@@ -2,6 +2,9 @@ import streamlit as st
 import graphviz
 from io import BytesIO
 
+# Set page configuration for a wide layout
+st.set_page_config(layout="wide")
+
 # Title and introductory guidance
 st.title("Decision Tree Modeling for PMP Project Managers")
 st.markdown("""
@@ -17,15 +20,16 @@ if 'tree' not in st.session_state:
     st.session_state.tree = None
 if 'computed' not in st.session_state:
     st.session_state.computed = False
+if 'explanation' not in st.session_state:
+    st.session_state.explanation = []
 
-# Helper function to get indented node labels for dropdowns
-def get_node_paths(node, depth=0):
-    indent = "  " * depth
-    label = f"{indent}{node['label']} ({node['type']})"
-    yield label, node
+# Helper function to get indented node labels for dropdowns with full path
+def get_node_paths(node, current_path=[]):
+    path_str = " → ".join(current_path + [node['label']])
+    yield path_str, node
     if node['type'] != 'end':
         for edge in node.get('edges', []):
-            yield from get_node_paths(edge['child'], depth + 1)
+            yield from get_node_paths(edge['child'], current_path + [node['label'], edge['label']])
 
 # Helper function to remove a node
 def remove_node(node, node_to_remove):
@@ -60,7 +64,7 @@ def collect_chance_emvs(node, chance_emvs=None):
         chance_emvs = []
     if node['type'] == 'chance' and node.get('value') is not None:
         chance_emvs.append((node['label'], node['value']))
-    for edge in node.get('edges', []):
+    for edge in node.get('edges') or []:
         collect_chance_emvs(edge['child'], chance_emvs)
     return chance_emvs
 
@@ -98,36 +102,51 @@ def generate_tree_image(tree):
         return dot.pipe(format='png')
     return None
 
-# Helper function to compute EMV and optimal path
-def compute_emv(node, current_cost=0):
+# Helper function to compute EMV and optimal path with explanation
+def compute_emv(node, current_cost=0, indent=0):
+    indent_str = "  " * indent
     if node['type'] == 'end':
         net_value = node['payoff'] - current_cost
         node['value'] = net_value
-        return net_value
+        explanation = [f"{indent_str}End Node '{node['label']}': Net Value = {node['payoff']} - {current_cost} = {net_value}"]
+        return net_value, explanation
     elif node['type'] == 'decision':
         option_emvs = []
+        option_explanations = []
         for edge in node['edges']:
-            # Pass the updated cost to the child
-            child_emv = compute_emv(edge['child'], current_cost + edge.get('initial_cost', 0))
+            child_emv, child_lines = compute_emv(edge['child'], current_cost + edge.get('initial_cost', 0), indent + 1)
             option_emvs.append(child_emv)
+            option_explanations.extend(child_lines)
         max_emv = max(option_emvs) if option_emvs else 0
         node['value'] = max_emv
+        explanation = [f"{indent_str}Decision Node '{node['label']}':"]
+        for i, emv in enumerate(option_emvs):
+            is_opt = "(optimal)" if emv == max_emv else ""
+            explanation.append(f"{indent_str}  Option '{node['edges'][i]['label']}': EMV = {emv} {is_opt}")
+        explanation.extend(option_explanations)
         for edge, option_emv in zip(node['edges'], option_emvs):
             edge['is_optimal'] = (option_emv == max_emv)
-        return max_emv
+        return max_emv, explanation
     elif node['type'] == 'chance':
         total_prob = sum(edge['probability'] for edge in node['edges'])
         if not (0.99 < total_prob < 1.01):
             raise ValueError(f"Probabilities for chance node '{node['label']}' must sum to 1, got {total_prob:.2f}.")
-        expected_emv = 0
+        child_contributions = []
+        child_explanations = []
         for edge in node['edges']:
-            # Pass the current cost to the child
-            child_emv = compute_emv(edge['child'], current_cost)
-            expected_emv += edge['probability'] * child_emv
+            child_emv, child_lines = compute_emv(edge['child'], current_cost, indent + 1)
+            contribution = edge['probability'] * child_emv
+            child_contributions.append(contribution)
+            child_explanations.append(f"{indent_str}  Outcome '{edge['label']}': Probability = {edge['probability']}, Child EMV = {child_emv}, Contribution = {edge['probability']} * {child_emv} = {contribution}")
+            child_explanations.extend(child_lines)
+        expected_emv = sum(child_contributions)
         node['value'] = expected_emv
+        explanation = [f"{indent_str}Chance Node '{node['label']}':"]
+        explanation.extend(child_explanations)
+        explanation.append(f"{indent_str}  Total EMV = {' + '.join(str(c) for c in child_contributions)} = {expected_emv}")
         for edge in node['edges']:
             edge['is_optimal'] = False
-        return expected_emv
+        return expected_emv, explanation
 
 # Initial tree setup form
 if st.session_state.tree is None:
@@ -248,7 +267,7 @@ else:
             parent_node = node_paths[labels.index(parent_label)][1]
             
             if parent_node['type'] != 'end':
-                st.write(f"Adding to: **{parent_node['label']} ({parent_node['type']})**")
+                st.write(f"Adding to: **{parent_label}**")
                 with st.form(key='add_child_form'):
                     if parent_node['type'] == 'decision':
                         edge_label_prompt = "Decision Option Name"
@@ -326,17 +345,18 @@ else:
             delete_labels = [label for label, _ in non_root_nodes]
             selected_delete_label = st.selectbox("Select Node to Delete", delete_labels)
             selected_delete_node = non_root_nodes[delete_labels.index(selected_delete_label)][1]
-            confirm_delete = st.checkbox(f"Confirm deletion of '{selected_delete_node['label']}'")
+            confirm_delete = st.checkbox(f"Confirm deletion of '{selected_delete_label}'")
             if st.button("Delete Node") and confirm_delete:
                 if remove_node(tree, selected_delete_node):
-                    st.success(f"Deleted '{selected_delete_node['label']}'")
+                    st.success(f"Deleted '{selected_delete_label}'")
                     st.rerun()
         
         # Compute optimal decision
         if st.button("Compute Optimal Path"):
             try:
-                compute_emv(tree, current_cost=0)
+                emv, explanation = compute_emv(tree, current_cost=0, indent=0)
                 st.session_state.computed = True
+                st.session_state.explanation = explanation
                 st.success("Optimal path computed!")
                 st.rerun()
             except Exception as e:
@@ -363,6 +383,12 @@ else:
         for path, net_value, prob in all_paths:
             path_str = " -> ".join(path)
             st.write(f"Path: {path_str}, Net Value: {net_value:.2f}, Probability: {prob:.2f}")
+
+    # Display EMV calculation details if computed
+    if st.session_state.computed:
+        with st.expander("EMV Calculation Details"):
+            for line in st.session_state.explanation:
+                st.write(line)
 
     # Interpretation guide
     st.markdown("""
