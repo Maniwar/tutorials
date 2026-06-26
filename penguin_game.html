@@ -282,6 +282,7 @@
     const pops = [];
     let correctAnswer = 0;
     let isAnimatingHop = false;
+    let isResolvingProblem = false;
     let isGameOver = false;
     let isStarted = false;
     let score = 0;
@@ -402,6 +403,7 @@
       els.equation.innerText = `${text} = ?`;
       createIcebergs(uniqueAnswers(correctAnswer));
       isAnimatingHop = false;
+      isResolvingProblem = false;
     }
 
     const audioCtx = { current: null };
@@ -454,7 +456,8 @@
     }
 
     function loseLife(reason) {
-      if (isGameOver) return;
+      if (isGameOver || isResolvingProblem) return;
+      isResolvingProblem = true;
       lives -= 1;
       streak = 0;
       updateUI();
@@ -486,6 +489,7 @@
       }
       updateUI();
       addPop(`+${earned}`, hitIceberg.position.x, 2.4, '#ffd166');
+      isResolvingProblem = true;
       isAnimatingHop = true;
       hopTimer = 0;
       setTimeout(() => {
@@ -501,6 +505,7 @@
       streak = 0;
       sinkTimer = 0;
       isGameOver = false;
+      isResolvingProblem = false;
       isStarted = true;
       els.gameOver.style.display = 'none';
       els.startScreen.style.display = 'none';
@@ -516,8 +521,9 @@
     const mouse = new THREE.Vector2();
 
     function onInteract(event) {
+      if (event.target?.closest?.('button')) return;
+      if (isAnimatingHop || isResolvingProblem || isGameOver || !isStarted) return;
       if (event.cancelable) event.preventDefault();
-      if (isAnimatingHop || isGameOver || !isStarted) return;
       const pointer = event.changedTouches ? event.changedTouches[0] : event;
       mouse.x = (pointer.clientX / window.innerWidth) * 2 - 1;
       mouse.y = -(pointer.clientY / window.innerHeight) * 2 + 1;
@@ -550,7 +556,7 @@
       });
 
       if (!isGameOver && isStarted) {
-        if (!isAnimatingHop) {
+        if (!isAnimatingHop && !isResolvingProblem) {
           sinkTimer += dt;
           const sinkRatio = Math.min(1, sinkTimer / timeToSink);
           const timeLeft = Math.max(0, 1 - sinkRatio);
