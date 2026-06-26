@@ -747,11 +747,14 @@
       renderer.render(scene, camera);
     }
 
-    window.addEventListener('resize', () => {
+    function handleViewportChange() {
       applyResponsiveSceneLayout();
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+    }
+
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('orientationchange', handleViewportChange);
 
     applyResponsiveSceneLayout();
     updateUI();
