@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>3D Penguin Math Adventure</title>
   <style>
     :root {
@@ -16,14 +16,27 @@
 
     * { box-sizing: border-box; }
 
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+    }
+
     body {
       margin: 0;
       overflow: hidden;
+      min-height: 100dvh;
       background:
         radial-gradient(circle at 50% -10%, rgba(255,255,255,0.95), rgba(135,206,235,0.35) 28%, transparent 48%),
         linear-gradient(180deg, #b9f3ff 0%, var(--sky) 38%, #1ca3ec 100%);
       touch-action: none;
       font-family: "Comic Sans MS", "Trebuchet MS", system-ui, sans-serif;
+    }
+
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100dvh;
     }
 
     #ui {
@@ -247,6 +260,35 @@
         font-size: clamp(0.72rem, 1.8vw, 0.95rem);
       }
     }
+
+    @media (orientation: landscape) and (max-height: 430px) {
+      #ui {
+        grid-template-columns: minmax(260px, 1fr) minmax(190px, 0.7fr);
+        gap: 4px 10px;
+      }
+
+      #stats {
+        gap: 5px;
+      }
+
+      .stat-card {
+        border-radius: 12px;
+        padding: 4px 6px;
+      }
+
+      #equation {
+        border-radius: 18px;
+        padding-inline: 0.22em;
+      }
+
+      #timerShell {
+        height: 12px;
+      }
+
+      #helpText {
+        display: none;
+      }
+    }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
@@ -367,21 +409,22 @@
       const aspect = window.innerWidth / Math.max(window.innerHeight, 1);
       const isPortrait = aspect < 0.82;
       const isShortLandscape = aspect > 1.35 && window.innerHeight < 560;
+      const isTinyLandscape = aspect > 1.6 && window.innerHeight < 430;
       return {
-        answerXs: isPortrait ? [-2.75, 0, 2.75] : [-4.2, 0, 4.2],
-        icebergScale: isPortrait ? 0.84 : 1,
-        icebergZ: isPortrait ? 3.35 : 4,
-        cameraY: isPortrait ? 7.4 : (isShortLandscape ? 5.4 : 6),
-        cameraZ: isPortrait ? 14.4 : (isShortLandscape ? 11.4 : 12),
-        fov: isPortrait ? 68 : (isShortLandscape ? 56 : 60),
-        penguinScale: isPortrait ? 0.9 : 1
+        answerXs: isPortrait ? [-2.55, 0, 2.55] : (isTinyLandscape ? [-3.25, 0, 3.25] : [-4.2, 0, 4.2]),
+        icebergScale: isPortrait ? 0.78 : (isTinyLandscape ? 0.76 : 1),
+        icebergZ: isPortrait ? 3.05 : (isTinyLandscape ? 3.55 : 4),
+        cameraY: isPortrait ? 7.7 : (isTinyLandscape ? 4.85 : (isShortLandscape ? 5.4 : 6)),
+        cameraZ: isPortrait ? 15.2 : (isTinyLandscape ? 10.25 : (isShortLandscape ? 11.4 : 12)),
+        fov: isPortrait ? 70 : (isTinyLandscape ? 58 : (isShortLandscape ? 56 : 60)),
+        penguinScale: isPortrait ? 0.84 : (isTinyLandscape ? 0.82 : 1)
       };
     }
 
     function applyResponsiveSceneLayout() {
       const settings = getResponsiveSettings();
       camera.fov = settings.fov;
-      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.aspect = window.innerWidth / Math.max(window.innerHeight, 1);
       camera.position.set(0, settings.cameraY, settings.cameraZ);
       camera.lookAt(0, 0.9, 0);
       camera.updateProjectionMatrix();
@@ -747,16 +790,23 @@
       renderer.render(scene, camera);
     }
 
-    function handleViewportChange() {
+    let viewportUpdateId = 0;
+    function syncViewport() {
       applyResponsiveSceneLayout();
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
+    function handleViewportChange() {
+      cancelAnimationFrame(viewportUpdateId);
+      viewportUpdateId = requestAnimationFrame(syncViewport);
+      setTimeout(syncViewport, 250);
+    }
+
     window.addEventListener('resize', handleViewportChange);
     window.addEventListener('orientationchange', handleViewportChange);
 
-    applyResponsiveSceneLayout();
+    syncViewport();
     updateUI();
     animate();
   </script>
