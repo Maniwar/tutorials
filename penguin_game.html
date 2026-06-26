@@ -19,7 +19,9 @@
     body {
       margin: 0;
       overflow: hidden;
-      background-color: var(--sky);
+      background:
+        radial-gradient(circle at 50% -10%, rgba(255,255,255,0.95), rgba(135,206,235,0.35) 28%, transparent 48%),
+        linear-gradient(180deg, #b9f3ff 0%, var(--sky) 38%, #1ca3ec 100%);
       touch-action: none;
       font-family: "Comic Sans MS", "Trebuchet MS", system-ui, sans-serif;
     }
@@ -33,7 +35,7 @@
       z-index: 10;
       color: #fff;
       text-shadow: 2px 2px 0 var(--deep-blue);
-      padding: 0 16px;
+      padding: max(8px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left));
     }
 
     #stats {
@@ -52,13 +54,20 @@
       border-radius: 18px;
       padding: 8px 10px;
       backdrop-filter: blur(4px);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.42), 0 8px 22px rgba(0, 77, 128, 0.16);
     }
 
     #equation {
       font-size: clamp(2.5rem, 10vw, 5rem);
       font-weight: 900;
+      display: inline-block;
       margin-bottom: 6px;
+      padding: 0.02em 0.32em 0.1em;
+      border-radius: 28px;
+      background: rgba(255, 255, 255, 0.16);
+      border: 2px solid rgba(255, 255, 255, 0.28);
       text-shadow: 3px 3px 0 var(--deep-blue), 0 0 18px rgba(255,255,255,0.55);
+      box-shadow: 0 12px 30px rgba(0, 95, 153, 0.18);
     }
 
     #feedback {
@@ -106,6 +115,10 @@
     #gameOver h1, #startScreen h1 { font-size: clamp(3rem, 10vw, 5rem); margin: 0 0 10px; }
     #gameOver p, #startScreen p { font-size: clamp(1.2rem, 4vw, 2rem); max-width: 760px; }
 
+    #gameOver > *, #startScreen > * {
+      max-width: min(880px, calc(100vw - 36px));
+    }
+
     button {
       pointer-events: auto;
       font-family: inherit;
@@ -140,9 +153,29 @@
       animation: popFloat 0.9s ease-out forwards;
     }
 
+    .spark {
+      position: absolute;
+      font-size: 1.25rem;
+      font-weight: 900;
+      text-shadow: 1px 1px 0 rgba(0,0,0,0.45);
+      transform: translate(-50%, -50%);
+      animation: sparkBurst 0.72s ease-out forwards;
+    }
+
     @keyframes popFloat {
       from { opacity: 1; transform: translate(-50%, -50%) scale(0.8); }
       to { opacity: 0; transform: translate(-50%, -130%) scale(1.25); }
+    }
+
+    @keyframes sparkBurst {
+      from {
+        opacity: 1;
+        transform: translate(-50%, -50%) rotate(0deg) scale(0.7);
+      }
+      to {
+        opacity: 0;
+        transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) rotate(var(--spin)) scale(1.45);
+      }
     }
 
     #helpText {
@@ -160,9 +193,59 @@
       width: min(720px, calc(100vw - 24px));
     }
 
-    @media (max-width: 680px) {
-      #stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    @media (orientation: portrait) {
+      #ui { inset: 2% 0 auto 0; }
+      #stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        max-width: 520px;
+        margin: 0 auto 10px;
+      }
       .stat-card { padding: 6px 8px; }
+      #helpText { bottom: max(12px, env(safe-area-inset-bottom)); }
+    }
+
+    @media (orientation: landscape) and (max-height: 560px) {
+      #ui {
+        inset: max(6px, env(safe-area-inset-top)) 0 auto 0;
+        display: grid;
+        grid-template-columns: minmax(360px, 1fr) minmax(260px, 0.8fr);
+        grid-template-areas:
+          "stats equation"
+          "timer feedback";
+        align-items: center;
+        gap: 6px 14px;
+      }
+
+      #stats {
+        grid-area: stats;
+        margin-bottom: 0;
+        font-size: clamp(0.78rem, 2.2vw, 1.05rem);
+      }
+
+      #equation {
+        grid-area: equation;
+        justify-self: center;
+        margin: 0;
+        font-size: clamp(2rem, 6vw, 3.4rem);
+      }
+
+      #feedback {
+        grid-area: feedback;
+        min-height: 1.6rem;
+        font-size: clamp(0.9rem, 2.4vw, 1.25rem);
+      }
+
+      #timerShell {
+        grid-area: timer;
+        width: min(480px, 100%);
+        height: 16px;
+        margin: 0 auto;
+      }
+
+      #helpText {
+        bottom: max(8px, env(safe-area-inset-bottom));
+        font-size: clamp(0.72rem, 1.8vw, 0.95rem);
+      }
     }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -224,6 +307,8 @@
     );
     water.rotation.x = -Math.PI / 2;
     scene.add(water);
+    const waterPositions = water.geometry.attributes.position;
+    const waterBaseZ = Array.from({ length: waterPositions.count }, (_, i) => waterPositions.getZ(i));
 
     const penguin = new THREE.Group();
     const blackMat = new THREE.MeshPhongMaterial({ color: 0x111111 });
@@ -278,10 +363,42 @@
       snowflakes.push(flake);
     }
 
+    function getResponsiveSettings() {
+      const aspect = window.innerWidth / Math.max(window.innerHeight, 1);
+      const isPortrait = aspect < 0.82;
+      const isShortLandscape = aspect > 1.35 && window.innerHeight < 560;
+      return {
+        answerXs: isPortrait ? [-2.75, 0, 2.75] : [-4.2, 0, 4.2],
+        icebergScale: isPortrait ? 0.84 : 1,
+        icebergZ: isPortrait ? 3.35 : 4,
+        cameraY: isPortrait ? 7.4 : (isShortLandscape ? 5.4 : 6),
+        cameraZ: isPortrait ? 14.4 : (isShortLandscape ? 11.4 : 12),
+        fov: isPortrait ? 68 : (isShortLandscape ? 56 : 60),
+        penguinScale: isPortrait ? 0.9 : 1
+      };
+    }
+
+    function applyResponsiveSceneLayout() {
+      const settings = getResponsiveSettings();
+      camera.fov = settings.fov;
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.position.set(0, settings.cameraY, settings.cameraZ);
+      camera.lookAt(0, 0.9, 0);
+      camera.updateProjectionMatrix();
+      penguin.scale.setScalar(settings.penguinScale);
+      icebergs.forEach((ice, i) => {
+        ice.position.x = settings.answerXs[i];
+        ice.position.z = settings.icebergZ;
+        ice.scale.setScalar(settings.icebergScale);
+        ice.userData.baseX = settings.answerXs[i];
+      });
+    }
+
     const icebergs = [];
     const pops = [];
     let correctAnswer = 0;
     let isAnimatingHop = false;
+    let isResolvingProblem = false;
     let isGameOver = false;
     let isStarted = false;
     let score = 0;
@@ -344,6 +461,7 @@
     }
 
     function createIcebergs(answers) {
+      const settings = getResponsiveSettings();
       icebergs.forEach((ice) => {
         ice.material.map.dispose();
         ice.material.dispose();
@@ -351,12 +469,13 @@
         scene.remove(ice);
       });
       icebergs.length = 0;
-      [-4.2, 0, 4.2].forEach((x, i) => {
+      settings.answerXs.forEach((x, i) => {
         const mesh = new THREE.Mesh(
           new THREE.CylinderGeometry(1.45, 1.9, 0.65, 9),
           new THREE.MeshPhongMaterial({ map: createTextTexture(String(answers[i])), shininess: 60 })
         );
-        mesh.position.set(x, 0.3, 4);
+        mesh.position.set(x, 0.3, settings.icebergZ);
+        mesh.scale.setScalar(settings.icebergScale);
         mesh.userData = { value: answers[i], baseX: x };
         scene.add(mesh);
         icebergs.push(mesh);
@@ -376,6 +495,7 @@
     function generateMathProblem() {
       if (isGameOver || !isStarted) return;
       sinkTimer = 0;
+      isResolvingProblem = false;
       timeToSink = Math.max(4.5, 8 - (level - 1) * 0.45);
       const maxNumber = 8 + level * 3;
       const operations = level >= 4 ? ['+', '-', '×'] : ['+', '-'];
@@ -442,6 +562,27 @@
       pop.addEventListener('animationend', () => pop.remove(), { once: true });
     }
 
+    function addBurst(x, y, emoji, color) {
+      const screen = new THREE.Vector3(x, y, 4).project(camera);
+      const left = (screen.x * 0.5 + 0.5) * window.innerWidth;
+      const top = (-screen.y * 0.5 + 0.5) * window.innerHeight;
+      for (let i = 0; i < 12; i++) {
+        const spark = document.createElement('span');
+        const angle = (Math.PI * 2 * i) / 12;
+        const distance = 42 + Math.random() * 54;
+        spark.className = 'spark';
+        spark.innerText = emoji;
+        spark.style.color = color;
+        spark.style.left = `${left}px`;
+        spark.style.top = `${top}px`;
+        spark.style.setProperty('--dx', `${Math.cos(angle) * distance}px`);
+        spark.style.setProperty('--dy', `${Math.sin(angle) * distance}px`);
+        spark.style.setProperty('--spin', `${Math.random() > 0.5 ? 180 : -180}deg`);
+        els.popLayer.appendChild(spark);
+        spark.addEventListener('animationend', () => spark.remove(), { once: true });
+      }
+    }
+
     function triggerGameOver() {
       isGameOver = true;
       playSound('gameover');
@@ -454,7 +595,9 @@
     }
 
     function loseLife(reason) {
-      if (isGameOver) return;
+      if (isGameOver || isResolvingProblem) return;
+      isResolvingProblem = true;
+      sinkTimer = 0;
       lives -= 1;
       streak = 0;
       updateUI();
@@ -464,6 +607,7 @@
         return;
       }
       setFeedback(reason === 'time' ? 'Too slow! The ice sank! 💦' : 'Oops! New iceberg coming! ❄️', '#ff4500');
+      addBurst(0, 1.5, reason === 'time' ? '💦' : '❄️', '#ffec99');
       setTimeout(() => {
         setFeedback('Quick, before they sink!');
         generateMathProblem();
@@ -471,6 +615,8 @@
     }
 
     function answerCorrect(hitIceberg) {
+      if (isResolvingProblem) return;
+      isResolvingProblem = true;
       streak += 1;
       const bonus = Math.min(20, streak * 2);
       const earned = 10 + level + bonus;
@@ -486,6 +632,7 @@
       }
       updateUI();
       addPop(`+${earned}`, hitIceberg.position.x, 2.4, '#ffd166');
+      addBurst(hitIceberg.position.x, 2.05, '✨', '#ffd166');
       isAnimatingHop = true;
       hopTimer = 0;
       setTimeout(() => {
@@ -502,6 +649,7 @@
       sinkTimer = 0;
       isGameOver = false;
       isStarted = true;
+      isResolvingProblem = false;
       els.gameOver.style.display = 'none';
       els.startScreen.style.display = 'none';
       setFeedback('Quick, before they sink!');
@@ -517,7 +665,7 @@
 
     function onInteract(event) {
       if (event.cancelable) event.preventDefault();
-      if (isAnimatingHop || isGameOver || !isStarted) return;
+      if (isAnimatingHop || isResolvingProblem || isGameOver || !isStarted) return;
       const pointer = event.changedTouches ? event.changedTouches[0] : event;
       mouse.x = (pointer.clientX / window.innerWidth) * 2 - 1;
       mouse.y = -(pointer.clientY / window.innerHeight) * 2 + 1;
@@ -549,8 +697,16 @@
         if (flake.position.y < -1) flake.position.y = Math.random() * 10 + 11;
       });
 
+      for (let i = 0; i < waterPositions.count; i++) {
+        const x = waterPositions.getX(i);
+        const y = waterPositions.getY(i);
+        const wave = Math.sin(time * 1.7 + x * 0.28) * 0.09 + Math.cos(time * 1.25 + y * 0.22) * 0.06;
+        waterPositions.setZ(i, waterBaseZ[i] + wave);
+      }
+      waterPositions.needsUpdate = true;
+
       if (!isGameOver && isStarted) {
-        if (!isAnimatingHop) {
+        if (!isAnimatingHop && !isResolvingProblem) {
           sinkTimer += dt;
           const sinkRatio = Math.min(1, sinkTimer / timeToSink);
           const timeLeft = Math.max(0, 1 - sinkRatio);
@@ -559,12 +715,14 @@
           icebergs.forEach((ice, i) => {
             ice.position.y = 0.3 - sinkRatio * 2.1 + Math.sin(time * 2 + i) * 0.11;
             ice.rotation.y = Math.sin(time * 0.8 + i) * 0.08;
+            ice.rotation.z = Math.sin(time * 1.35 + i) * 0.045;
           });
           if (sinkTimer >= timeToSink) loseLife('time');
         } else {
           els.timerBar.style.width = '100%';
           icebergs.forEach((ice, i) => {
             ice.position.y = 0.3 + Math.sin(time * 2 + i) * 0.1;
+            ice.rotation.z = Math.sin(time * 1.45 + i) * 0.04;
           });
         }
 
@@ -589,13 +747,16 @@
       renderer.render(scene, camera);
     }
 
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
+    function handleViewportChange() {
+      applyResponsiveSceneLayout();
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+    }
 
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('orientationchange', handleViewportChange);
+
+    applyResponsiveSceneLayout();
     updateUI();
     animate();
   </script>
