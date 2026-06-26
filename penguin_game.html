@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>3D Penguin Math Adventure</title>
+  <style>
+    :root {
+      --sky: #87ceeb;
+      --deep-blue: #005f99;
+      --ice: #e0f7fa;
+      --success: #32cd32;
+      --danger: #ff4500;
+      --gold: #ffd166;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: var(--sky);
+      touch-action: none;
+      font-family: "Comic Sans MS", "Trebuchet MS", system-ui, sans-serif;
+    }
+
+    #ui {
+      position: absolute;
+      inset: 3% 0 auto 0;
+      width: 100%;
+      text-align: center;
+      pointer-events: none;
+      z-index: 10;
+      color: #fff;
+      text-shadow: 2px 2px 0 var(--deep-blue);
+      padding: 0 16px;
+    }
+
+    #stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      align-items: center;
+      font-size: clamp(1rem, 3vw, 1.6rem);
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+
+    .stat-card {
+      background: rgba(0, 95, 153, 0.35);
+      border: 2px solid rgba(255, 255, 255, 0.45);
+      border-radius: 18px;
+      padding: 8px 10px;
+      backdrop-filter: blur(4px);
+    }
+
+    #equation {
+      font-size: clamp(2.5rem, 10vw, 5rem);
+      font-weight: 900;
+      margin-bottom: 6px;
+      text-shadow: 3px 3px 0 var(--deep-blue), 0 0 18px rgba(255,255,255,0.55);
+    }
+
+    #feedback {
+      min-height: 2.8rem;
+      font-size: clamp(1.2rem, 4vw, 2rem);
+      font-weight: 900;
+      text-shadow: 2px 2px 0 #000;
+    }
+
+    #timerShell {
+      width: min(620px, calc(100vw - 32px));
+      height: 22px;
+      margin: 8px auto 0;
+      border: 3px solid #fff;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.3);
+      overflow: hidden;
+      box-shadow: 0 3px 0 rgba(0, 95, 153, 0.5);
+    }
+
+    #timerBar {
+      height: 100%;
+      width: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--success), var(--gold));
+      transition: width 0.08s linear, background 0.2s ease;
+    }
+
+    #gameOver, #startScreen {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      color: white;
+      text-align: center;
+      text-shadow: 2px 2px 0 #000;
+      background: radial-gradient(circle at top, rgba(45, 169, 225, 0.92), rgba(0, 95, 153, 0.92));
+      padding: 24px;
+    }
+
+    #gameOver { display: none; }
+    #gameOver h1, #startScreen h1 { font-size: clamp(3rem, 10vw, 5rem); margin: 0 0 10px; }
+    #gameOver p, #startScreen p { font-size: clamp(1.2rem, 4vw, 2rem); max-width: 760px; }
+
+    button {
+      pointer-events: auto;
+      font-family: inherit;
+      font-size: clamp(1.4rem, 4vw, 2rem);
+      padding: 15px 40px;
+      border-radius: 30px;
+      border: 0;
+      background-color: var(--success);
+      color: white;
+      font-weight: 900;
+      cursor: pointer;
+      box-shadow: 0 8px 0 #228b22;
+      transition: transform 0.1s, filter 0.2s;
+    }
+
+    button:hover { filter: brightness(1.08); }
+    button:active { transform: translateY(8px); box-shadow: 0 0 0 #228b22; }
+
+    #popLayer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 12;
+    }
+
+    .pop {
+      position: absolute;
+      font-size: 2rem;
+      font-weight: 900;
+      text-shadow: 2px 2px 0 #000;
+      transform: translate(-50%, -50%);
+      animation: popFloat 0.9s ease-out forwards;
+    }
+
+    @keyframes popFloat {
+      from { opacity: 1; transform: translate(-50%, -50%) scale(0.8); }
+      to { opacity: 0; transform: translate(-50%, -130%) scale(1.25); }
+    }
+
+    #helpText {
+      position: absolute;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+      z-index: 10;
+      pointer-events: none;
+      color: white;
+      font-weight: 800;
+      text-align: center;
+      text-shadow: 2px 2px 0 #005f99;
+      font-size: clamp(0.9rem, 2.5vw, 1.2rem);
+      width: min(720px, calc(100vw - 24px));
+    }
+
+    @media (max-width: 680px) {
+      #stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .stat-card { padding: 6px 8px; }
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+  <div id="ui" aria-live="polite">
+    <div id="stats">
+      <div class="stat-card">Score: <span id="scoreVal">0</span></div>
+      <div class="stat-card">Best: <span id="bestVal">0</span></div>
+      <div class="stat-card">Level: <span id="levelVal">1</span></div>
+      <div class="stat-card" id="livesVal">❤️❤️❤️</div>
+    </div>
+    <div id="equation">? + ? =</div>
+    <div id="feedback">Tap the right iceberg!</div>
+    <div id="timerShell" aria-label="Time remaining"><div id="timerBar"></div></div>
+  </div>
+
+  <div id="popLayer"></div>
+  <div id="helpText">Streaks add bonus points. Higher levels add bigger numbers, multiplication, and faster sinking icebergs.</div>
+
+  <div id="startScreen">
+    <h1>Penguin Math Adventure 🐧</h1>
+    <p>Hop across the correct iceberg before it sinks. Build streaks, level up, and keep your hearts!</p>
+    <button id="startButton">Start Game</button>
+  </div>
+
+  <div id="gameOver">
+    <h1>Game Over! ❄️</h1>
+    <p>Final Score: <span id="finalScoreVal">0</span></p>
+    <p>Best Score: <span id="finalBestVal">0</span></p>
+    <button id="restartButton">Play Again</button>
+  </div>
+
+  <script>
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87ceeb);
+    scene.fog = new THREE.Fog(0x87ceeb, 10, 55);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 6, 12);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.85);
+    hemiLight.position.set(0, 20, 0);
+    scene.add(hemiLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.75);
+    dirLight.position.set(5, 10, 5);
+    scene.add(dirLight);
+
+    const water = new THREE.Mesh(
+      new THREE.PlaneGeometry(120, 120, 16, 16),
+      new THREE.MeshPhongMaterial({ color: 0x1ca3ec, flatShading: true, shininess: 80 })
+    );
+    water.rotation.x = -Math.PI / 2;
+    scene.add(water);
+
+    const penguin = new THREE.Group();
+    const blackMat = new THREE.MeshPhongMaterial({ color: 0x111111 });
+    const whiteMat = new THREE.MeshPhongMaterial({ color: 0xffffff });
+    const orangeMat = new THREE.MeshPhongMaterial({ color: 0xffa500 });
+
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1, 2.5, 16), blackMat);
+    body.position.y = 1.25;
+    penguin.add(body);
+
+    const belly = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.9, 2.2, 16), whiteMat);
+    belly.position.set(0, 1.25, 0.15);
+    penguin.add(belly);
+
+    function createEye(x) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 16), whiteMat);
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.08, 16, 16), new THREE.MeshPhongMaterial({ color: 0x000000 }));
+      pupil.position.z = 0.1;
+      eye.add(pupil);
+      eye.position.set(x, 2.2, 0.7);
+      return eye;
+    }
+
+    penguin.add(createEye(-0.3));
+    penguin.add(createEye(0.3));
+
+    const beak = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.6, 8), orangeMat);
+    beak.rotation.x = Math.PI / 2;
+    beak.position.set(0, 1.9, 0.9);
+    penguin.add(beak);
+
+    const leftFlipper = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.2, 0.16), blackMat);
+    leftFlipper.position.set(-0.95, 1.15, 0);
+    leftFlipper.rotation.z = -0.35;
+    penguin.add(leftFlipper);
+
+    const rightFlipper = leftFlipper.clone();
+    rightFlipper.position.x = 0.95;
+    rightFlipper.rotation.z = 0.35;
+    penguin.add(rightFlipper);
+    scene.add(penguin);
+
+    const snowflakes = [];
+    for (let i = 0; i < 80; i++) {
+      const flake = new THREE.Mesh(
+        new THREE.SphereGeometry(Math.random() * 0.035 + 0.015, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xffffff })
+      );
+      flake.position.set((Math.random() - 0.5) * 28, Math.random() * 18 + 3, (Math.random() - 0.5) * 32);
+      flake.userData.speed = Math.random() * 0.55 + 0.25;
+      scene.add(flake);
+      snowflakes.push(flake);
+    }
+
+    const icebergs = [];
+    const pops = [];
+    let correctAnswer = 0;
+    let isAnimatingHop = false;
+    let isGameOver = false;
+    let isStarted = false;
+    let score = 0;
+    let bestScore = Number(localStorage.getItem('penguinMathBest') || 0);
+    let lives = 3;
+    let level = 1;
+    let streak = 0;
+    let sinkTimer = 0;
+    let timeToSink = 8;
+    let hopTimer = 999;
+
+    const els = {
+      score: document.getElementById('scoreVal'),
+      best: document.getElementById('bestVal'),
+      level: document.getElementById('levelVal'),
+      lives: document.getElementById('livesVal'),
+      equation: document.getElementById('equation'),
+      feedback: document.getElementById('feedback'),
+      timerBar: document.getElementById('timerBar'),
+      gameOver: document.getElementById('gameOver'),
+      finalScore: document.getElementById('finalScoreVal'),
+      finalBest: document.getElementById('finalBestVal'),
+      startScreen: document.getElementById('startScreen'),
+      popLayer: document.getElementById('popLayer')
+    };
+
+    function setFeedback(text, color = '#fff') {
+      els.feedback.innerText = text;
+      els.feedback.style.color = color;
+    }
+
+    function updateUI() {
+      els.score.innerText = score;
+      els.best.innerText = bestScore;
+      els.level.innerText = level;
+      els.lives.innerText = '❤️'.repeat(lives) + '🖤'.repeat(3 - lives);
+    }
+
+    function createTextTexture(text) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 384;
+      canvas.height = 384;
+      const ctx = canvas.getContext('2d');
+      const gradient = ctx.createLinearGradient(0, 0, 0, 384);
+      gradient.addColorStop(0, '#ffffff');
+      gradient.addColorStop(1, '#c7f3ff');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 384, 384);
+      ctx.strokeStyle = '#8bddec';
+      ctx.lineWidth = 18;
+      ctx.strokeRect(9, 9, 366, 366);
+      ctx.font = 'bold 150px Trebuchet MS, sans-serif';
+      ctx.fillStyle = '#005f99';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, 192, 194);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      return texture;
+    }
+
+    function createIcebergs(answers) {
+      icebergs.forEach((ice) => {
+        ice.material.map.dispose();
+        ice.material.dispose();
+        ice.geometry.dispose();
+        scene.remove(ice);
+      });
+      icebergs.length = 0;
+      [-4.2, 0, 4.2].forEach((x, i) => {
+        const mesh = new THREE.Mesh(
+          new THREE.CylinderGeometry(1.45, 1.9, 0.65, 9),
+          new THREE.MeshPhongMaterial({ map: createTextTexture(String(answers[i])), shininess: 60 })
+        );
+        mesh.position.set(x, 0.3, 4);
+        mesh.userData = { value: answers[i], baseX: x };
+        scene.add(mesh);
+        icebergs.push(mesh);
+      });
+    }
+
+    function uniqueAnswers(answer) {
+      const offsets = [-3, -2, -1, 1, 2, 3, 4];
+      const options = new Set([answer]);
+      while (options.size < 3) {
+        const offset = offsets[Math.floor(Math.random() * offsets.length)];
+        options.add(Math.max(0, answer + offset));
+      }
+      return Array.from(options).sort(() => Math.random() - 0.5);
+    }
+
+    function generateMathProblem() {
+      if (isGameOver || !isStarted) return;
+      sinkTimer = 0;
+      timeToSink = Math.max(4.5, 8 - (level - 1) * 0.45);
+      const maxNumber = 8 + level * 3;
+      const operations = level >= 4 ? ['+', '-', '×'] : ['+', '-'];
+      const op = operations[Math.floor(Math.random() * operations.length)];
+      let n1 = Math.floor(Math.random() * maxNumber) + 1;
+      let n2 = Math.floor(Math.random() * maxNumber) + 1;
+      let text = '';
+
+      if (op === '+') {
+        correctAnswer = n1 + n2;
+        text = `${n1} + ${n2}`;
+      } else if (op === '-') {
+        const max = Math.max(n1, n2);
+        const min = Math.min(n1, n2);
+        correctAnswer = max - min;
+        text = `${max} - ${min}`;
+      } else {
+        n1 = Math.floor(Math.random() * Math.min(10, level + 4)) + 1;
+        n2 = Math.floor(Math.random() * Math.min(10, level + 4)) + 1;
+        correctAnswer = n1 * n2;
+        text = `${n1} × ${n2}`;
+      }
+
+      els.equation.innerText = `${text} = ?`;
+      createIcebergs(uniqueAnswers(correctAnswer));
+      isAnimatingHop = false;
+    }
+
+    const audioCtx = { current: null };
+    function playSound(type) {
+      audioCtx.current = audioCtx.current || new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = audioCtx.current;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const now = ctx.currentTime;
+      const configs = {
+        correct: [600, 1250, 0.45, 'sine'],
+        wrong: [300, 90, 0.35, 'sawtooth'],
+        level: [450, 1500, 0.55, 'triangle'],
+        gameover: [200, 45, 0.9, 'square']
+      };
+      const [start, end, duration, wave] = configs[type] || configs.correct;
+      osc.type = wave;
+      osc.frequency.setValueAtTime(start, now);
+      osc.frequency.exponentialRampToValueAtTime(end, now + duration * 0.65);
+      gain.gain.setValueAtTime(0.35, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
+      osc.start(now);
+      osc.stop(now + duration);
+    }
+
+    function addPop(text, x, y, color) {
+      pops.push({ text, x, y, color, life: 1 });
+      const screen = new THREE.Vector3(x, y, 4).project(camera);
+      const pop = document.createElement('div');
+      pop.className = 'pop';
+      pop.innerText = text;
+      pop.style.color = color;
+      pop.style.left = `${(screen.x * 0.5 + 0.5) * window.innerWidth}px`;
+      pop.style.top = `${(-screen.y * 0.5 + 0.5) * window.innerHeight}px`;
+      els.popLayer.appendChild(pop);
+      pop.addEventListener('animationend', () => pop.remove(), { once: true });
+    }
+
+    function triggerGameOver() {
+      isGameOver = true;
+      playSound('gameover');
+      bestScore = Math.max(bestScore, score);
+      localStorage.setItem('penguinMathBest', String(bestScore));
+      updateUI();
+      els.finalScore.innerText = score;
+      els.finalBest.innerText = bestScore;
+      els.gameOver.style.display = 'flex';
+    }
+
+    function loseLife(reason) {
+      if (isGameOver) return;
+      lives -= 1;
+      streak = 0;
+      updateUI();
+      playSound('wrong');
+      if (lives <= 0) {
+        triggerGameOver();
+        return;
+      }
+      setFeedback(reason === 'time' ? 'Too slow! The ice sank! 💦' : 'Oops! New iceberg coming! ❄️', '#ff4500');
+      setTimeout(() => {
+        setFeedback('Quick, before they sink!');
+        generateMathProblem();
+      }, 800);
+    }
+
+    function answerCorrect(hitIceberg) {
+      streak += 1;
+      const bonus = Math.min(20, streak * 2);
+      const earned = 10 + level + bonus;
+      score += earned;
+      const nextLevel = Math.floor(score / 70) + 1;
+      if (nextLevel > level) {
+        level = nextLevel;
+        playSound('level');
+        setFeedback(`Level ${level}! Faster icebergs! 🚀`, '#ffd166');
+      } else {
+        playSound('correct');
+        setFeedback(`Awesome! +${earned} (streak ${streak}) 🌟`, '#32cd32');
+      }
+      updateUI();
+      addPop(`+${earned}`, hitIceberg.position.x, 2.4, '#ffd166');
+      isAnimatingHop = true;
+      hopTimer = 0;
+      setTimeout(() => {
+        setFeedback('Quick, before they sink!');
+        generateMathProblem();
+      }, 1000);
+    }
+
+    function resetGame() {
+      score = 0;
+      lives = 3;
+      level = 1;
+      streak = 0;
+      sinkTimer = 0;
+      isGameOver = false;
+      isStarted = true;
+      els.gameOver.style.display = 'none';
+      els.startScreen.style.display = 'none';
+      setFeedback('Quick, before they sink!');
+      updateUI();
+      generateMathProblem();
+    }
+
+    document.getElementById('startButton').addEventListener('click', resetGame);
+    document.getElementById('restartButton').addEventListener('click', resetGame);
+
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    function onInteract(event) {
+      if (event.cancelable) event.preventDefault();
+      if (isAnimatingHop || isGameOver || !isStarted) return;
+      const pointer = event.changedTouches ? event.changedTouches[0] : event;
+      mouse.x = (pointer.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(pointer.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(icebergs);
+      if (!intersects.length) return;
+      const hitIceberg = intersects[0].object;
+      if (hitIceberg.userData.value === correctAnswer) {
+        answerCorrect(hitIceberg);
+      } else {
+        addPop('Nope!', hitIceberg.position.x, 2.2, '#ff4500');
+        loseLife('wrong');
+      }
+    }
+
+    window.addEventListener('touchstart', onInteract, { passive: false });
+    window.addEventListener('mousedown', onInteract);
+
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.05);
+      const time = clock.getElapsedTime();
+
+      snowflakes.forEach((flake) => {
+        flake.position.y -= flake.userData.speed * dt;
+        flake.position.x += Math.sin(time + flake.position.z) * 0.003;
+        if (flake.position.y < -1) flake.position.y = Math.random() * 10 + 11;
+      });
+
+      if (!isGameOver && isStarted) {
+        if (!isAnimatingHop) {
+          sinkTimer += dt;
+          const sinkRatio = Math.min(1, sinkTimer / timeToSink);
+          const timeLeft = Math.max(0, 1 - sinkRatio);
+          els.timerBar.style.width = `${timeLeft * 100}%`;
+          els.timerBar.style.background = timeLeft < 0.28 ? 'linear-gradient(90deg, #ff4500, #ffd166)' : 'linear-gradient(90deg, #32cd32, #ffd166)';
+          icebergs.forEach((ice, i) => {
+            ice.position.y = 0.3 - sinkRatio * 2.1 + Math.sin(time * 2 + i) * 0.11;
+            ice.rotation.y = Math.sin(time * 0.8 + i) * 0.08;
+          });
+          if (sinkTimer >= timeToSink) loseLife('time');
+        } else {
+          els.timerBar.style.width = '100%';
+          icebergs.forEach((ice, i) => {
+            ice.position.y = 0.3 + Math.sin(time * 2 + i) * 0.1;
+          });
+        }
+
+        if (hopTimer < 1) {
+          hopTimer += dt * 2.4;
+          penguin.position.y = Math.sin(hopTimer * Math.PI) * 3;
+          penguin.rotation.y = hopTimer * Math.PI * 2;
+          penguin.rotation.z = Math.sin(hopTimer * Math.PI * 4) * 0.18;
+        } else {
+          penguin.position.y = Math.sin(time * 3) * 0.1;
+          penguin.rotation.y = 0;
+          penguin.rotation.z = Math.sin(time * 4) * 0.035;
+        }
+      }
+
+      for (let i = pops.length - 1; i >= 0; i--) {
+        pops[i].life -= dt;
+        pops[i].y += dt * 1.4;
+        if (pops[i].life <= 0) pops.splice(i, 1);
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    updateUI();
+    animate();
+  </script>
+</body>
+</html>
