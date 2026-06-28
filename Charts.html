@@ -18,22 +18,23 @@
 
     <div class="mb-8 border-b border-slate-700 pb-6">
         <h1 class="text-3xl md:text-4xl font-bold mb-2 text-sky-400">📈 Weekly Pivot & Resistance App</h1>
-        <p class="text-slate-400 mb-6">Hybrid Engine: Uses FMP for standard stocks and Yahoo Finance backups for ETFs/Crypto.</p>
+        <p class="text-slate-400 mb-6">Powered by Twelve Data (Supports ALL Stocks, ETFs, and Crypto natively without proxies).</p>
         
         <div class="bg-slate-800 p-5 rounded-lg border border-slate-600 mb-6 inline-block w-full max-w-2xl shadow-lg">
-            <label class="block text-sm font-semibold text-slate-300 mb-2">🔑 API Key (Pre-Filled For You)</label>
+            <label class="block text-sm font-semibold text-slate-300 mb-2">🔑 Connect Twelve Data API (Required)</label>
             <div class="flex flex-col sm:flex-row gap-3 items-center">
-                <input type="text" id="apiKeyInput" value="KY3h1zYi0LKoK3BI1ySfHoae13Hzxh73" 
-                       class="bg-slate-900 border border-slate-600 text-sky-400 rounded px-3 py-2 w-full sm:w-80 outline-none font-mono text-sm" readonly>
+                <input type="password" id="apiKeyInput" placeholder="Paste your Twelve Data API Key here..." 
+                       class="bg-slate-900 border border-slate-600 text-white rounded px-3 py-2 w-full sm:w-80 focus:border-sky-500 outline-none font-mono">
                 <p class="text-xs text-slate-400 w-full sm:w-auto">
-                    FMP free keys block ETFs like SPY.<br>
-                    <span class="text-sky-400">If blocked, app auto-reroutes to Yahoo!</span>
+                    Get your free key from <br>
+                    <a href="https://twelvedata.com/pricing" target="_blank" class="text-sky-400 underline hover:text-sky-300">TwelveData.com</a> (800 requests/day)
                 </p>
             </div>
+            <p class="text-xs text-slate-500 mt-2 italic">*Your key is saved securely in your browser memory so you only have to paste it once.</p>
         </div>
 
         <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <input type="text" id="tickerInput" value="AAPL" placeholder="Enter ticker..." 
+            <input type="text" id="tickerInput" value="SOFI" placeholder="Enter ticker..." 
                    class="bg-slate-800 border border-slate-600 text-white rounded-lg px-4 py-3 w-64 focus:outline-none focus:border-sky-500 text-lg uppercase shadow-sm">
             <button onclick="calculateLevels()" id="calcBtn"
                     class="bg-sky-600 hover:bg-sky-500 text-white font-semibold py-3 px-6 rounded-lg transition flex items-center shadow-md">
@@ -42,7 +43,6 @@
             </button>
         </div>
         <div id="errorMsg" class="text-red-400 mt-4 hidden text-sm font-semibold bg-red-900/20 py-2 px-4 rounded border border-red-900/50 inline-block"></div>
-        <div id="warnMsg" class="text-yellow-400 mt-4 hidden text-sm font-semibold bg-yellow-900/20 py-2 px-4 rounded border border-yellow-900/50 inline-block"></div>
     </div>
 
     <div id="results" class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8 hidden">
@@ -79,6 +79,19 @@
         let chart;
         const formatCurrency = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num);
 
+        // Save API Key to browser memory as the user types
+        document.getElementById("apiKeyInput").addEventListener("input", function(e) {
+            localStorage.setItem("tdApiKey", e.target.value.trim());
+        });
+
+        // Load saved API Key automatically when the page opens
+        window.addEventListener('DOMContentLoaded', () => { 
+            const savedKey = localStorage.getItem('tdApiKey');
+            if(savedKey) {
+                document.getElementById('apiKeyInput').value = savedKey;
+            }
+        });
+
         function getISOWeekString(dateStr) {
             const parts = dateStr.split('-');
             const d = new Date(parts[0], parts[1] - 1, parts[2]);
@@ -89,72 +102,45 @@
             return `${d.getFullYear()}-W${weekNo.toString().padStart(2, '0')}`;
         }
 
-        // --- HYBRID DATA ENGINE ---
+        // --- TWELVE DATA API ENGINE ---
         async function fetchMarketData(ticker, apiKey) {
-            const warnMsg = document.getElementById("warnMsg");
-            warnMsg.classList.add("hidden");
-
-            // ENGINE 1: Try Financial Modeling Prep (FMP) First
-            if (apiKey) {
-                try {
-                    const fmpTicker = ticker.replace('-', '');
-                    const url = `https://financialmodelingprep.com/api/v3/historical-price-full/${fmpTicker}?timeseries=90&apikey=${apiKey}`;
-                    const res = await fetch(url);
-                    const data = await res.json();
-                    
-                    if (!data["Error Message"] && data.historical && data.historical.length > 0) {
-                        return data.historical.reverse().map(day => ({
-                            dateStr: day.date, open: day.open, high: day.high, low: day.low, close: day.close
-                        }));
-                    } else if (data["Error Message"]) {
-                        console.warn("FMP Blocked: " + data["Error Message"]);
-                    }
-                } catch (e) {
-                    console.warn("FMP Failed. Falling back to Yahoo Finance...");
-                }
-            }
-
-            // ENGINE 2: Instantly Fallback to Yahoo Finance Proxy Network for ETFs/Crypto
-            warnMsg.innerText = `Notice: FMP Free Tier blocked ${ticker} (ETFs & Crypto are restricted). Automatically fetching from Yahoo Finance backup...`;
-            warnMsg.classList.remove("hidden");
-
-            const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=3mo`;
-            const encoded = encodeURIComponent(yfUrl);
+            let formattedTicker = ticker.toUpperCase();
             
-            const proxies = [
-                { url: `https://api.allorigins.win/get?url=${encoded}`, type: 'allorigins' },
-                { url: `https://api.codetabs.com/v1/proxy?quest=${encoded}`, type: 'raw' }
-            ];
-
-            for (let proxy of proxies) {
-                try {
-                    const res = await fetch(proxy.url);
-                    if (!res.ok) continue;
-                    
-                    let data = proxy.type === 'allorigins' ? JSON.parse((await res.json()).contents) : await res.json();
-                    
-                    if (data.chart && data.chart.result && data.chart.result.length > 0) {
-                        const result = data.chart.result[0];
-                        const timestamps = result.timestamp;
-                        const quotes = result.indicators.quote[0];
-                        
-                        const formatted = [];
-                        for (let i = 0; i < timestamps.length; i++) {
-                            if (quotes.close[i] === null) continue;
-                            const d = new Date(timestamps[i] * 1000);
-                            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                            formatted.push({
-                                dateStr: dateStr, open: quotes.open[i], high: quotes.high[i], low: quotes.low[i], close: quotes.close[i]
-                            });
-                        }
-                        return formatted;
-                    }
-                } catch (e) {
-                    console.warn("Proxy failed, trying next...");
-                }
+            // Twelve Data format handlers for Crypto (e.g. BTC/USD instead of BTC-USD)
+            if (formattedTicker.includes("-USD")) {
+                formattedTicker = formattedTicker.replace("-USD", "/USD");
+            } else if (formattedTicker === "BTC" || formattedTicker === "ETH") {
+                formattedTicker += "/USD";
             }
 
-            throw new Error(`Data completely blocked. FMP Free Tier does not support ${ticker}, and backup proxies are unavailable.`);
+            // Native, direct connection - No proxy required!
+            const url = `https://api.twelvedata.com/time_series?symbol=${formattedTicker}&interval=1day&outputsize=90&apikey=${apiKey}`;
+            
+            const response = await fetch(url);
+            if (!response.ok) throw new Error("Network request failed. Check your internet connection.");
+            
+            const data = await response.json();
+            
+            if (data.code === 429) {
+                throw new Error("Twelve Data free tier limit reached (8 requests per minute). Wait 60 seconds and try again.");
+            }
+            if (data.status === "error") {
+                throw new Error(data.message || "Invalid API key or Ticker symbol not found.");
+            }
+            if (!data.values || data.values.length === 0) {
+                throw new Error("No data returned. Make sure the ticker symbol is valid.");
+            }
+
+            // TwelveData returns data newest->oldest. We reverse it so it renders perfectly chronologically on the chart.
+            const historical = data.values.reverse();
+            
+            return historical.map(day => ({
+                dateStr: day.datetime, 
+                open: parseFloat(day.open),
+                high: parseFloat(day.high),
+                low: parseFloat(day.low),
+                close: parseFloat(day.close)
+            }));
         }
 
         async function calculateLevels() {
@@ -162,6 +148,11 @@
             const apiKey = document.getElementById("apiKeyInput").value.trim();
             const errorMsg = document.getElementById("errorMsg");
 
+            if (!apiKey) {
+                errorMsg.innerText = "Error: Please paste your free Twelve Data API key into the box above.";
+                errorMsg.classList.remove("hidden");
+                return;
+            }
             if (!ticker) return;
 
             const loader = document.getElementById("loading");
@@ -294,9 +285,6 @@
         window.addEventListener('resize', () => {
             if(chart) chart.applyOptions({ width: document.getElementById('chart-container').clientWidth });
         });
-        
-        // Calculate automatically when the page loads
-        window.addEventListener('DOMContentLoaded', () => { calculateLevels(); });
     </script>
 </body>
 </html>
