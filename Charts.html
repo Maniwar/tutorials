@@ -10,8 +10,6 @@
         body { background-color: #0f172a; color: #f8fafc; font-family: 'Segoe UI', system-ui, sans-serif; }
         .card { background-color: #1e293b; border-radius: 0.75rem; padding: 1.5rem; border: 1px solid #334155; }
         #chart-container { height: 500px; width: 100%; border-radius: 0.5rem; overflow: hidden; background-color: #0f172a; }
-        
-        /* Loading Spinner */
         .loader { border: 3px solid #334155; border-top: 3px solid #38bdf8; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: none; margin-left: 10px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
@@ -20,8 +18,21 @@
 
     <div class="mb-8 border-b border-slate-700 pb-6">
         <h1 class="text-3xl md:text-4xl font-bold mb-2 text-sky-400">📈 Weekly Pivot & Resistance App</h1>
-        <p class="text-slate-400 mb-6">Enter any ticker (e.g., SPY, AAPL, BTC-USD) to calculate algorithmic weekly targets.</p>
+        <p class="text-slate-400 mb-6">Built with an official API to bypass proxy blocks. Calculate algorithmic weekly targets.</p>
         
+        <div class="bg-slate-800 p-5 rounded-lg border border-slate-600 mb-6 inline-block w-full max-w-2xl shadow-lg">
+            <label class="block text-sm font-semibold text-slate-300 mb-2">🔑 Connect Free Data Provider (Fixes Yahoo errors forever)</label>
+            <div class="flex flex-col sm:flex-row gap-3 items-center">
+                <input type="password" id="apiKeyInput" placeholder="Paste your FMP API Key here..." 
+                       class="bg-slate-900 border border-slate-600 text-white rounded px-3 py-2 w-full sm:w-80 focus:border-sky-500 outline-none">
+                <p class="text-xs text-slate-400 w-full sm:w-auto">
+                    Get a free key from <br>
+                    <a href="https://site.financialmodelingprep.com/developer/docs" target="_blank" class="text-sky-400 underline hover:text-sky-300">Financial Modeling Prep</a>
+                </p>
+            </div>
+            <p class="text-xs text-slate-500 mt-2 italic">*Your key is saved securely in your browser memory so you only have to paste it once.</p>
+        </div>
+
         <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
             <input type="text" id="tickerInput" value="SPY" placeholder="Enter ticker..." 
                    class="bg-slate-800 border border-slate-600 text-white rounded-lg px-4 py-3 w-64 focus:outline-none focus:border-sky-500 text-lg uppercase shadow-sm">
@@ -66,11 +77,24 @@
 
     <script>
         let chart;
-
         const formatCurrency = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num);
 
-        function getISOWeekString(date) {
-            const d = new Date(date);
+        // Save API Key to browser memory as the user types
+        document.getElementById("apiKeyInput").addEventListener("input", function(e) {
+            localStorage.setItem("fmpApiKey", e.target.value.trim());
+        });
+
+        // Load saved API Key automatically when the page opens
+        window.addEventListener('DOMContentLoaded', () => { 
+            const savedKey = localStorage.getItem('fmpApiKey');
+            if(savedKey) {
+                document.getElementById('apiKeyInput').value = savedKey;
+            }
+        });
+
+        function getISOWeekString(dateStr) {
+            const parts = dateStr.split('-');
+            const d = new Date(parts[0], parts[1] - 1, parts[2]);
             d.setHours(0, 0, 0, 0);
             d.setDate(d.getDate() + 4 - (d.getDay() || 7));
             const yearStart = new Date(d.getFullYear(), 0, 1);
@@ -78,48 +102,42 @@
             return `${d.getFullYear()}-W${weekNo.toString().padStart(2, '0')}`;
         }
 
-        // --- NEW MULTI-PROXY FALLBACK SYSTEM ---
-        async function fetchMarketData(ticker) {
-            const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=3mo`;
-            const encodedUrl = encodeURIComponent(yfUrl);
+        async function fetchMarketData(ticker, apiKey) {
+            // Strip hyphens for crypto (e.g. FMP uses BTCUSD, not BTC-USD)
+            const fmpTicker = ticker.replace('-', '');
             
-            // Multiple proxies. If one gets blocked, it immediately tries the next one seamlessly
-            const proxies = [
-                { url: `https://api.allorigins.win/get?url=${encodedUrl}`, type: 'allorigins' },
-                { url: `https://corsproxy.io/?${encodedUrl}`, type: 'raw' },
-                { url: `https://api.codetabs.com/v1/proxy?quest=${encodedUrl}`, type: 'raw' }
-            ];
+            // Native Direct Connection! No proxies needed.
+            const url = `https://financialmodelingprep.com/api/v3/historical-price-full/${fmpTicker}?timeseries=90&apikey=${apiKey}`;
             
-            for (let proxy of proxies) {
-                try {
-                    const res = await fetch(proxy.url);
-                    if (!res.ok) continue;
-                    
-                    let data;
-                    if (proxy.type === 'allorigins') {
-                        const json = await res.json();
-                        data = JSON.parse(json.contents);
-                    } else {
-                        data = await res.json();
-                    }
-                    
-                    if (data && data.chart && data.chart.result) {
-                        return data;
-                    }
-                } catch (e) {
-                    console.warn("Proxy failed, trying backup...");
+            const response = await fetch(url);
+            if (!response.ok) {
+                if (response.status === 403 || response.status === 401) {
+                    throw new Error("Invalid API Key. Please make sure you pasted it correctly.");
                 }
+                throw new Error("Network request failed.");
             }
-            throw new Error("Unable to fetch data. Proxies may be temporarily blocked or ticker is invalid.");
+            
+            const data = await response.json();
+            if (data["Error Message"]) throw new Error(data["Error Message"]);
+            if (!data.historical || data.historical.length === 0) throw new Error("No data returned. Make sure the ticker is correct.");
+            
+            return data;
         }
 
         async function calculateLevels() {
             const ticker = document.getElementById("tickerInput").value.trim().toUpperCase();
+            const apiKey = document.getElementById("apiKeyInput").value.trim();
+            const errorMsg = document.getElementById("errorMsg");
+
+            if (!apiKey) {
+                errorMsg.innerText = "Error: Please paste your free API key into the box above.";
+                errorMsg.classList.remove("hidden");
+                return;
+            }
             if (!ticker) return;
 
             const loader = document.getElementById("loading");
             const btn = document.getElementById("calcBtn");
-            const errorMsg = document.getElementById("errorMsg");
             const results = document.getElementById("results");
             const chartWrapper = document.getElementById("chartWrapper");
             
@@ -129,57 +147,48 @@
             errorMsg.classList.add("hidden");
             
             try {
-                // Fetch data using the fallback system
-                const data = await fetchMarketData(ticker);
-
-                if (data.chart.error) throw new Error(data.chart.error.description);
-                if (!data.chart.result || data.chart.result.length === 0) throw new Error("No data returned for that symbol.");
-
-                const result = data.chart.result[0];
-                const timestamps = result.timestamp;
-                const quotes = result.indicators.quote[0];
+                const data = await fetchMarketData(ticker, apiKey);
+                
+                // FMP returns newest data first. We reverse it so it goes oldest -> newest for charting.
+                const historical = data.historical.reverse(); 
 
                 const weeks = {};
                 const chartData = [];
-                const seenDates = new Set();
 
-                for (let i = 0; i < timestamps.length; i++) {
-                    if (quotes.close[i] === null) continue;
-
-                    const ts = timestamps[i];
-                    const d = new Date(ts * 1000);
-                    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                    
-                    if (seenDates.has(dateStr)) continue;
-                    seenDates.add(dateStr);
-
-                    const weekStr = getISOWeekString(d);
+                for (let i = 0; i < historical.length; i++) {
+                    const day = historical[i];
+                    const dateStr = day.date; 
+                    const weekStr = getISOWeekString(dateStr);
                     
                     if (!weeks[weekStr]) {
-                        weeks[weekStr] = { high: quotes.high[i], low: quotes.low[i], close: quotes.close[i] };
+                        weeks[weekStr] = { high: day.high, low: day.low, close: day.close };
                     } else {
-                        weeks[weekStr].high = Math.max(weeks[weekStr].high, quotes.high[i]);
-                        weeks[weekStr].low = Math.min(weeks[weekStr].low, quotes.low[i]);
-                        weeks[weekStr].close = quotes.close[i]; 
+                        weeks[weekStr].high = Math.max(weeks[weekStr].high, day.high);
+                        weeks[weekStr].low = Math.min(weeks[weekStr].low, day.low);
+                        weeks[weekStr].close = day.close; // Last processed date in the week is the true close
                     }
 
                     chartData.push({
                         time: dateStr,
-                        open: quotes.open[i],
-                        high: quotes.high[i],
-                        low: quotes.low[i],
-                        close: quotes.close[i]
+                        open: day.open,
+                        high: day.high,
+                        low: day.low,
+                        close: day.close
                     });
                 }
 
                 const sortedWeekStrs = Object.keys(weeks).sort();
                 const latestDataWeek = sortedWeekStrs[sortedWeekStrs.length - 1];
 
-                const nyTime = new Date(new Date().toLocaleString("en-US", {timeZone: "America/New_York"}));
+                // Check calendar to find the last fully completed trading week
+                const nyTimeStr = new Date().toLocaleString("en-US", {timeZone: "America/New_York"});
+                const nyTime = new Date(nyTimeStr);
+                const nyDateStr = `${nyTime.getFullYear()}-${String(nyTime.getMonth()+1).padStart(2,'0')}-${String(nyTime.getDate()).padStart(2,'0')}`;
+                
+                const currentRealWorldWeek = getISOWeekString(nyDateStr);
                 const nyDay = nyTime.getDay();
                 const nyHour = nyTime.getHours();
                 const isWeekendEnd = (nyDay === 6 || nyDay === 0) || (nyDay === 5 && nyHour >= 16);
-                const currentRealWorldWeek = getISOWeekString(nyTime);
 
                 let targetWeekStr;
                 if (latestDataWeek === currentRealWorldWeek) {
@@ -195,16 +204,18 @@
 
                 const targetWeek = weeks[targetWeekStr];
                 
+                // MATH CALCULATIONS
                 const high = targetWeek.high;
                 const low = targetWeek.low;
                 const close = targetWeek.close;
-                const currentPrice = quotes.close[quotes.close.length - 1];
+                const currentPrice = historical[historical.length - 1].close;
 
                 const pp = (high + low + close) / 3;
                 const r1 = (2 * pp) - low;
                 const r2 = pp + (high - low);
                 const r3 = high + 2 * (pp - low);
 
+                // UPDATE DASHBOARD
                 document.getElementById("valR3").innerText = formatCurrency(r3);
                 document.getElementById("valR2").innerText = formatCurrency(r2);
                 document.getElementById("valR1").innerText = formatCurrency(r1);
@@ -258,8 +269,6 @@
         document.getElementById("tickerInput").addEventListener("keypress", function(event) {
             if (event.key === "Enter") calculateLevels();
         });
-
-        window.addEventListener('DOMContentLoaded', () => { calculateLevels(); });
         
         window.addEventListener('resize', () => {
             if(chart) chart.applyOptions({ width: document.getElementById('chart-container').clientWidth });
