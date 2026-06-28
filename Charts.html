@@ -67,10 +67,8 @@
     <script>
         let chart;
 
-        // Currency formatter for standardizing money visuals (e.g. $1,234.50)
         const formatCurrency = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num);
 
-        // Standardizes grouping dates into calendar weeks mathematically 
         function getISOWeekString(date) {
             const d = new Date(date);
             d.setHours(0, 0, 0, 0);
@@ -78,6 +76,41 @@
             const yearStart = new Date(d.getFullYear(), 0, 1);
             const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
             return `${d.getFullYear()}-W${weekNo.toString().padStart(2, '0')}`;
+        }
+
+        // --- NEW MULTI-PROXY FALLBACK SYSTEM ---
+        async function fetchMarketData(ticker) {
+            const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=3mo`;
+            const encodedUrl = encodeURIComponent(yfUrl);
+            
+            // Multiple proxies. If one gets blocked, it immediately tries the next one seamlessly
+            const proxies = [
+                { url: `https://api.allorigins.win/get?url=${encodedUrl}`, type: 'allorigins' },
+                { url: `https://corsproxy.io/?${encodedUrl}`, type: 'raw' },
+                { url: `https://api.codetabs.com/v1/proxy?quest=${encodedUrl}`, type: 'raw' }
+            ];
+            
+            for (let proxy of proxies) {
+                try {
+                    const res = await fetch(proxy.url);
+                    if (!res.ok) continue;
+                    
+                    let data;
+                    if (proxy.type === 'allorigins') {
+                        const json = await res.json();
+                        data = JSON.parse(json.contents);
+                    } else {
+                        data = await res.json();
+                    }
+                    
+                    if (data && data.chart && data.chart.result) {
+                        return data;
+                    }
+                } catch (e) {
+                    console.warn("Proxy failed, trying backup...");
+                }
+            }
+            throw new Error("Unable to fetch data. Proxies may be temporarily blocked or ticker is invalid.");
         }
 
         async function calculateLevels() {
@@ -90,28 +123,18 @@
             const results = document.getElementById("results");
             const chartWrapper = document.getElementById("chartWrapper");
             
-            // Set UI to loading state
             loader.style.display = "inline-block";
             btn.disabled = true;
             btn.classList.add("opacity-75");
             errorMsg.classList.add("hidden");
             
             try {
-                // Fetch daily data from Yahoo Finance via proxy
-                const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=3mo`;
-                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(yfUrl)}`;
-                
-                const response = await fetch(proxyUrl);
-                if (!response.ok) throw new Error("Network request failed.");
-                
-                const json = await response.json();
-                if (!json.contents) throw new Error("No data returned. Ticker may be invalid.");
-                
-                const data = JSON.parse(json.contents);
+                // Fetch data using the fallback system
+                const data = await fetchMarketData(ticker);
+
                 if (data.chart.error) throw new Error(data.chart.error.description);
                 if (!data.chart.result || data.chart.result.length === 0) throw new Error("No data returned for that symbol.");
 
-                // Parse the payload
                 const result = data.chart.result[0];
                 const timestamps = result.timestamp;
                 const quotes = result.indicators.quote[0];
@@ -120,9 +143,8 @@
                 const chartData = [];
                 const seenDates = new Set();
 
-                // 1. Group daily market data into their respective calendar weeks
                 for (let i = 0; i < timestamps.length; i++) {
-                    if (quotes.close[i] === null) continue; // Skip holidays
+                    if (quotes.close[i] === null) continue;
 
                     const ts = timestamps[i];
                     const d = new Date(ts * 1000);
@@ -133,7 +155,6 @@
 
                     const weekStr = getISOWeekString(d);
                     
-                    // Track Highs, Lows, and final Close for each calendar week
                     if (!weeks[weekStr]) {
                         weeks[weekStr] = { high: quotes.high[i], low: quotes.low[i], close: quotes.close[i] };
                     } else {
@@ -151,11 +172,9 @@
                     });
                 }
 
-                // 2. Identify the last FULLY completed week
                 const sortedWeekStrs = Object.keys(weeks).sort();
                 const latestDataWeek = sortedWeekStrs[sortedWeekStrs.length - 1];
 
-                // Check real-world time to see if the current week is officially over
                 const nyTime = new Date(new Date().toLocaleString("en-US", {timeZone: "America/New_York"}));
                 const nyDay = nyTime.getDay();
                 const nyHour = nyTime.getHours();
@@ -165,20 +184,17 @@
                 let targetWeekStr;
                 if (latestDataWeek === currentRealWorldWeek) {
                     if (isWeekendEnd) {
-                        targetWeekStr = latestDataWeek; // Friday after 4PM or Weekend: Week is complete
+                        targetWeekStr = latestDataWeek; 
                     } else {
-                        // Mid-week check: Week is incomplete. We must use the prior week for the math.
                         if(sortedWeekStrs.length < 2) throw new Error("Not enough historical data.");
                         targetWeekStr = sortedWeekStrs[sortedWeekStrs.length - 2]; 
                     }
                 } else {
-                    // Latest data is from a past week, making it complete by default
                     targetWeekStr = latestDataWeek;
                 }
 
                 const targetWeek = weeks[targetWeekStr];
                 
-                // 3. Mathematical Pivot Formulas
                 const high = targetWeek.high;
                 const low = targetWeek.low;
                 const close = targetWeek.close;
@@ -189,7 +205,6 @@
                 const r2 = pp + (high - low);
                 const r3 = high + 2 * (pp - low);
 
-                // Update UI Dashboard
                 document.getElementById("valR3").innerText = formatCurrency(r3);
                 document.getElementById("valR2").innerText = formatCurrency(r2);
                 document.getElementById("valR1").innerText = formatCurrency(r1);
@@ -199,9 +214,8 @@
                 results.classList.remove("hidden");
                 chartWrapper.classList.remove("hidden");
 
-                // 4. Build the Interactive TradingView Chart
                 const chartContainer = document.getElementById("chart-container");
-                chartContainer.innerHTML = ""; // Clear existing chart
+                chartContainer.innerHTML = ""; 
                 
                 chart = LightweightCharts.createChart(chartContainer, {
                     layout: { background: { type: 'solid', color: '#0f172a' }, textColor: '#94a3b8' },
@@ -218,7 +232,6 @@
 
                 candlestickSeries.setData(chartData);
 
-                // Draw the Mathematical Resistance Lines on the chart
                 const createLine = (price, color, title) => {
                     candlestickSeries.createPriceLine({
                         price: price, color: color, lineWidth: 2, lineStyle: 2, axisLabelVisible: true, title: title
@@ -242,15 +255,12 @@
             }
         }
         
-        // Trigger calculation when pressing 'Enter' in the input box
         document.getElementById("tickerInput").addEventListener("keypress", function(event) {
             if (event.key === "Enter") calculateLevels();
         });
 
-        // Initialize with default ticker on load
         window.addEventListener('DOMContentLoaded', () => { calculateLevels(); });
         
-        // Keep chart responsive if browser window is resized
         window.addEventListener('resize', () => {
             if(chart) chart.applyOptions({ width: document.getElementById('chart-container').clientWidth });
         });
