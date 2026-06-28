@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weekly Resistance App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: 'Segoe UI', system-ui, sans-serif; }
+        .card { background-color: #1e293b; border-radius: 0.75rem; padding: 1.5rem; border: 1px solid #334155; }
+        #chart-container { height: 500px; width: 100%; border-radius: 0.5rem; overflow: hidden; background-color: #0f172a; }
+        
+        /* Loading Spinner */
+        .loader { border: 3px solid #334155; border-top: 3px solid #38bdf8; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: none; margin-left: 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="p-4 md:p-8 max-w-7xl mx-auto">
+
+    <div class="mb-8 border-b border-slate-700 pb-6">
+        <h1 class="text-3xl md:text-4xl font-bold mb-2 text-sky-400">📈 Weekly Pivot & Resistance App</h1>
+        <p class="text-slate-400 mb-6">Enter any ticker (e.g., SPY, AAPL, BTC-USD) to calculate algorithmic weekly targets.</p>
+        
+        <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <input type="text" id="tickerInput" value="SPY" placeholder="Enter ticker..." 
+                   class="bg-slate-800 border border-slate-600 text-white rounded-lg px-4 py-3 w-64 focus:outline-none focus:border-sky-500 text-lg uppercase shadow-sm">
+            <button onclick="calculateLevels()" id="calcBtn"
+                    class="bg-sky-600 hover:bg-sky-500 text-white font-semibold py-3 px-6 rounded-lg transition flex items-center shadow-md">
+                Calculate Levels
+                <div id="loading" class="loader"></div>
+            </button>
+        </div>
+        <div id="errorMsg" class="text-red-400 mt-4 hidden text-sm font-semibold bg-red-900/20 py-2 px-4 rounded border border-red-900/50 inline-block"></div>
+    </div>
+
+    <div id="results" class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8 hidden">
+        <div class="card border-t-4 border-t-red-500 shadow-lg text-center">
+            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">R3 (Extreme)</div>
+            <div class="text-2xl font-bold text-red-400" id="valR3">--</div>
+        </div>
+        <div class="card border-t-4 border-t-orange-400 shadow-lg text-center">
+            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">R2 (Breakout)</div>
+            <div class="text-2xl font-bold text-orange-400" id="valR2">--</div>
+        </div>
+        <div class="card border-t-4 border-t-yellow-400 shadow-lg text-center">
+            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">R1 (First Hurdle)</div>
+            <div class="text-2xl font-bold text-yellow-400" id="valR1">--</div>
+        </div>
+        <div class="card border-t-4 border-t-sky-500 shadow-lg text-center">
+            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Pivot Point</div>
+            <div class="text-2xl font-bold text-sky-400" id="valPP">--</div>
+        </div>
+        <div class="card border-t-4 border-t-slate-500 shadow-lg text-center">
+            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Current Price</div>
+            <div class="text-2xl font-bold text-white" id="valCP">--</div>
+        </div>
+    </div>
+
+    <div id="chartWrapper" class="hidden">
+        <h2 class="text-xl font-semibold mb-4 text-slate-300">📊 Daily Price Action vs. Weekly Mathematical Ceilings</h2>
+        <div class="card shadow-lg p-2">
+            <div id="chart-container"></div>
+        </div>
+    </div>
+
+    <script>
+        let chart;
+
+        // Currency formatter for standardizing money visuals (e.g. $1,234.50)
+        const formatCurrency = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num);
+
+        // Standardizes grouping dates into calendar weeks mathematically 
+        function getISOWeekString(date) {
+            const d = new Date(date);
+            d.setHours(0, 0, 0, 0);
+            d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+            const yearStart = new Date(d.getFullYear(), 0, 1);
+            const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+            return `${d.getFullYear()}-W${weekNo.toString().padStart(2, '0')}`;
+        }
+
+        async function calculateLevels() {
+            const ticker = document.getElementById("tickerInput").value.trim().toUpperCase();
+            if (!ticker) return;
+
+            const loader = document.getElementById("loading");
+            const btn = document.getElementById("calcBtn");
+            const errorMsg = document.getElementById("errorMsg");
+            const results = document.getElementById("results");
+            const chartWrapper = document.getElementById("chartWrapper");
+            
+            // Set UI to loading state
+            loader.style.display = "inline-block";
+            btn.disabled = true;
+            btn.classList.add("opacity-75");
+            errorMsg.classList.add("hidden");
+            
+            try {
+                // Fetch daily data from Yahoo Finance via proxy
+                const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=3mo`;
+                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(yfUrl)}`;
+                
+                const response = await fetch(proxyUrl);
+                if (!response.ok) throw new Error("Network request failed.");
+                
+                const json = await response.json();
+                if (!json.contents) throw new Error("No data returned. Ticker may be invalid.");
+                
+                const data = JSON.parse(json.contents);
+                if (data.chart.error) throw new Error(data.chart.error.description);
+                if (!data.chart.result || data.chart.result.length === 0) throw new Error("No data returned for that symbol.");
+
+                // Parse the payload
+                const result = data.chart.result[0];
+                const timestamps = result.timestamp;
+                const quotes = result.indicators.quote[0];
+
+                const weeks = {};
+                const chartData = [];
+                const seenDates = new Set();
+
+                // 1. Group daily market data into their respective calendar weeks
+                for (let i = 0; i < timestamps.length; i++) {
+                    if (quotes.close[i] === null) continue; // Skip holidays
+
+                    const ts = timestamps[i];
+                    const d = new Date(ts * 1000);
+                    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                    
+                    if (seenDates.has(dateStr)) continue;
+                    seenDates.add(dateStr);
+
+                    const weekStr = getISOWeekString(d);
+                    
+                    // Track Highs, Lows, and final Close for each calendar week
+                    if (!weeks[weekStr]) {
+                        weeks[weekStr] = { high: quotes.high[i], low: quotes.low[i], close: quotes.close[i] };
+                    } else {
+                        weeks[weekStr].high = Math.max(weeks[weekStr].high, quotes.high[i]);
+                        weeks[weekStr].low = Math.min(weeks[weekStr].low, quotes.low[i]);
+                        weeks[weekStr].close = quotes.close[i]; 
+                    }
+
+                    chartData.push({
+                        time: dateStr,
+                        open: quotes.open[i],
+                        high: quotes.high[i],
+                        low: quotes.low[i],
+                        close: quotes.close[i]
+                    });
+                }
+
+                // 2. Identify the last FULLY completed week
+                const sortedWeekStrs = Object.keys(weeks).sort();
+                const latestDataWeek = sortedWeekStrs[sortedWeekStrs.length - 1];
+
+                // Check real-world time to see if the current week is officially over
+                const nyTime = new Date(new Date().toLocaleString("en-US", {timeZone: "America/New_York"}));
+                const nyDay = nyTime.getDay();
+                const nyHour = nyTime.getHours();
+                const isWeekendEnd = (nyDay === 6 || nyDay === 0) || (nyDay === 5 && nyHour >= 16);
+                const currentRealWorldWeek = getISOWeekString(nyTime);
+
+                let targetWeekStr;
+                if (latestDataWeek === currentRealWorldWeek) {
+                    if (isWeekendEnd) {
+                        targetWeekStr = latestDataWeek; // Friday after 4PM or Weekend: Week is complete
+                    } else {
+                        // Mid-week check: Week is incomplete. We must use the prior week for the math.
+                        if(sortedWeekStrs.length < 2) throw new Error("Not enough historical data.");
+                        targetWeekStr = sortedWeekStrs[sortedWeekStrs.length - 2]; 
+                    }
+                } else {
+                    // Latest data is from a past week, making it complete by default
+                    targetWeekStr = latestDataWeek;
+                }
+
+                const targetWeek = weeks[targetWeekStr];
+                
+                // 3. Mathematical Pivot Formulas
+                const high = targetWeek.high;
+                const low = targetWeek.low;
+                const close = targetWeek.close;
+                const currentPrice = quotes.close[quotes.close.length - 1];
+
+                const pp = (high + low + close) / 3;
+                const r1 = (2 * pp) - low;
+                const r2 = pp + (high - low);
+                const r3 = high + 2 * (pp - low);
+
+                // Update UI Dashboard
+                document.getElementById("valR3").innerText = formatCurrency(r3);
+                document.getElementById("valR2").innerText = formatCurrency(r2);
+                document.getElementById("valR1").innerText = formatCurrency(r1);
+                document.getElementById("valPP").innerText = formatCurrency(pp);
+                document.getElementById("valCP").innerText = formatCurrency(currentPrice);
+                
+                results.classList.remove("hidden");
+                chartWrapper.classList.remove("hidden");
+
+                // 4. Build the Interactive TradingView Chart
+                const chartContainer = document.getElementById("chart-container");
+                chartContainer.innerHTML = ""; // Clear existing chart
+                
+                chart = LightweightCharts.createChart(chartContainer, {
+                    layout: { background: { type: 'solid', color: '#0f172a' }, textColor: '#94a3b8' },
+                    grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
+                    timeScale: { timeVisible: true, borderColor: '#334155' },
+                    rightPriceScale: { borderColor: '#334155' },
+                    crosshair: { mode: 0 }
+                });
+
+                const candlestickSeries = chart.addCandlestickSeries({
+                    upColor: '#22c55e', downColor: '#ef4444', 
+                    borderVisible: false, wickUpColor: '#22c55e', wickDownColor: '#ef4444'
+                });
+
+                candlestickSeries.setData(chartData);
+
+                // Draw the Mathematical Resistance Lines on the chart
+                const createLine = (price, color, title) => {
+                    candlestickSeries.createPriceLine({
+                        price: price, color: color, lineWidth: 2, lineStyle: 2, axisLabelVisible: true, title: title
+                    });
+                };
+
+                createLine(r3, '#ef4444', 'R3');
+                createLine(r2, '#fb923c', 'R2');
+                createLine(r1, '#facc15', 'R1');
+                createLine(pp, '#38bdf8', 'Pivot');
+
+                chart.timeScale().fitContent();
+
+            } catch (error) {
+                errorMsg.innerText = "Error: " + error.message;
+                errorMsg.classList.remove("hidden");
+            } finally {
+                loader.style.display = "none";
+                btn.disabled = false;
+                btn.classList.remove("opacity-75");
+            }
+        }
+        
+        // Trigger calculation when pressing 'Enter' in the input box
+        document.getElementById("tickerInput").addEventListener("keypress", function(event) {
+            if (event.key === "Enter") calculateLevels();
+        });
+
+        // Initialize with default ticker on load
+        window.addEventListener('DOMContentLoaded', () => { calculateLevels(); });
+        
+        // Keep chart responsive if browser window is resized
+        window.addEventListener('resize', () => {
+            if(chart) chart.applyOptions({ width: document.getElementById('chart-container').clientWidth });
+        });
+    </script>
+</body>
+</html>
