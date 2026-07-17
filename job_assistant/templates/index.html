@@ -24,9 +24,7 @@
     </style>
 </head>
 <body>
-
     <h1>🤖 AI Job Application Assistant</h1>
-
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for category, message in messages %}
@@ -34,32 +32,24 @@
         {% endfor %}
       {% endif %}
     {% endwith %}
-
     <div class="grid">
-        <!-- AI Materials Generator -->
         <div class="card">
             <h2>Generate Tailored Materials</h2>
             <form action="{{ url_for('generate_materials_route') }}" method="post">
                 <label>Gemini API Key:</label>
                 <input type="password" name="api_key" placeholder="AIzaSy..." value="{{ api_key or '' }}" required>
-
                 <label>Your Base Resume (Text):</label>
                 <textarea name="resume_text" rows="6" placeholder="Paste your resume text here..." required>{{ resume_text or '' }}</textarea>
-
                 <label>Job Description:</label>
                 <textarea name="job_desc" rows="6" placeholder="Paste the job description here..." required>{{ job_desc or '' }}</textarea>
-
                 <button type="submit">Generate Cover Letter & Tips</button>
             </form>
-
             {% if materials %}
                 <h3 style="margin-top: 20px;">Generated Output:</h3>
                 <pre>{{ materials }}</pre>
             {% endif %}
         </div>
-
         <div>
-            <!-- Add Job Form -->
             <div class="card" style="margin-bottom: 20px;">
                 <h2>Log a New Job</h2>
                 <form action="{{ url_for('add_job_route') }}" method="post">
@@ -72,8 +62,6 @@
                     <button type="submit">Save to Log</button>
                 </form>
             </div>
-
-            <!-- Job Log Table -->
             <div class="card">
                 <h2>Job Application Log</h2>
                 <table>
@@ -92,15 +80,12 @@
                             <td>{{ job.title }}</td>
                             <td><strong>{{ job.status }}</strong><br><small>{{ job.date_applied.split(' ')[0] }}</small></td>
                             <td>
-                                <form class="inline-form" action="{{ url_for('auto_apply_route', job_id=job.id) }}" method="post">
+                                <form class="inline-form" action="{{ url_for('auto_apply_route', job_id=job.id) }}" method="post" enctype="multipart/form-data">
                                     <input type="hidden" name="job_url" value="{{ job.url }}">
-                                    <button type="submit" style="background-color: #28a745; font-size: 12px; padding: 5px 10px;">Auto-Apply (PoC)</button>
+                                    <input type="file" name="resume_pdf" accept=".pdf" style="font-size: 10px; margin-bottom: 5px; width:150px;">
+                                    <button type="submit" style="background-color: #28a745; font-size: 12px; padding: 5px 10px;">Auto-Apply</button>
                                 </form>
                             </td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="4">No jobs logged yet.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -108,6 +93,5 @@
             </div>
         </div>
     </div>
-
 </body>
 </html>

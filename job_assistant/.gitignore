@@ -1,4 +1,7 @@
+venv/
 __pycache__/
 *.pyc
 *.db
-flask.log
+*.log
+uploads/
+browser_data/

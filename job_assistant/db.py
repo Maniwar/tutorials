@@ -5,7 +5,6 @@ from datetime import datetime
 DB_FILE = 'jobs.db'
 
 def init_db():
-    """Initialize the SQLite database and create the jobs table if it doesn't exist."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('''
@@ -22,7 +21,6 @@ def init_db():
     conn.close()
 
 def add_job(url, title="", company=""):
-    """Add a new job application to the database."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     date_applied = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -32,9 +30,8 @@ def add_job(url, title="", company=""):
     conn.close()
 
 def get_jobs():
-    """Retrieve all jobs from the database."""
     conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row # Returns dict-like objects
+    conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute('SELECT * FROM jobs ORDER BY id DESC')
     jobs = c.fetchall()
@@ -42,7 +39,6 @@ def get_jobs():
     return jobs
 
 def update_job_status(job_id, status):
-    """Update the status of a job."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('UPDATE jobs SET status = ? WHERE id = ?', (status, job_id))
@@ -50,6 +46,4 @@ def update_job_status(job_id, status):
     conn.close()
 
 if __name__ == '__main__':
-    # Initialize when script is run directly
     init_db()
-    print("Database initialized.")
