@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Job Assistant</title>
+    <style>
+        body { font-family: sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background-color: #f4f7f6; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1, h2 { color: #333; }
+        .flash { padding: 10px; margin-bottom: 20px; border-radius: 4px; }
+        .flash.success { background-color: #d4edda; color: #155724; }
+        .flash.error { background-color: #f8d7da; color: #721c24; }
+        .flash.info { background-color: #cce5ff; color: #004085; }
+        input[type="text"], input[type="password"], textarea { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;}
+        button { background-color: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #f8f9fa; }
+        pre { white-space: pre-wrap; background: #eee; padding: 15px; border-radius: 4px; font-size: 14px;}
+        .inline-form { display: inline; }
+    </style>
+</head>
+<body>
+
+    <h1>🤖 AI Job Application Assistant</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="grid">
+        <!-- AI Materials Generator -->
+        <div class="card">
+            <h2>Generate Tailored Materials</h2>
+            <form action="{{ url_for('generate_materials_route') }}" method="post">
+                <label>Gemini API Key:</label>
+                <input type="password" name="api_key" placeholder="AIzaSy..." value="{{ api_key or '' }}" required>
+
+                <label>Your Base Resume (Text):</label>
+                <textarea name="resume_text" rows="6" placeholder="Paste your resume text here..." required>{{ resume_text or '' }}</textarea>
+
+                <label>Job Description:</label>
+                <textarea name="job_desc" rows="6" placeholder="Paste the job description here..." required>{{ job_desc or '' }}</textarea>
+
+                <button type="submit">Generate Cover Letter & Tips</button>
+            </form>
+
+            {% if materials %}
+                <h3 style="margin-top: 20px;">Generated Output:</h3>
+                <pre>{{ materials }}</pre>
+            {% endif %}
+        </div>
+
+        <div>
+            <!-- Add Job Form -->
+            <div class="card" style="margin-bottom: 20px;">
+                <h2>Log a New Job</h2>
+                <form action="{{ url_for('add_job_route') }}" method="post">
+                    <label>Job URL (LinkedIn):</label>
+                    <input type="text" name="job_url" placeholder="https://linkedin.com/jobs/..." required>
+                    <label>Job Title:</label>
+                    <input type="text" name="job_title" placeholder="e.g. Software Engineer">
+                    <label>Company:</label>
+                    <input type="text" name="company" placeholder="e.g. Google">
+                    <button type="submit">Save to Log</button>
+                </form>
+            </div>
+
+            <!-- Job Log Table -->
+            <div class="card">
+                <h2>Job Application Log</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Company</th>
+                            <th>Title</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for job in jobs %}
+                        <tr>
+                            <td><a href="{{ job.url }}" target="_blank">{{ job.company }}</a></td>
+                            <td>{{ job.title }}</td>
+                            <td><strong>{{ job.status }}</strong><br><small>{{ job.date_applied.split(' ')[0] }}</small></td>
+                            <td>
+                                <form class="inline-form" action="{{ url_for('auto_apply_route', job_id=job.id) }}" method="post">
+                                    <input type="hidden" name="job_url" value="{{ job.url }}">
+                                    <button type="submit" style="background-color: #28a745; font-size: 12px; padding: 5px 10px;">Auto-Apply (PoC)</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4">No jobs logged yet.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
