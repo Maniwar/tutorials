@@ -433,6 +433,7 @@
             </div>
             <div id="aiError" class="error" style="display:none"></div>
             <div id="aiStreamBox" style="display:none;background:#0f172a;color:#a5f3fc;border-radius:10px;padding:0.75rem 1rem;font-family:ui-monospace,monospace;font-size:0.72rem;max-height:180px;overflow:auto;white-space:pre-wrap;line-height:1.4">
+              <button onclick="stopAIStream()" class="btn-sm btn-danger no-print" style="float:right;margin-left:0.6rem;position:sticky;top:0" title="Abort this AI call. The stream is cancelled server-side, so the model stops generating — unspent tokens are not billed. Nothing is ever applied from a stopped call.">⏹ Stop</button>
               <div id="aiStreamHead" style="color:#f8fafc;font-weight:700;margin-bottom:0.3rem"></div><span id="aiStreamText"></span><span style="animation:blink 1s infinite">▋</span>
             </div>
           </div>
@@ -6195,6 +6196,12 @@ Rules:
 - For workshops/sessions with several people at once, set one owner and put the rest in "attendees".`;
     }
 
+    // ⏹ Stop: aborting the fetch kills the SSE stream server-side, so the model
+    // stops generating — the tokens it would have produced are never billed.
+    let aiAbortCtrl = null;
+    function stopAIStream() {
+      if (aiAbortCtrl) { try { aiAbortCtrl.abort(); } catch (e) {} }
+    }
     async function callAnthropic(userContent, opts) {
       opts = opts || {};
       const key = (document.getElementById('aiKey').value.trim()) || localStorage.getItem(AI_KEY_STORE);
@@ -6202,10 +6209,13 @@ Rules:
       const model = document.getElementById('aiModel').value || 'claude-sonnet-5';
       // per-model output ceilings: Sonnet 5 / Opus 4.8 allow 128k output tokens, Haiku 4.5 64k
       const maxTok = opts.maxTokens || (model.indexOf('haiku') >= 0 ? 64000 : 128000);
+      const ctrl = new AbortController();
+      aiAbortCtrl = ctrl;
 
       const once = async (messages, baseText) => {
         const res = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
+          signal: ctrl.signal,
           headers: {
             'content-type': 'application/json',
             'x-api-key': key,
@@ -6264,18 +6274,26 @@ Rules:
       // Auto-continuation: if the model hits the output ceiling, resend with the
       // partial answer as an assistant prefill so it resumes mid-token-stream —
       // huge plans get stitched together seamlessly across responses.
-      let full = '';
-      for (let round = 0; round < 8; round++) {
-        const prefill = full.replace(/\s+$/, ''); // API rejects trailing whitespace in prefills
-        const messages = prefill
-          ? [{ role: 'user', content: userContent }, { role: 'assistant', content: prefill }]
-          : [{ role: 'user', content: userContent }];
-        if (prefill) full = prefill;
-        const r = await once(messages, full);
-        full += r.text;
-        if (r.stopReason !== 'max_tokens') return full;
+      try {
+        let full = '';
+        for (let round = 0; round < 8; round++) {
+          const prefill = full.replace(/\s+$/, ''); // API rejects trailing whitespace in prefills
+          const messages = prefill
+            ? [{ role: 'user', content: userContent }, { role: 'assistant', content: prefill }]
+            : [{ role: 'user', content: userContent }];
+          if (prefill) full = prefill;
+          const r = await once(messages, full);
+          full += r.text;
+          if (r.stopReason !== 'max_tokens') return full;
+        }
+        return full + '\n/*TRUNCATED*/';
+      } catch (e) {
+        if (ctrl.signal.aborted || (e && e.name === 'AbortError'))
+          throw new Error('⏹ Stopped — the stream was cancelled (the model stops generating, so remaining tokens are not billed). NOTHING was changed.');
+        throw e;
+      } finally {
+        if (aiAbortCtrl === ctrl) aiAbortCtrl = null;
       }
-      return full + '\n/*TRUNCATED*/';
     }
     function parseAIJson(text) {
       parseAIJson.repaired = false; // set true when we had to cut back to the last complete object
@@ -6329,15 +6347,33 @@ Rules:
             parent: (tasks.find(x => x.id === t.parentId) || {}).name || '',
             dependsOn: t.predecessors.map(p => (tasks.find(x => x.id === p.id) || {}).name).filter(Boolean) })),
           resources: Object.keys(resources).map(n => ({ name: n, capacityPercent: getCapacity(n) })) };
+        const unit = document.getElementById('durationUnit').value;
         prompt = `You are a project planning assistant for engagement/project managers.
 Here is the CURRENT project plan as JSON:
 ${JSON.stringify(current, null, 2)}
 ${histPromptBlock()}
-Apply the following change request, keeping everything else intact and preserving existing tasks/estimates unless the request changes them:
+Apply the following change request:
 """${notes}"""
 
-${aiSchemaHint()}
-Return the COMPLETE updated task list (not just the changes).`;
+Return ONLY a JSON DELTA — never re-emit the whole plan. Unchanged tasks must NOT appear in your response.
+{
+  "changedTasks": [
+    { "name": "task name", "optimistic": n, "mostLikely": n, "pessimistic": n,  // durations in ${unit}, optimistic <= mostLikely <= pessimistic
+      "milestone": false, "owner": "", "units": 100, "attendees": [],
+      "parent": "exact name of the phase it nests under (or \\"\\" for top level)",
+      "deliverable": "", "description": "", "acceptance": "",
+      "dependsOn": ["exact predecessor task names"],
+      "was": "current name ONLY when renaming this task" }
+  ],
+  "removeTasks": ["exact names of tasks to delete"],
+  "resources": [ { "name": "person/role/team", "capacityPercent": 100, "kind": "internal" } ]
+}
+Rules:
+- changedTasks holds ONLY new tasks and tasks where a field genuinely changes. Fill every field for each task you include (its stored planning fields are overwritten; % complete, actual dates and story/test-case links are preserved automatically).
+- "parent" and "dependsOn" reference exact task names — current ones or new ones introduced in this same response.
+- Use "was" to rename without losing tracking history.
+- "resources" lists ONLY new or changed people (capacityPercent > 100 for teams; kind "client" for client-side people — they are never billed). Rates and PTO are managed in the app and never change here.
+- removeTasks and resources may be empty arrays. Every array may be empty if the request needs no change of that kind.`;
       } else {
         prompt = `You are a project planning assistant for engagement/project managers.
 Read the following notes/description and turn it into a structured, estimated project plan.
@@ -6350,14 +6386,16 @@ ${aiSchemaHint()}`;
       const orig = btn.textContent;
       btn.textContent = '⏳ Generating…';
       status.textContent = 'Contacting Claude…';
-      const onDelta = streamShow(mode === 'merge' ? 'Updating plan' : 'Generating plan');
+      const onDelta = streamShow(mode === 'merge' ? 'Updating plan (delta — only the changes stream in)' : 'Generating plan');
       try {
         const text = await callAnthropic(prompt, { onDelta });
         const plan = parseAIJsonStrict(text, 'the plan'); // partial plans are never applied
-        applyAIPlan(plan, mode);
+        const stats = applyAIPlan(plan, mode);
         streamHide(true);
-        status.textContent = '✓ Plan ready — review below.';
-        setTimeout(() => status.textContent = '', 4000);
+        status.textContent = stats
+          ? `✓ Delta applied — ${stats.added} added, ${stats.updated} updated, ${stats.removed} removed. Everything else (progress, actuals, links) untouched.`
+          : '✓ Plan ready — review below.';
+        setTimeout(() => { status.textContent = ''; }, 9000);
         // one continuous flow: notes → plan → requirements (unless opted out).
         // On merges we only draft when stories don't exist yet — an update to the
         // plan shouldn't silently rewrite an existing requirements layer.
@@ -6379,7 +6417,104 @@ ${aiSchemaHint()}`;
       }
     }
 
+    // Differential apply for plan UPDATES: only tasks the AI names are touched;
+    // everything else keeps its id, % complete, actuals, level delays and the
+    // story/test-case links that point at those ids. Accepts the delta shape
+    // {changedTasks, removeTasks, resources} and, for backward compatibility, a
+    // legacy full {tasks} list — which is treated as an UPSERT, never a rebuild.
+    function applyAIMergeDelta(plan) {
+      if (!plan) throw new Error('Empty AI response.');
+      const changed = Array.isArray(plan.changedTasks) ? plan.changedTasks : (Array.isArray(plan.tasks) ? plan.tasks : []);
+      const removals = Array.isArray(plan.removeTasks) ? plan.removeTasks : [];
+      if (!changed.length && !removals.length && !Array.isArray(plan.resources))
+        throw new Error('AI response contained no changes (changedTasks / removeTasks / resources all missing).');
+      if (plan.projectName) document.getElementById('projectName').value = plan.projectName;
+      const byLower = {};
+      tasks.forEach(t => { byLower[t.name.trim().toLowerCase()] = t; });
+      // 1) removals — children climb to the removed task's parent; stories that
+      // pointed at a removed task surface in the red "not linked" banner
+      const removedIds = new Set();
+      removals.forEach(nm => { const t = byLower[String(nm || '').trim().toLowerCase()]; if (t) removedIds.add(t.id); });
+      if (removedIds.size) {
+        const parentOf = {}; tasks.forEach(t => { parentOf[t.id] = t.parentId; });
+        const climb = pid => { while (pid != null && removedIds.has(pid)) pid = parentOf[pid]; return pid == null ? null : pid; };
+        tasks.forEach(t => { if (!removedIds.has(t.id)) t.parentId = climb(t.parentId); });
+        tasks = tasks.filter(t => !removedIds.has(t.id));
+        tasks.forEach(t => { t.predecessors = t.predecessors.filter(p => !removedIds.has(p.id)); });
+        for (const k of Object.keys(byLower)) if (removedIds.has(byLower[k].id)) delete byLower[k];
+        removedIds.forEach(id => { selectedTaskIds.delete(id); collapsedIds.delete(id); });
+      }
+      // 2) upserts — existing tasks are edited IN PLACE
+      let addedN = 0, updatedN = 0;
+      const parentNames = new Set(changed.map(x => String((x && x.parent) || '').trim().toLowerCase()).filter(Boolean));
+      const pending = [];
+      changed.forEach(pt => {
+        const name = String((pt && pt.name) || '').trim();
+        if (!name) return;
+        const wasKey = String(pt.was || '').trim().toLowerCase();
+        let t = (wasKey && byLower[wasKey]) || byLower[name.toLowerCase()];
+        let o = Number(pt.optimistic) || 0, m = Number(pt.mostLikely) || 0, p = Number(pt.pessimistic) || 0;
+        const arr = [o, m, p].sort((a, b) => a - b); o = arr[0]; m = arr[1]; p = arr[2];
+        const attendees = Array.isArray(pt.attendees) ? pt.attendees.map(a => ({ name: String(typeof a === 'string' ? a : (a && a.name) || '').trim(), units: 100 })).filter(a => a.name) : null;
+        if (!t) {
+          t = makeTask({ id: nextId++, name, o, m, p,
+            milestone: (!!pt.milestone || (o === 0 && m === 0 && p === 0)) && !parentNames.has(name.toLowerCase()),
+            owner: String(pt.owner || '').trim(), units: (Number.isFinite(+pt.units) && +pt.units > 0) ? +pt.units : 100,
+            attendees: attendees || [],
+            deliverable: String(pt.deliverable || '').trim(), description: String(pt.description || '').trim(),
+            acceptance: String(pt.acceptance || '').trim(), predecessors: [] });
+          tasks.push(t); addedN++;
+        } else {
+          updatedN++;
+          t.name = name; // rename via "was" keeps id → progress, links, history survive
+          if (pt.optimistic != null || pt.mostLikely != null || pt.pessimistic != null) { t.o = o; t.m = m; t.p = p; }
+          if (pt.milestone != null) t.milestone = !!pt.milestone && !isSummaryId(t.id);
+          if (pt.owner != null) t.owner = String(pt.owner).trim();
+          if (Number.isFinite(+pt.units) && +pt.units > 0) t.units = +pt.units;
+          if (attendees) t.attendees = attendees;
+          ['deliverable', 'description', 'acceptance'].forEach(f => { if (pt[f] != null && String(pt[f]).trim()) t[f] = String(pt[f]).trim(); });
+        }
+        byLower[name.toLowerCase()] = t;
+        pending.push({ t, parent: pt.parent != null ? String(pt.parent).trim() : undefined, dependsOn: Array.isArray(pt.dependsOn) ? pt.dependsOn : undefined });
+      });
+      // resolve parent / dependsOn names against existing + newly added tasks
+      pending.forEach(({ t, parent, dependsOn }) => {
+        if (parent !== undefined) {
+          const pr = parent ? byLower[parent.toLowerCase()] : null;
+          if (!parent) t.parentId = null;
+          else if (pr && pr.id !== t.id) t.parentId = pr.id; // unresolvable name → keep current nesting
+        }
+        if (dependsOn !== undefined) {
+          const preds = dependsOn.map(dn => byLower[String(dn || '').trim().toLowerCase()]).filter(x => x && x.id !== t.id).map(x => ({ id: x.id, type: 'FS', lag: 0 }));
+          if (preds.length || dependsOn.length === 0) t.predecessors = preds; // all names unresolvable → keep old links
+        }
+      });
+      // 3) resources — merge-only: add/update capacity & kind; rates/PTO untouched
+      if (Array.isArray(plan.resources)) {
+        plan.resources.forEach(r => {
+          let nm = String((r && r.name) || '').trim(); if (!nm) return;
+          const exKey = Object.keys(resources).find(k => k.toLowerCase() === nm.toLowerCase());
+          if (exKey) nm = exKey;
+          const old = resources[nm] || {};
+          const cap = Number(r.capacityPercent != null ? r.capacityPercent : r.capacity);
+          resources[nm] = Object.assign({}, old, {
+            capacity: (Number.isFinite(cap) && cap > 0) ? cap : ((+old.capacity > 0) ? +old.capacity : 100),
+            kind: r.kind === 'client' ? 'client' : (old.kind || 'internal')
+          });
+        });
+      }
+      syncResources();
+      calculated = false;
+      renderTaskTable();
+      saveLocal();
+      if (tasks.length && recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderPERT(); }
+      return { added: addedN, updated: updatedN, removed: removedIds.size };
+    }
+
     function applyAIPlan(plan, mode) {
+      // plan UPDATES are differential — a merge must never rebuild the task list
+      // (rebuilding re-issues ids, wiping % complete, actuals and story links)
+      if (mode === 'merge' && tasks.length) return applyAIMergeDelta(plan);
       if (!plan || !Array.isArray(plan.tasks)) throw new Error('AI response did not contain a tasks array.');
       if (plan.projectName) document.getElementById('projectName').value = plan.projectName;
       if (plan.durationUnit && ['days','weeks','hours'].includes(plan.durationUnit))
