@@ -246,6 +246,17 @@
     </div>
     <div class="header-actions">
       <span id="savedIndicator" class="saved-dot"></span>
+      <details class="export-menu">
+        <summary class="btn-ghost btn-sm" style="list-style:none">📂 Projects ▾</summary>
+        <div class="export-panel">
+          <div class="grp">Saved projects</div>
+          <div id="projMenuList"></div>
+          <div class="grp">Actions</div>
+          <button onclick="newProject(false)">➕ New project</button>
+          <button onclick="newProject(true)">⧉ Duplicate current</button>
+          <button onclick="deleteProject()" style="color:#b91c1c">🗑 Delete current</button>
+        </div>
+      </details>
       <button class="btn-ghost btn-sm" onclick="loadSample()">Load Sample</button>
       <details class="export-menu">
         <summary class="btn-ghost btn-sm" style="list-style:none">Export ▾</summary>
@@ -255,6 +266,9 @@
           <button onclick="exportSmartsheetCSV()">📊 Smartsheet (.csv)</button>
           <div class="grp">Communications</div>
           <button onclick="copyStatusReport()">📄 Copy status report (email-ready)</button>
+          <button onclick="draftNarrative()">✨ Draft AI narrative for report</button>
+          <button onclick="copySOW()">📑 Copy SOW draft</button>
+          <button onclick="archiveToHistory()">🗄 Archive to estimation history</button>
           <button onclick="copyChartImage('gantt')">📋 Copy Gantt as image</button>
           <button onclick="copyChartImage('pert')">📋 Copy PERT as image</button>
           <button onclick="downloadChartPNG('gantt')">🖼 Gantt (.png)</button>
@@ -318,6 +332,7 @@
       <button class="tab" data-tab="resources" onclick="switchTab('resources')">5. Resources</button>
       <button class="tab" data-tab="baseline" onclick="switchTab('baseline')">6. Baseline &amp; Variance</button>
       <button class="tab" data-tab="analytics" onclick="switchTab('analytics')">7. Analytics &amp; Risk</button>
+      <button class="tab" data-tab="raid" onclick="switchTab('raid')">8. RAID &amp; SOW</button>
     </div>
 
     <!-- TASKS VIEW -->
@@ -388,6 +403,7 @@
               <select id="aiMode" style="width:auto">
                 <option value="replace">Create / replace all tasks</option>
                 <option value="merge">Update existing (describe the changes)</option>
+                <option value="progress">Update progress from meeting notes</option>
               </select>
               <button class="btn-primary" id="aiGenerateBtn" onclick="generateWithAI()">✨ Generate Plan</button>
               <span id="aiStatus" class="help-text" style="margin:0"></span>
@@ -497,6 +513,7 @@
             <button class="btn-sm btn-secondary" onclick="downloadChartPNG('gantt')">PNG</button>
             <button class="btn-sm btn-secondary" onclick="downloadChartSVG('gantt')">SVG</button>
             <button class="btn-sm btn-success" onclick="copyStatusReport()" title="Copy a formatted status summary (tables + completeness) for pasting into email">📄 Copy status report</button>
+            <button class="btn-sm btn-secondary no-print" onclick="draftNarrative()" title="AI writes the Progress / Risks / Next-steps narrative included at the top of the report">✨ Narrative</button>
           </div>
         </div>
         <div class="card-body">
@@ -545,9 +562,79 @@
       </div>
     </div>
 
+    <!-- RAID & SOW VIEW -->
+    <div id="view-raid" class="view">
+      <div class="card">
+        <div class="card-header">
+          <h2>RAID Log — Risks, Assumptions, Issues, Decisions &amp; Exclusions</h2>
+          <div class="toolbar no-print">
+            <button class="btn-primary btn-sm" onclick="openRaidForm()">+ Add entry</button>
+            <button class="btn-secondary btn-sm" onclick="aiDraftRaid()" title="AI reviews the plan and drafts risks & assumptions">✨ AI draft RAID</button>
+            <button class="btn-secondary btn-sm" onclick="exportRaidCSV()">Export (.csv)</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="raidForm" style="display:none;background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:1rem">
+            <div style="display:grid;grid-template-columns:1fr 3fr;gap:0.75rem;margin-bottom:0.75rem">
+              <div><label>Type</label><select id="rType">
+                <option>Risk</option><option>Assumption</option><option>Issue</option><option>Decision</option><option>Exclusion</option></select></div>
+              <div><label>Title *</label><input id="rTitle" type="text" placeholder="e.g. Client sandbox access may be delayed" /></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 2fr;gap:0.75rem;margin-bottom:0.75rem">
+              <div><label>Probability (1–5)</label><input id="rProb" type="number" min="1" max="5" value="3" /></div>
+              <div><label>Impact (1–5)</label><input id="rImpact" type="number" min="1" max="5" value="3" /></div>
+              <div><label>Owner</label><input id="rOwner" type="text" list="ownerList" /></div>
+              <div><label>Related task</label><select id="rTask"><option value="">—</option></select></div>
+            </div>
+            <div class="form-group"><label>Mitigation / response / detail</label><textarea id="rMitigation" rows="2"></textarea></div>
+            <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+              <button class="btn-secondary btn-sm" onclick="closeRaidForm()">Cancel</button>
+              <button class="btn-primary btn-sm" id="raidSaveBtn" onclick="saveRaidEntry()">Save entry</button>
+            </div>
+          </div>
+          <div id="raidContainer"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Pricing &amp; Margin</h2>
+          <span class="help-text">Bill rates set on the Resources tab • cost from day rates &amp; fixed costs</span>
+        </div>
+        <div class="card-body"><div id="pricingContainer"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Statement of Work (SOW) Draft</h2>
+          <div class="toolbar no-print">
+            <button class="btn-primary btn-sm" onclick="generateSOW()">✨ Generate SOW draft</button>
+            <button class="btn-secondary btn-sm" onclick="copySOW()">📋 Copy (rich text)</button>
+            <button class="btn-secondary btn-sm" onclick="downloadSOW()">Download (.html)</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <p class="help-text" style="margin-bottom:0.75rem">Assembled from the plan itself: scope &amp; deliverables from the WBS dictionary, milestones, team &amp; rates, pricing from the Monte-Carlo basis above, assumptions/exclusions from the RAID log. With an API key the narrative sections are drafted by AI; without one you get the structured skeleton to edit.</p>
+          <div id="sowContainer" style="border:1px solid var(--border);border-radius:10px;padding:1rem;max-height:560px;overflow:auto;background:white">
+            <div class="empty-state"><h3>No SOW draft yet</h3><p>Click <strong>Generate SOW draft</strong> — the plan, dictionary, milestones, pricing and RAID entries become a client-ready starting document.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ANALYTICS VIEW -->
     <div id="view-analytics" class="view">
       <div class="summary-grid" id="summaryGrid"></div>
+      <div class="card">
+        <div class="card-header">
+          <h2>🩺 Plan Health Check &amp; Trend</h2>
+          <div class="toolbar no-print">
+            <button class="btn-primary btn-sm" onclick="runHealthCheck()">Run health check</button>
+            <button class="btn-secondary btn-sm" onclick="takeStatusSnapshot(true)" title="Record today's forecast for the trend chart">📸 Snapshot status</button>
+          </div>
+        </div>
+        <div class="card-body"><div id="healthContainer"><p class="help-text">Run the health check to lint estimate quality (ranges too narrow, tasks too big, missing scope, top schedule drivers) — with an API key the AI also reviews the plan against your notes and historical data. Status snapshots build the forecast-trend chart here.</p></div></div>
+      </div>
       <div class="card">
         <div class="card-header">
           <h2>Monte Carlo Forecast &amp; Target Date</h2>
@@ -700,6 +787,13 @@
     let ganttDayW = null;         // null = auto zoom; otherwise px per day
     let projectBudget = 0;        // optional cost budget for variance tracking
     let dragTaskId = null;        // row being dragged in the task table
+    let raid = [];                // RAID log: risks / assumptions / issues / decisions / exclusions
+    let nextRaidId = 1;
+    let statusHistory = [];       // periodic snapshots: {date, pct, finish, p80, cost, over, openRisks}
+    let sowDraft = '';            // last generated SOW HTML
+    let statusNarrative = null;   // {date, text} AI exec summary for the status report
+    let pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 }; // bill-side settings
+    let healthFindings = null;    // last health-check results
 
     // ========================= UTIL =========================
     function escapeHtml(s) {
@@ -732,12 +826,108 @@
       }, o);
     }
 
+    // ========================= PROJECT LIBRARY =========================
+    // Multiple saved projects in localStorage:
+    //   pertGantt.projIndex  -> { id: {name, updatedAt} }
+    //   pertGantt.proj.<id>  -> serialized project
+    //   pertGantt.activeProj -> id
+    const PROJ_INDEX_KEY = 'pertGantt.projIndex';
+    const PROJ_PREFIX = 'pertGantt.proj.';
+    const PROJ_ACTIVE_KEY = 'pertGantt.activeProj';
+    function projIndex() {
+      try { return JSON.parse(localStorage.getItem(PROJ_INDEX_KEY) || '{}'); } catch (e) { return {}; }
+    }
+    function saveProjIndex(idx) { try { localStorage.setItem(PROJ_INDEX_KEY, JSON.stringify(idx)); } catch (e) {} }
+    function activeProjectId() {
+      let id = localStorage.getItem(PROJ_ACTIVE_KEY);
+      if (!id) { id = 'p' + Date.now().toString(36); localStorage.setItem(PROJ_ACTIVE_KEY, id); }
+      return id;
+    }
+    function renderProjectMenu() {
+      const el = document.getElementById('projMenuList');
+      if (!el) return;
+      const idx = projIndex();
+      const act = activeProjectId();
+      const items = Object.entries(idx).sort((a, b) => (b[1].updatedAt || '').localeCompare(a[1].updatedAt || ''));
+      el.innerHTML = items.map(([id, meta]) =>
+        `<button data-proj="${id}" style="${id === act ? 'font-weight:700;color:var(--primary)' : ''}">${id === act ? '● ' : ''}${escapeHtml(meta.name || 'Untitled')} <span class="help-text" style="font-size:0.65rem">${escapeHtml((meta.updatedAt || '').slice(0, 10))}</span></button>`
+      ).join('') || '<div class="grp">No saved projects yet</div>';
+      el.querySelectorAll('[data-proj]').forEach(btn => btn.addEventListener('click', () => switchProject(btn.dataset.proj)));
+    }
+    function switchProject(id) {
+      if (id === activeProjectId()) return;
+      saveLocal(); // persist current first
+      const raw = localStorage.getItem(PROJ_PREFIX + id);
+      if (!raw) { alert('Could not load that project.'); return; }
+      localStorage.setItem(PROJ_ACTIVE_KEY, id);
+      try { hydrate(JSON.parse(raw)); } catch (e) { alert('Project data is corrupted: ' + e.message); return; }
+      calculated = false; mcResult = null; resourceLoad = null; healthFindings = null;
+      renderTaskTable(); renderWBS(); renderRaid();
+      if (tasks.length && recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT(); }
+      renderProjectMenu();
+      switchTab('tasks');
+      flashSaved('Switched to "' + (document.getElementById('projectName').value || 'project') + '"');
+    }
+    function newProject(fromCurrent) {
+      saveLocal();
+      const id = 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+      localStorage.setItem(PROJ_ACTIVE_KEY, id);
+      if (!fromCurrent) {
+        tasks = []; nextId = 1; resources = {}; raid = []; nextRaidId = 1; statusHistory = [];
+        sowDraft = ''; statusNarrative = null; healthFindings = null; projectBudget = 0;
+        reserves = { contingency: { value: 0, unit: 'percent' }, management: { value: 0, unit: 'percent' } };
+        pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 };
+        baselineDate = ''; collapsedIds = new Set(); levelMode = 'none'; calculated = false; mcResult = null;
+        document.getElementById('projectName').value = 'New Engagement';
+        document.getElementById('holidays').value = '';
+      } else {
+        document.getElementById('projectName').value = (document.getElementById('projectName').value || 'Project') + ' (copy)';
+      }
+      saveLocal();
+      renderTaskTable(); renderWBS(); renderRaid(); renderProjectMenu();
+      if (!fromCurrent) {
+        document.getElementById('summaryGrid').innerHTML = '';
+        document.getElementById('analyticsContent').innerHTML = '<div class="empty-state"><h3>Run Calculate to see analytics</h3></div>';
+        document.getElementById('ganttContainer').innerHTML = '';
+        document.getElementById('resourcesContainer').innerHTML = '';
+        document.getElementById('pertSvg').innerHTML = '';
+      }
+      switchTab('tasks');
+    }
+    function deleteProject() {
+      const idx = projIndex();
+      const act = activeProjectId();
+      const nm = (idx[act] && idx[act].name) || 'this project';
+      if (!confirm(`Delete "${nm}" permanently? This cannot be undone.`)) return;
+      delete idx[act];
+      saveProjIndex(idx);
+      localStorage.removeItem(PROJ_PREFIX + act);
+      const remaining = Object.keys(idx);
+      if (remaining.length) { localStorage.removeItem(PROJ_ACTIVE_KEY); switchProjectForce(remaining[0]); }
+      else { localStorage.removeItem(PROJ_ACTIVE_KEY); newProject(false); }
+    }
+    function switchProjectForce(id) {
+      localStorage.setItem(PROJ_ACTIVE_KEY, id);
+      const raw = localStorage.getItem(PROJ_PREFIX + id);
+      if (raw) { try { hydrate(JSON.parse(raw)); } catch (e) {} }
+      calculated = false;
+      renderTaskTable(); renderWBS(); renderRaid();
+      if (tasks.length && recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT(); }
+      renderProjectMenu();
+    }
+
     // ========================= PERSISTENCE =========================
     function markDirty() { saveLocal(); }
     function saveLocal() {
       try {
         const data = serialize();
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        const id = activeProjectId();
+        localStorage.setItem(PROJ_PREFIX + id, JSON.stringify(data));
+        const idx = projIndex();
+        idx[id] = { name: data.projectName || 'Untitled', updatedAt: new Date().toISOString() };
+        saveProjIndex(idx);
+        renderProjectMenu();
         const el = document.getElementById('savedIndicator');
         el.textContent = '✓ Saved';
         clearTimeout(saveLocal._t);
@@ -752,6 +942,7 @@
         holidays: document.getElementById('holidays').value,
         nextId,
         resources, reserves, baselineDate, levelMode, projectBudget,
+        raid, nextRaidId, statusHistory, sowDraft, statusNarrative, pricing,
         collapsedIds: [...collapsedIds],
         tasks: tasks.map(t => ({
           id: t.id, name: t.name, o: t.o, m: t.m, p: t.p, milestone: t.milestone,
@@ -797,13 +988,20 @@
       baselineDate = data.baselineDate || '';
       levelMode = ['none','slack','extend'].includes(data.levelMode) ? data.levelMode : 'none';
       projectBudget = Number(data.projectBudget) || 0;
+      raid = Array.isArray(data.raid) ? data.raid.map(r => Object.assign({ id: 0, type: 'Risk', title: '', description: '', probability: 3, impact: 3, owner: '', status: 'Open', mitigation: '', taskId: null, createdAt: '' }, r)) : [];
+      nextRaidId = data.nextRaidId || (Math.max(0, ...raid.map(r => r.id)) + 1);
+      statusHistory = Array.isArray(data.statusHistory) ? data.statusHistory : [];
+      sowDraft = typeof data.sowDraft === 'string' ? data.sowDraft : '';
+      statusNarrative = (data.statusNarrative && data.statusNarrative.text) ? data.statusNarrative : null;
+      pricing = Object.assign({ model: 'fixed', basis: 'p80', contractPrice: 0 }, data.pricing || {});
       collapsedIds = new Set(Array.isArray(data.collapsedIds) ? data.collapsedIds : []);
       nextId = data.nextId || (Math.max(0, ...tasks.map(t => t.id)) + 1);
       calculated = false;
     }
     function loadLocal() {
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        const act = localStorage.getItem(PROJ_ACTIVE_KEY);
+        const raw = (act && localStorage.getItem(PROJ_PREFIX + act)) || localStorage.getItem(STORAGE_KEY);
         if (!raw) return false;
         hydrate(JSON.parse(raw));
         return true;
@@ -866,7 +1064,8 @@
       if (name === 'gantt' && calculated) renderGantt();
       if (name === 'resources' && calculated) renderResources();
       if (name === 'baseline' && calculated) renderBaseline();
-      if (name === 'analytics' && calculated) renderAnalytics();
+      if (name === 'analytics' && calculated) { renderAnalytics(); renderHealth(); }
+      if (name === 'raid') { renderRaid(); if (sowDraft) document.getElementById('sowContainer').innerHTML = sowDraft; }
     }
 
     // ========================= MODAL =========================
@@ -1423,6 +1622,9 @@
       calculated = true;
       computeResourceLoad();
       runMonteCarlo();
+      // auto-record one status snapshot per day so the trend builds itself
+      const todayIso = fmtISO(new Date());
+      if (!statusHistory.some(x => x.date === todayIso)) takeStatusSnapshot(false);
       return true;
     }
 
@@ -1772,6 +1974,37 @@
         (ext > 0.01 ? ` Finish moved out by ${ext.toFixed(1)} ${unitLabel()} — review and re-baseline if you accept the new dates.` : ' Finish date unchanged.') +
         (after ? ' Remaining conflicts cannot be fixed by delaying (a task alone exceeds its owner\'s capacity) — reduce Units %, raise capacity, or reassign.' : '');
     }
+    // ---- Managed resource roster (explicit add / rename / remove) ----
+    function addResourcePrompt() {
+      const name = (prompt('New resource name (person, role, or team):') || '').trim();
+      if (!name) return;
+      if (resources[name]) { alert('That resource already exists.'); return; }
+      resources[name] = { capacity: 100, rate: 0, billRate: 0 };
+      saveLocal();
+      renderResources();
+      populateOwnerList();
+    }
+    function renameResource(oldName) {
+      const name = (prompt(`Rename "${oldName}" to:`, oldName) || '').trim();
+      if (!name || name === oldName) return;
+      if (resources[name]) { alert('A resource with that name already exists.'); return; }
+      resources[name] = resources[oldName] || { capacity: 100 };
+      delete resources[oldName];
+      tasks.forEach(t => { if ((t.owner || '').trim() === oldName) t.owner = name; });
+      saveLocal();
+      if (calculated) recompute();
+      renderTaskTable(); renderResources(); renderAnalytics(); renderGantt();
+    }
+    function removeResource(name) {
+      const assigned = tasks.filter(t => (t.owner || '').trim() === name);
+      if (!confirm(`Remove resource "${name}"?${assigned.length ? ` ${assigned.length} task(s) will become unassigned.` : ''}`)) return;
+      delete resources[name];
+      assigned.forEach(t => t.owner = '');
+      saveLocal();
+      if (calculated) recompute();
+      renderTaskTable(); renderResources(); renderAnalytics(); renderGantt();
+    }
+
     // Mend by adding people: raise a resource's capacity.
     function addCapacity(name, amount) {
       if (!resources[name]) resources[name] = { capacity: 100 };
@@ -2008,6 +2241,7 @@
       if (recompute()) {
         renderTaskTable(); renderWBS(); renderGantt(); renderResources();
         renderBaseline(); renderAnalytics(); renderPERT();
+        if (document.getElementById('view-raid').classList.contains('active')) renderRaid();
       }
     }
     function renderAnalytics() {
@@ -2462,7 +2696,8 @@
         return `<tr>
           <td style="font-weight:600">${escapeHtml(name)}</td>
           <td><input class="mini-inp rl-cap" data-ri="${ri}" type="number" min="1" step="10" value="${R.capacity}" title="Capacity % — 100 = 1 full-time person, 300 = a 3-person team" /></td>
-          <td><input class="mini-inp rl-rate" data-ri="${ri}" type="number" min="0" step="50" value="${getRate(name)}" title="Cost per working day at 100% (feeds the budget layer)" /></td>
+          <td><input class="mini-inp rl-rate" data-ri="${ri}" type="number" min="0" step="50" value="${getRate(name)}" title="COST per working day at 100% (feeds the budget layer)" /></td>
+          <td><input class="mini-inp rl-bill" data-ri="${ri}" type="number" min="0" step="50" value="${getBillRate(name)}" title="BILL rate per day (client-facing — feeds pricing & SOW)" /></td>
           <td>${assigned.length}</td>
           <td>${effort.toFixed(1)}d</td>
           <td>${Math.round(R.peak)}%</td>
@@ -2479,7 +2714,7 @@
           <button class="btn-sm btn-primary no-print" onclick="addResourcePrompt()">➕ Add resource</button>
         </div>
         <div class="table-wrap" style="margin-bottom:1rem"><table>
-          <thead><tr><th>Resource</th><th>Capacity %</th><th>Day rate $</th><th>Tasks</th><th>Planned effort</th><th>Peak load</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Resource</th><th>Capacity %</th><th>Cost $/d</th><th>Bill $/d</th><th>Tasks</th><th>Planned effort</th><th>Peak load</th><th>Status</th><th></th></tr></thead>
           <tbody>${rosterRows}</tbody>
         </table></div>`;
       const holidays = getHolidaySet();
@@ -2599,6 +2834,9 @@
       });
       cont.querySelectorAll('input.rl-rate').forEach(inp => {
         inp.addEventListener('change', () => setRate(names[Number(inp.dataset.ri)], inp.value));
+      });
+      cont.querySelectorAll('input.rl-bill').forEach(inp => {
+        inp.addEventListener('change', () => setBillRate(names[Number(inp.dataset.ri)], inp.value));
       });
       cont.querySelectorAll('[data-mend-add]').forEach(btn => {
         btn.addEventListener('click', () => addCapacity(names[Number(btn.dataset.mendAdd)], 100));
@@ -2943,13 +3181,22 @@
         ? `<p style="margin:6px 0;font-size:13px;color:#b91c1c"><b>⚠ Resourcing:</b> ${rl.overResourceDays} over-allocated resource-day(s) — ${rl.resourcesOver.map(escapeHtml).join(', ')}. Mitigation in progress (level, add capacity, or extend).</p>` : '';
       const baseLine = hasBaseline()
         ? `<p style="margin:6px 0;font-size:13px"><b>Baseline (${escapeHtml(baselineDate)}):</b> variance ${(() => { const bf = new Date(Math.max(...tasks.filter(t => t.baseFinish).map(t => t.baseFinish.getTime()))); const v = calDaysBetween(bf, new Date(Math.max(...leaves.map(t => currentFinish(t).getTime())))); return (v > 0 ? '<span style="color:#b91c1c">+' + v + 'd late</span>' : v < 0 ? '<span style="color:#15803d">' + v + 'd early</span>' : 'on plan'); })()}</p>` : '';
+      const narrBlock = (statusNarrative && statusNarrative.text)
+        ? `<div style="background:#f8fafc;border-left:4px solid #2563eb;padding:8px 12px;margin:8px 0;font-size:13px">${escapeHtml(statusNarrative.text).replace(/\n\n/g, '</p><p style="margin:6px 0 0">').replace(/^/, '<p style="margin:0">')}</p><div style="color:#94a3b8;font-size:10px;margin-top:4px">AI-drafted narrative (${escapeHtml(statusNarrative.date)}) — review before sending</div></div>` : '';
+      const openRisks = raid.filter(r => (r.type === 'Risk' || r.type === 'Issue') && r.status !== 'Closed')
+        .sort((a, b) => b.probability * b.impact - a.probability * a.impact).slice(0, 5);
+      const riskBlock = openRisks.length ? `<h3 style="margin:14px 0 4px;font-size:14px">Top risks &amp; issues</h3>
+        <table style="border-collapse:collapse"><tr><th style="${th}">Type</th><th style="${th}">Item</th><th style="${th}">P×I</th><th style="${th}">Response</th><th style="${th}">Status</th></tr>
+        ${openRisks.map(r => `<tr><td style="${td}">${r.type}</td><td style="${td}">${escapeHtml(r.title)}</td><td style="${td}">${r.probability * r.impact}</td><td style="${td}">${escapeHtml(r.mitigation || '')}</td><td style="${td}">${r.status}</td></tr>`).join('')}</table>` : '';
       return `<div style="font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;max-width:860px">
         <h2 style="margin:0 0 4px">${escapeHtml(projName())} — Status Report</h2>
         <p style="margin:2px 0 10px;color:#64748b;font-size:12px">Generated ${new Date().toLocaleDateString()} • PERT 3-point estimates • ${mcResult ? mcResult.iters.toLocaleString() + ' Monte-Carlo simulations' : 'deterministic CPM'}</p>
+        ${narrBlock}
         <p style="margin:6px 0;font-size:13px"><b>Overall:</b> ${prog.toFixed(0)}% complete • forecast finish <b>${fmtNice(finish)}</b>${mcResult ? ` • P80 ${fmtNice(durationToDate(mcResult.p80))} • P90 ${fmtNice(durationToDate(mcResult.p90))}` : ''}${rv.contingencyUnits > 0 ? ` • committed (with contingency) ${fmtNice(rv.committedDate)}` : ''}</p>
         ${baseLine}${costLine}${overLine}
         <p style="margin:6px 0;font-size:13px"><b>Critical path:</b> ${escapeHtml(critNames) || '—'}</p>
         ${msRows ? `<h3 style="margin:14px 0 4px;font-size:14px">Milestones</h3><table style="border-collapse:collapse"><tr><th style="${th}">Milestone</th><th style="${th}">Date</th><th style="${th}">Status</th></tr>${msRows}</table>` : ''}
+        ${riskBlock}
         <h3 style="margin:14px 0 4px;font-size:14px">Work breakdown &amp; completeness</h3>
         <table style="border-collapse:collapse"><tr><th style="${th}">WBS</th><th style="${th}">Task</th><th style="${th}">Owner</th><th style="${th}">Start</th><th style="${th}">Finish</th><th style="${th}">%</th><th style="${th}">Status</th><th style="${th}">Var</th></tr>${taskRows}</table>
         <p style="margin:10px 0 0;color:#94a3b8;font-size:11px">Var = finish variance vs baseline (calendar days). Generated by Engagement PERT &amp; Gantt Tracker.</p>
@@ -3221,9 +3468,16 @@
       tasks.forEach(t => { if (pcts[t.id] != null) t.percentComplete = pcts[t.id]; });
       nextId = 14;
       resources = {
-        'PMO': { capacity: 100, rate: 900 }, 'A. Rivera': { capacity: 100, rate: 1200 },
-        'L. Chen': { capacity: 100, rate: 1300 }, 'Dev Team': { capacity: 300, rate: 1100 }, 'QA': { capacity: 100, rate: 950 }
+        'PMO': { capacity: 100, rate: 900, billRate: 1500 }, 'A. Rivera': { capacity: 100, rate: 1200, billRate: 1900 },
+        'L. Chen': { capacity: 100, rate: 1300, billRate: 2100 }, 'Dev Team': { capacity: 300, rate: 1100, billRate: 1750 }, 'QA': { capacity: 100, rate: 950, billRate: 1500 }
       };
+      raid = [
+        { id: 1, type: 'Risk', title: 'Client sandbox access may slip past kickoff', probability: 3, impact: 4, owner: 'PMO', mitigation: 'Escalate access request in week 1; fallback to vendor demo org', description: '', status: 'Open', taskId: 6, createdAt: fmtISO(new Date()) },
+        { id: 2, type: 'Assumption', title: 'Client provides a data steward 2 days/week during mapping', probability: 3, impact: 3, owner: 'A. Rivera', mitigation: 'Named in SOW client obligations', description: '', status: 'Open', taskId: 5, createdAt: fmtISO(new Date()) },
+        { id: 3, type: 'Exclusion', title: 'Historical data older than 24 months is out of scope for migration', probability: 3, impact: 3, owner: '', mitigation: '', description: '', status: 'Open', taskId: null, createdAt: fmtISO(new Date()) }
+      ];
+      nextRaidId = 4; statusHistory = []; sowDraft = ''; statusNarrative = null; healthFindings = null;
+      pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 };
       reserves = { contingency: { value: 10, unit: 'percent' }, management: { value: 5, unit: 'percent' } };
       baselineDate = ''; collapsedIds = new Set(); levelMode = 'none'; projectBudget = 0; calculated = false;
       document.getElementById('projectName').value = 'Sample Client Engagement – CRM Rollout';
@@ -3445,6 +3699,7 @@ Rules:
         errEl.textContent = 'Add your Anthropic API key first (⚙ API Key).'; errEl.style.display = 'block'; return;
       }
 
+      if (mode === 'progress') { return updateProgressFromNotes(notes, btn, status, errEl); }
       let prompt;
       if (mode === 'merge' && tasks.length) {
         const current = { projectName: document.getElementById('projectName').value, durationUnit: document.getElementById('durationUnit').value,
@@ -3565,6 +3820,43 @@ ${aiSchemaHint()}`;
       if (tasks.length) { if (recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderPERT(); } }
     }
 
+    // ---- AI: update progress / actuals from pasted meeting or standup notes ----
+    async function updateProgressFromNotes(notes, btn, status, errEl) {
+      if (!tasks.length) { errEl.textContent = 'No tasks to update yet.'; errEl.style.display = 'block'; return; }
+      const taskList = leafTasks().map(t => `"${t.name}" (${t.percentComplete || 0}% now${t.actualStart ? ', started ' + t.actualStart : ''})`).join('; ');
+      const prompt = `You are updating project tracking data from meeting/standup notes.
+Today is ${fmtISO(new Date())}. Current tasks: ${taskList}.
+NOTES:\n"""${notes}"""
+Return ONLY JSON:
+{"updates":[{"task":"exact task name","percentComplete":0-100,"actualStart":"YYYY-MM-DD or empty","actualFinish":"YYYY-MM-DD or empty"}],
+ "newRisks":[{"type":"Risk|Issue","title":"...","probability":1-5,"impact":1-5,"mitigation":"..."}]}
+Rules: only include tasks the notes actually mention; never lower an existing percentComplete unless the notes explicitly say work was redone; use actualFinish only when clearly done; extract genuinely new risks/issues only.`;
+      btn.disabled = true; const orig = btn.textContent; btn.textContent = '⏳ Updating…'; status.textContent = 'Reading notes…';
+      try {
+        const res = parseAIJson(await callAnthropic(prompt));
+        let changed = 0, risksAdded = 0;
+        (res.updates || []).forEach(up => {
+          const t = leafTasks().find(x => x.name.toLowerCase() === String(up.task || '').trim().toLowerCase());
+          if (!t) return;
+          if (Number.isFinite(+up.percentComplete)) { const v = Math.min(100, Math.max(0, +up.percentComplete)); if (v !== t.percentComplete) { t.percentComplete = v; changed++; } }
+          if (up.actualStart && /^\d{4}-\d{2}-\d{2}$/.test(up.actualStart)) t.actualStart = up.actualStart;
+          if (up.actualFinish && /^\d{4}-\d{2}-\d{2}$/.test(up.actualFinish)) { t.actualFinish = up.actualFinish; if (t.percentComplete < 100) t.percentComplete = 100; }
+        });
+        (res.newRisks || []).forEach(r => {
+          const title = String(r.title || '').trim(); if (!title) return;
+          if (raid.some(x => x.title.toLowerCase() === title.toLowerCase())) return;
+          raid.push({ id: nextRaidId++, type: r.type === 'Issue' ? 'Issue' : 'Risk', title,
+            probability: Math.min(5, Math.max(1, +r.probability || 3)), impact: Math.min(5, Math.max(1, +r.impact || 3)),
+            owner: '', mitigation: String(r.mitigation || '').trim(), description: '', status: 'Open', taskId: null, createdAt: fmtISO(new Date()) });
+          risksAdded++;
+        });
+        rollupProgress(); saveLocal(); refreshAll(); renderRaid();
+        status.textContent = `✓ ${changed} task(s) updated${risksAdded ? ', ' + risksAdded + ' risk(s) logged' : ''} — review the plan.`;
+        setTimeout(() => status.textContent = '', 5000);
+      } catch (e) { errEl.textContent = 'Progress update failed: ' + (e.message || e); errEl.style.display = 'block'; status.textContent = ''; }
+      finally { btn.disabled = false; btn.textContent = orig; }
+    }
+
     // ---- AI: decompose one task into finer sub-tasks (deeper WBS) ----
     async function aiDecompose(id) {
       const t = tasks.find(x => x.id === id);
@@ -3639,6 +3931,449 @@ Rules:
       }
     }
 
+
+    // ========================= RAID LOG =========================
+    let editingRaidId = null;
+    function openRaidForm(id) {
+      editingRaidId = id == null ? null : id;
+      const r = id != null ? raid.find(x => x.id === id) : null;
+      document.getElementById('rType').value = r ? r.type : 'Risk';
+      document.getElementById('rTitle').value = r ? r.title : '';
+      document.getElementById('rProb').value = r ? r.probability : 3;
+      document.getElementById('rImpact').value = r ? r.impact : 3;
+      document.getElementById('rOwner').value = r ? r.owner : '';
+      document.getElementById('rMitigation').value = r ? (r.mitigation || r.description || '') : '';
+      const sel = document.getElementById('rTask');
+      sel.innerHTML = '<option value="">—</option>' + tasks.map(t => `<option value="${t.id}" ${r && r.taskId === t.id ? 'selected' : ''}>${escapeHtml((t.wbs ? t.wbs + ' ' : '') + t.name)}</option>`).join('');
+      document.getElementById('raidForm').style.display = 'block';
+      document.getElementById('rTitle').focus();
+    }
+    function closeRaidForm() { document.getElementById('raidForm').style.display = 'none'; editingRaidId = null; }
+    function saveRaidEntry() {
+      const title = document.getElementById('rTitle').value.trim();
+      if (!title) { alert('Title is required.'); return; }
+      const entry = {
+        type: document.getElementById('rType').value,
+        title,
+        probability: Math.min(5, Math.max(1, parseInt(document.getElementById('rProb').value, 10) || 3)),
+        impact: Math.min(5, Math.max(1, parseInt(document.getElementById('rImpact').value, 10) || 3)),
+        owner: document.getElementById('rOwner').value.trim(),
+        mitigation: document.getElementById('rMitigation').value.trim(),
+        taskId: Number(document.getElementById('rTask').value) || null
+      };
+      if (editingRaidId != null) {
+        Object.assign(raid.find(x => x.id === editingRaidId) || {}, entry);
+      } else {
+        raid.push(Object.assign({ id: nextRaidId++, status: 'Open', description: '', createdAt: fmtISO(new Date()) }, entry));
+      }
+      closeRaidForm(); saveLocal(); renderRaid();
+    }
+    function setRaidStatus(id, status) {
+      const r = raid.find(x => x.id === id); if (!r) return;
+      r.status = status; saveLocal(); renderRaid();
+    }
+    function deleteRaidEntry(id) {
+      if (!confirm('Delete this RAID entry?')) return;
+      raid = raid.filter(x => x.id !== id); saveLocal(); renderRaid();
+    }
+    function raidScoreBadge(r) {
+      if (r.type !== 'Risk' && r.type !== 'Issue') return '—';
+      const score = (r.probability || 3) * (r.impact || 3);
+      const col = score >= 15 ? ['#fee2e2', '#b91c1c'] : score >= 8 ? ['#fef3c7', '#b45309'] : ['#dcfce7', '#15803d'];
+      return `<span class="risk-tag" style="background:${col[0]};color:${col[1]}">${score}</span>`;
+    }
+    function renderRaid() {
+      const cont = document.getElementById('raidContainer');
+      if (!cont) return;
+      if (!raid.length) { cont.innerHTML = '<div class="empty-state"><h3>RAID log is empty</h3><p>Track risks, assumptions, issues, decisions and scope exclusions here — they feed the status report and the SOW draft. Try <strong>✨ AI draft RAID</strong> to seed it from the plan.</p></div>'; renderPricing(); return; }
+      const order = { Risk: 0, Issue: 1, Assumption: 2, Decision: 3, Exclusion: 4 };
+      const rows = raid.slice().sort((a, b) => (order[a.type] ?? 9) - (order[b.type] ?? 9) || ((b.probability * b.impact) - (a.probability * a.impact))).map(r => {
+        const t = r.taskId ? tasks.find(x => x.id === r.taskId) : null;
+        const closed = r.status === 'Closed';
+        return `<tr style="${closed ? 'opacity:0.55' : ''}">
+          <td><span class="badge ${r.type === 'Risk' ? 'badge-critical' : r.type === 'Issue' ? 'badge-warn' : r.type === 'Assumption' ? 'badge-info' : 'badge-slack'}">${r.type}</span></td>
+          <td style="font-weight:600">${escapeHtml(r.title)}</td>
+          <td>${raidScoreBadge(r)}</td>
+          <td style="font-size:0.8rem">${escapeHtml(r.owner || '—')}</td>
+          <td style="font-size:0.8rem">${t ? escapeHtml(t.wbs + ' ' + t.name) : '—'}</td>
+          <td style="font-size:0.8rem;max-width:300px">${escapeHtml(r.mitigation || '')}</td>
+          <td><select class="mini-inp" style="width:auto" onchange="setRaidStatus(${r.id}, this.value)">
+            ${['Open','Mitigating','Closed'].map(st => `<option ${st === r.status ? 'selected' : ''}>${st}</option>`).join('')}</select></td>
+          <td style="white-space:nowrap">
+            <button class="btn-sm btn-secondary" onclick="openRaidForm(${r.id})">Edit</button>
+            <button class="btn-sm btn-danger" onclick="deleteRaidEntry(${r.id})">✕</button>
+          </td>
+        </tr>`;
+      }).join('');
+      cont.innerHTML = `<div class="table-wrap"><table>
+        <thead><tr><th>Type</th><th>Title</th><th>Score</th><th>Owner</th><th>Task</th><th>Mitigation / detail</th><th>Status</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`;
+      renderPricing();
+    }
+    function exportRaidCSV() {
+      const rows = [['Type','Title','Probability','Impact','Score','Owner','Related task','Mitigation','Status','Created']];
+      raid.forEach(r => rows.push([r.type, r.title, r.probability, r.impact, r.probability * r.impact, r.owner,
+        (tasks.find(t => t.id === r.taskId) || {}).name || '', r.mitigation, r.status, r.createdAt]));
+      download(safeName() + '-raid.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
+    }
+    async function aiDraftRaid() {
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) {
+        alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return;
+      }
+      const planSummary = tasksInWbsOrder().map(({ task: t, depth }) => `${'  '.repeat(depth)}${t.wbs} ${t.name}${t.milestone ? ' [milestone]' : ''} (${t.o}/${t.m}/${t.p} ${unitLabel()}${t.owner ? ', ' + t.owner : ''})${t.description ? ' — ' + t.description : ''}`).join('\n');
+      const existing = raid.map(r => r.type + ': ' + r.title).join('; ') || '(none)';
+      const prompt = `You are a delivery-risk reviewer for an engagement manager.
+Project: ${document.getElementById('projectName').value}
+Plan:\n${planSummary}
+Existing RAID entries (do NOT duplicate): ${existing}
+${histPromptBlock()}
+Return ONLY JSON: {"entries":[{"type":"Risk|Assumption|Issue|Decision|Exclusion","title":"...","probability":1-5,"impact":1-5,"owner":"","mitigation":"one-line response/detail","task":"exact task name or empty"}]}
+Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, integration unknowns, resourcing), key assumptions the estimates rely on, and scope exclusions worth stating in a SOW. Concrete, not generic boilerplate.`;
+      flashSaved('⏳ Drafting RAID…');
+      try {
+        const res = parseAIJson(await callAnthropic(prompt));
+        if (!res || !Array.isArray(res.entries)) throw new Error('No entries returned.');
+        let added = 0;
+        res.entries.forEach(e => {
+          const title = String(e.title || '').trim(); if (!title) return;
+          if (raid.some(r => r.title.toLowerCase() === title.toLowerCase())) return;
+          const task = tasks.find(t => t.name.toLowerCase() === String(e.task || '').trim().toLowerCase());
+          raid.push({ id: nextRaidId++, type: ['Risk','Assumption','Issue','Decision','Exclusion'].includes(e.type) ? e.type : 'Risk',
+            title, probability: Math.min(5, Math.max(1, +e.probability || 3)), impact: Math.min(5, Math.max(1, +e.impact || 3)),
+            owner: String(e.owner || '').trim(), mitigation: String(e.mitigation || '').trim(), description: '',
+            status: 'Open', taskId: task ? task.id : null, createdAt: fmtISO(new Date()) });
+          added++;
+        });
+        saveLocal(); renderRaid();
+        flashSaved(`✓ ${added} RAID entries drafted — review & edit`);
+      } catch (e) { alert('RAID draft failed: ' + (e.message || e)); }
+    }
+
+    // ========================= PRICING & MARGIN =========================
+    function getBillRate(name) {
+      const r = resources[name];
+      return (r && Number.isFinite(+r.billRate)) ? +r.billRate : 0;
+    }
+    function setBillRate(name, val) {
+      if (!resources[name]) resources[name] = { capacity: 100 };
+      resources[name].billRate = Math.max(0, parseFloat(val) || 0);
+      saveLocal(); renderPricing();
+    }
+    function laborRevenue() { // bill side at P50 effort
+      return leafTasks().reduce((sum, t) => {
+        if (t.milestone) return sum;
+        return sum + getBillRate((t.owner || '').trim()) * unitToWorkingDays(t.te || 0) * ((+t.units || 100) / 100);
+      }, 0);
+    }
+    function riskUplift(basis) { // duration-based uplift from Monte Carlo
+      if (!mcResult) return 1;
+      const det = Math.max(0.0001, ...leafTasks().map(t => t.ef));
+      const pick = basis === 'p90' ? mcResult.p90 : basis === 'p80' ? mcResult.p80 : mcResult.p50;
+      return Math.max(1, pick / det);
+    }
+    function setPricing(field, val) {
+      if (field === 'contractPrice') pricing.contractPrice = Math.max(0, parseFloat(val) || 0);
+      else pricing[field] = val;
+      saveLocal(); renderPricing();
+    }
+    function renderPricing() {
+      const cont = document.getElementById('pricingContainer');
+      if (!cont) return;
+      if (!calculated || !tasks.length) { cont.innerHTML = '<p class="help-text">Calculate the plan first, and set bill rates on the Resources tab.</p>'; return; }
+      const cost = projectCost();
+      const revP50 = laborRevenue() + leafTasks().reduce((s, t) => s + (+t.fixedCost || 0), 0);
+      const anyBill = laborRevenue() > 0;
+      if (!anyBill) { cont.innerHTML = '<p class="help-text">No bill rates set yet — add <strong>Bill $/d</strong> per resource on the Resources tab and the pricing model appears here (T&M price, P80/P90 risk-adjusted fixed price, and margin).</p>'; return; }
+      const u50 = 1, u80 = riskUplift('p80'), u90 = riskUplift('p90');
+      const prices = { p50: revP50 * u50, p80: revP50 * u80, p90: revP50 * u90 };
+      const chosen = prices[pricing.basis] || prices.p80;
+      const contract = pricing.contractPrice || 0;
+      const effPrice = contract || chosen;
+      const margin = effPrice > 0 ? (effPrice - cost) / effPrice * 100 : 0;
+      const mRow = (label, price, note, hot) => `
+        <div class="stat-card ${hot ? 'warn' : ''}" style="${hot ? 'border-color:#f59e0b' : ''}">
+          <div class="value" style="font-size:1.1rem">${fmtMoney(price)}</div>
+          <div class="label">${label}</div>
+          <div class="help-text" style="font-size:0.65rem">${note}</div>
+        </div>`;
+      cont.innerHTML = `
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:end;margin-bottom:0.85rem">
+          <div><label>Pricing model</label><select style="width:auto" onchange="setPricing('model', this.value)">
+            <option value="fixed" ${pricing.model === 'fixed' ? 'selected' : ''}>Fixed price</option>
+            <option value="tm" ${pricing.model === 'tm' ? 'selected' : ''}>Time &amp; materials</option></select></div>
+          <div><label>Fixed-bid basis <span class="info-icon" title="For fixed-price work, bid at P80/P90 effort from the Monte Carlo — bidding the P50 mean means a coin-flip on margin.">i</span></label>
+            <select style="width:auto" onchange="setPricing('basis', this.value)">
+              <option value="p50" ${pricing.basis === 'p50' ? 'selected' : ''}>P50 (mean — risky)</option>
+              <option value="p80" ${pricing.basis === 'p80' ? 'selected' : ''}>P80 (recommended)</option>
+              <option value="p90" ${pricing.basis === 'p90' ? 'selected' : ''}>P90 (conservative)</option></select></div>
+          <div><label>Contract price $ (override)</label><input type="number" min="0" step="1000" style="width:130px" value="${pricing.contractPrice || ''}" placeholder="auto" onchange="setPricing('contractPrice', this.value)" /></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:0.75rem">
+          <div class="stat-card"><div class="value" style="font-size:1.1rem">${fmtMoney(cost)}</div><div class="label">Delivery cost (P50)</div><div class="help-text" style="font-size:0.65rem">day-rates × effort + fixed</div></div>
+          ${mRow('T&M revenue (P50 effort)', prices.p50, 'bill-rates × estimated effort', false)}
+          ${mRow('Fixed bid @ P80', prices.p80, '+' + Math.round((u80 - 1) * 100) + '% Monte-Carlo risk uplift', pricing.basis === 'p80')}
+          ${mRow('Fixed bid @ P90', prices.p90, '+' + Math.round((u90 - 1) * 100) + '% risk uplift', pricing.basis === 'p90')}
+          <div class="stat-card ${margin < 25 ? 'critical' : 'success'}"><div class="value" style="font-size:1.1rem">${margin.toFixed(0)}%</div><div class="label">Margin at ${contract ? 'contract' : pricing.basis.toUpperCase()} price</div><div class="help-text" style="font-size:0.65rem">${fmtMoney(effPrice)} − ${fmtMoney(cost)} cost</div></div>
+        </div>
+        <p class="help-text" style="margin-top:0.6rem">${pricing.model === 'fixed'
+          ? `Fixed-price guidance: at the P50 price there is roughly a 50% chance effort exceeds plan. The ${pricing.basis.toUpperCase()} bid covers ~${pricing.basis === 'p90' ? '90' : pricing.basis === 'p80' ? '80' : '50'}% of simulated outcomes${mcResult ? '' : ' (run Calculate for Monte-Carlo uplift)'}.`
+          : 'T&M: revenue tracks actual effort; quote the P50 number as the estimate and the P80 as the not-to-exceed.'}</p>`;
+    }
+
+    // ========================= SOW GENERATOR =========================
+    function sowSkeletonData() {
+      const u = unitLabel();
+      const rv = computeReserves();
+      const leaves = leafTasks();
+      const finish = durationToDate(Math.max(0, ...leaves.map(t => t.ef), 0));
+      return {
+        name: projName(),
+        start: fmtNice(projectStartDate()), finish: fmtNice(finish),
+        committed: rv.contingencyUnits > 0 ? fmtNice(rv.committedDate) : null,
+        scope: tasksInWbsOrder().map(({ task: t, depth }) => ({ wbs: t.wbs, depth, name: t.name, summary: t.isSummary, milestone: t.milestone,
+          deliverable: t.deliverable, description: t.description, acceptance: t.acceptance, owner: t.owner,
+          effort: t.milestone || t.isSummary ? null : (t.te || 0).toFixed(1) + ' ' + u })),
+        milestones: tasks.filter(t => t.milestone).map(t => ({ name: t.name, date: fmtNice(t.finishDate) })),
+        team: Object.keys(resources).map(n => ({ role: n, capacity: getCapacity(n), billRate: getBillRate(n) })).filter(r => tasks.some(t => (t.owner || '').trim() === r.role)),
+        assumptions: raid.filter(r => r.type === 'Assumption' && r.status !== 'Closed').map(r => r.title + (r.mitigation ? ' — ' + r.mitigation : '')),
+        exclusions: raid.filter(r => r.type === 'Exclusion').map(r => r.title),
+        risks: raid.filter(r => r.type === 'Risk' && r.status !== 'Closed').sort((a, b) => b.probability * b.impact - a.probability * a.impact).slice(0, 6).map(r => r.title),
+        price: (() => { const rev = laborRevenue() + leafTasks().reduce((sx, t) => sx + (+t.fixedCost || 0), 0);
+          if (rev <= 0) return null;
+          const p = pricing.contractPrice || rev * riskUplift(pricing.basis);
+          return { model: pricing.model === 'fixed' ? 'Fixed price' : 'Time & materials', amount: fmtMoney(p), basis: pricing.basis.toUpperCase() }; })()
+      };
+    }
+    function sowAssembleHtml(d, narrative) {
+      const td = 'padding:5px 9px;border:1px solid #d7dde5;font-size:12.5px;vertical-align:top;';
+      const th = td + 'background:#f1f5f9;font-weight:700;text-align:left;';
+      const h = x => escapeHtml(x || '');
+      const n = narrative || {};
+      const scopeRows = d.scope.map(r => `<tr style="${r.summary ? 'font-weight:700;background:#f8fafc' : ''}">
+        <td style="${td}">${h(r.wbs)}</td><td style="${td};padding-left:${9 + r.depth * 14}px">${r.milestone ? '◆ ' : ''}${h(r.name)}</td>
+        <td style="${td}">${h(r.deliverable)}</td><td style="${td}">${h(r.description)}</td><td style="${td}">${h(r.acceptance)}</td><td style="${td}">${h(r.effort || '')}</td></tr>`).join('');
+      return `<div style="font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;max-width:900px">
+        <h1 style="margin:0 0 2px;font-size:22px">Statement of Work — ${h(d.name)}</h1>
+        <p style="color:#64748b;font-size:12px;margin:0 0 14px">DRAFT generated ${new Date().toLocaleDateString()} — review all terms before sending. Timeline ${h(d.start)} → ${h(d.finish)}${d.committed ? ' (committed date incl. contingency: ' + h(d.committed) + ')' : ''}.</p>
+        <h2 style="font-size:16px;margin:16px 0 6px">1. Overview &amp; Objectives</h2><p style="font-size:13px">${n.overview || '<em>[Describe the business context and objectives of this engagement.]</em>'}</p>
+        <h2 style="font-size:16px;margin:16px 0 6px">2. Scope of Work &amp; Deliverables</h2>
+        <p style="font-size:13px">${n.scopeNarrative || ''}</p>
+        <table style="border-collapse:collapse"><tr><th style="${th}">WBS</th><th style="${th}">Work item</th><th style="${th}">Deliverable</th><th style="${th}">Description</th><th style="${th}">Acceptance criteria</th><th style="${th}">Effort</th></tr>${scopeRows}</table>
+        <h2 style="font-size:16px;margin:16px 0 6px">3. Out of Scope</h2>
+        ${d.exclusions.length ? '<ul style="font-size:13px">' + d.exclusions.map(x => '<li>' + h(x) + '</li>').join('') + '</ul>' : `<p style="font-size:13px">${n.outOfScope || '<em>[List explicit exclusions.]</em>'}</p>`}
+        <h2 style="font-size:16px;margin:16px 0 6px">4. Timeline &amp; Milestones</h2>
+        <table style="border-collapse:collapse"><tr><th style="${th}">Milestone</th><th style="${th}">Target date</th></tr>
+        ${d.milestones.map(m => `<tr><td style="${td}">◆ ${h(m.name)}</td><td style="${td}">${h(m.date)}</td></tr>`).join('') || `<tr><td style="${td}" colspan="2"><em>No milestones defined</em></td></tr>`}</table>
+        <h2 style="font-size:16px;margin:16px 0 6px">5. Team &amp; Rates</h2>
+        <table style="border-collapse:collapse"><tr><th style="${th}">Role / resource</th><th style="${th}">Allocation</th>${d.team.some(t => t.billRate) ? `<th style="${th}">Rate (per day)</th>` : ''}</tr>
+        ${d.team.map(t => `<tr><td style="${td}">${h(t.role)}</td><td style="${td}">${t.capacity}%</td>${d.team.some(x => x.billRate) ? `<td style="${td}">${t.billRate ? fmtMoney(t.billRate) : '—'}</td>` : ''}</tr>`).join('')}</table>
+        ${d.price ? `<h2 style="font-size:16px;margin:16px 0 6px">6. Commercial Terms</h2>
+        <p style="font-size:13px"><b>${d.price.model}:</b> ${d.price.amount}${d.price.model === 'Fixed price' ? ' (risk-adjusted at ' + d.price.basis + ' effort basis)' : ''}. ${n.paymentTerms || '<em>[Payment schedule — e.g. per milestone above.]</em>'}</p>` : ''}
+        <h2 style="font-size:16px;margin:16px 0 6px">${d.price ? '7' : '6'}. Assumptions</h2>
+        ${d.assumptions.length ? '<ul style="font-size:13px">' + d.assumptions.map(x => '<li>' + h(x) + '</li>').join('') + '</ul>' : '<p style="font-size:13px"><em>[Add assumptions to the RAID log and regenerate.]</em></p>'}
+        <h2 style="font-size:16px;margin:16px 0 6px">${d.price ? '8' : '7'}. Acceptance Process</h2><p style="font-size:13px">${n.acceptanceProcess || 'Deliverables are accepted against the acceptance criteria in §2. The client has five (5) business days to review each deliverable; absent written feedback within that window the deliverable is deemed accepted.'}</p>
+        <h2 style="font-size:16px;margin:16px 0 6px">${d.price ? '9' : '8'}. Change Control</h2><p style="font-size:13px">${n.changeControl || 'Changes to scope, schedule, or price require a written change order describing the impact, approved by both parties before work proceeds.'}</p>
+        ${d.risks.length ? `<h2 style="font-size:16px;margin:16px 0 6px">Appendix — Key Delivery Risks</h2><ul style="font-size:13px">${d.risks.map(x => '<li>' + h(x) + '</li>').join('')}</ul>` : ''}
+      </div>`;
+    }
+    async function generateSOW() {
+      if (!tasks.length) { alert('Build the plan first.'); return; }
+      if (!ensureCalc()) return;
+      const d = sowSkeletonData();
+      const hasKey = !!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE));
+      let narrative = null;
+      if (hasKey) {
+        flashSaved('⏳ Drafting SOW narrative…');
+        try {
+          const prompt = `Draft narrative sections for a Statement of Work. Facts:
+Project: ${d.name}. Timeline ${d.start} → ${d.finish}. Milestones: ${d.milestones.map(m => m.name + ' (' + m.date + ')').join(', ') || 'none'}.
+Scope items: ${d.scope.filter(x => !x.summary).map(x => x.name + (x.deliverable ? ' → ' + x.deliverable : '')).join('; ')}.
+Assumptions: ${d.assumptions.join('; ') || 'none recorded'}. Exclusions: ${d.exclusions.join('; ') || 'none recorded'}.
+${d.price ? 'Commercials: ' + d.price.model + ' ' + d.price.amount + '.' : ''}
+${histPromptBlock()}
+Return ONLY JSON: {"overview":"2-3 sentence engagement overview & objectives","scopeNarrative":"2-3 sentences framing the scope table","outOfScope":"1-2 sentences if exclusions are empty","paymentTerms":"one sentence proposing milestone-based payment","acceptanceProcess":"2-3 sentence acceptance clause","changeControl":"2-3 sentence change-control clause"}
+Professional, client-ready, no hype, no invented facts.`;
+          narrative = parseAIJson(await callAnthropic(prompt));
+          Object.keys(narrative || {}).forEach(k => { narrative[k] = escapeHtml(String(narrative[k] || '')); });
+        } catch (e) { alert('AI narrative failed (' + (e.message || e) + ') — generating the structured skeleton instead.'); }
+      }
+      sowDraft = sowAssembleHtml(d, narrative);
+      saveLocal();
+      document.getElementById('sowContainer').innerHTML = sowDraft;
+      flashSaved('✓ SOW draft ready — review, then Copy or Download');
+    }
+    async function copySOW() {
+      if (!sowDraft) { alert('Generate the SOW draft first.'); return; }
+      const plain = sowDraft.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#?\w{2,8};/g, ' ').replace(/\s+/g, ' ').trim();
+      try {
+        await navigator.clipboard.write([new ClipboardItem({
+          'text/html': new Blob([sowDraft], { type: 'text/html' }),
+          'text/plain': new Blob([plain], { type: 'text/plain' })
+        })]);
+        flashSaved('✓ SOW copied — paste into Word/Docs/email');
+      } catch (e) { download(safeName() + '-sow.html', sowDraft, 'text/html'); alert('Clipboard unavailable — downloaded the SOW as HTML instead.'); }
+    }
+    function downloadSOW() {
+      if (!sowDraft) { alert('Generate the SOW draft first.'); return; }
+      download(safeName() + '-sow.html', sowDraft, 'text/html');
+    }
+
+    // ========================= STATUS SNAPSHOTS & TREND =========================
+    function takeStatusSnapshot(manual) {
+      if (!calculated) { if (manual) alert('Calculate first.'); return; }
+      const today = fmtISO(new Date());
+      const leaves = leafTasks();
+      const entry = {
+        date: today,
+        pct: Math.round(overallProgress()),
+        finish: fmtISO(durationToDate(Math.max(0, ...leaves.map(t => t.ef), 0))),
+        p80: mcResult ? fmtISO(durationToDate(mcResult.p80)) : null,
+        cost: Math.round(projectCost()),
+        over: resourceLoad ? resourceLoad.overResourceDays : 0,
+        openRisks: raid.filter(r => r.type === 'Risk' && r.status !== 'Closed').length
+      };
+      const i = statusHistory.findIndex(x => x.date === today);
+      if (i >= 0) statusHistory[i] = entry; else statusHistory.push(entry);
+      if (statusHistory.length > 200) statusHistory = statusHistory.slice(-200);
+      saveLocal();
+      if (manual) { renderHealth(); flashSaved('📸 Status snapshot recorded'); }
+    }
+    function trendChartSvg() {
+      if (statusHistory.length < 2) return '<p class="help-text">Snapshots build a trend once you have two or more (one is stored automatically per day when the plan recalculates — or press 📸).</p>';
+      const H = 120, Wc = 560, padL = 44, padB = 18, padT = 12;
+      const pts = statusHistory.slice(-26);
+      const xs = i => padL + i * (Wc - padL - 8) / Math.max(1, pts.length - 1);
+      const fins = pts.map(p => new Date(p.finish + 'T00:00:00').getTime());
+      const minF = Math.min(...fins), maxF = Math.max(...fins);
+      const spanF = Math.max(86400000, maxF - minF);
+      const yF = v => padT + (1 - (v - minF) / spanF) * (H - padT - padB);
+      const yP = v => padT + (1 - v / 100) * (H - padT - padB);
+      const finPath = pts.map((p, i) => (i ? 'L' : 'M') + xs(i).toFixed(1) + ',' + yF(new Date(p.finish + 'T00:00:00').getTime()).toFixed(1)).join(' ');
+      const pctPath = pts.map((p, i) => (i ? 'L' : 'M') + xs(i).toFixed(1) + ',' + yP(p.pct).toFixed(1)).join(' ');
+      const first = pts[0], last = pts[pts.length - 1];
+      const slip = Math.round((new Date(last.finish) - new Date(first.finish)) / 86400000);
+      return `<div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center">
+        <svg width="${Wc}" height="${H}" viewBox="0 0 ${Wc} ${H}" style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;max-width:100%">
+          <text x="6" y="${padT + 8}" font-size="9" fill="#64748b">${escapeHtml(fmtNice(new Date(maxF)))}</text>
+          <text x="6" y="${H - padB}" font-size="9" fill="#64748b">${escapeHtml(fmtNice(new Date(minF)))}</text>
+          <path d="${finPath}" fill="none" stroke="#dc2626" stroke-width="2"/>
+          <path d="${pctPath}" fill="none" stroke="#16a34a" stroke-width="2" stroke-dasharray="4,3"/>
+          ${pts.map((p, i) => `<circle cx="${xs(i)}" cy="${yF(new Date(p.finish + 'T00:00:00').getTime())}" r="2.5" fill="#dc2626"><title>${p.date}: finish ${p.finish}, ${p.pct}%</title></circle>`).join('')}
+          <text x="${Wc - 8}" y="${H - 6}" font-size="9" fill="#64748b" text-anchor="end">${pts.length} snapshots</text>
+        </svg>
+        <div style="font-size:0.85rem">
+          <div><span style="display:inline-block;width:14px;height:3px;background:#dc2626;vertical-align:middle"></span> Forecast finish date</div>
+          <div><span style="display:inline-block;width:14px;height:3px;background:#16a34a;vertical-align:middle;border-bottom:1px dashed #16a34a"></span> % complete</div>
+          <div style="margin-top:0.5rem;font-weight:700;color:${slip > 0 ? 'var(--critical)' : 'var(--success)'}">${slip > 0 ? '▲ Forecast slipped ' + slip + ' calendar day(s)' : slip < 0 ? '▼ Forecast pulled in ' + (-slip) + ' day(s)' : '— Forecast steady'} since ${escapeHtml(first.date)}</div>
+        </div></div>`;
+    }
+
+    // ========================= PLAN HEALTH CHECK =========================
+    function lintPlan() {
+      const u = unitLabel();
+      const findings = [];
+      const leaves = leafTasks().filter(t => !t.milestone);
+      leaves.forEach(t => {
+        if (t.p > 0 && (t.p - t.o) < 0.35 * t.m) findings.push({ severity: 'medium', area: 'Estimate range', finding: `"${t.name}" range ${t.o}–${t.p} is very narrow vs likely ${t.m}`, recommendation: 'Widen O–P (classic overconfidence); ranges usually span ≥ ±30% of M.' });
+        if ((t.te || 0) > (document.getElementById('durationUnit').value === 'hours' ? 80 : 10)) findings.push({ severity: 'medium', area: 'Granularity', finding: `"${t.name}" is ${(t.te || 0).toFixed(1)} ${u} — too big to estimate or track reliably`, recommendation: 'Decompose (⑂) into 2–8 ' + u + ' work packages (8/80 rule).' });
+        if (!t.owner) findings.push({ severity: 'low', area: 'Ownership', finding: `"${t.name}" has no owner`, recommendation: 'Assign a resource so workload and accountability are tracked.' });
+        if (!t.deliverable && !t.description) findings.push({ severity: 'low', area: 'WBS dictionary', finding: `"${t.name}" has no deliverable/scope note`, recommendation: 'Fill the dictionary — it feeds the SOW and handoffs.' });
+      });
+      const noPreds = leaves.filter(t => !effectivePreds(t).length);
+      if (noPreds.length > Math.max(2, leaves.length * 0.3)) findings.push({ severity: 'high', area: 'Dependencies', finding: `${noPreds.length} of ${leaves.length} tasks have no predecessors — the network is probably under-linked`, recommendation: 'Link the real sequence or the critical path (and every forecast) is understated.' });
+      if (!tasks.some(t => t.milestone)) findings.push({ severity: 'medium', area: 'Milestones', finding: 'No milestones defined', recommendation: 'Add sign-off / go-live checkpoints — they anchor the SOW payment schedule and status reporting.' });
+      if (!leaves.some(t => /manag|pm\b|status|govern|coordinat/i.test(t.name))) findings.push({ severity: 'medium', area: 'Missing scope', finding: 'No project-management/governance effort in the plan', recommendation: 'Delivery overhead is typically 10–15% — add a PM workstream or it comes out of margin.' });
+      if (mcResult) {
+        const drivers = leaves.map(t => ({ t, w: (t.criticality || 0) * (t.variance || 0) })).sort((a, b) => b.w - a.w).slice(0, 3).filter(x => x.w > 0);
+        if (drivers.length) findings.push({ severity: 'info', area: 'Sensitivity', finding: 'Schedule risk is concentrated in: ' + drivers.map(x => `"${x.t.t ? x.t.t.name : x.t.name}"`).join(', ').replace(/"undefined"/g, ''), recommendation: 'Tighten these estimates first — they drive most of the finish-date variance.' });
+      }
+      const over = resourceLoad ? resourceLoad.overResourceDays : 0;
+      if (over) findings.push({ severity: 'high', area: 'Resourcing', finding: `${over} over-allocated resource-day(s)`, recommendation: 'Resolve on the Resources tab (level, add capacity, or extend) before committing dates.' });
+      return findings;
+    }
+    async function runHealthCheck() {
+      if (!calculated) { alert('Calculate first.'); return; }
+      let findings = lintPlan();
+      const hasKey = !!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE));
+      if (hasKey) {
+        flashSaved('⏳ AI reviewing the plan…');
+        try {
+          const planSummary = tasksInWbsOrder().map(({ task: t, depth }) => `${'  '.repeat(depth)}${t.wbs} ${t.name}${t.milestone ? ' [MS]' : ''} O/M/P=${t.o}/${t.m}/${t.p} ${t.owner || ''} ${t.description ? '— ' + t.description : ''}`).join('\n');
+          const prompt = `You are a hard-nosed delivery reviewer. Critique this project plan for an engagement manager.
+Plan:\n${planSummary}
+${histPromptBlock()}
+Return ONLY JSON: {"findings":[{"severity":"high|medium|low","area":"Missing scope|Estimate realism|Sequencing|Risk|Other","finding":"specific observation","recommendation":"concrete action"}]}
+Focus on: scope that is obviously missing for this type of work; estimates that contradict the historical data; sequencing that looks wrong; single points of failure. 3-8 findings, concrete, no generic advice.`;
+          const res = parseAIJson(await callAnthropic(prompt));
+          if (res && Array.isArray(res.findings)) {
+            res.findings.forEach(fd => findings.push({ severity: ['high','medium','low'].includes(fd.severity) ? fd.severity : 'medium', area: '🤖 ' + String(fd.area || 'AI review'), finding: String(fd.finding || ''), recommendation: String(fd.recommendation || '') }));
+          }
+        } catch (e) { findings.push({ severity: 'info', area: 'AI review', finding: 'AI review unavailable: ' + (e.message || e), recommendation: 'Deterministic checks above still apply.' }); }
+      }
+      healthFindings = { date: fmtISO(new Date()), findings };
+      saveLocal(); renderHealth();
+      flashSaved('✓ Health check complete — ' + findings.length + ' finding(s)');
+    }
+    function renderHealth() {
+      const cont = document.getElementById('healthContainer');
+      if (!cont) return;
+      const trend = `<h3 style="font-size:0.95rem;margin:0 0 0.5rem">Forecast trend</h3>${trendChartSvg()}`;
+      if (!healthFindings) { cont.innerHTML = trend + '<p class="help-text" style="margin-top:0.75rem">Run the health check to lint estimate quality and (with an API key) get an AI plan review calibrated to your historical data.</p>'; return; }
+      const sevCol = { high: ['#fee2e2', '#b91c1c'], medium: ['#fef3c7', '#b45309'], low: ['#e2e8f0', '#475569'], info: ['#dbeafe', '#1e40af'] };
+      const rows = healthFindings.findings.map(fd => {
+        const c = sevCol[fd.severity] || sevCol.info;
+        return `<tr><td><span class="risk-tag" style="background:${c[0]};color:${c[1]}">${fd.severity}</span></td>
+          <td style="font-size:0.8rem;white-space:nowrap">${escapeHtml(fd.area)}</td>
+          <td style="font-size:0.85rem">${escapeHtml(fd.finding)}</td>
+          <td style="font-size:0.85rem;color:var(--muted)">${escapeHtml(fd.recommendation)}</td></tr>`;
+      }).join('');
+      cont.innerHTML = trend + `<h3 style="font-size:0.95rem;margin:1rem 0 0.5rem">Health check — ${escapeHtml(healthFindings.date)} (${healthFindings.findings.length} finding${healthFindings.findings.length === 1 ? '' : 's'})</h3>
+        ${healthFindings.findings.length ? `<div class="table-wrap"><table><thead><tr><th></th><th>Area</th><th>Finding</th><th>Recommendation</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="conflict-card ok"><strong style="color:var(--success)">✓ No issues found.</strong> Estimates, structure and resourcing all look sound.</div>'}`;
+    }
+
+    // ========================= AI NARRATIVE + ARCHIVE =========================
+    async function draftNarrative() {
+      if (!calculated) { alert('Calculate first.'); return; }
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) { alert('Add your Anthropic API key first (⚙ on the Tasks tab).'); return; }
+      flashSaved('⏳ Drafting narrative…');
+      try {
+        const leaves = leafTasks();
+        const done = leaves.filter(t => t.percentComplete >= 100).map(t => t.name).join('; ') || 'none yet';
+        const inProg = leaves.filter(t => t.percentComplete > 0 && t.percentComplete < 100).map(t => t.name + ' (' + t.percentComplete + '%)').join('; ') || 'none';
+        const late = leaves.filter(isLate).map(t => t.name).join('; ') || 'none';
+        const risks = raid.filter(r => r.type === 'Risk' && r.status !== 'Closed').slice(0, 5).map(r => r.title).join('; ') || 'none logged';
+        const prompt = `Write a concise weekly status narrative (3 short paragraphs: Progress, Risks & attention items, Next steps) for this project. Plain professional prose, no headers needed, no invented facts.
+Project ${projName()}: ${Math.round(overallProgress())}% complete, forecast finish ${fmtNice(durationToDate(Math.max(0, ...leaves.map(t => t.ef), 0)))}.
+Completed: ${done}. In progress: ${inProg}. Behind schedule: ${late}. Open risks: ${risks}.
+Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
+        const res = parseAIJson(await callAnthropic(prompt));
+        if (!res || !res.narrative) throw new Error('empty response');
+        statusNarrative = { date: fmtISO(new Date()), text: String(res.narrative) };
+        saveLocal();
+        flashSaved('✓ Narrative drafted — included in the next Copy status report');
+      } catch (e) { alert('Narrative failed: ' + (e.message || e)); }
+    }
+    function archiveToHistory() {
+      if (!calculated) { alert('Calculate first.'); return; }
+      if (!confirm('Append this project\'s estimates-vs-actuals to the 📚 historical data (used to calibrate future AI estimates)?')) return;
+      const u = unitLabel();
+      const lines = [`\n--- Archived project: ${projName()} (${fmtISO(new Date())}) ---`,
+        `Overall: planned ${Math.max(0, ...leafTasks().map(t => t.ef), 0).toFixed(1)} ${u}, ${Math.round(overallProgress())}% complete at archive time.`];
+      leafTasks().filter(t => !t.milestone).forEach(t => {
+        let actual = '';
+        if (t.actualStart && t.actualFinish) {
+          const wd = calDaysBetween(new Date(t.actualStart + 'T00:00:00'), new Date(t.actualFinish + 'T00:00:00')) + 1;
+          const ratio = t.te > 0 ? (wd / unitToWorkingDays(t.te)).toFixed(2) : '?';
+          actual = ` — actual ~${wd} calendar days (${ratio}x estimate)`;
+        } else if (t.percentComplete >= 100) actual = ' — completed (no actual dates recorded)';
+        lines.push(`- ${t.name}: est ${t.o}/${t.m}/${t.p} ${u} (TE ${t.te.toFixed(1)})${t.owner ? ', ' + t.owner : ''}${actual}`);
+      });
+      const ta = document.getElementById('histData');
+      ta.value = (ta.value.trim() ? ta.value + '\n' : '') + lines.join('\n');
+      saveHistData();
+      flashSaved('🗄 Archived to historical data — future estimates will calibrate against it');
+    }
+
     // ========================= INIT =========================
     (function init() {
       // default start date = today
@@ -3646,6 +4381,8 @@ Rules:
       const loaded = loadLocal();
       if (!startInput.value) startInput.value = fmtISO(new Date());
       renderTaskTable();
+      renderProjectMenu();
+      renderRaid();
       loadApiKey();
       loadHistData();
       validateKeyFormat();
