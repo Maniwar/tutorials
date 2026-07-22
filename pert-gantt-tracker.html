@@ -977,6 +977,7 @@
     let unleveledDuration = null; // CPM duration with all leveling removed (for banners)
     let ganttDayW = null;         // null = auto zoom; otherwise px per day
     let ganttLabelW = (() => { try { return Number(localStorage.getItem('pertGantt.ganttLabelW')) || null; } catch (e) { return null; } })(); // drag-resizable title column
+    let projectSpanUp = null;     // whole-project O/M/P schedule spans (all-optimistic / all-likely / all-pessimistic passes)
     let projectBudget = 0;        // optional cost budget for variance tracking
     let dragTaskId = null;        // row being dragged in the task table
     let raid = [];                // RAID log: risks / assumptions / issues / decisions / exclusions
@@ -1754,7 +1755,33 @@
       if (tasks.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
       empty.style.display = 'none';
       computeWbsCodes();
-      tbody.innerHTML = visibleWbsOrder().map(({ task: t, depth }) => {
+      // pinned whole-project rollup row — O/M/P spans from the all-optimistic /
+      // all-likely / all-pessimistic scheduling passes (parallel work overlaps)
+      let totalRow = '';
+      if (calculated && projectSpanUp && projectSpanUp.p != null) {
+        const leavesAll = leafTasks();
+        const projDur = Math.max(0, ...leavesAll.map(t => t.ef || 0));
+        const finish = durationToDate(projDur);
+        const spanTip = (kind, v) => `Whole-project span if EVERY activity hit its ${kind} estimate: ${v.toFixed(1)} ${unitLabel()}, finishing ${fmtNice(durationToDate(v))}. Parallel work overlaps, so this is a schedule span (like TE), not a sum of effort — and an all-${kind} outcome is a near-impossible extreme. Commit to the Monte-Carlo P80 (Analytics tab) instead.`;
+        totalRow = `<tr style="font-weight:700;background:#eef2ff;border-bottom:2px solid #c7d2fe">
+          <td class="no-print"></td><td></td>
+          <td style="color:var(--muted)">▣</td>
+          <td>PROJECT TOTAL <span class="help-text" style="font-weight:400">(${leavesAll.filter(t => !t.milestone).length} activities)</span></td>
+          <td>—</td>
+          <td><span class="help-text" style="cursor:help;font-style:italic" title="${escapeHtml(spanTip('optimistic', projectSpanUp.o))}">${projectSpanUp.o.toFixed(1)}</span></td>
+          <td><span class="help-text" style="cursor:help;font-style:italic" title="${escapeHtml(spanTip('most-likely', projectSpanUp.m))}">${projectSpanUp.m.toFixed(1)}</span></td>
+          <td><span class="help-text" style="cursor:help;font-style:italic" title="${escapeHtml(spanTip('pessimistic', projectSpanUp.p))}">${projectSpanUp.p.toFixed(1)}</span></td>
+          <td><strong style="cursor:help" title="Expected whole-project duration: the critical path at PERT-expected (TE) durations — the number the Gantt and forecast are built on. Range ${projectSpanUp.o.toFixed(1)}–${projectSpanUp.p.toFixed(1)} ${unitLabel()} best→worst.">${projDur.toFixed(2)}</strong></td>
+          <td>—</td>
+          <td style="font-size:0.8rem;white-space:nowrap">${fmtNice(projectStartDate())}</td>
+          <td style="font-size:0.8rem;white-space:nowrap">${fmtNice(finish)}</td>
+          <td>—</td>
+          <td>${Math.round(overallProgress())}% <span class="help-text" style="font-size:0.65rem">auto</span></td>
+          <td>${mcResult ? `<span class="badge badge-info" style="cursor:pointer" onclick="switchTab('analytics')" title="P80 finish ${escapeHtml(fmtNice(durationToDate(mcResult.p80)))} — the commit-safe date. Click for the full simulation.">P80 ${escapeHtml(fmtNice(durationToDate(mcResult.p80)))}</span>` : ''}</td>
+          <td></td>
+        </tr>`;
+      }
+      tbody.innerHTML = totalRow + visibleWbsOrder().map(({ task: t, depth }) => {
         const summary = t.isSummary;
         const teStr = t.milestone ? '◆' : (calculated ? (t.te || 0).toFixed(2) : '—');
         const slackStr = calculated ? (Math.abs(t.slack) < 0.05 ? '0.0' : t.slack.toFixed(1)) : '—';
@@ -2235,6 +2262,12 @@
           t[k] = (s.ok && ids.length) ? Math.max(...ids.map(i => s.ef[i])) - Math.min(...ids.map(i => s.es[i])) : null;
         });
       });
+      // whole-project rollup: total span if EVERY task hit its O / M / P
+      projectSpanUp = {
+        o: spanPasses.oUp.ok ? spanPasses.oUp.projectDuration : null,
+        m: spanPasses.mUp.ok ? spanPasses.mUp.projectDuration : null,
+        p: spanPasses.pUp.ok ? spanPasses.pUp.projectDuration : null
+      };
 
       calculated = true;
       computeResourceLoad();
