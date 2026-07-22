@@ -446,7 +446,8 @@
           <h2>Activity List — 3-Point Estimates &amp; Progress</h2>
           <div class="toolbar">
             <button class="btn-secondary btn-sm" onclick="scanAndRepair()" title="Scan the plan for drift and gaps — unassigned or rate-less work after roster changes, tasks with no estimates, stale roster entries, orphaned/missing user stories — then fix each finding: 🔧 AI repair, 🔗 auto-relink, or a jump to the right tab.">🩺 Scan &amp; repair</button>
-            <button class="btn-secondary btn-sm" onclick="copyUpdateRequest()" title="Copy an email-ready TABLE of all open work (one per owner, yellow fill-in cells for %, done-date and blockers). Send it; paste the filled reply into the AI box above (mode: Update progress) — %s, actual dates and rollups update, blockers land in RAID.">📮 Copy update request</button>
+            <button class="btn-secondary btn-sm" onclick="copyUpdateRequest()" title="Copy an email-ready TABLE of open work (one per owner, yellow fill-in cells for %, done-date and blockers). Tick rows first to request updates for ONLY those tasks. Send it; paste the filled reply into the AI box above (mode: Update progress) — %s, actual dates and rollups update, blockers land in RAID.">📮 Copy update request</button>
+            <button class="btn-secondary btn-sm" onclick="aiHealDependencies()" title="AI proposes missing predecessor links — for the ticked rows, or for every task that has none when nothing is selected (e.g. test cases whose looping links were dropped during a move). Every suggestion is cycle-checked before it applies; one ↶ undo reverses the batch.">🔗 AI link repair</button>
             <button class="btn-secondary btn-sm" onclick="openAddModal(true)">+ Milestone</button>
             <button class="btn-primary btn-sm" onclick="openAddModal(false)">+ Add Activity</button>
           </div>
@@ -469,6 +470,8 @@
               <button class="btn-sm btn-secondary" onclick="bulkIndent()" title="Indent each selected row under the row above it">⇥</button>
               <button class="btn-sm btn-secondary" onclick="bulkOutdent()" title="Outdent each selected row one level">⇤</button>
               <span style="display:inline-flex;gap:4px;align-items:center;flex:1;min-width:260px" title="Describe a change in plain English — it becomes a reviewable AI request scoped to ONLY the selected tasks">🤖 <input id="bulkAiText" type="text" class="mini-inp" style="flex:1" placeholder='AI edit selected… e.g. "add a 1-day client review after each" or "prefix names with Wave 2:"' /><button class="btn-sm btn-secondary" onclick="bulkAiEdit()">Prep AI edit</button></span>
+              <button class="btn-sm btn-secondary" onclick="copyUpdateRequest()" title="Email-ready status-update request for ONLY the selected tasks (yellow fill-in cells; paste the reply into AI ▸ Update progress)">📮 Update request</button>
+              <button class="btn-sm btn-secondary" onclick="aiHealDependencies()" title="AI proposes predecessor links for the selected tasks — every suggestion is cycle-checked before it applies">🔗 Fix links</button>
               <button class="btn-sm btn-danger" onclick="bulkDelete()" title="Delete every selected task (and their sub-tasks) in one confirmed step — undoable with ↶">🗑 Delete</button>
               <button class="btn-sm btn-secondary" onclick="clearSelection()">✕ Clear</button>
             </div>
@@ -602,6 +605,18 @@
         <div class="modal-footer">
           <button class="btn-secondary" onclick="closeDecompModal()">Cancel</button>
           <button class="btn-primary" id="decompRunBtn" onclick="runAiDecompose()">⑂ Decompose</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- dependency fix wizard: opens whenever the schedule has a loop -->
+    <div class="modal-overlay" id="depFixModal">
+      <div class="modal" style="max-width:700px">
+        <div class="modal-header"><h3>🔗 Dependency fix wizard — the schedule has a loop</h3><button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeDepFixWizard()">✕</button></div>
+        <div class="modal-body" id="depFixBody"></div>
+        <div class="modal-footer" style="display:flex;gap:0.5rem;justify-content:space-between;flex-wrap:wrap">
+          <button class="btn-primary btn-sm" onclick="depFixAI()" title="Cut every link in the loop, then let the AI propose correct predecessors for those tasks — each suggestion is cycle-checked before it applies, and ↶ Undo reverses the whole thing">🤖 Cut loop links & AI re-link</button>
+          <button class="btn-secondary btn-sm" onclick="closeDepFixWizard()">Close — I’ll fix by hand</button>
         </div>
       </div>
     </div>
@@ -1506,7 +1521,23 @@
       if (sp) {
         const st = storiesForTask(id);
         const typeIcon = { happy: '✅', error: '⚠️', edge: '🧪', perf: '📏' };
-        sp.innerHTML = st.length
+        // full test-case specification: which criterion it verifies, the numbered
+        // steps for the tester, and the exact pass condition
+        let tcSpec = '';
+        if (isTestCaseTask(t)) {
+          const acId = ((t.name.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').toLowerCase();
+          let acHit = null, stHit = null;
+          ((reqs && reqs.stories) || []).forEach(s => (s.ac || []).forEach(a => { if (a.id.toLowerCase() === acId) { acHit = a; stHit = s; } }));
+          const steps = tcStepLines(t.description).split('\n').filter(Boolean);
+          tcSpec = `<div style="margin-bottom:1rem;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:0.6rem 0.8rem;font-size:0.8rem;line-height:1.5">
+            <div style="font-weight:700;color:#166534;margin-bottom:0.3rem">🧪 Test case — ${acHit ? 'verifies ' + escapeHtml(acHit.id) + ' (' + (typeIcon[acHit.type] || '') + ' ' + escapeHtml(acHit.type) + ' path)' : (acId ? 'references ' + escapeHtml(acId.toUpperCase()) + ' — criterion not found in Requirements' : 'no AC reference in the name')}</div>
+            ${acHit ? `<div style="margin-bottom:0.4rem"><b>Acceptance criterion:</b><br/>${gwtLines(acHit.text).split('\n').map(escapeHtml).join('<br/>')}</div>` : ''}
+            ${hasRealSteps(t) ? `<div><b>Steps for the tester:</b><ol style="margin:0.2rem 0 0.45rem;padding-left:1.25rem">${steps.map(sx => `<li>${escapeHtml(sx.replace(/^\d+\.\s*/, ''))}</li>`).join('')}</ol></div>` : `<div style="color:#b45309;margin-bottom:0.35rem">⚠ This test case has no real numbered steps yet${t.description ? ' (only: “' + escapeHtml(t.description.slice(0, 90)) + (t.description.length > 90 ? '…' : '') + '”)' : ''} — run 🧪 Generate test plan on the Requirements tab; it now rewrites shallow test cases in place with executable steps.</div>`}
+            ${t.acceptance ? `<div style="background:#dcfce7;border-radius:6px;padding:0.35rem 0.55rem"><b>✅ Pass when:</b> ${gwtLines(t.acceptance).split('\n').map(escapeHtml).join('<br/>')}</div>` : ''}
+            ${stHit ? `<div class="help-text" style="margin-top:0.4rem">From <b>${escapeHtml(stHit.id)}</b> — As a ${escapeHtml(stHit.persona || '?')}, I want to ${escapeHtml(stHit.want || '?')} <button class="btn-sm btn-secondary no-print" style="margin-left:0.4rem" onclick="closeModal();openReqStory('${escapeHtml(stHit.id)}')">Open story →</button></div>` : ''}
+          </div>`;
+        }
+        sp.innerHTML = tcSpec + (st.length
           ? `<details open style="margin-bottom:1rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:0.5rem 0.75rem">
               <summary style="cursor:pointer;font-size:0.8rem;font-weight:600;color:#0369a1">📖 User stories traced to this activity (${st.length}) — the acceptance criteria that define “done” for billing</summary>
               ${st.map(s => `<div style="margin:0.5rem 0;font-size:0.8rem;line-height:1.45">
@@ -1515,8 +1546,8 @@
               </div>`).join('')}
               <button class="btn-sm btn-secondary no-print" onclick="closeModal();openReqStory('${escapeHtml(st[0].id)}')" title="Jump straight to ${escapeHtml(st[0].id)} on the Requirements tab — edit, lint, traceability matrix">Open in Requirements →</button>
             </details>`
-          : (reqs && Array.isArray(reqs.stories) && reqs.stories.length && !isSummaryId(id) && !t.milestone
-            ? `<p class="help-text" style="margin-bottom:0.75rem">No user story traces to this activity yet — Requirements tab ▸ 🤖 Draft from WBS fills the gaps.</p>` : '');
+          : (reqs && Array.isArray(reqs.stories) && reqs.stories.length && !isSummaryId(id) && !t.milestone && !isTestCaseTask(t)
+            ? `<p class="help-text" style="margin-bottom:0.75rem">No user story traces to this activity yet — Requirements tab ▸ 🤖 Draft from WBS fills the gaps.</p>` : ''));
       }
       document.getElementById('modal').classList.add('open');
     }
@@ -1968,6 +1999,7 @@
           + bad.slice(0, 8).map(b => '• "' + b.t.name + '" waits for "' + b.predName + '"').join('\n') + (bad.length > 8 ? '\n… and ' + (bad.length - 8) + ' more' : '')
           + '\n\nOK = drop those link(s) and finish the move (the nesting still schedules them inside the parent).\nCancel = undo the move, change nothing.')) {
           bad.forEach(b => { b.t.predecessors = b.t.predecessors.filter(p => p.id !== b.predId); });
+          var droppedNote = ' · ' + bad.length + ' looping link(s) dropped — 🔗 AI link repair (toolbar) can re-point them';
           if (!computeSchedule(durOf).ok) {
             const cyc = findScheduleCycle(); // name the loop BEFORE reverting
             undoMove();
@@ -1982,7 +2014,7 @@
           return;
         }
       }
-      bulkApplyDone('📁 ' + moved.length + ' task(s) moved' + (skipped ? ' (' + skipped + ' skipped — would nest a phase inside itself)' : ''));
+      bulkApplyDone('📁 ' + moved.length + ' task(s) moved' + (typeof droppedNote !== 'undefined' ? droppedNote : '') + (skipped ? ' (' + skipped + ' skipped — would nest a phase inside itself)' : ''));
     }
     function bulkIndent() {
       let n = 0;
@@ -2152,8 +2184,9 @@
     }
 
     // ========================= CPM CORE =========================
-    // Name the actual dependency loop so "cycle detected" is actionable.
-    function findScheduleCycle() {
+    // Find the actual dependency loop (task ids, in "each waits for the next"
+    // order) so "cycle detected" is actionable instead of a dead end.
+    function findScheduleCycleIds() {
       const nodes = leafTasks();
       const leafIds = new Set(nodes.map(t => t.id));
       const preds = {};
@@ -2175,9 +2208,79 @@
         cur = nxt.id;
       }
       if (!seen.has(cur)) return null;
-      const loop = path.slice(seen.get(cur));
-      const nm = id => { const t = tasks.find(x => x.id === id); return t ? t.name : '#' + id; };
-      return loop.reverse().map(nm);
+      return path.slice(seen.get(cur)); // loop[i] waits for loop[i+1]; last waits for first
+    }
+    function findScheduleCycle() {
+      const loop = findScheduleCycleIds();
+      if (!loop) return null;
+      return loop.map(id => { const t = tasks.find(x => x.id === id); return t ? t.name : '#' + id; });
+    }
+    // The stored predecessor link behind an effective "from waits for to" edge —
+    // it may sit on the task itself or be inherited from one of its phases.
+    function resolveStoredLink(fromId, toId) {
+      const chain = [fromId];
+      let c = (tasks.find(x => x.id === fromId) || {}).parentId;
+      while (c != null) { chain.push(c); c = (tasks.find(x => x.id === c) || {}).parentId; }
+      for (const hid of chain) {
+        const h = tasks.find(x => x.id === hid);
+        if (!h) continue;
+        for (const p of h.predecessors) {
+          if (p.id === toId || (isSummaryId(p.id) && leafDescendants(p.id).some(d => d.id === toId))) return { holder: h, pred: p };
+        }
+      }
+      return null;
+    }
+    // ============== DEPENDENCY FIX WIZARD ==============
+    // Shows the loop as cards — "X waits for Y via <stored link>" — with a
+    // one-click 🗑 per link, plus an AI path that cuts the loop and re-links.
+    function openDepFixWizard() {
+      const body = document.getElementById('depFixBody');
+      const loop = findScheduleCycleIds();
+      if (!body || !loop) { closeDepFixWizard(); return; }
+      computeWbsCodes();
+      const nm = id => { const t = tasks.find(x => x.id === id); return t ? (t.wbs ? t.wbs + ' ' : '') + t.name : '#' + id; };
+      let rows = '';
+      loop.forEach((id, i) => {
+        const nxt = loop[(i + 1) % loop.length];
+        const link = resolveStoredLink(id, nxt);
+        const onPhase = link && link.holder.id !== id;
+        rows += `<div style="display:flex;align-items:flex-start;gap:0.6rem;padding:0.5rem 0.65rem;border:1px solid var(--border);border-radius:8px;margin-bottom:0.45rem;background:${onPhase ? '#fffbeb' : '#fff'}">
+          <div style="flex:1;font-size:0.84rem;line-height:1.45"><b>${escapeHtml(nm(id))}</b>
+            <span style="color:var(--muted)">waits for</span> <b>${escapeHtml(nm(nxt))}</b>
+            ${link ? `<div class="help-text" style="margin-top:2px">stored link: “${escapeHtml(link.holder.name)}” ← “${escapeHtml((tasks.find(x => x.id === link.pred.id) || { name: '?' }).name)}”${onPhase ? ' — ⚠ sits on the PHASE, removing it affects every task inside' : ''}</div>` : '<div class="help-text" style="margin-top:2px">inherited link — open the task to inspect</div>'}
+          </div>
+          <div style="display:flex;gap:0.35rem;flex-shrink:0">
+            ${link ? `<button class="btn-sm btn-danger" onclick="depFixRemove(${link.holder.id}, ${link.pred.id})" title="Delete this predecessor link. Cutting ONE link breaks the loop — usually the one pointing backwards (waiting for something that happens later in the plan).">🗑 Remove link</button>` : ''}
+            <button class="btn-sm btn-secondary" onclick="closeDepFixWizard();openEditModal(${id}, true)" title="Open this task to edit its predecessors by hand">✎ Open</button>
+          </div></div>`;
+      });
+      body.innerHTML = `<p style="font-size:0.85rem;margin:0 0 0.65rem">These <b>${loop.length}</b> tasks wait on each other in a circle, so none of them can ever start. Cut <b>one</b> link to break it — usually the one pointing <i>backwards</i> in the plan. The wizard reopens automatically if another loop remains, and ↶ Undo restores anything you cut.</p>${rows}`;
+      document.getElementById('depFixModal').classList.add('open');
+    }
+    function closeDepFixWizard() { const m = document.getElementById('depFixModal'); if (m) m.classList.remove('open'); }
+    function depFixRemove(holderId, predId) {
+      const h = tasks.find(x => x.id === holderId);
+      if (!h) return;
+      h.predecessors = h.predecessors.filter(p => p.id !== predId);
+      saveLocal();
+      if (findScheduleCycleIds()) { openDepFixWizard(); flashSaved('🗑 Link removed — another loop remains, see the wizard'); return; }
+      closeDepFixWizard();
+      if (recompute()) refreshAll();
+      flashSaved('✓ Loop resolved — schedule recomputed. ↶ Undo restores the link.');
+    }
+    async function depFixAI() {
+      const loop = findScheduleCycleIds();
+      if (!loop) { closeDepFixWizard(); return; }
+      const cut = [];
+      loop.forEach((id, i) => { const l = resolveStoredLink(id, loop[(i + 1) % loop.length]); if (l) cut.push(l); });
+      cut.forEach(l => { l.holder.predecessors = l.holder.predecessors.filter(p => p !== l.pred); });
+      closeDepFixWizard();
+      selectedTaskIds = new Set(loop.filter(id => !isSummaryId(id)));
+      cut.forEach(l => { if (!isSummaryId(l.holder.id)) selectedTaskIds.add(l.holder.id); });
+      renderTaskTable();
+      await aiHealDependencies(); // replaces preds on the loop tasks, cycle-checked per suggestion
+      selectedTaskIds = new Set();
+      renderTaskTable();
     }
     // Back-edges after a re-parent: direct predecessor links on the moved tasks
     // that point at activities which (transitively) depend on the moved task in
@@ -2318,13 +2421,7 @@
       }
 
       const sched = computeSchedule(t => t.te);
-      if (!sched.ok) {
-        const cyc = findScheduleCycle();
-        alert('Cycle detected in dependencies.' + (cyc && cyc.length
-          ? '\n\nEach of these waits for the next, so none can ever start:\n• ' + cyc.join('\n• ') + '\n\nRemove or redirect one of these predecessor links (Edit ▸ Predecessors).'
-          : ' Please fix predecessor links.'));
-        return false;
-      }
+      if (!sched.ok) { openDepFixWizard(); return false; }
 
       const holidays = getHolidaySet();
       const start = projectStartDate();
@@ -4721,6 +4818,17 @@
             <button class="btn-sm btn-primary" onclick="createTasksFromUnlinked()" title="One new WBS activity per unlinked story, dictionary pre-filled, then a pre-filled AI request to estimate them">➕ Create WBS activities for the rest</button>
           </div></div>`;
       }
+      // leftovers from the fixed story↔TC cycle bug: stories drafted FOR test
+      // cases. Stories describe scope; test cases verify it — these are noise.
+      const tcTaskIds = new Set(tasks.filter(isTestCaseTask).map(t => t.id));
+      const tcStories = stories.filter(s => s.wbsId != null && tcTaskIds.has(s.wbsId));
+      if (tcStories.length) {
+        html += `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
+          <strong>🧹 ${tcStories.length} stor${tcStories.length === 1 ? 'y traces' : 'ies trace'} to TEST CASES:</strong>
+          ${tcStories.slice(0, 8).map(s => escapeHtml(s.id)).join(', ')}${tcStories.length > 8 ? '…' : ''} —
+          these were drafted when test cases wrongly counted as uncovered scope (a fixed bug). A story describes scope; a test case verifies it — a "story about a test case" (and any test cases generated for <i>its</i> criteria) is double-counted noise in coverage, the matrix and the SOW.
+          <div style="margin-top:0.4rem"><button class="btn-sm btn-danger" onclick="cleanupTestCaseStories()" title="Deletes these stories AND the test-case tasks generated from their criteria (tests of tests). One ↶ undo reverses all of it.">🧹 Remove them (and their derived test cases)</button></div></div>`;
+      }
       if (uncovered.length) {
         html += `<div id="covBanner" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
           <strong>⚠ ${uncovered.length} WBS activit${uncovered.length === 1 ? 'y has' : 'ies have'} no story:</strong>
@@ -4825,6 +4933,8 @@
     // they must never count as "activities missing a story", or generating a
     // test plan would immediately demand stories for the test cases (a cycle).
     function isTestCaseTask(t) { return /^tc\s/i.test((t.name || '').trim()); }
+    // a REAL test case has numbered, executable steps — not a one-line summary
+    function hasRealSteps(t) { const d = String((t && t.description) || ''); return /(^|\s)1\.\s/.test(d) && /(^|\s)2\.\s/.test(d); }
     // leaf activities that legitimately need a user story
     function storyableLeaves() { return leafTasks().filter(t => !t.milestone && !isTestCaseTask(t)); }
     function testCasesForAC(acId) {
@@ -4973,10 +5083,15 @@ Return ONLY JSON:
         alert('No acceptance criteria yet — draft the requirements first (🤖 Draft from WBS).'); return;
       }
       if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) { alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
-      // only ACs with no test case yet — idempotent re-runs
+      // ACs with no test case yet, PLUS ACs whose test cases are shallow (a
+      // one-line summary instead of numbered steps) — those get re-specified in
+      // place. Re-runs stay idempotent: a TC with real steps is never touched.
       const work = [];
-      reqs.stories.forEach(s => (s.ac || []).forEach(a => { if (!testCasesForAC(a.id).length) work.push({ s, a }); }));
-      if (!work.length) { flashSaved('✓ Every acceptance criterion already has a test case — nothing to generate.'); return; }
+      reqs.stories.forEach(s => (s.ac || []).forEach(a => {
+        const tcs = testCasesForAC(a.id);
+        if (!tcs.length || tcs.every(x => !hasRealSteps(x))) work.push({ s, a });
+      }));
+      if (!work.length) { flashSaved('✓ Every acceptance criterion already has a real test case (steps + expected result) — nothing to generate.'); return; }
       // Hosts: test cases are a WBS DECOMPOSITION of the plan's own UAT/testing
       // activities — each TC becomes a sub-task of the matching UAT task (same
       // WBS branch preferred, so per-workstream UAT tasks each get their own
@@ -5036,7 +5151,7 @@ Return ONLY JSON:
       const roster = Object.keys(resources).join(', ') || '(none)';
       const batches = [];
       for (let i = 0; i < work.length; i += 12) batches.push(work.slice(i, i + 12));
-      let made = 0;
+      let made = 0, respec = 0;
       for (let bi = 0; bi < batches.length; bi++) {
         const batch = batches[bi];
         const partBar = batches.map((x, i) => i < bi ? '✓' : i === bi ? '▶' : '·').join('');
@@ -5059,9 +5174,21 @@ Return ONLY JSON (no prose, no fences):
         (res.testCases || []).forEach(tc => {
           const nm = String(tc.name || '').trim();
           if (!nm || !/^tc\s/i.test(nm)) return;
-          if (tasks.some(t => t.name.trim().toLowerCase() === nm.toLowerCase())) return; // dedupe
           const acId = String(tc.ac || (nm.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').trim();
           const wa = work.find(w => w.a.id.toLowerCase() === acId.toLowerCase());
+          // an existing shallow TC for this criterion is re-specified IN PLACE —
+          // same task, id, schedule and links; it just gains real steps
+          const existing = testCasesForAC(acId)[0];
+          if (existing) {
+            if (!hasRealSteps(existing)) {
+              if (String(tc.steps || '').trim()) existing.description = String(tc.steps).trim();
+              if (String(tc.pass || '').trim()) existing.acceptance = String(tc.pass).trim();
+              if (!existing.deliverable) existing.deliverable = 'Test evidence: pass/fail + defects logged (S1–S4)';
+              respec++;
+            }
+            return;
+          }
+          if (tasks.some(t => t.name.trim().toLowerCase() === nm.toLowerCase())) return; // dedupe
           let o = Number(tc.optimistic), m = Number(tc.mostLikely), pv = Number(tc.pessimistic);
           if (!(pv > 0)) { o = 0.1; m = 0.25; pv = 0.5; }
           const arr = [o, m, pv].sort((x, y) => x - y);
@@ -5079,13 +5206,13 @@ Return ONLY JSON (no prose, no fences):
           usedHosts.add(host.name); collapsedIds.delete(host.id);
         });
         syncResources(); saveLocal();
-        flashSaved('🧪 Batch ' + (bi + 1) + '/' + batches.length + ' done — ' + made + ' test case(s) so far');
+        flashSaved('🧪 Batch ' + (bi + 1) + '/' + batches.length + ' done — ' + made + ' new, ' + respec + ' re-specified so far');
       }
       calculate();
       renderReqs();
       const uncovered = [];
       reqs.stories.forEach(s => (s.ac || []).forEach(a => { if (!testCasesForAC(a.id).length) uncovered.push(a.id); }));
-      flashSaved('🧪 ' + made + ' test case(s) nested as sub-tasks of ' + ([...usedHosts].map(n => '"' + n + '"').join(', ') || 'the plan') + (uncovered.length ? ' — ⚠ still uncovered: ' + uncovered.slice(0, 6).join(', ') + ' (re-run to fill)' : ' — every AC covered. Export ⬇ Test plan (.md)'));
+      flashSaved('🧪 ' + made + ' test case(s) created' + (respec ? ' · ' + respec + ' shallow one(s) re-specified with real steps' : '') + (usedHosts.size ? ' — nested under ' + [...usedHosts].map(n => '"' + n + '"').join(', ') : '') + (uncovered.length ? ' — ⚠ still uncovered: ' + uncovered.slice(0, 6).join(', ') + ' (re-run to fill)' : ' — every AC covered. Export ⬇ Test plan (.md)'));
     }
     // Test plan document: strategy + gates from the estimation guide + AC→TC traceability
     function exportTestPlanMarkdown() {
@@ -5134,14 +5261,17 @@ Return ONLY JSON (no prose, no fences):
           L.push('', '### ' + tc.name, '- **Verifies:** ' + a.id + ' (' + s.id + ') — ' + a.text,
             '- **Owner:** ' + (tc.owner || '_unassigned_') + ' • **Estimate:** ' + (tc.te || 0).toFixed(1) + ' ' + unitLabel() + ' • **Status:** ' + ((tc.percentComplete || 0) >= 100 ? '✅ executed' : (tc.percentComplete || 0) > 0 ? 'in progress' : 'not run'),
             '- **Steps:**');
-          String(tc.description || '(no steps recorded — edit the task)').split(/(?<![\w.])(?=\d+\.\s)/).map(x => x.trim()).filter(Boolean).forEach(st => L.push('  ' + (/^\d+\./.test(st) ? st : '1. ' + st)));
+          if (!hasRealSteps(tc)) L.push('  ⚠ **No executable steps recorded** — run 🧪 Generate test plan (it re-specifies shallow test cases in place). Current note: ' + (tc.description || '_none_'));
+          else String(tc.description).split(/(?<![\w.])(?=\d+\.\s)/).map(x => x.trim()).filter(Boolean).forEach(st => L.push('  ' + (/^\d+\./.test(st) ? st : '1. ' + st)));
           L.push('- **Expected result (pass):** ' + (tc.acceptance || '_not recorded_'));
         });
       });
       if (!anySpec) L.push('_No test cases yet — run 🧪 Generate test plan._');
       const gaps = allAcs.filter(({ a }) => !testCasesForAC(a.id).length);
-      L.push('', '## 7. Coverage gaps' + (gaps.length ? '' : ' — none'));
+      const shallowAcs = allAcs.filter(({ a }) => { const tcs = testCasesForAC(a.id); return tcs.length && tcs.every(x => !hasRealSteps(x)); });
+      L.push('', '## 7. Coverage gaps' + (gaps.length || shallowAcs.length ? '' : ' — none'));
       gaps.forEach(({ s, a }) => L.push('- ' + a.id + ' (' + s.id + '): ' + a.text + ' — run 🧪 Generate test plan to cover.'));
+      shallowAcs.forEach(({ s, a }) => L.push('- ⚠ ' + a.id + ' (' + s.id + '): covered only by a SHALLOW test case (no executable steps) — run 🧪 Generate test plan to re-specify it.'));
       download(safeName() + '-test-plan.md', L.join('\n'), 'text/markdown');
       flashSaved('⬇ Test plan exported — ' + covered.length + '/' + allAcs.length + ' ACs covered, full steps & expected results in §6');
     }
@@ -5167,7 +5297,7 @@ Return ONLY JSON (no prose, no fences):
         const acId = ((tc.name.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').toLowerCase();
         const hit = acIndex[acId];
         rows.push([tc.name, hit ? hit.a.id : acId.toUpperCase(), hit ? gwtLines(hit.a.text) : '', hit ? hit.s.id + '\nAs a ' + (hit.s.persona || '?') + ', I want to ' + (hit.s.want || '?') : '',
-          tcStepLines(tc.description), gwtLines(tc.acceptance), tc.owner || '', (tc.te || 0).toFixed(1), (tc.percentComplete || 0) + '%', taskStatus(tc).label,
+          hasRealSteps(tc) ? tcStepLines(tc.description) : '⚠ NO EXECUTABLE STEPS — run 🧪 Generate test plan (re-specifies shallow TCs)' + (tc.description ? '\nCurrent note: ' + tc.description : ''), gwtLines(tc.acceptance), tc.owner || '', (tc.te || 0).toFixed(1), (tc.percentComplete || 0) + '%', taskStatus(tc).label,
           tc.startDate ? fmtISO(tc.startDate) : '', '', '']);
       });
       return rows;
@@ -5198,6 +5328,30 @@ Return ONLY JSON (no prose, no fences):
       flashSaved('⬇ ' + (rows.length - 1) + ' test cases exported (Excel) — yellow columns are for the tester to fill in');
     }
 
+    // Remove stories that trace to test-case tasks (created before the coverage
+    // fix) plus any TC tasks generated from THOSE stories' criteria.
+    function cleanupTestCaseStories() {
+      if (!reqs || !Array.isArray(reqs.stories)) return;
+      const tcTaskIds = new Set(tasks.filter(isTestCaseTask).map(t => t.id));
+      const junk = reqs.stories.filter(s => s.wbsId != null && tcTaskIds.has(s.wbsId));
+      if (!junk.length) { flashSaved('✓ No test-case stories to clean.'); return; }
+      const junkAcIds = new Set();
+      junk.forEach(s => (s.ac || []).forEach(a => junkAcIds.add(String(a.id).toLowerCase())));
+      const junkTcs = tasks.filter(t => isTestCaseTask(t) && junkAcIds.has(String((t.name.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').toLowerCase()));
+      if (!confirm('Remove ' + junk.length + ' stor' + (junk.length === 1 ? 'y' : 'ies') + ' that trace to test cases' + (junkTcs.length ? ' AND the ' + junkTcs.length + ' test-case task(s) generated from their criteria' : '') + '?\n\n↶ Undo reverses everything.')) return;
+      const junkIds = new Set(junk.map(s => s.id));
+      reqs.stories = reqs.stories.filter(s => !junkIds.has(s.id));
+      if (junkTcs.length) {
+        const rm = new Set(junkTcs.map(t => t.id));
+        tasks = tasks.filter(t => !rm.has(t.id));
+        tasks.forEach(t => { t.predecessors = t.predecessors.filter(p => !rm.has(p.id)); });
+        rm.forEach(id => { selectedTaskIds.delete(id); collapsedIds.delete(id); });
+      }
+      saveLocal();
+      if (calculated) recompute();
+      refreshAll(); renderReqs();
+      flashSaved('🧹 ' + junk.length + ' story(ies) + ' + junkTcs.length + ' derived test case(s) removed — ↶ Undo restores them');
+    }
     function reqSetAll(open) { document.querySelectorAll('#reqContainer details.story-card').forEach(d => { d.open = open; }); }
     // headline-card drill-in: scroll to (and open) a section of the req tab
     function reqScrollTo(id, openIt) {
@@ -5619,12 +5773,71 @@ ${reqRulesBlock()}`;
     // 2) People type into the yellow cells and reply. 3) Paste the filled table
     //    into Tasks ▸ AI mode "Update progress" → %s, actual dates and
     //    TE-weighted rollups update; noted blockers are logged into RAID.
+    // 🔗 AI link repair: proposes predecessors for the selected rows (or, with
+    // nothing selected, every non-milestone leaf that has none — e.g. test cases
+    // whose looping links were dropped during a move). Every suggestion is
+    // validated against the schedule; anything that would loop is skipped, and a
+    // truncated response applies nothing.
+    async function aiHealDependencies() {
+      if (!tasks.length) { alert('No activities yet.'); return; }
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) { alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
+      computeWbsCodes();
+      const sel = selectedTaskIds.size ? selectedTaskIds : null;
+      const targets = leafTasks().filter(t => sel ? (sel.has(t.id) && !isSummaryId(t.id)) : (!t.milestone && !effectivePreds(t).length));
+      if (!targets.length) { flashSaved(sel ? 'ℹ No linkable leaf tasks in the selection.' : '✓ Every activity already has predecessor links.'); return; }
+      const durOf = t => (t.te || ((t.o + 4 * t.m + t.p) / 6) || 0);
+      const outline = tasksInWbsOrder().map(({ task: t, depth }) =>
+        `${'  '.repeat(depth)}${t.wbs} | ${t.name}${isSummaryId(t.id) ? ' [phase]' : t.milestone ? ' [milestone]' : ''}${t.predecessors.length ? ' | after: ' + t.predecessors.map(p => (tasks.find(x => x.id === p.id) || {}).name).filter(Boolean).join('; ') : ''}`).join('\n');
+      const prompt = `You are repairing the dependency network of a project plan. Propose predecessors ("must FINISH before this starts") for ONLY the target tasks below.
+PLAN (wbs | name | current links):
+${outline}
+TARGET TASKS NEEDING LINKS:
+${targets.map(t => '- ' + t.wbs + ' ' + t.name).join('\n')}
+Rules:
+- dependsOn holds exact task names from the plan — never the task itself, never its own phase/children.
+- Pick the LATEST activities that must genuinely finish first (usually 1–2). Keep genuinely parallel work parallel.
+- Test cases ("TC …") depend on the activity that BUILDS what they verify — never on later work like training, go-live or sign-off.
+- NEVER create a loop: if B already comes after A (directly or through the chain), A must not depend on B.
+- A task that genuinely starts on day one may return an empty dependsOn.
+Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","dependsOn":["exact task names"]}]}`;
+      const onDelta = streamShow('🔗 Repairing dependency links (' + targets.length + ' task' + (targets.length === 1 ? '' : 's') + ')');
+      try {
+        const text = await callAnthropic(prompt, { onDelta });
+        streamHide(true);
+        const res = parseAIJsonStrict(text, 'the dependency repair'); // complete or nothing
+        const byLower = {}; tasks.forEach(t => { byLower[t.name.trim().toLowerCase()] = t; });
+        let linked = 0; const skipped = [];
+        (res.links || []).forEach(l => {
+          const t = byLower[String((l && l.task) || '').trim().toLowerCase()];
+          if (!t || !targets.some(x => x.id === t.id)) return;
+          const anc = new Set(); let c = t.parentId;
+          while (c != null) { anc.add(c); c = (tasks.find(x => x.id === c) || {}).parentId; }
+          const desc = new Set(allDescendants(t.id).map(d => d.id));
+          const preds = (l.dependsOn || []).map(dn => byLower[String(dn || '').trim().toLowerCase()])
+            .filter(x => x && x.id !== t.id && !anc.has(x.id) && !desc.has(x.id))
+            .map(x => ({ id: x.id, type: 'FS', lag: 0 }));
+          if (!preds.length) return;
+          const before = t.predecessors;
+          t.predecessors = preds;
+          if (!computeSchedule(durOf).ok) { t.predecessors = before; skipped.push(t.name); return; } // cycle guard per task
+          linked++;
+        });
+        saveLocal();
+        if (calculated) recompute();
+        refreshAll();
+        flashSaved('🔗 ' + linked + ' task(s) linked' + (skipped.length ? ' · ' + skipped.length + ' skipped (would loop): ' + skipped.slice(0, 4).join(', ') + (skipped.length > 4 ? '…' : '') : '') + ' — ↶ Undo reverses the batch');
+      } catch (e) { streamHide(false); alert('Link repair failed: ' + (e.message || e)); }
+    }
+
     async function copyUpdateRequest() {
       if (!tasks.length) { alert('No activities yet.'); return; }
       if (!calculated) ensureCalc();
       computeWbsCodes();
-      const open = leafTasks().filter(t => (t.percentComplete || 0) < 100 && !(t.milestone && effectivePreds(t).length));
-      if (!open.length) { alert('Everything is already at 100% — nothing to chase. 🎉'); return; }
+      // scoped: with rows selected (checkboxes / shift-click), only those are chased
+      const sel = selectedTaskIds.size ? selectedTaskIds : null;
+      const open = leafTasks().filter(t => (t.percentComplete || 0) < 100 && !(t.milestone && effectivePreds(t).length) && (!sel || sel.has(t.id)));
+      if (!open.length) { alert(sel ? 'The selected tasks are all at 100% already — nothing to chase there.' : 'Everything is already at 100% — nothing to chase. 🎉'); return; }
+      const scopeNote = sel ? ' (' + open.length + ' selected item' + (open.length === 1 ? '' : 's') + ')' : '';
       const byOwner = {};
       open.forEach(t => { const o = (t.owner || '').trim() || 'Unassigned'; (byOwner[o] = byOwner[o] || []).push(t); });
       const owners = Object.keys(byOwner).sort((a, b) => a === 'Unassigned' ? 1 : b === 'Unassigned' ? -1 : a.localeCompare(b));
@@ -5635,7 +5848,7 @@ ${reqRulesBlock()}`;
       const fillTh = td + 'background:#fef08a;font-weight:700;text-align:left;white-space:nowrap;';
       const fill = td + 'background:#fefce8;min-width:90px;';
       let html = `<div style="font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;max-width:1000px">
-        <h2 style="margin:0 0 2px;font-size:16px">Status update request — ${escapeHtml(projName())}</h2>
+        <h2 style="margin:0 0 2px;font-size:16px">Status update request — ${escapeHtml(projName())}${escapeHtml(scopeNote)}</h2>
         <p style="margin:0 0 10px;font-size:12.5px;color:#475569">${escapeHtml(fmtNice(new Date()))} • Please fill in the <b>yellow cells</b> on your rows — a %, or “done” plus the finish date, and any blockers — then reply with the table. The reply gets pasted straight back into the plan; blockers you note are logged into the project risk register.</p>`;
       owners.forEach(o => {
         html += `<h3 style="margin:12px 0 4px;font-size:13.5px">${escapeHtml(o)} — ${byOwner[o].length} open item${byOwner[o].length === 1 ? '' : 's'}</h3>
@@ -5654,7 +5867,7 @@ ${reqRulesBlock()}`;
 
       // plain-text fallback for Slack / plain-text mail clients
       const L = [];
-      L.push('STATUS UPDATE REQUEST — ' + projName() + ' — ' + fmtNice(new Date()));
+      L.push('STATUS UPDATE REQUEST — ' + projName() + scopeNote + ' — ' + fmtNice(new Date()));
       L.push('');
       L.push('Please update your items below: replace ____ with today\'s % complete (or "done"),');
       L.push('add the actual finish date for anything completed, and flag blockers.');
@@ -5676,7 +5889,7 @@ ${reqRulesBlock()}`;
           'text/html': new Blob([html], { type: 'text/html' }),
           'text/plain': new Blob([text], { type: 'text/plain' })
         })]);
-        flashSaved('✓ Update-request table copied — paste into email; paste the filled reply back via AI ▸ Update progress');
+        flashSaved('✓ Update-request table copied' + (sel ? ' — scoped to the ' + open.length + ' selected item(s)' : '') + ' — paste into email; paste the filled reply back via AI ▸ Update progress');
       } catch (e) {
         try {
           await navigator.clipboard.writeText(text);
@@ -6311,6 +6524,30 @@ Rules:
     function stopAIStream() {
       if (aiAbortCtrl) { try { aiAbortCtrl.abort(); } catch (e) {} }
     }
+    // Shared DELTA contract for every flow that EDITS an existing plan — the AI
+    // returns only what changes; unchanged tasks must not be re-emitted.
+    function aiDeltaSchemaHint() {
+      const unit = document.getElementById('durationUnit').value;
+      return `Return ONLY a JSON DELTA — never re-emit the whole plan. Unchanged tasks must NOT appear in your response.
+{
+  "changedTasks": [
+    { "name": "task name", "optimistic": n, "mostLikely": n, "pessimistic": n,  // durations in ${unit}, optimistic <= mostLikely <= pessimistic
+      "milestone": false, "owner": "", "units": 100, "attendees": [],
+      "parent": "exact name of the phase it nests under (or \\"\\" for top level)",
+      "deliverable": "", "description": "", "acceptance": "",
+      "dependsOn": ["exact predecessor task names"],
+      "was": "current name ONLY when renaming this task" }
+  ],
+  "removeTasks": ["exact names of tasks to delete"],
+  "resources": [ { "name": "person/role/team", "capacityPercent": 100, "kind": "internal" } ]
+}
+Rules:
+- changedTasks holds ONLY new tasks and tasks where a field genuinely changes. Fill every field for each task you include (its stored planning fields are overwritten; % complete, actual dates and story/test-case links are preserved automatically).
+- "parent" and "dependsOn" reference exact task names — current ones or new ones introduced in this same response.
+- Use "was" to rename without losing tracking history.
+- "resources" lists ONLY new or changed people (capacityPercent > 100 for teams; kind "client" for client-side people — they are never billed). Rates and PTO are managed in the app and never change here.
+- removeTasks and resources may be empty arrays. Every array may be empty if the request needs no change of that kind.`;
+    }
     async function callAnthropic(userContent, opts) {
       opts = opts || {};
       const key = (document.getElementById('aiKey').value.trim()) || localStorage.getItem(AI_KEY_STORE);
@@ -6468,7 +6705,6 @@ Rules:
             parent: (tasks.find(x => x.id === t.parentId) || {}).name || '',
             dependsOn: t.predecessors.map(p => (tasks.find(x => x.id === p.id) || {}).name).filter(Boolean) })),
           resources: Object.keys(resources).map(n => ({ name: n, capacityPercent: getCapacity(n) })) };
-        const unit = document.getElementById('durationUnit').value;
         prompt = `You are a project planning assistant for engagement/project managers.
 Here is the CURRENT project plan as JSON:
 ${JSON.stringify(current, null, 2)}
@@ -6476,25 +6712,7 @@ ${histPromptBlock()}
 Apply the following change request:
 """${notes}"""
 
-Return ONLY a JSON DELTA — never re-emit the whole plan. Unchanged tasks must NOT appear in your response.
-{
-  "changedTasks": [
-    { "name": "task name", "optimistic": n, "mostLikely": n, "pessimistic": n,  // durations in ${unit}, optimistic <= mostLikely <= pessimistic
-      "milestone": false, "owner": "", "units": 100, "attendees": [],
-      "parent": "exact name of the phase it nests under (or \\"\\" for top level)",
-      "deliverable": "", "description": "", "acceptance": "",
-      "dependsOn": ["exact predecessor task names"],
-      "was": "current name ONLY when renaming this task" }
-  ],
-  "removeTasks": ["exact names of tasks to delete"],
-  "resources": [ { "name": "person/role/team", "capacityPercent": 100, "kind": "internal" } ]
-}
-Rules:
-- changedTasks holds ONLY new tasks and tasks where a field genuinely changes. Fill every field for each task you include (its stored planning fields are overwritten; % complete, actual dates and story/test-case links are preserved automatically).
-- "parent" and "dependsOn" reference exact task names — current ones or new ones introduced in this same response.
-- Use "was" to rename without losing tracking history.
-- "resources" lists ONLY new or changed people (capacityPercent > 100 for teams; kind "client" for client-side people — they are never billed). Rates and PTO are managed in the app and never change here.
-- removeTasks and resources may be empty arrays. Every array may be empty if the request needs no change of that kind.`;
+${aiDeltaSchemaHint()}`;
       } else {
         prompt = `You are a project planning assistant for engagement/project managers.
 Read the following notes/description and turn it into a structured, estimated project plan.
@@ -7657,17 +7875,16 @@ CURRENT PLAN:\n${JSON.stringify(current, null, 2)}
 ${histPromptBlock()}
 APPLY THESE FIXES (change only what each fix requires; keep everything else identical — same names, estimates, owners, structure):\n${instructions}
 When a fix needs an owner assigned or reassigned, prefer people already listed in "resources" (matching skills implied by their other tasks) before inventing anyone new. When a fix needs missing O/M/P estimates, size them relative to comparable tasks in this plan and the historical data.
-${aiSchemaHint()}
-Return the COMPLETE updated task list.`;
-      const onDelta = streamShow('Applying health-check fixes');
+${aiDeltaSchemaHint()}`;
+      const onDelta = streamShow('Applying health-check fixes (delta — only the changes stream in)');
       flashSaved('⏳ AI is applying ' + list.length + ' fix(es)…');
       try {
-        const plan = parseAIJsonStrict(await callAnthropic(prompt, { onDelta }), 'the fixes'); // a repaired/partial task list would silently DROP tasks — never apply it
-        applyAIPlan(plan, 'merge');
+        const plan = parseAIJsonStrict(await callAnthropic(prompt, { onDelta }), 'the fixes'); // a repaired/partial delta is never applied
+        const stats = applyAIPlan(plan, 'merge');
         streamHide(true);
         healthFindings = { date: fmtISO(new Date()), findings: lintPlan() }; // fresh deterministic lint after fixes
         renderHealth();
-        flashSaved('✓ Fixes applied — review the plan, then re-run the full health check');
+        flashSaved('✓ Fixes applied' + (stats ? ' — ' + stats.added + ' added, ' + stats.updated + ' updated, ' + stats.removed + ' removed; everything else untouched' : '') + ' — re-run the health check to confirm');
       } catch (e) { streamHide(false); alert('AI fix failed: ' + (e.message || e)); }
     }
 
