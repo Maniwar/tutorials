@@ -530,6 +530,8 @@
           <div class="toolbar no-print">
             <button class="btn-primary btn-sm" onclick="draftRequirements()" title="AI drafts personas, epics and INVEST user stories with happy/error/edge acceptance criteria for every WBS work item — or fills the gaps if some already exist">🤖 Draft from WBS</button>
             <button class="btn-secondary btn-sm" onclick="openStoryModal(null)" title="Write a story by hand">+ Add story</button>
+            <button class="btn-secondary btn-sm" onclick="generateTestPlan()" title="AI derives test cases from EVERY story's acceptance criteria (batched so nothing truncates): one TC per AC minimum, scheduled as WBS tasks under a Test Execution phase, each depending on the activity it verifies, owned by your QA/UAT resource. Safe to re-run — existing TCs are kept, only gaps are filled.">🧪 Generate test plan</button>
+            <button class="btn-secondary btn-sm" onclick="exportTestPlanMarkdown()" title="Test plan document: strategy by test type, entry/exit criteria, S1–S4 defect severity gates and deemed-acceptance clause (per the estimation guide), AC→TC traceability with status, and uncovered-AC gaps">⬇ Test plan (.md)</button>
             <button class="btn-secondary btn-sm" onclick="exportReqsMarkdown()" title="Full requirements document: personas, epics, stories, ACs, NFRs, assumptions — ready for the SOW appendix">⬇ Markdown</button>
             <button class="btn-secondary btn-sm" onclick="exportTraceCSV()" title="Traceability matrix: one row per acceptance criterion — epic → story → AC → WBS item → status">⬇ Traceability (.csv)</button>
           </div>
@@ -4673,6 +4675,125 @@ Return ONLY JSON:
       let n = 1; while (ids.has('US-' + n)) n++;
       return 'US-' + n;
     }
+
+    // ========================= TEST PLAN =========================
+    // 🧪 One flow: every story's acceptance criteria → test-case WBS tasks under
+    // a Test Execution phase, each depending on the activity it verifies. Batched
+    // (guaranteed-complete calls) and idempotent — re-runs only fill gaps.
+    async function generateTestPlan() {
+      if (!reqs || !Array.isArray(reqs.stories) || !reqs.stories.some(s => (s.ac || []).length)) {
+        alert('No acceptance criteria yet — draft the requirements first (🤖 Draft from WBS).'); return;
+      }
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) { alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
+      // only ACs with no test case yet — idempotent re-runs
+      const work = [];
+      reqs.stories.forEach(s => (s.ac || []).forEach(a => { if (!testCasesForAC(a.id).length) work.push({ s, a }); }));
+      if (!work.length) { flashSaved('✓ Every acceptance criterion already has a test case — nothing to generate.'); return; }
+      // parent: an existing UAT/testing activity, else a new Test Execution phase
+      computeWbsCodes();
+      let parent = tasks.find(t => /\buat\b|test execution|test case/i.test(t.name) && !t.milestone)
+        || tasks.find(t => /\btest(ing)?\b/i.test(t.name) && !t.milestone);
+      if (!parent) {
+        parent = makeTask({ id: nextId++, name: 'Test Execution (UAT)', o: 0, m: 0, p: 0, milestone: false, owner: '', parentId: null, predecessors: [],
+          description: 'Execution of the acceptance-criteria test cases below; entry/exit gates per the test plan.', deliverable: 'UAT sign-off with zero open S1 and no unaccepted S2 defects' });
+        tasks.push(parent);
+      } else if (!confirm(`Create the test cases under "${parent.name}"? (Cancel to abort — rename that activity if it's the wrong home.)`)) return;
+      const qaOwner = Object.keys(resources).find(n => /qa|test|uat/i.test(n)) || '';
+      const roster = Object.keys(resources).join(', ') || '(none)';
+      const batches = [];
+      for (let i = 0; i < work.length; i += 12) batches.push(work.slice(i, i + 12));
+      let made = 0;
+      for (let bi = 0; bi < batches.length; bi++) {
+        const batch = batches[bi];
+        const partBar = batches.map((x, i) => i < bi ? '✓' : i === bi ? '▶' : '·').join('');
+        const prompt = `You are a QA lead writing executable UAT test cases from acceptance criteria (each criterion translates directly into one or more test cases).
+PROJECT: ${projName()}. Available people: ${roster}. Default test owner: ${qaOwner || '(leave empty)'}.
+ACCEPTANCE CRITERIA NEEDING TEST CASES (story context included):
+${batch.map(({ s, a }) => `- ${a.id} [${a.type}] (from ${s.id}: As a ${s.persona || '?'}, I want to ${s.want || '?'}): ${a.text}`).join('\n')}
+Rules:
+- One test case per criterion minimum; add a second only when the criterion genuinely bundles two scenarios.
+- name MUST start with "TC <AC-id> — " (e.g. "TC AC-3.2 — error path: export without admin role") — the tool links TCs to criteria by that prefix.
+- steps: numbered, concrete, executable by a client UAT tester (setup → action → observation), derived from the Given/When/Then.
+- pass: the binary pass condition, measurable, copied faithfully from the criterion's Then (keep every number and its measurement condition).
+- Durations in ${document.getElementById('durationUnit').value}: small and realistic for executing one test (typically 0.1–0.5 days) — data setup or environment work belongs in its own test case only if a criterion demands it.
+Return ONLY JSON (no prose, no fences):
+{"testCases":[{"name":"TC AC-1.1 — …","ac":"AC-1.1","optimistic":0.1,"mostLikely":0.25,"pessimistic":0.5,"owner":"","steps":"1. … 2. …","pass":"…"}]}`;
+        const onDelta = streamShow('Writing test cases [' + partBar + '] batch ' + (bi + 1) + '/' + batches.length + ' (' + batch.length + ' ACs)');
+        const text = await callAnthropic(prompt, { onDelta });
+        streamHide(true);
+        const res = parseAIJsonStrict(text, 'test-case batch ' + (bi + 1)); // never keep a partial batch
+        (res.testCases || []).forEach(tc => {
+          const nm = String(tc.name || '').trim();
+          if (!nm || !/^tc\s/i.test(nm)) return;
+          if (tasks.some(t => t.name.trim().toLowerCase() === nm.toLowerCase())) return; // dedupe
+          const acId = String(tc.ac || (nm.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').trim();
+          const wa = work.find(w => w.a.id.toLowerCase() === acId.toLowerCase());
+          let o = Number(tc.optimistic), m = Number(tc.mostLikely), pv = Number(tc.pessimistic);
+          if (!(pv > 0)) { o = 0.1; m = 0.25; pv = 0.5; }
+          const arr = [o, m, pv].sort((x, y) => x - y);
+          const nt = makeTask({ id: nextId++, name: nm, o: arr[0], m: arr[1], p: arr[2], milestone: false,
+            owner: String(tc.owner || '').trim() || qaOwner, units: 100, parentId: parent.id,
+            predecessors: (wa && wa.s.wbsId != null && tasks.some(t => t.id === wa.s.wbsId)) ? [{ id: wa.s.wbsId, type: 'FS', lag: 0 }] : [],
+            description: String(tc.steps || '').trim(),
+            deliverable: 'Test evidence: pass/fail + defects logged (S1–S4)',
+            acceptance: String(tc.pass || '').trim() });
+          tasks.push(nt); made++;
+        });
+        collapsedIds.delete(parent.id);
+        syncResources(); saveLocal();
+        flashSaved('🧪 Batch ' + (bi + 1) + '/' + batches.length + ' done — ' + made + ' test case(s) so far');
+      }
+      calculate();
+      renderReqs();
+      const uncovered = [];
+      reqs.stories.forEach(s => (s.ac || []).forEach(a => { if (!testCasesForAC(a.id).length) uncovered.push(a.id); }));
+      flashSaved('🧪 ' + made + ' test case(s) created under "' + parent.name + '"' + (uncovered.length ? ' — ⚠ still uncovered: ' + uncovered.slice(0, 6).join(', ') + ' (re-run to fill)' : ' — every AC covered. Export ⬇ Test plan (.md)'));
+    }
+    // Test plan document: strategy + gates from the estimation guide + AC→TC traceability
+    function exportTestPlanMarkdown() {
+      if (!reqs || !Array.isArray(reqs.stories) || !reqs.stories.length) { alert('No requirements yet — draft stories first.'); return; }
+      computeWbsCodes();
+      const allAcs = []; reqs.stories.forEach(s => (s.ac || []).forEach(a => allAcs.push({ s, a })));
+      const covered = allAcs.filter(({ a }) => testCasesForAC(a.id).length);
+      const typeCount = k => allAcs.filter(({ a }) => a.type === k).length;
+      const deps = []; reqs.stories.forEach(s => (s.assumptions || []).forEach(x => { if (/^D:/i.test(x)) deps.push(x); }));
+      const L = ['# Test Plan — ' + projName(), '',
+        '_Generated ' + fmtNice(new Date()) + ' from the requirements traceability chain: story → acceptance criterion → test case → WBS schedule._', '',
+        '## 1. Scope & coverage',
+        '- User stories: **' + reqs.stories.length + '** • acceptance criteria: **' + allAcs.length + '** • test cases: **' + covered.reduce((n, { a }) => n + testCasesForAC(a.id).length, 0) + '**',
+        '- AC coverage: **' + covered.length + '/' + allAcs.length + '**' + (covered.length < allAcs.length ? '  ⚠ gaps listed in §6' : ' — complete'),
+        '- Test types from criteria mix: functional/happy ' + typeCount('happy') + ', negative/error ' + typeCount('error') + ', boundary/edge ' + typeCount('edge') + ', performance ' + typeCount('perf') + '.', '',
+        '## 2. Entry criteria (testing may begin when)',
+        '- The build under test is deployed to the designated acceptance environment.',
+        '- Test data and client dependencies are in place:' + (deps.length ? '' : ' _(none recorded — verify)_')];
+      deps.slice(0, 12).forEach(d => L.push('  - ' + d));
+      L.push('', '## 3. Exit / acceptance criteria (per the SOW)',
+        '- All acceptance criteria pass in the designated environment.',
+        '- **Zero open S1 defects; no S2 defects** other than those the client has accepted in writing with an agreed remediation date.',
+        '- S3/S4 defects are logged and scheduled within the warranty window; they do not block acceptance.',
+        '- Rejection must cite the specific acceptance criterion that failed; absent written response within the review window the deliverable is deemed accepted; production use constitutes acceptance.', '',
+        '## 4. Defect severity definitions',
+        '| Severity | Definition | Blocks acceptance? |', '|---|---|---|',
+        '| S1 — Critical | Core function unusable; data loss/corruption; security breach; no workaround | Yes |',
+        '| S2 — Major | Significant function impaired; workaround exists but burdensome | Yes, unless accepted in writing with a fix date |',
+        '| S3 — Minor | Limited impairment; reasonable workaround | No — warranty window |',
+        '| S4 — Cosmetic | Visual/copy/trivial, no functional impact | No — backlog |', '',
+        '## 5. Traceability & execution checklist');
+      L.push('| AC | Criterion | Test case(s) | Owner | Status |', '|---|---|---|---|---|');
+      allAcs.forEach(({ s, a }) => {
+        const tcs = testCasesForAC(a.id);
+        L.push('| ' + a.id + ' (' + a.type + ') | ' + a.text.replace(/\|/g, '\\|') + ' | ' +
+          (tcs.length ? tcs.map(tc => tc.name.replace(/\|/g, '\\|')).join('<br>') : '—') + ' | ' +
+          (tcs.map(tc => tc.owner).filter(Boolean)[0] || '') + ' | ' +
+          (tcs.length ? (tcs.every(tc => (tc.percentComplete || 0) >= 100) ? '✅ passed/executed' : tcs.some(tc => tc.percentComplete > 0) ? 'in progress' : 'not run') : '⚠ NO TEST CASE') + ' |');
+      });
+      const gaps = allAcs.filter(({ a }) => !testCasesForAC(a.id).length);
+      L.push('', '## 6. Coverage gaps' + (gaps.length ? '' : ' — none'));
+      gaps.forEach(({ s, a }) => L.push('- ' + a.id + ' (' + s.id + '): ' + a.text + ' — run 🧪 Generate test plan to cover.'));
+      download(safeName() + '-test-plan.md', L.join('\n'), 'text/markdown');
+      flashSaved('⬇ Test plan exported — ' + covered.length + '/' + allAcs.length + ' ACs covered');
+    }
+
     // Deep link: open the Requirements tab AND land on a specific story,
     // scrolled into view with a brief highlight — used by every drill-in.
     function openReqStory(storyId) {
