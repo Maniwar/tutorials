@@ -720,6 +720,11 @@
           </div>
         </div>
         <div class="form-group">
+          <label>Additional attendees <span class="info-icon" title="For sessions/workshops with several people at once. Each attendee loads their own calendar, cost and billing (client-type resources bill nothing).">i</span></label>
+          <div id="attRows"></div>
+          <button class="btn-sm btn-secondary" type="button" onclick="addAttRow()">+ Add attendee</button>
+        </div>
+        <div class="form-group">
           <label>Dependencies (predecessors)</label>
           <div id="depRows"></div>
           <button class="btn-sm btn-secondary" type="button" onclick="addDepRow()">+ Add dependency</button>
@@ -828,7 +833,7 @@
     function makeTask(o) {
       return Object.assign({
         id: 0, name: '', o: 0, m: 0, p: 0, milestone: false,
-        owner: '', units: 100, levelDelay: 0, percentComplete: 0, predecessors: [],
+        owner: '', units: 100, attendees: [], levelDelay: 0, percentComplete: 0, predecessors: [],
         parentId: null, description: '', deliverable: '', acceptance: '',
         actualStart: '', actualFinish: '', fixedCost: 0, actualCost: 0,
         baseStart: null, baseFinish: null, baseTe: null, baseCost: null,
@@ -1008,7 +1013,7 @@
         collapsedIds: [...collapsedIds],
         tasks: tasks.map(t => ({
           id: t.id, name: t.name, o: t.o, m: t.m, p: t.p, milestone: t.milestone,
-          owner: t.owner, units: t.units, levelDelay: t.levelDelay,
+          owner: t.owner, units: t.units, attendees: t.attendees || [], levelDelay: t.levelDelay,
           percentComplete: t.percentComplete, predecessors: t.predecessors,
           parentId: t.parentId, description: t.description, deliverable: t.deliverable,
           acceptance: t.acceptance, actualStart: t.actualStart, actualFinish: t.actualFinish,
@@ -1028,6 +1033,7 @@
         id: t.id, name: t.name, o: +t.o, m: +t.m, p: +t.p,
         milestone: !!t.milestone, owner: t.owner || '',
         units: (t.units == null ? 100 : Number(t.units)),
+        attendees: Array.isArray(t.attendees) ? t.attendees.map(a => ({ name: String(a.name || '').trim(), units: Number.isFinite(+a.units) ? +a.units : 100 })).filter(a => a.name) : [],
         levelDelay: Number(t.levelDelay) || 0,
         percentComplete: Number(t.percentComplete) || 0,
         predecessors: (t.predecessors || []).map(normalizePred),
@@ -1147,6 +1153,7 @@
       document.getElementById('mMilestone').checked = !!isMilestone;
       document.getElementById('modalError').style.display = 'none';
       document.getElementById('depRows').innerHTML = '';
+      document.getElementById('attRows').innerHTML = '';
       document.getElementById('mDesc').value = '';
       document.getElementById('mDeliverable').value = '';
       document.getElementById('mAcceptance').value = '';
@@ -1177,6 +1184,8 @@
       document.getElementById('mMilestone').checked = !!t.milestone;
       document.getElementById('modalError').style.display = 'none';
       document.getElementById('depRows').innerHTML = '';
+      document.getElementById('attRows').innerHTML = '';
+      (t.attendees || []).forEach(a => addAttRow(a));
       document.getElementById('mDesc').value = t.description || '';
       document.getElementById('mDeliverable').value = t.deliverable || '';
       document.getElementById('mAcceptance').value = t.acceptance || '';
@@ -1216,6 +1225,19 @@
       return tasks.filter(t => t.id !== editingId)
         .map(t => `<option value="${t.id}" ${t.id === selectedId ? 'selected' : ''}>${escapeHtml(t.id + ': ' + t.name)}</option>`)
         .join('');
+    }
+    function addAttRow(att) {
+      att = att || { name: '', units: 100 };
+      const wrap = document.getElementById('attRows');
+      const row = document.createElement('div');
+      row.className = 'dep-row';
+      row.style.gridTemplateColumns = '3fr 1fr auto';
+      const names = [...new Set([...Object.keys(resources), ...tasks.map(t => (t.owner || '').trim())])].filter(Boolean).sort();
+      row.innerHTML = `
+        <select class="att-name"><option value="">— select resource —</option>${names.map(n => `<option value="${escapeHtml(n)}" ${n === att.name ? 'selected' : ''}>${escapeHtml(n)}${isClientResource(n) ? ' (client)' : ''}</option>`).join('')}</select>
+        <input class="att-units" type="number" min="0" step="5" value="${att.units}" title="Units % for this attendee" />
+        <button type="button" class="btn-sm btn-danger" onclick="this.parentElement.remove()">✕</button>`;
+      wrap.appendChild(row);
     }
     function addDepRow(pred) {
       pred = pred || { id: null, type: 'FS', lag: 0 };
@@ -1265,6 +1287,12 @@
       const actualFinish = document.getElementById('mActualFinish').value || '';
       const actualCost = Math.max(0, parseFloat(document.getElementById('mActualCost').value) || 0);
 
+      const attendees = [];
+      document.querySelectorAll('#attRows .dep-row').forEach(r => {
+        const nm = r.querySelector('.att-name').value.trim();
+        if (!nm || nm === owner) return;
+        attendees.push({ name: nm, units: Math.max(0, parseFloat(r.querySelector('.att-units').value) || 100) });
+      });
       const preds = [];
       document.querySelectorAll('#depRows .dep-row').forEach(r => {
         const id = Number(r.querySelector('.dep-id').value);
@@ -1275,7 +1303,7 @@
       const seen = {}; preds.forEach(pr => seen[pr.id] = pr);
       const finalPreds = Object.values(seen).filter(pr => pr.id !== editingId);
 
-      const fields = { name, o, m, p, milestone: isMs, owner, units, fixedCost, actualCost, percentComplete: pct, predecessors: finalPreds,
+      const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, actualCost, percentComplete: pct, predecessors: finalPreds,
         parentId, description, deliverable, acceptance, actualStart, actualFinish };
       if (editingId === null) {
         tasks.push(makeTask(Object.assign({ id: nextId++ }, fields)));
@@ -1394,7 +1422,7 @@
           <td style="cursor:grab;color:var(--muted)" title="Drag to reorder / re-nest">⠿</td>
           <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
           <td>${nameCell}</td>
-          <td style="font-size:0.8rem" title="${t.overallocated ? escapeHtml((t.owner||'')+' is over-allocated during this task') : ''}">${t.overallocated ? '<span style="color:var(--critical)" title="over-allocated">⚠ </span>' : ''}${escapeHtml(t.owner || '—')}${(!t.milestone && !summary && t.units !== 100) ? ` <span class="help-text" style="font-size:0.68rem">@${t.units}%</span>` : ''}</td>
+          <td style="font-size:0.8rem" title="${t.overallocated ? escapeHtml((t.owner||'')+' is over-allocated during this task') : ''}">${t.overallocated ? '<span style="color:var(--critical)" title="over-allocated">⚠ </span>' : ''}${escapeHtml(t.owner || '—')}${(!t.milestone && !summary && t.units !== 100) ? ` <span class="help-text" style="font-size:0.68rem">@${t.units}%</span>` : ''}${(t.attendees && t.attendees.length) ? ` <span class="badge badge-info" title="${escapeHtml(t.attendees.map(a => a.name + ' @' + a.units + '%').join(', '))}">+${t.attendees.length}</span>` : ''}</td>
           <td>${(t.milestone || summary) ? '—' : t.o}</td>
           <td>${(t.milestone || summary) ? '—' : t.m}</td>
           <td>${(t.milestone || summary) ? '—' : t.p}</td>
@@ -1842,6 +1870,7 @@
     // Ensure every assigned owner has a capacity entry (default 100% = 1 FTE).
     function syncResources() {
       const owners = new Set(tasks.map(t => (t.owner || '').trim()).filter(Boolean));
+      tasks.forEach(t => (t.attendees || []).forEach(a => { const n = (a.name || '').trim(); if (n) owners.add(n); }));
       owners.forEach(o => { if (!resources[o]) resources[o] = { capacity: 100 }; });
       return owners;
     }
@@ -1884,24 +1913,25 @@
         for (let k = 0; k <= maxIdx; k++) { dayDates.push(new Date(dd)); do { dd.setDate(dd.getDate() + 1); } while (!isWorkingDay(dd, holidays)); } }
 
       tasks.forEach(t => {
-        const name = (t.owner || '').trim();
-        if (!name || t.milestone || t.isSummary) return;
-        const units = Number.isFinite(+t.units) ? +t.units : 100;
-        if (units <= 0) return;
-        const R = perResource[name];
+        if (t.milestone || t.isSummary) return;
         const esD = unitToWorkingDays(t.es), efD = unitToWorkingDays(t.ef);
         if (efD - esD <= 1e-9) return;
-        const firstIdx = Math.max(0, Math.floor(esD + 1e-9));
-        const lastIdx = Math.min(dayDates.length - 1, Math.ceil(efD - 1e-9) - 1);
-        for (let k = firstIdx; k <= lastIdx; k++) {
-          const overlap = Math.min(efD, k + 1) - Math.max(esD, k); // fraction of working-day k occupied
-          if (overlap <= 1e-9) continue;
-          const iso = fmtISO(dayDates[k]);
-          if (!R.days[iso]) R.days[iso] = { load: 0, tasks: [] };
-          R.days[iso].load += overlap * units;
-          R.days[iso].tasks.push(t.id);
-          R.unitDays += overlap * units;
-        }
+        taskParticipants(t).forEach(pr => {
+          if (pr.units <= 0) return;
+          const R = perResource[pr.name];
+          if (!R) return;
+          const firstIdx = Math.max(0, Math.floor(esD + 1e-9));
+          const lastIdx = Math.min(dayDates.length - 1, Math.ceil(efD - 1e-9) - 1);
+          for (let k = firstIdx; k <= lastIdx; k++) {
+            const overlap = Math.min(efD, k + 1) - Math.max(esD, k); // fraction of working-day k occupied
+            if (overlap <= 1e-9) continue;
+            const iso = fmtISO(dayDates[k]);
+            if (!R.days[iso]) R.days[iso] = { load: 0, tasks: [] };
+            R.days[iso].load += overlap * pr.units;
+            R.days[iso].tasks.push(t.id);
+            R.unitDays += overlap * pr.units;
+          }
+        });
       });
 
       let overResourceDays = 0;
@@ -2309,6 +2339,30 @@
       if (calculated) { recompute(); renderTaskTable(); renderResources(); renderAnalytics(); }
     }
 
+    // ---- resource kind: internal (billable) vs client/external (non-billing) ----
+    function getKind(name) { const r = resources[name]; return (r && r.kind === 'client') ? 'client' : 'internal'; }
+    function isClientResource(name) { return getKind(name) === 'client'; }
+    function setKind(name, val) {
+      if (!resources[name]) resources[name] = { capacity: 100 };
+      resources[name].kind = val === 'client' ? 'client' : 'internal';
+      saveLocal();
+      if (calculated) { renderResources(); renderAnalytics(); renderPricing(); }
+    }
+    // Everyone working a task: owner + additional attendees (sessions/workshops).
+    function taskParticipants(t) {
+      const out = [];
+      const seen = new Set();
+      const add = (name, units) => {
+        const n = (name || '').trim();
+        if (!n || seen.has(n.toLowerCase())) return;
+        seen.add(n.toLowerCase());
+        out.push({ name: n, units: Number.isFinite(+units) ? +units : 100 });
+      };
+      add(t.owner, t.units);
+      (t.attendees || []).forEach(a => add(a.name, a.units));
+      return out;
+    }
+
     // ========================= COST / BUDGET =========================
     function getRate(name) {
       const r = resources[name];
@@ -2324,7 +2378,9 @@
     // Planned cost of a leaf = fixed cost + owner day-rate × working days × units.
     function taskCost(t) {
       if (t.isSummary) return leafDescendants(t.id).reduce((s, x) => s + taskCost(x), 0);
-      const labor = getRate((t.owner || '').trim()) * unitToWorkingDays(t.te || 0) * ((Number.isFinite(+t.units) ? +t.units : 100) / 100);
+      const days = unitToWorkingDays(t.te || 0);
+      const labor = taskParticipants(t).reduce((sx, pr) =>
+        sx + (isClientResource(pr.name) ? 0 : getRate(pr.name) * days * pr.units / 100), 0);
       return (Number(t.fixedCost) || 0) + labor;
     }
     function projectCost() { return leafTasks().reduce((s, t) => s + taskCost(t), 0); }
@@ -2996,14 +3052,21 @@
       // ---- managed roster table ----
       const rosterRows = names.map((name, ri) => {
         const R = rl.perResource[name];
-        const assigned = tasks.filter(t => (t.owner || '').trim() === name && !t.isSummary && !t.milestone);
-        const effort = assigned.reduce((s, t) => s + unitToWorkingDays(t.te || 0) * ((+t.units || 100) / 100), 0);
+        const assigned = tasks.filter(t => !t.isSummary && !t.milestone && taskParticipants(t).some(pr => pr.name === name));
+        const effort = assigned.reduce((s, t) => {
+          const pr = taskParticipants(t).find(x => x.name === name);
+          return s + unitToWorkingDays(t.te || 0) * ((pr ? pr.units : 0) / 100);
+        }, 0);
         const over = R.overDays.length;
-        return `<tr>
-          <td style="font-weight:600">${escapeHtml(name)}</td>
+        const isClient = isClientResource(name);
+        return `<tr style="${isClient ? 'background:#fafaf9' : ''}">
+          <td style="font-weight:600">${escapeHtml(name)}${isClient ? ' <span class="risk-tag" style="background:#e0e7ff;color:#3730a3">CLIENT</span>' : ''}</td>
+          <td><select class="mini-inp rl-kind" data-ri="${ri}" style="width:auto" title="Client/external people carry no cost or billing — but their workload and PTO are still tracked">
+            <option value="internal" ${!isClient ? 'selected' : ''}>Internal</option>
+            <option value="client" ${isClient ? 'selected' : ''}>Client</option></select></td>
           <td><input class="mini-inp rl-cap" data-ri="${ri}" type="number" min="1" step="10" value="${R.capacity}" title="Capacity % — 100 = 1 full-time person, 300 = a 3-person team" /></td>
-          <td><input class="mini-inp rl-rate" data-ri="${ri}" type="number" min="0" step="50" value="${getRate(name)}" title="COST per working day at 100% (feeds the budget layer)" /></td>
-          <td><input class="mini-inp rl-bill" data-ri="${ri}" type="number" min="0" step="50" value="${getBillRate(name)}" title="BILL rate per day (client-facing — feeds pricing & SOW)" /></td>
+          <td>${isClient ? '<span class="help-text">n/a</span>' : `<input class="mini-inp rl-rate" data-ri="${ri}" type="number" min="0" step="50" value="${getRate(name)}" title="COST per working day at 100% (feeds the budget layer)" />`}</td>
+          <td>${isClient ? '<span class="help-text">n/a</span>' : `<input class="mini-inp rl-bill" data-ri="${ri}" type="number" min="0" step="50" value="${getBillRate(name)}" title="BILL rate per day (client-facing — feeds pricing & SOW)" />`}</td>
           <td><input class="mini-inp rl-pto" data-ri="${ri}" style="width:150px" value="${escapeHtml((resources[name] && resources[name].pto) || '')}" placeholder="2026-08-03..2026-08-07" title="PTO / unavailable dates: single dates or ranges (start..end), comma separated. Work scheduled on these days is flagged." /></td>
           <td>${assigned.length}</td>
           <td>${effort.toFixed(1)}d</td>
@@ -3021,7 +3084,7 @@
           <button class="btn-sm btn-primary no-print" onclick="addResourcePrompt()">➕ Add resource</button>
         </div>
         <div class="table-wrap" style="margin-bottom:1rem"><table>
-          <thead><tr><th>Resource</th><th>Capacity %</th><th>Cost $/d</th><th>Bill $/d</th><th>PTO / unavailable</th><th>Tasks</th><th>Planned effort</th><th>Peak load</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Resource</th><th>Type</th><th>Capacity %</th><th>Cost $/d</th><th>Bill $/d</th><th>PTO / unavailable</th><th>Tasks</th><th>Planned effort</th><th>Peak load</th><th>Status</th><th></th></tr></thead>
           <tbody>${rosterRows}</tbody>
         </table></div>`;
       const holidays = getHolidaySet();
@@ -3151,6 +3214,9 @@
       });
       cont.querySelectorAll('input.rl-pto').forEach(inp => {
         inp.addEventListener('change', () => setPto(names[Number(inp.dataset.ri)], inp.value));
+      });
+      cont.querySelectorAll('select.rl-kind').forEach(sel => {
+        sel.addEventListener('change', () => setKind(names[Number(sel.dataset.ri)], sel.value));
       });
       rcBindEditor(cont);
       cont.querySelectorAll('[data-mend-add]').forEach(btn => {
@@ -3595,11 +3661,12 @@
     function exportResourcesCSV() {
       if (!Object.keys(resources).length && !tasks.some(t => t.owner)) { alert('No resources yet.'); return; }
       syncResources();
-      const rows = [['Resource','Role (rate card)','Capacity %','Cost $/day','Bill $/day','PTO / unavailable dates','Assigned tasks','Planned effort (days)']];
+      const rows = [['Resource','Type','Role (rate card)','Capacity %','Cost $/day','Bill $/day','PTO / unavailable dates','Assigned tasks','Planned effort (days)']];
       Object.keys(resources).forEach(n => {
-        const assigned = tasks.filter(t => (t.owner || '').trim() === n && !t.isSummary && !t.milestone);
-        const effort = assigned.reduce((sx, t) => sx + unitToWorkingDays(t.te || 0) * ((+t.units || 100) / 100), 0);
-        rows.push([n, (resources[n] && resources[n].role) || '', getCapacity(n), getRate(n), getBillRate(n),
+        const assigned = tasks.filter(t => !t.isSummary && !t.milestone && taskParticipants(t).some(pr => pr.name === n));
+        const effort = assigned.reduce((sx, t) => { const pr = taskParticipants(t).find(x => x.name === n); return sx + unitToWorkingDays(t.te || 0) * ((pr ? pr.units : 0) / 100); }, 0);
+        rows.push([n, getKind(n), (resources[n] && resources[n].role) || '', getCapacity(n),
+          isClientResource(n) ? '' : getRate(n), isClientResource(n) ? '' : getBillRate(n),
           (resources[n] && resources[n].pto) || '', assigned.map(t => t.name).join('; '), effort.toFixed(1)]);
       });
       download(safeName() + '-resources.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
@@ -3640,7 +3707,7 @@
           (t.milestone) ? '0' : (t.te || 0).toFixed(2) + durSuffix,
           dateStr(t.startDate), dateStr(t.finishDate),
           ((t.percentComplete||0)/100).toFixed(2),
-          preds, t.owner || '',
+          preds, taskParticipants(t).map(pr => pr.name).join(', ') || '',
           [t.isSummary ? 'Summary' : '', t.milestone ? 'Milestone' : '', (!t.milestone && !t.isSummary && t.units !== 100) ? ('Allocation ' + t.units + '%') : '', t.deliverable ? ('Deliverable: ' + t.deliverable) : ''].filter(Boolean).join('; ')
         ]);
       });
@@ -3696,8 +3763,10 @@
       const typeCode = { FF: 0, FS: 1, SF: 2, SS: 3 };
       const lagMinutes = lag => Math.round(unitToWorkingDays(lag) * 8 * 60 * 10); // tenths of a minute
 
-      // resources from unique owners
-      const owners = [...new Set(tasks.map(t => t.owner).filter(Boolean))];
+      // resources from every participant (owners + attendees)
+      const ownerSet = new Set(tasks.map(t => (t.owner || '').trim()).filter(Boolean));
+      tasks.forEach(t => (t.attendees || []).forEach(a => { const n = (a.name || '').trim(); if (n) ownerSet.add(n); }));
+      const owners = [...ownerSet];
       const resUID = {}; owners.forEach((o, i) => resUID[o] = i + 1);
 
       let taskXml = '';
@@ -3752,16 +3821,18 @@
       let assignXml = '';
       let auid = 1;
       tasks.forEach(t => {
-        if (t.owner && resUID[t.owner] && !t.isSummary) {
+        if (t.isSummary) return;
+        taskParticipants(t).forEach(pr => {
+          if (!resUID[pr.name]) return;
           assignXml += `
       <Assignment>
         <UID>${auid++}</UID>
         <TaskUID>${t.id}</TaskUID>
-        <ResourceUID>${resUID[t.owner]}</ResourceUID>
+        <ResourceUID>${resUID[pr.name]}</ResourceUID>
         <PercentWorkComplete>${Math.round(t.percentComplete || 0)}</PercentWorkComplete>
-        <Units>${((Number.isFinite(+t.units) ? +t.units : 100) / 100).toFixed(4)}</Units>
+        <Units>${(pr.units / 100).toFixed(4)}</Units>
       </Assignment>`;
-        }
+        });
       });
 
       const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -3832,7 +3903,8 @@
         // work packages
         mk(1, 'Kick-off & Discovery', 2, 3, 5, [], 'PMO', 11, 'Charter & discovery notes'),
         mk(2, 'Stakeholder Interviews', 3, 5, 8, [1], 'A. Rivera', 11, 'Interview findings'),
-        mk(3, 'Requirements Workshop', 2, 3, 4, [1], 'A. Rivera', 11, 'Signed requirements'),
+        (() => { const t = mk(3, 'Requirements Workshop', 2, 3, 4, [1], 'A. Rivera', 11, 'Signed requirements');
+          t.attendees = [{ name: 'L. Chen', units: 100 }, { name: 'Client SME', units: 100 }]; return t; })(),
         mk(4, 'Solution Design', 4, 6, 10, [2, 3], 'L. Chen', 12, 'Solution design doc'),
         mk(5, 'Data Mapping', 3, 4, 7, [2], 'L. Chen', 12, 'Data mapping spec'),
         mk(6, 'Build / Configure', 8, 12, 18, [4, 5], 'Dev Team', 13, 'Configured system'),
@@ -3847,7 +3919,8 @@
       nextId = 14;
       resources = {
         'PMO': { capacity: 100, rate: 900, billRate: 1500 }, 'A. Rivera': { capacity: 100, rate: 1200, billRate: 1900 },
-        'L. Chen': { capacity: 100, rate: 1300, billRate: 2100 }, 'Dev Team': { capacity: 300, rate: 1100, billRate: 1750 }, 'QA': { capacity: 100, rate: 950, billRate: 1500 }
+        'L. Chen': { capacity: 100, rate: 1300, billRate: 2100 }, 'Dev Team': { capacity: 300, rate: 1100, billRate: 1750 }, 'QA': { capacity: 100, rate: 950, billRate: 1500 },
+        'Client SME': { capacity: 50, kind: 'client', rate: 0, billRate: 0 }
       };
       raid = [
         { id: 1, type: 'Risk', title: 'Client sandbox access may slip past kickoff', probability: 3, impact: 4, owner: 'PMO', mitigation: 'Escalate access request in week 1; fallback to vendor demo org', description: '', status: 'Open', taskId: 6, createdAt: fmtISO(new Date()) },
@@ -4001,6 +4074,7 @@
       "milestone": false,     // true for zero-duration checkpoints (go-live, sign-off, approvals)
       "owner": "person/role or empty string",
       "units": 100,           // % of the owner this task consumes while active (100 = full-time; use less for part-time work)
+      "attendees": [],        // optional: other people also in this session/workshop (names; each loads their own calendar)
       "parent": "",           // optional: exact name of a phase/deliverable this task rolls up under (for WBS grouping)
       "deliverable": "",      // REQUIRED: the tangible output (one line)
       "description": "",      // REQUIRED: scope statement for the WBS dictionary (one line)
@@ -4009,7 +4083,7 @@
     }
   ],
   "resources": [
-    { "name": "person/role/team name", "capacityPercent": 100 }   // optional; 100 = 1 person, 300 = a 3-person team
+    { "name": "person/role/team name", "capacityPercent": 100, "kind": "internal" }  // kind "client" for CLIENT-side people (they do work but are never billed/costed)
   ]
 }
 Rules:
@@ -4021,7 +4095,8 @@ Rules:
 - Mark clear checkpoints (go-live, sign-off, approval, kickoff decision) as milestones with 0/0/0 durations.
 - Assign owners only when named or clearly implied. Default units to 100 unless the notes say a task is part-time or shared.
 - Draft the FULL WBS dictionary: every task (including phases and milestones) gets a concise deliverable, description, and acceptance — never leave them blank.
-- In "resources", list each distinct owner once. Give teams a capacityPercent > 100 (e.g. a 3-developer team = 300); individuals default to 100. Omit "resources" only if no owners are assigned.`;
+- In "resources", list each distinct owner once. Give teams a capacityPercent > 100 (e.g. a 3-developer team = 300); individuals default to 100. Mark client-side participants (SMEs, approvers, data stewards) with kind "client". Omit "resources" only if no owners are assigned.
+- For workshops/sessions with several people at once, set one owner and put the rest in "attendees".`;
     }
 
     async function callAnthropic(userContent) {
@@ -4150,6 +4225,7 @@ ${aiSchemaHint()}`;
         if (!Number.isFinite(units) || units < 0) units = 100;
         built.push(makeTask({ id, name, o, m, p, milestone: isMs,
           owner: String(pt.owner || '').trim(), units,
+          attendees: Array.isArray(pt.attendees) ? pt.attendees.map(a => ({ name: String(typeof a === 'string' ? a : (a && a.name) || '').trim(), units: 100 })).filter(a => a.name) : [],
           deliverable: String(pt.deliverable || '').trim(), description: String(pt.description || '').trim(),
           acceptance: String(pt.acceptance || '').trim(),
           predecessors: [], _dependsOn: pt.dependsOn || [], _parent: String(pt.parent || '').trim() }));
@@ -4186,7 +4262,7 @@ ${aiSchemaHint()}`;
           if (!nm) return;
           nm = ownerByLower[nm.toLowerCase()] || nm; // canonicalize to the owner's casing
           const cap = Number(r.capacityPercent != null ? r.capacityPercent : r.capacity);
-          resources[nm] = { capacity: (Number.isFinite(cap) && cap > 0) ? cap : 100 };
+          resources[nm] = { capacity: (Number.isFinite(cap) && cap > 0) ? cap : 100, kind: r.kind === 'client' ? 'client' : 'internal' };
         });
       }
       syncResources();
@@ -4437,10 +4513,12 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       resources[name].billRate = Math.max(0, parseFloat(val) || 0);
       saveLocal(); renderPricing();
     }
-    function laborRevenue() { // bill side at P50 effort
+    function laborRevenue() { // bill side at P50 effort; client-side resources bill nothing
       return leafTasks().reduce((sum, t) => {
         if (t.milestone) return sum;
-        return sum + getBillRate((t.owner || '').trim()) * unitToWorkingDays(t.te || 0) * ((+t.units || 100) / 100);
+        const days = unitToWorkingDays(t.te || 0);
+        return sum + taskParticipants(t).reduce((sx, pr) =>
+          sx + (isClientResource(pr.name) ? 0 : getBillRate(pr.name) * days * pr.units / 100), 0);
       }, 0);
     }
     function riskUplift(basis) { // duration-based uplift from Monte Carlo
@@ -4495,7 +4573,8 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         </div>
         <p class="help-text" style="margin-top:0.6rem">${pricing.model === 'fixed'
           ? `Fixed-price guidance: at the P50 price there is roughly a 50% chance effort exceeds plan. The ${pricing.basis.toUpperCase()} bid covers ~${pricing.basis === 'p90' ? '90' : pricing.basis === 'p80' ? '80' : '50'}% of simulated outcomes${mcResult ? '' : ' (run Calculate for Monte-Carlo uplift)'}.`
-          : 'T&M: revenue tracks actual effort; quote the P50 number as the estimate and the P80 as the not-to-exceed.'}</p>`;
+          : 'T&M: revenue tracks actual effort; quote the P50 number as the estimate and the P80 as the not-to-exceed.'}
+          ${Object.keys(resources).some(isClientResource) ? ' Client-type resources are excluded from cost and billing.' : ''}</p>`;
     }
 
     // ========================= SOW GENERATOR =========================
@@ -4512,7 +4591,11 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           deliverable: t.deliverable, description: t.description, acceptance: t.acceptance, owner: t.owner,
           effort: t.milestone || t.isSummary ? null : (t.te || 0).toFixed(1) + ' ' + u })),
         milestones: tasks.filter(t => t.milestone).map(t => ({ name: t.name, date: fmtNice(t.finishDate) })),
-        team: Object.keys(resources).map(n => ({ role: n, capacity: getCapacity(n), billRate: getBillRate(n) })).filter(r => tasks.some(t => (t.owner || '').trim() === r.role)),
+        team: Object.keys(resources).filter(n => !isClientResource(n)).map(n => ({ role: n, capacity: getCapacity(n), billRate: getBillRate(n) })).filter(r => tasks.some(t => taskParticipants(t).some(pr => pr.name === r.role))),
+        clientTeam: Object.keys(resources).filter(isClientResource).map(n => ({
+          role: n,
+          duties: tasks.filter(t => !t.isSummary && taskParticipants(t).some(pr => pr.name === n)).map(t => t.name)
+        })).filter(c => c.duties.length),
         assumptions: raid.filter(r => r.type === 'Assumption' && r.status !== 'Closed').map(r => r.title + (r.mitigation ? ' — ' + r.mitigation : '')),
         exclusions: raid.filter(r => r.type === 'Exclusion').map(r => r.title),
         risks: raid.filter(r => r.type === 'Risk' && r.status !== 'Closed').sort((a, b) => b.probability * b.impact - a.probability * a.impact).slice(0, 6).map(r => r.title),
@@ -4545,6 +4628,10 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         <h2 style="font-size:16px;margin:16px 0 6px">5. Team &amp; Rates</h2>
         <table style="border-collapse:collapse"><tr><th style="${th}">Role / resource</th><th style="${th}">Allocation</th>${d.team.some(t => t.billRate) ? `<th style="${th}">Rate (per day)</th>` : ''}</tr>
         ${d.team.map(t => `<tr><td style="${td}">${h(t.role)}</td><td style="${td}">${t.capacity}%</td>${d.team.some(x => x.billRate) ? `<td style="${td}">${t.billRate ? fmtMoney(t.billRate) : '—'}</td>` : ''}</tr>`).join('')}</table>
+        ${d.clientTeam && d.clientTeam.length ? `<h3 style="font-size:14px;margin:10px 0 4px">Client team &amp; responsibilities</h3>
+        <p style="font-size:12.5px;color:#475569">The client will make the following resources available; timely participation is a dependency of the schedule and pricing above.</p>
+        <table style="border-collapse:collapse"><tr><th style="${th}">Client resource</th><th style="${th}">Participates in</th></tr>
+        ${d.clientTeam.map(c => `<tr><td style="${td}">${h(c.role)}</td><td style="${td}">${c.duties.map(h).join('; ')}</td></tr>`).join('')}</table>` : ''}
         ${d.price ? `<h2 style="font-size:16px;margin:16px 0 6px">6. Commercial Terms</h2>
         <p style="font-size:13px"><b>${d.price.model}:</b> ${d.price.amount}${d.price.model === 'Fixed price' ? ' (risk-adjusted at ' + d.price.basis + ' effort basis)' : ''}. ${n.paymentTerms || '<em>[Payment schedule — e.g. per milestone above.]</em>'}</p>` : ''}
         <h2 style="font-size:16px;margin:16px 0 6px">${d.price ? '7' : '6'}. Assumptions</h2>
