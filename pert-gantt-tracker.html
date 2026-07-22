@@ -532,7 +532,8 @@
             <button class="btn-secondary btn-sm" onclick="openStoryModal(null)" title="Write a story by hand">+ Add story</button>
             <button class="btn-secondary btn-sm" onclick="generateTestPlan()" title="AI derives test cases from EVERY story's acceptance criteria (batched so nothing truncates): one TC per AC minimum, scheduled as WBS tasks under a Test Execution phase, each depending on the activity it verifies, owned by your QA/UAT resource. Safe to re-run — existing TCs are kept, only gaps are filled.">🧪 Generate test plan</button>
             <button class="btn-secondary btn-sm" onclick="exportTestPlanMarkdown()" title="Test plan document: strategy, entry/exit criteria, S1–S4 severity gates, AC→TC traceability, FULL test-case specifications (steps + expected results), and coverage gaps">⬇ Test plan (.md)</button>
-            <button class="btn-secondary btn-sm" onclick="exportTestCasesCSV()" title="UAT execution sheet: one row per test case with numbered steps, expected result, owner, schedule, and blank Result / Defect columns for the tester to fill in">⬇ Test cases (.csv)</button>
+            <button class="btn-secondary btn-sm" onclick="exportTestCasesCSV()" title="UAT execution sheet (CSV): one row per test case with numbered steps, expected result, owner, schedule, and blank Result / Defect columns for the tester to fill in">⬇ Test cases (.csv)</button>
+            <button class="btn-secondary btn-sm" onclick="exportTestCasesXLS()" title="Same execution sheet formatted for Excel: styled header, wrapped steps, yellow fill-in columns. Excel shows a one-time format notice, then opens normally.">⬇ Excel</button>
             <button class="btn-secondary btn-sm" onclick="exportReqsMarkdown()" title="Full requirements document: personas, epics, stories, ACs, NFRs, assumptions — ready for the SOW appendix">⬇ Markdown</button>
             <button class="btn-secondary btn-sm" onclick="exportTraceCSV()" title="Traceability matrix: one row per acceptance criterion — epic → story → AC → WBS item → status">⬇ Traceability (.csv)</button>
           </div>
@@ -4564,7 +4565,7 @@
       }
       const idToTask = {}; tasks.forEach(t => idToTask[t.id] = t);
       const stories = reqs.stories, epics = reqs.epics || [];
-      const leaves = leafTasks().filter(t => !t.milestone);
+      const leaves = storyableLeaves(); // test cases verify ACs — they never need stories themselves
       const covered = new Set(stories.map(s => s.wbsId).filter(id => id != null));
       const uncovered = leaves.filter(t => !covered.has(t.id));
       const allWarns = stories.reduce((n, s) => n + storyLint(s).length, 0);
@@ -4697,6 +4698,12 @@
     // test-case WBS items that reference an acceptance criterion by ID — created
     // by ⑂ decompose ("TC AC-1.2 — …") or named that way by hand. Completes the
     // guide's chain: story → AC → test case → status.
+    // Test cases are VERIFICATION of a story's ACs, not scope of their own —
+    // they must never count as "activities missing a story", or generating a
+    // test plan would immediately demand stories for the test cases (a cycle).
+    function isTestCaseTask(t) { return /^tc\s/i.test((t.name || '').trim()); }
+    // leaf activities that legitimately need a user story
+    function storyableLeaves() { return leafTasks().filter(t => !t.milestone && !isTestCaseTask(t)); }
     function testCasesForAC(acId) {
       if (!acId) return [];
       const needle = String(acId).trim().toLowerCase();
@@ -4770,7 +4777,7 @@
       const flagged = reqs.stories.map(s => ({ s, warns: storyLint(s) })).filter(x => x.warns.length);
       if (!flagged.length) { flashSaved('✓ No lint findings — every story is testable and traced.'); return; }
       computeWbsCodes();
-      const wbsNames = leafTasks().filter(t => !t.milestone).map(t => t.name);
+      const wbsNames = storyableLeaves().map(t => t.name);
       const payload = flagged.map(x => ({
         story: { id: x.s.id, epicId: x.s.epicId, wbsName: x.s.wbsName || '', persona: x.s.persona, want: x.s.want, soThat: x.s.soThat, ac: x.s.ac, nfrs: x.s.nfrs, assumptions: x.s.assumptions },
         problems: x.warns
@@ -4965,11 +4972,20 @@ Return ONLY JSON (no prose, no fences):
       download(safeName() + '-test-plan.md', L.join('\n'), 'text/markdown');
       flashSaved('⬇ Test plan exported — ' + covered.length + '/' + allAcs.length + ' ACs covered, full steps & expected results in §6');
     }
-    // UAT execution sheet: one row per test case with steps + expected result —
-    // hand this CSV to the client tester and track pass/fail in it
-    function exportTestCasesCSV() {
+    // UAT execution sheet data: one row per test case with steps + expected result.
+    // Cells carry real line breaks (quoted in CSV, <br/> in .xls) so Excel shows
+    // one numbered step per line instead of one run-on string.
+    function tcStepLines(s) {
+      return String(s || '').split(/(?<![\w.])(?=\d+\.\s)/).map(x => x.trim()).filter(Boolean).join('\n');
+    }
+    function gwtLines(t) {
+      const s = String(t || '').trim();
+      if (!/^given\b/i.test(s)) return s;
+      return s.replace(/,\s*(?=(?:When|Then|And)\b)/g, ',\n');
+    }
+    function testCaseSheetRows() {
       const tcs = tasks.filter(t => /^tc\s/i.test(t.name.trim()));
-      if (!tcs.length) { alert('No test cases yet — 🧪 Generate test plan first.'); return; }
+      if (!tcs.length) return null;
       computeWbsCodes();
       const acIndex = {};
       (reqs && reqs.stories || []).forEach(s => (s.ac || []).forEach(a => acIndex[a.id.toLowerCase()] = { s, a }));
@@ -4977,12 +4993,36 @@ Return ONLY JSON (no prose, no fences):
       tcs.forEach(tc => {
         const acId = ((tc.name.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').toLowerCase();
         const hit = acIndex[acId];
-        rows.push([tc.name, hit ? hit.a.id : acId.toUpperCase(), hit ? hit.a.text : '', hit ? hit.s.id + ' — As a ' + (hit.s.persona || '?') + ', I want to ' + (hit.s.want || '?') : '',
-          tc.description || '', tc.acceptance || '', tc.owner || '', (tc.te || 0).toFixed(1), (tc.percentComplete || 0) + '%', taskStatus(tc).label,
+        rows.push([tc.name, hit ? hit.a.id : acId.toUpperCase(), hit ? gwtLines(hit.a.text) : '', hit ? hit.s.id + '\nAs a ' + (hit.s.persona || '?') + ', I want to ' + (hit.s.want || '?') : '',
+          tcStepLines(tc.description), gwtLines(tc.acceptance), tc.owner || '', (tc.te || 0).toFixed(1), (tc.percentComplete || 0) + '%', taskStatus(tc).label,
           tc.startDate ? fmtISO(tc.startDate) : '', '', '']);
       });
+      return rows;
+    }
+    function exportTestCasesCSV() {
+      const rows = testCaseSheetRows();
+      if (!rows) { alert('No test cases yet — 🧪 Generate test plan first.'); return; }
       download(safeName() + '-test-cases.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
-      flashSaved('⬇ ' + tcs.length + ' test cases exported with steps & expected results — the UAT execution sheet');
+      flashSaved('⬇ ' + (rows.length - 1) + ' test cases exported (CSV) — steps, expected results, fill-in Result/Defect columns');
+    }
+    // Excel-formatted version: an HTML-table .xls (no dependencies) — styled
+    // header, wrapped steps, yellow fill-in columns. Excel shows a one-time
+    // "format doesn't match extension" notice and then opens it fine.
+    function exportTestCasesXLS() {
+      const rows = testCaseSheetRows();
+      if (!rows) { alert('No test cases yet — 🧪 Generate test plan first.'); return; }
+      const th = 'background:#1e293b;color:#fff;padding:6px 8px;border:1px solid #94a3b8;font-size:12px;text-align:left;vertical-align:top;';
+      const td = 'padding:5px 8px;border:1px solid #cbd5e1;font-size:12px;vertical-align:top;';
+      const fillCols = new Set([rows[0].length - 2, rows[0].length - 1]);
+      const html = `<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8">
+        <xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Test Cases</x:Name>
+        <x:WorksheetOptions><x:Panes/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml></head>
+        <body><table border="1" style="border-collapse:collapse">
+        <tr>${rows[0].map(h => `<th style="${th}">${escapeHtml(h)}</th>`).join('')}</tr>
+        ${rows.slice(1).map(r => `<tr>${r.map((c, i) => `<td style="${td}${fillCols.has(i) ? 'background:#fef9c3;' : ''}${i === 4 ? 'width:340px;' : i === 2 || i === 5 ? 'width:260px;' : i === 3 ? 'width:220px;' : ''}">${escapeHtml(String(c)).replace(/\n/g, '<br/>')}</td>`).join('')}</tr>`).join('')}
+        </table></body></html>`;
+      download(safeName() + '-test-cases.xls', html, 'application/vnd.ms-excel');
+      flashSaved('⬇ ' + (rows.length - 1) + ' test cases exported (Excel) — yellow columns are for the tester to fill in');
     }
 
     function reqSetAll(open) { document.querySelectorAll('#reqContainer details.story-card').forEach(d => { d.open = open; }); }
@@ -5096,12 +5136,13 @@ Return ONLY JSON (no prose, no fences):
       computeWbsCodes();
       // big plans go straight to phase-by-phase drafting: many small calls that
       // each COMPLETE, instead of one huge response that could hit the ceiling
-      if (leafTasks().filter(t => !t.milestone).length > 60) {
+      if (storyableLeaves().length > 60) {
         flashSaved('📦 Large plan — drafting phase-by-phase so nothing can be cut off');
         try { await draftRequirementsChunked(); } catch (e) { streamHide(false); alert('Requirements drafting failed: ' + (e.message || e)); }
         return;
       }
-      const outline = reqOutlineFor(tasksInWbsOrder());
+      // test-case tasks are excluded: they verify ACs, they don't get stories
+      const outline = reqOutlineFor(tasksInWbsOrder().filter(({ task }) => !isTestCaseTask(task)));
       const existing = (reqs && reqs.stories && reqs.stories.length)
         ? `\nEXISTING REQUIREMENTS — keep every existing ID stable, improve weak spots (missing error/edge ACs, vague personas, untestable words) and ADD stories for uncovered activities. Return the COMPLETE set:\n${JSON.stringify({ personas: reqs.personas, epics: reqs.epics, stories: reqs.stories.map(s => ({ id: s.id, epicId: s.epicId, wbsName: (tasks.find(t => t.id === s.wbsId) || {}).name || '', persona: s.persona, want: s.want, soThat: s.soThat, ac: s.ac, nfrs: s.nfrs, assumptions: s.assumptions })) })}\n`
         : '';
@@ -5140,7 +5181,7 @@ ${reqRulesBlock()}`;
       if (!reqs) reqs = { personas: [], epics: [], stories: [] };
       computeWbsCodes();
       const coveredIds = new Set(reqs.stories.map(s => s.wbsId).filter(id => id != null));
-      const gaps = leafTasks().filter(t => !t.milestone && !coveredIds.has(t.id));
+      const gaps = storyableLeaves().filter(t => !coveredIds.has(t.id));
       if (!gaps.length) { flashSaved('✓ Every activity already has a story — no gaps.'); return; }
       const batches = [];
       for (let i = 0; i < gaps.length; i += 15) batches.push(gaps.slice(i, i + 15));
@@ -5168,7 +5209,7 @@ ${reqRulesBlock()}`;
           saveLocal(); renderReqs();
         }
       } catch (e) { streamHide(false); alert('Gap drafting failed: ' + (e.message || e) + '\nCompleted batches were kept — re-run to continue.'); return; }
-      const still = leafTasks().filter(t => !t.milestone && !reqs.stories.some(s => s.wbsId === t.id));
+      const still = storyableLeaves().filter(t => !reqs.stories.some(s => s.wbsId === t.id));
       renderReqs();
       if (still.length) {
         alert('⚠ ' + still.length + ' activit' + (still.length === 1 ? 'y' : 'ies') + ' STILL have no linked story — the AI most likely retitled them, so its stories landed in the red "not linked" banner instead. Use 🔗 Auto-relink there (or the story editor), or re-run this button:\n\n• ' + still.slice(0, 12).map(t => t.name).join('\n• ') + (still.length > 12 ? '\n…' : ''));
@@ -5190,8 +5231,8 @@ ${reqRulesBlock()}`;
       let done = 0;
       for (const b of batches) {
         done++;
-        const entries = tasksInWbsOrder().filter(({ task }) => b.ids.has(task.id));
-        if (!entries.some(({ task }) => !task.milestone && !isSummaryId(task.id))) continue; // nothing storyable here
+        const entries = tasksInWbsOrder().filter(({ task }) => b.ids.has(task.id) && !isTestCaseTask(task));
+        if (!entries.some(({ task }) => !task.milestone && !isSummaryId(task.id))) continue; // nothing storyable here (e.g. the Test Execution branch)
         const existingBatch = reqs.stories.filter(s => s.wbsId != null && b.ids.has(s.wbsId));
         const prompt = `You are a senior business analyst and delivery lead writing the requirements layer for a billable engagement. This is PART ${done} of ${batches.length}: draft user stories ONLY for the activities listed below (one branch of the WBS). Other branches are handled separately.
 
@@ -7151,7 +7192,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         const orphans = reqs.stories.filter(s => s.wbsId == null || !tasks.some(t => t.id === s.wbsId));
         if (orphans.length) findings.push({ severity: 'medium', area: 'Requirements', finding: `${orphans.length} user stor${orphans.length === 1 ? 'y is' : 'ies are'} not linked to any WBS activity (its task was deleted or renamed): ${orphans.slice(0, 6).map(s => s.id).join(', ')}${orphans.length > 6 ? '…' : ''}`, recommendation: 'Auto-relink matches by remembered task name; relink the rest in the story editor.', relink: true });
         const covered = new Set(reqs.stories.map(s => s.wbsId));
-        const untold = leaves.filter(t => !covered.has(t.id));
+        const untold = leaves.filter(t => !covered.has(t.id) && !isTestCaseTask(t)); // TCs verify ACs — they never need stories
         if (untold.length) findings.push({ severity: 'low', area: 'Requirements', finding: `${untold.length} activit${untold.length === 1 ? 'y has' : 'ies have'} no user story`, recommendation: 'Requirements tab ▸ 🤖 Draft from WBS adds the missing stories while keeping existing ones.', jump: 'req' });
       }
       return findings;
