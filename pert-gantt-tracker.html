@@ -531,7 +531,8 @@
             <button class="btn-primary btn-sm" onclick="draftRequirements()" title="AI drafts personas, epics and INVEST user stories with happy/error/edge acceptance criteria for every WBS work item — or fills the gaps if some already exist">🤖 Draft from WBS</button>
             <button class="btn-secondary btn-sm" onclick="openStoryModal(null)" title="Write a story by hand">+ Add story</button>
             <button class="btn-secondary btn-sm" onclick="generateTestPlan()" title="AI derives test cases from EVERY story's acceptance criteria (batched so nothing truncates): one TC per AC minimum, scheduled as WBS tasks under a Test Execution phase, each depending on the activity it verifies, owned by your QA/UAT resource. Safe to re-run — existing TCs are kept, only gaps are filled.">🧪 Generate test plan</button>
-            <button class="btn-secondary btn-sm" onclick="exportTestPlanMarkdown()" title="Test plan document: strategy by test type, entry/exit criteria, S1–S4 defect severity gates and deemed-acceptance clause (per the estimation guide), AC→TC traceability with status, and uncovered-AC gaps">⬇ Test plan (.md)</button>
+            <button class="btn-secondary btn-sm" onclick="exportTestPlanMarkdown()" title="Test plan document: strategy, entry/exit criteria, S1–S4 severity gates, AC→TC traceability, FULL test-case specifications (steps + expected results), and coverage gaps">⬇ Test plan (.md)</button>
+            <button class="btn-secondary btn-sm" onclick="exportTestCasesCSV()" title="UAT execution sheet: one row per test case with numbered steps, expected result, owner, schedule, and blank Result / Defect columns for the tester to fill in">⬇ Test cases (.csv)</button>
             <button class="btn-secondary btn-sm" onclick="exportReqsMarkdown()" title="Full requirements document: personas, epics, stories, ACs, NFRs, assumptions — ready for the SOW appendix">⬇ Markdown</button>
             <button class="btn-secondary btn-sm" onclick="exportTraceCSV()" title="Traceability matrix: one row per acceptance criterion — epic → story → AC → WBS item → status">⬇ Traceability (.csv)</button>
           </div>
@@ -4621,7 +4622,7 @@
           <td style="font-size:0.75rem">${a ? escapeHtml(a.type) : ''}</td>
           <td style="font-size:0.78rem;min-width:260px">${a ? escapeHtml(a.text) : '<i>no acceptance criteria</i>'}</td>
           <td style="font-size:0.72rem;white-space:nowrap">${a ? (() => { const tcs = testCasesForAC(a.id); return tcs.length
-            ? tcs.map(tc => `<span class="badge ${tc.percentComplete >= 100 ? 'badge-done' : tc.percentComplete > 0 ? 'badge-prog' : 'badge-notstarted'}" style="cursor:pointer" onclick="openEditModal(${tc.id})" title="${escapeHtml(tc.name + ' — ' + (tc.percentComplete || 0) + '% complete. Click to open the test-case task.')}">${escapeHtml((tc.wbs || 'TC'))}</span>`).join(' ')
+            ? tcs.map(tc => `<span class="badge ${tc.percentComplete >= 100 ? 'badge-done' : tc.percentComplete > 0 ? 'badge-prog' : 'badge-notstarted'}" style="cursor:pointer" onclick="openEditModal(${tc.id})" title="${escapeHtml(tc.name + ' — ' + (tc.percentComplete || 0) + '% complete.' + (tc.description ? '\nSTEPS: ' + (tc.description.length > 260 ? tc.description.slice(0, 258) + '…' : tc.description) : '') + (tc.acceptance ? '\nEXPECTED: ' + (tc.acceptance.length > 160 ? tc.acceptance.slice(0, 158) + '…' : tc.acceptance) : '') + '\nClick to open the test-case task.')}">${escapeHtml((tc.wbs || 'TC'))}</span>`).join(' ')
             : '<span class="help-text" title="No test-case task references this criterion yet — ⑂ decompose the UAT activity with guidance like “decompose to test-case level” and they are generated named TC ' + escapeHtml(a.id) + ' — …">—</span>'; })() : ''}</td>
           <td style="font-size:0.75rem;white-space:nowrap;${t ? 'cursor:pointer;color:var(--primary)' : ''}" ${t ? `onclick="openEditModal(${t.id}, true)" title="Open ${escapeHtml(t.wbs + ' ' + t.name)}"` : ''}>${t ? escapeHtml(t.wbs + ' ' + (t.name.length > 24 ? t.name.slice(0, 22) + '…' : t.name)) : '⚠ unlinked'}</td>
           <td style="font-size:0.75rem">${t ? escapeHtml(t.owner || '—') : ''}</td>
@@ -4870,8 +4871,8 @@ ${batch.map(({ s, a }) => `- ${a.id} [${a.type}] (from ${s.id}: As a ${s.persona
 Rules:
 - One test case per criterion minimum; add a second only when the criterion genuinely bundles two scenarios.
 - name MUST start with "TC <AC-id> — " (e.g. "TC AC-3.2 — error path: export without admin role") — the tool links TCs to criteria by that prefix.
-- steps: numbered, concrete, executable by a client UAT tester (setup → action → observation), derived from the Given/When/Then.
-- pass: the binary pass condition, measurable, copied faithfully from the criterion's Then (keep every number and its measurement condition).
+- steps: MINIMUM 3 numbered steps a client UAT tester can execute without asking questions — setup/preconditions (name the exact test data or account), the action(s), and the observation to make. "1. Log in as billing admin (test user uat_billing01). 2. Open Analytics ▸ Export and select Jan–Mar 2026. 3. Click Export CSV and time the download." — that level of concreteness.
+- pass: the EXPECTED RESULT — the observable behaviour that means PASS, copied faithfully from the criterion's Then (keep every number and its measurement condition). Never restate the steps here.
 - Durations in ${document.getElementById('durationUnit').value}: small and realistic for executing one test (typically 0.1–0.5 days) — data setup or environment work belongs in its own test case only if a criterion demands it.
 Return ONLY JSON (no prose, no fences):
 {"testCases":[{"name":"TC AC-1.1 — …","ac":"AC-1.1","optimistic":0.1,"mostLikely":0.25,"pessimistic":0.5,"owner":"","steps":"1. … 2. …","pass":"…"}]}`;
@@ -4944,11 +4945,44 @@ Return ONLY JSON (no prose, no fences):
           (tcs.map(tc => tc.owner).filter(Boolean)[0] || '') + ' | ' +
           (tcs.length ? (tcs.every(tc => (tc.percentComplete || 0) >= 100) ? '✅ passed/executed' : tcs.some(tc => tc.percentComplete > 0) ? 'in progress' : 'not run') : '⚠ NO TEST CASE') + ' |');
       });
+      // full executable specifications — the part a UAT tester actually runs
+      L.push('', '## 6. Test case specifications');
+      let anySpec = false;
+      allAcs.forEach(({ s, a }) => {
+        testCasesForAC(a.id).forEach(tc => {
+          anySpec = true;
+          L.push('', '### ' + tc.name, '- **Verifies:** ' + a.id + ' (' + s.id + ') — ' + a.text,
+            '- **Owner:** ' + (tc.owner || '_unassigned_') + ' • **Estimate:** ' + (tc.te || 0).toFixed(1) + ' ' + unitLabel() + ' • **Status:** ' + ((tc.percentComplete || 0) >= 100 ? '✅ executed' : (tc.percentComplete || 0) > 0 ? 'in progress' : 'not run'),
+            '- **Steps:**');
+          String(tc.description || '(no steps recorded — edit the task)').split(/(?<![\w.])(?=\d+\.\s)/).map(x => x.trim()).filter(Boolean).forEach(st => L.push('  ' + (/^\d+\./.test(st) ? st : '1. ' + st)));
+          L.push('- **Expected result (pass):** ' + (tc.acceptance || '_not recorded_'));
+        });
+      });
+      if (!anySpec) L.push('_No test cases yet — run 🧪 Generate test plan._');
       const gaps = allAcs.filter(({ a }) => !testCasesForAC(a.id).length);
-      L.push('', '## 6. Coverage gaps' + (gaps.length ? '' : ' — none'));
+      L.push('', '## 7. Coverage gaps' + (gaps.length ? '' : ' — none'));
       gaps.forEach(({ s, a }) => L.push('- ' + a.id + ' (' + s.id + '): ' + a.text + ' — run 🧪 Generate test plan to cover.'));
       download(safeName() + '-test-plan.md', L.join('\n'), 'text/markdown');
-      flashSaved('⬇ Test plan exported — ' + covered.length + '/' + allAcs.length + ' ACs covered');
+      flashSaved('⬇ Test plan exported — ' + covered.length + '/' + allAcs.length + ' ACs covered, full steps & expected results in §6');
+    }
+    // UAT execution sheet: one row per test case with steps + expected result —
+    // hand this CSV to the client tester and track pass/fail in it
+    function exportTestCasesCSV() {
+      const tcs = tasks.filter(t => /^tc\s/i.test(t.name.trim()));
+      if (!tcs.length) { alert('No test cases yet — 🧪 Generate test plan first.'); return; }
+      computeWbsCodes();
+      const acIndex = {};
+      (reqs && reqs.stories || []).forEach(s => (s.ac || []).forEach(a => acIndex[a.id.toLowerCase()] = { s, a }));
+      const rows = [['Test case', 'Verifies AC', 'Acceptance criterion', 'Story', 'Steps', 'Expected result (pass)', 'Owner', 'Estimate (' + unitLabel() + ')', '% done', 'Status', 'Scheduled', 'Result (fill in)', 'Defect ID / notes (fill in)']];
+      tcs.forEach(tc => {
+        const acId = ((tc.name.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').toLowerCase();
+        const hit = acIndex[acId];
+        rows.push([tc.name, hit ? hit.a.id : acId.toUpperCase(), hit ? hit.a.text : '', hit ? hit.s.id + ' — As a ' + (hit.s.persona || '?') + ', I want to ' + (hit.s.want || '?') : '',
+          tc.description || '', tc.acceptance || '', tc.owner || '', (tc.te || 0).toFixed(1), (tc.percentComplete || 0) + '%', taskStatus(tc).label,
+          tc.startDate ? fmtISO(tc.startDate) : '', '', '']);
+      });
+      download(safeName() + '-test-cases.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
+      flashSaved('⬇ ' + tcs.length + ' test cases exported with steps & expected results — the UAT execution sheet');
     }
 
     function reqSetAll(open) { document.querySelectorAll('#reqContainer details.story-card').forEach(d => { d.open = open; }); }
