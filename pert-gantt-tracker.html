@@ -4221,6 +4221,17 @@
           ${reqs.personas.map(p => `<tr><td style="white-space:nowrap"><b>${escapeHtml(p.name)}</b></td><td style="font-size:0.85rem">${escapeHtml(p.definition || '')}</td></tr>`).join('')}
           </tbody></table></div></details>`;
       }
+      const unlinkedList = stories.filter(s => s.wbsId == null || !idToTask[s.wbsId]);
+      if (unlinkedList.length) {
+        html += `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
+          <strong>⚠ ${unlinkedList.length} stor${unlinkedList.length === 1 ? 'y is' : 'ies are'} not linked to any WBS activity:</strong>
+          ${unlinkedList.slice(0, 8).map(s => escapeHtml(s.id)).join(', ')}${unlinkedList.length > 8 ? '…' : ''} —
+          scope that is written down but <b>not in the plan or the price</b>. Either the activity was renamed/deleted, or the AI found a genuine scope gap.
+          <div style="margin-top:0.4rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+            <button class="btn-sm btn-secondary" onclick="repairOrphanStories()" title="Re-attach by remembered task name (case/punctuation-insensitive)">🔗 Auto-relink</button>
+            <button class="btn-sm btn-primary" onclick="createTasksFromUnlinked()" title="One new WBS activity per unlinked story, dictionary pre-filled, then a pre-filled AI request to estimate them">➕ Create WBS activities for the rest</button>
+          </div></div>`;
+      }
       if (uncovered.length) {
         html += `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
           <strong>⚠ ${uncovered.length} WBS activit${uncovered.length === 1 ? 'y has' : 'ies have'} no story:</strong>
@@ -4265,6 +4276,7 @@
       if (leftovers.length) html += `<div style="margin-bottom:1.1rem"><h3 style="font-size:0.95rem;margin:0 0 0.5rem">Ungrouped stories</h3>${leftovers.map(s => storyCardHtml(s, idToTask, typeIcon, typeTip)).join('')}</div>`;
       cont.innerHTML = html;
       cont.querySelectorAll('[data-story-edit]').forEach(b => b.addEventListener('click', () => openStoryModal(b.dataset.storyEdit)));
+      cont.querySelectorAll('[data-story-mk]').forEach(b => b.addEventListener('click', () => createTaskFromStory(b.dataset.storyMk)));
     }
     function storyCardHtml(s, idToTask, typeIcon, typeTip) {
       const t = s.wbsId != null ? idToTask[s.wbsId] : null;
@@ -4280,7 +4292,8 @@
           <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap">
             ${t ? `<span class="badge badge-info" style="cursor:pointer" onclick="openEditModal(${t.id}, true)" title="Traces to WBS ${escapeHtml(t.wbs)} ${escapeHtml(t.name)} — click to open the activity (dictionary inside)">↳ ${escapeHtml(t.wbs)} ${escapeHtml(t.name.length > 26 ? t.name.slice(0, 24) + '…' : t.name)}</span>
               <span class="badge ${pct >= 100 ? 'badge-done' : pct > 0 ? 'badge-prog' : 'badge-notstarted'}" title="Status inherited from the linked WBS activity — check work off on the Tasks tab and this follows">${pct >= 100 ? '✓ done' : pct > 0 ? pct + '%' : 'not started'}</span>`
-            : `<span class="badge badge-blocked" title="No linked WBS activity — open the story and pick one so status & cost roll up">unlinked</span>`}
+            : `<span class="badge badge-blocked" title="No linked WBS activity — this scope is NOT in the plan or the price. Link it in the editor, or create the missing activity from the story.">unlinked</span>
+               <button class="btn-sm btn-secondary" data-story-mk="${escapeHtml(s.id)}" title="Create the missing WBS activity from this story: name from 'I want…', dictionary from the story + happy-path AC, nested under the epic's phase. It then needs an O/M/P estimate.">➕ Create WBS task</button>`}
             <button class="btn-sm btn-secondary" data-story-edit="${escapeHtml(s.id)}" title="Edit this story">✎</button>
           </div>
         </div>
@@ -4301,6 +4314,49 @@
           ? ' AC: ' + s.ac.map(a => a.id + ' (' + a.type + ') ' + a.text).join(' | ')
           : ' (' + s.ac.length + ' acceptance criteria)') : '')
       ).join('  ||  ');
+    }
+    // A story with no home in the WBS = scope the plan doesn't cover. Create the
+    // missing activity FROM the story: name from "I want…", dictionary from the
+    // story sentence + its happy-path AC, parented under the epic's phase when known.
+    function createTaskFromStory(storyId, quiet) {
+      const s = reqs && reqs.stories.find(x => x.id === storyId);
+      if (!s) return null;
+      if (s.wbsId != null && tasks.some(t => t.id === s.wbsId)) return null; // already linked
+      const ep = (reqs.epics || []).find(e => e.id === s.epicId);
+      const parentId = (ep && ep.wbsId != null && tasks.some(t => t.id === ep.wbsId) && !tasks.find(t => t.id === ep.wbsId).milestone) ? ep.wbsId : null;
+      let name = (s.want || s.id).trim();
+      name = name.charAt(0).toUpperCase() + name.slice(1);
+      if (tasks.some(t => t.name.trim().toLowerCase() === name.toLowerCase())) name += ' (' + s.id + ')';
+      const happy = (s.ac || []).find(a => a.type === 'happy') || (s.ac || [])[0];
+      const t = makeTask({
+        id: nextId++, name, o: 0, m: 0, p: 0, milestone: false, owner: '', units: 100,
+        parentId, predecessors: [],
+        description: 'From ' + s.id + ': As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?'),
+        deliverable: name,
+        acceptance: happy ? happy.text.slice(0, 300) : ''
+      });
+      tasks.push(t);
+      s.wbsId = t.id; s.wbsName = t.name;
+      if (!quiet) {
+        saveLocal(); renderReqs(); renderTaskTable();
+        flashSaved('➕ WBS activity created from ' + s.id + ' — it needs an O/M/P estimate (🩺 scan will nag until it has one)');
+      }
+      return t;
+    }
+    function createTasksFromUnlinked() {
+      if (!reqs || !Array.isArray(reqs.stories)) return;
+      const unlinked = reqs.stories.filter(s => s.wbsId == null || !tasks.some(t => t.id === s.wbsId));
+      if (!unlinked.length) { flashSaved('Nothing to create — every story is linked.'); return; }
+      const made = unlinked.map(s => createTaskFromStory(s.id, true)).filter(Boolean);
+      saveLocal(); renderReqs(); renderTaskTable();
+      // hand the estimating straight to the AI as a reviewable merge request
+      if (made.length) {
+        document.getElementById('aiMode').value = 'merge';
+        document.getElementById('aiNotes').value = 'Provide realistic 3-point estimates (O/M/P), owners from the existing team, and dependencies for these new activities created from user stories:\n'
+          + made.map(t => `- "${t.name}"${t.description ? ' — ' + t.description : ''}`).join('\n')
+          + '\nKeep every other task exactly as it is.';
+        flashSaved('➕ ' + made.length + ' WBS activit' + (made.length === 1 ? 'y' : 'ies') + ' created — an AI estimate request is pre-filled on the Tasks tab (review & press ✨ Generate Plan)');
+      }
     }
     function nextStoryId() {
       const ids = new Set(((reqs && reqs.stories) || []).map(s => s.id));
@@ -4379,7 +4435,8 @@ WORK BREAKDOWN STRUCTURE (wbs code | name | details):
 ${outline}
 ${existing}
 Rules (follow this house style exactly):
-- Every non-milestone LEAF activity gets at least one user story (wbsName = the EXACT activity name). Phases/summary rows become EPICS, not stories — an epic answers "what business capability?" and maps to an SOW section/milestone. Milestones get no stories.
+- Every non-milestone LEAF activity gets at least one user story. wbsName MUST be copied character-for-character from the WBS outline above — never paraphrase, retitle or abbreviate it. Phases/summary rows become EPICS, not stories — an epic answers "what business capability?" and maps to an SOW section/milestone. Milestones get no stories.
+- If you identify necessary scope with NO matching activity in the WBS (a scope gap), still write the story but set wbsName to "" and add an assumption "A: no WBS activity covers this yet — unplanned/unpriced scope" — the tool then offers to create the missing activity from the story.
 - Story format, verbatim structure: As a [role or persona], I want to [perform an action or achieve a goal], so that [I get some specific value or benefit]. Stories must satisfy ALL of INVEST — independent (minimal coupling), negotiable, valuable, estimable, small (fits one sprint — split oversized ones by workflow step, business rule, happy-vs-error path, data type, CRUD or interface), testable (pass/fail is objective; an untestable story cannot be accepted or invoiced).
 - Personas are specific named roles ("as a user" is banned — an admin story and an end-user story with identical wording can differ 3× in cost). Define every persona used in personas[] — the glossary belongs in the SOW.
 - Acceptance criteria per story, each ONE criterion in Given [initial state/context] When [specific action or trigger] Then [measurable, observable outcome] form (multiple "And" clauses are fine; a second "When" means split the criterion). Cover ALL THREE path types: the happy path, at least one ERROR path (invalid input / dependency failure rejected gracefully) and at least one EDGE case (boundaries, empty states, maximums, concurrency, timeouts, dependency failure). Add a perf criterion whenever a measurable threshold applies. Happy-path-only stories get estimated at 40–60% of true cost — never produce one. No implementation detail in the Then ("behaviour, not the database table"); binary pass/fail; observable from outside the system.
@@ -4405,17 +4462,28 @@ Return ONLY JSON (no prose, no fences):
         flashSaved('✓ ' + reqs.stories.length + ' stories drafted across ' + reqs.epics.length + ' epics — review the lint flags');
       } catch (e) { streamHide(false); alert('Requirements drafting failed: ' + (e.message || e)); }
     }
+    // exact name → task, then a normalized (case/punctuation-insensitive) pass so
+    // an AI paraphrase like "Kick-off and Discovery" still links to "Kick-off & Discovery"
+    function taskByLooseName(name) {
+      const norm = s => String(s || '').toLowerCase().replace(/&/g, ' and ').replace(/\+/g, ' plus ').replace(/[^a-z0-9]+/g, ' ').trim();
+      const n = String(name || '').trim().toLowerCase();
+      if (!n) return null;
+      let hit = tasks.find(t => t.name.trim().toLowerCase() === n);
+      if (hit) return hit;
+      const nn = norm(name);
+      const matches = tasks.filter(t => norm(t.name) === nn);
+      return matches.length === 1 ? matches[0] : null; // ambiguous → stay unlinked
+    }
     function applyReqsFromAI(res) {
       if (!res || !Array.isArray(res.stories) || !res.stories.length) throw new Error('response had no stories');
-      const byName = {}; tasks.forEach(t => byName[t.name.trim().toLowerCase()] = t);
       const clean = v => String(v == null ? '' : v).trim();
       const safeId = (v, pre, i) => { v = clean(v); return /^[A-Za-z0-9_.-]{1,32}$/.test(v) ? v : pre + '-' + (i + 1); };
-      const epics = Array.isArray(res.epics) ? res.epics.map((e, i) => ({
-        id: safeId(e.id, 'EP', i), title: clean(e.title), businessNeed: clean(e.businessNeed),
-        wbsId: (byName[clean(e.wbsName).toLowerCase()] || {}).id != null ? byName[clean(e.wbsName).toLowerCase()].id : null
-      })) : [];
+      const epics = Array.isArray(res.epics) ? res.epics.map((e, i) => {
+        const et = taskByLooseName(clean(e.wbsName));
+        return { id: safeId(e.id, 'EP', i), title: clean(e.title), businessNeed: clean(e.businessNeed), wbsId: et ? et.id : null };
+      }) : [];
       const stories = res.stories.map((s, i) => {
-        const t = byName[clean(s.wbsName).toLowerCase()];
+        const t = taskByLooseName(clean(s.wbsName));
         return {
           id: safeId(s.id, 'US', i), epicId: clean(s.epicId) || null,
           wbsId: t ? t.id : null,
@@ -6293,12 +6361,11 @@ Focus on: scope that is obviously missing for this type of work; estimates that 
     // story remembers; refresh the snapshot on healthy links so future renames heal.
     function repairOrphanStories() {
       if (!reqs || !Array.isArray(reqs.stories)) return;
-      const byName = {}; tasks.forEach(t => byName[t.name.trim().toLowerCase()] = t);
       let fixed = 0, still = 0;
       reqs.stories.forEach(s => {
         const t = s.wbsId != null ? tasks.find(x => x.id === s.wbsId) : null;
         if (t) { s.wbsName = t.name; return; }
-        const m = byName[String(s.wbsName || '').trim().toLowerCase()];
+        const m = taskByLooseName(s.wbsName);
         if (m) { s.wbsId = m.id; s.wbsName = m.name; fixed++; } else { s.wbsId = null; still++; }
       });
       saveLocal();
