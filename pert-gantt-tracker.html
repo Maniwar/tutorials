@@ -1090,14 +1090,43 @@
         const bar = m ? `<div class="progress-track" style="height:4px;margin-top:3px"><div class="progress-fill" style="width:${Math.min(100, m.pct || 0)}%;background:${(m.pct || 0) >= 100 ? 'var(--success)' : 'var(--primary)'}"></div></div>` : '';
         return `<div style="display:flex;align-items:center;gap:2px"><button data-proj="${id}" style="flex:1;text-align:left;${id === act ? 'font-weight:700;color:var(--primary)' : ''}" title="${escapeHtml((meta.name || 'Untitled') + ' — last saved ' + (meta.updatedAt || '').slice(0, 16).replace('T', ' '))}">${id === act ? '● ' : ''}${escapeHtml(meta.name || 'Untitled')}<br/>${metaLine}${bar}</button>${id !== act ? `<button data-cmp="${id}" title="Compare with current (what-if)" style="width:auto;padding:0.2rem 0.4rem">⚖</button>` : ''}</div>`;
       }).join('') || '<div class="grp">No saved projects yet</div>';
+      const used = storageUsedMB();
+      el.innerHTML += `<div class="grp" style="margin-top:0.4rem;font-size:0.65rem;color:${used > 4 ? 'var(--critical)' : 'var(--muted)'}" title="Browsers allow roughly 5 MB. Near the limit, saves start failing — export JSON backups and delete finished projects.">💾 storage: ${used.toFixed(1)} MB of ~5 MB${used > 4 ? ' — ⚠ nearly full, export & clean up' : ''}</div>`;
       el.querySelectorAll('[data-proj]').forEach(btn => btn.addEventListener('click', () => switchProject(btn.dataset.proj)));
       el.querySelectorAll('[data-cmp]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); compareProject(btn.dataset.cmp); }));
     }
     function switchProject(id) {
-      if (id === activeProjectId()) return;
-      saveLocal(); // persist current first
       const raw = localStorage.getItem(PROJ_PREFIX + id);
-      if (!raw) { alert('Could not load that project.'); return; }
+      if (id === activeProjectId()) {
+        // Normally a no-op — but if the screen is empty while the stored copy
+        // has tasks, this click is a RECOVERY request (e.g. a "New project"
+        // that wiped the screen after a failed save). Reload from disk.
+        if (raw && !tasks.length) {
+          try {
+            resetUndo();
+            hydrate(JSON.parse(raw));
+            calculated = false;
+            renderTaskTable(); renderWBS(); renderRaid();
+            if (tasks.length && recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT(); }
+            renderProjectMenu();
+            flashSaved('↻ Reloaded "' + (document.getElementById('projectName').value || 'project') + '" from its last save');
+          } catch (e) { alert('Could not reload the saved copy: ' + e.message); }
+        }
+        return;
+      }
+      const okSave = saveLocal(); // persist current first
+      if (okSave === false && tasks.length &&
+        !confirm('⚠ The CURRENT project could not be saved (browser storage is full) — switching now loses its unsaved changes.\n\nCancel to stay (then Export ▸ Download JSON and delete an old project to free space), or OK to switch anyway.')) return;
+      if (!raw) {
+        // last resort: the legacy single-project slot may hold the latest full save
+        const legacy = localStorage.getItem(STORAGE_KEY);
+        if (legacy && confirm('That project has no saved copy of its own (its saves may have failed while storage was full).\n\nA legacy full snapshot exists — load it into this project?')) {
+          try { localStorage.setItem(PROJ_ACTIVE_KEY, id); resetUndo(); hydrate(JSON.parse(legacy)); calculated = false; renderTaskTable(); renderWBS(); renderRaid(); if (tasks.length && recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT(); } renderProjectMenu(); switchTab('tasks'); saveLocal(); flashSaved('↻ Recovered from the legacy snapshot'); } catch (e) { alert('Recovery failed: ' + e.message); }
+          return;
+        }
+        alert('Could not load that project — it has no saved data. If its saves failed while storage was full, free space (delete an old project) and use Export/IMPORT JSON to restore from a backup.');
+        return;
+      }
       localStorage.setItem(PROJ_ACTIVE_KEY, id);
       resetUndo(); // undo must never cross a project boundary
       try { hydrate(JSON.parse(raw)); } catch (e) { alert('Project data is corrupted: ' + e.message); return; }
@@ -1109,7 +1138,13 @@
       flashSaved('Switched to "' + (document.getElementById('projectName').value || 'project') + '"');
     }
     function newProject(fromCurrent) {
-      saveLocal();
+      const okSave = saveLocal();
+      // NEVER wipe the screen unless the current project verifiably persisted —
+      // a full-storage save failure here is how work gets destroyed
+      const persisted = !!localStorage.getItem(PROJ_PREFIX + activeProjectId());
+      if (tasks.length && (okSave === false || !persisted)) {
+        if (!confirm('⚠ The current project could NOT be saved (browser storage looks full).\n\nCreating a new project now would LOSE it.\n\nCancel (recommended): then Export ▸ Download JSON as a backup and delete an old project to free space.\nOK: continue anyway and lose the current plan.')) return;
+      }
       const id = 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
       localStorage.setItem(PROJ_ACTIVE_KEY, id);
       resetUndo();
@@ -1254,12 +1289,30 @@
       flashSaved('↷ Redone');
     }
 
+    function storageUsedMB() {
+      let n = 0;
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); n += k.length + (localStorage.getItem(k) || '').length; }
+      return n * 2 / 1048576; // UTF-16 ≈ 2 bytes/char
+    }
+    function showStorageBanner() {
+      let b = document.getElementById('storageBanner');
+      if (!b) {
+        b = document.createElement('div');
+        b.id = 'storageBanner';
+        b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:3000;background:#b91c1c;color:#fff;padding:8px 16px;font-size:13px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.3)';
+        document.body.appendChild(b);
+      }
+      b.innerHTML = '⚠ <b>Changes are NOT being saved</b> — browser storage is full (' + storageUsedMB().toFixed(1) + ' MB used of ~5 MB). <b>Export ▸ Download JSON now</b>, then free space: open an old project via Projects ▸ and 🗑 Delete current. <button onclick="this.parentElement.remove()" style="margin-left:10px;background:#fff;color:#b91c1c;border:none;border-radius:4px;padding:2px 8px;cursor:pointer">✕</button>';
+    }
     function saveLocal() {
       try {
         const data = serialize();
         trackUndo(JSON.stringify(data));
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         const id = activeProjectId();
+        // NOTE: the full payload is stored ONCE per project. (It used to also be
+        // mirrored into the legacy single-project slot, doubling storage use and
+        // making quota exhaustion twice as likely; that slot is now read-only
+        // for migration/recovery.)
         localStorage.setItem(PROJ_PREFIX + id, JSON.stringify(data));
         const idx = projIndex();
         idx[id] = { name: data.projectName || 'Untitled', updatedAt: new Date().toISOString(),
@@ -1275,10 +1328,17 @@
         el.textContent = '✓ Saved';
         clearTimeout(saveLocal._t);
         saveLocal._t = setTimeout(() => { el.textContent = ''; }, 1500);
+        saveLocal.lastOk = true;
+        const sb = document.getElementById('storageBanner'); if (sb) sb.remove(); // saving works again
+        return true;
       } catch (e) {
-        // storage full or unavailable — say so instead of losing data silently
+        // storage full or unavailable — this must be LOUD, not a 1.5s toast:
+        // silent save failures are how a "New project" click destroys work
+        saveLocal.lastOk = false;
         const el = document.getElementById('savedIndicator');
-        if (el) el.textContent = '⚠ NOT saved — browser storage is full. Export ▸ JSON backup, then delete an old project.';
+        if (el) el.textContent = '⚠ NOT saved — storage full';
+        showStorageBanner();
+        return false;
       }
     }
     function serialize() {
