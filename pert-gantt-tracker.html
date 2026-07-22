@@ -768,6 +768,17 @@
         <div class="card-header">
           <h2>Statement of Work (SOW) Draft</h2>
           <div class="toolbar no-print">
+            <select id="sowDepth" class="mini-inp" style="width:auto" onchange="pricing.sowDepth=this.value;saveLocal()" title="How deep the §2 scope table goes. L1 = phases only (executive SOW), L2 = phases + work packages, L3 = one more level, Full = every leaf task. Milestones always appear regardless.">
+              <option value="1">Scope: L1 (phases)</option>
+              <option value="2" selected>Scope: L2</option>
+              <option value="3">Scope: L3</option>
+              <option value="all">Scope: full detail</option>
+            </select>
+            <select id="sowStoriesMode" class="mini-inp" style="width:auto" onchange="pricing.sowStoriesMode=this.value;saveLocal()" title="Appendix detail for user stories. Full = every story with all acceptance criteria (long but contractual); Compact = one line per story with AC count; Off = no appendix.">
+              <option value="full" selected>Stories: full ACs</option>
+              <option value="compact">Stories: compact</option>
+              <option value="none">Stories: off</option>
+            </select>
             <button class="btn-primary btn-sm" onclick="generateSOW()">✨ Generate SOW draft</button>
             <button class="btn-secondary btn-sm" id="sowEditBtn" onclick="toggleSowEdit()" title="Edit the draft right here — tweak wording, delete a row, add a clause — then Save. Regenerating replaces manual edits (you'll be asked first).">✎ Edit</button>
             <button class="btn-secondary btn-sm" onclick="copySOW()">📋 Copy (rich text)</button>
@@ -1220,7 +1231,11 @@
         el.textContent = '✓ Saved';
         clearTimeout(saveLocal._t);
         saveLocal._t = setTimeout(() => { el.textContent = ''; }, 1500);
-      } catch (e) { /* storage may be unavailable */ }
+      } catch (e) {
+        // storage full or unavailable — say so instead of losing data silently
+        const el = document.getElementById('savedIndicator');
+        if (el) el.textContent = '⚠ NOT saved — browser storage is full. Export ▸ JSON backup, then delete an old project.';
+      }
     }
     function serialize() {
       return {
@@ -1396,7 +1411,12 @@
       if (name === 'resources' && calculated) renderResources();
       if (name === 'baseline' && calculated) renderBaseline();
       if (name === 'analytics' && calculated) { renderAnalytics(); renderHealth(); }
-      if (name === 'raid') { renderRaid(); renderCoHistory(); if (sowDraft && !draftChangeOrder._pending) document.getElementById('sowContainer').innerHTML = sowDraft; }
+      if (name === 'raid') {
+        renderRaid(); renderCoHistory();
+        if (sowDraft && !draftChangeOrder._pending) document.getElementById('sowContainer').innerHTML = sowDraft;
+        const sd = document.getElementById('sowDepth'); if (sd && pricing.sowDepth) sd.value = pricing.sowDepth;
+        const sm = document.getElementById('sowStoriesMode'); if (sm && pricing.sowStoriesMode) sm.value = pricing.sowStoriesMode;
+      }
     }
 
     // ========================= MODAL =========================
@@ -4610,7 +4630,7 @@ Return ONLY JSON:
       const onDelta = streamShow('Fixing ' + flagged.length + ' flagged stor' + (flagged.length === 1 ? 'y' : 'ies'));
       flashSaved('⏳ AI repairing lint findings…');
       try {
-        const res = parseAIJson(await callAnthropic(prompt, { onDelta }));
+        const res = parseAIJsonStrict(await callAnthropic(prompt, { onDelta }), 'the lint repairs');
         streamHide(true);
         if (!res || !Array.isArray(res.stories)) throw new Error('no corrected stories returned');
         const clean = v => String(v == null ? '' : v).trim();
@@ -4716,22 +4736,10 @@ Return ONLY JSON:
       reqs.stories = reqs.stories.filter(s => s.id !== editingStoryId);
       saveLocal(); closeStoryModal(); renderReqs();
     }
-    async function draftRequirements() {
-      if (!tasks.length) { alert('Build the plan first (Tasks tab) — stories trace to WBS activities.'); return; }
-      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) { alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
-      computeWbsCodes();
-      const outline = tasksInWbsOrder().map(({ task: t, depth }) =>
-        `${'  '.repeat(depth)}${t.wbs} | ${t.name}${t.milestone ? ' [milestone]' : ''}${isSummaryId(t.id) ? ' [phase]' : ''}${t.owner ? ' | owner: ' + t.owner : ''}${t.deliverable ? ' | deliverable: ' + t.deliverable : ''}${t.description ? ' | scope: ' + t.description : ''}${t.acceptance ? ' | done-when: ' + t.acceptance : ''}`).join('\n');
-      const existing = (reqs && reqs.stories && reqs.stories.length)
-        ? `\nEXISTING REQUIREMENTS — keep every existing ID stable, improve weak spots (missing error/edge ACs, vague personas, untestable words) and ADD stories for uncovered activities. Return the COMPLETE set:\n${JSON.stringify({ personas: reqs.personas, epics: reqs.epics, stories: reqs.stories.map(s => ({ id: s.id, epicId: s.epicId, wbsName: (tasks.find(t => t.id === s.wbsId) || {}).name || '', persona: s.persona, want: s.want, soThat: s.soThat, ac: s.ac, nfrs: s.nfrs, assumptions: s.assumptions })) })}\n`
-        : '';
-      const prompt = `You are a senior business analyst and delivery lead writing the requirements layer for a billable engagement. Stories and acceptance criteria are the billing checklist: what is not testable cannot be accepted or invoiced.
-
-PROJECT: ${projName()}
-WORK BREAKDOWN STRUCTURE (wbs code | name | details):
-${outline}
-${existing}
-Rules (follow this house style exactly):
+    // the guide-derived house rules + schema — ONE source of truth used by both
+    // single-shot and phase-by-phase drafting
+    function reqRulesBlock() {
+      return `Rules (follow this house style exactly):
 - Every non-milestone LEAF activity gets at least one user story. wbsName MUST be copied character-for-character from the WBS outline above — never paraphrase, retitle or abbreviate it. Phases/summary rows become EPICS, not stories — an epic answers "what business capability?" and maps to an SOW section/milestone. Milestones get no stories.
 - If you identify necessary scope with NO matching activity in the WBS (a scope gap), still write the story but set wbsName to "" and add an assumption "A: no WBS activity covers this yet — unplanned/unpriced scope" — the tool then offers to create the missing activity from the story.
 - Story format, verbatim structure: As a [role or persona], I want to [perform an action or achieve a goal], so that [I get some specific value or benefit]. Stories must satisfy ALL of INVEST — independent (minimal coupling), negotiable, valuable, estimable, small (fits one sprint — split oversized ones by workflow step, business rule, happy-vs-error path, data type, CRUD or interface), testable (pass/fail is objective; an untestable story cannot be accepted or invoiced).
@@ -4748,16 +4756,113 @@ Return ONLY JSON (no prose, no fences):
  "stories":[{"id":"US-1","epicId":"EP-1","wbsName":"EXACT leaf activity name","persona":"…","want":"…","soThat":"…",
    "ac":[{"id":"AC-1.1","type":"happy|error|edge|perf","text":"Given … When … Then …"}],
    "nfrs":["…"],"assumptions":["A: … — impact if false: …","D: … — if slipped: …"]}]}`;
+    }
+    // shared builders so single-shot and chunked drafting use identical style rules
+    function reqOutlineFor(entries) {
+      return entries.map(({ task: t, depth }) =>
+        `${'  '.repeat(depth)}${t.wbs} | ${t.name}${t.milestone ? ' [milestone]' : ''}${isSummaryId(t.id) ? ' [phase]' : ''}${t.owner ? ' | owner: ' + t.owner : ''}${t.deliverable ? ' | deliverable: ' + t.deliverable : ''}${t.description ? ' | scope: ' + t.description : ''}${t.acceptance ? ' | done-when: ' + t.acceptance : ''}`).join('\n');
+    }
+    async function draftRequirements() {
+      if (!tasks.length) { alert('Build the plan first (Tasks tab) — stories trace to WBS activities.'); return; }
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) { alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
+      computeWbsCodes();
+      // big plans go straight to phase-by-phase drafting: many small calls that
+      // each COMPLETE, instead of one huge response that could hit the ceiling
+      if (leafTasks().filter(t => !t.milestone).length > 60) {
+        flashSaved('📦 Large plan — drafting phase-by-phase so nothing can be cut off');
+        try { await draftRequirementsChunked(); } catch (e) { streamHide(false); alert('Requirements drafting failed: ' + (e.message || e)); }
+        return;
+      }
+      const outline = reqOutlineFor(tasksInWbsOrder());
+      const existing = (reqs && reqs.stories && reqs.stories.length)
+        ? `\nEXISTING REQUIREMENTS — keep every existing ID stable, improve weak spots (missing error/edge ACs, vague personas, untestable words) and ADD stories for uncovered activities. Return the COMPLETE set:\n${JSON.stringify({ personas: reqs.personas, epics: reqs.epics, stories: reqs.stories.map(s => ({ id: s.id, epicId: s.epicId, wbsName: (tasks.find(t => t.id === s.wbsId) || {}).name || '', persona: s.persona, want: s.want, soThat: s.soThat, ac: s.ac, nfrs: s.nfrs, assumptions: s.assumptions })) })}\n`
+        : '';
+      const prompt = `You are a senior business analyst and delivery lead writing the requirements layer for a billable engagement. Stories and acceptance criteria are the billing checklist: what is not testable cannot be accepted or invoiced.
+
+PROJECT: ${projName()}
+WORK BREAKDOWN STRUCTURE (wbs code | name | details):
+${outline}
+${existing}
+${reqRulesBlock()}`;
       const onDelta = streamShow('Drafting requirements & user stories');
       flashSaved('⏳ AI drafting requirements…');
       try {
-        const res = parseAIJson(await callAnthropic(prompt, { onDelta }));
+        const text = await callAnthropic(prompt, { onDelta });
         streamHide(true);
+        let incomplete = text.indexOf('/*TRUNCATED*/') >= 0, res = null;
+        if (!incomplete) { res = parseAIJson(text); incomplete = parseAIJson.repaired; }
+        if (incomplete) {
+          // never keep a cut-off result — redo the work phase-by-phase instead
+          flashSaved('⤵ Output limit reached — switching to phase-by-phase drafting so nothing is lost');
+          await draftRequirementsChunked();
+          return;
+        }
         applyReqsFromAI(res);
         saveLocal(); renderReqs();
         if (!document.getElementById('view-req').classList.contains('active')) switchTab('req');
         flashSaved('✓ ' + reqs.stories.length + ' stories drafted across ' + reqs.epics.length + ' epics — review the lint flags');
       } catch (e) { streamHide(false); alert('Requirements drafting failed: ' + (e.message || e)); }
+    }
+    // Phase-by-phase drafting: one guaranteed-complete call per top-level branch,
+    // merged as we go — completeness by construction, no reliance on repair.
+    async function draftRequirementsChunked() {
+      computeWbsCodes();
+      const roots = tasks.filter(t => t.parentId == null);
+      const batches = [];
+      roots.forEach(r => { if (isSummaryId(r.id)) batches.push({ name: r.name, ids: new Set([r.id, ...allDescendants(r.id).map(d => d.id)]) }); });
+      const loose = roots.filter(r => !isSummaryId(r.id));
+      if (loose.length) batches.push({ name: 'Ungrouped activities', ids: new Set(loose.map(t => t.id)) });
+      if (!reqs) reqs = { personas: [], epics: [], stories: [] };
+      let done = 0;
+      for (const b of batches) {
+        done++;
+        const entries = tasksInWbsOrder().filter(({ task }) => b.ids.has(task.id));
+        if (!entries.some(({ task }) => !task.milestone && !isSummaryId(task.id))) continue; // nothing storyable here
+        const existingBatch = reqs.stories.filter(s => s.wbsId != null && b.ids.has(s.wbsId));
+        const prompt = `You are a senior business analyst and delivery lead writing the requirements layer for a billable engagement. This is PART ${done} of ${batches.length}: draft user stories ONLY for the activities listed below (one branch of the WBS). Other branches are handled separately.
+
+PROJECT: ${projName()} — branch: ${b.name}
+ACTIVITIES IN THIS BRANCH (wbs code | name | details):
+${reqOutlineFor(entries)}
+
+KNOWN PERSONAS — reuse these exact names wherever they fit, only add genuinely new ones: ${(reqs.personas || []).map(p => p.name).join(', ') || '(none yet)'}
+STORY IDs ALREADY TAKEN — never reuse: ${reqs.stories.map(s => s.id).join(', ') || '(none)'}
+EPICS ALREADY DEFINED — reuse by id when this branch belongs to one: ${(reqs.epics || []).map(e => e.id + ' ' + (e.title || '')).join('; ') || '(none)'}
+${existingBatch.length ? 'EXISTING STORIES FOR THIS BRANCH — keep their IDs, improve weak spots, add what is missing:\n' + JSON.stringify(existingBatch.map(s => ({ id: s.id, epicId: s.epicId, wbsName: s.wbsName, persona: s.persona, want: s.want, soThat: s.soThat, ac: s.ac, nfrs: s.nfrs, assumptions: s.assumptions }))) + '\n' : ''}
+${reqRulesBlock()}`;
+        const onDelta = streamShow('Drafting requirements — part ' + done + '/' + batches.length + ': ' + b.name.slice(0, 34));
+        const text = await callAnthropic(prompt, { onDelta });
+        streamHide(true);
+        const res = parseAIJsonStrict(text, 'requirements part ' + done + ' (' + b.name + ')'); // a branch is small; if even this truncates, stop loudly
+        mergeReqsChunk(res, b.ids);
+        saveLocal();
+        if (document.getElementById('view-req').classList.contains('active')) renderReqs();
+        flashSaved('📦 Part ' + done + '/' + batches.length + ' done — ' + reqs.stories.length + ' stories so far');
+      }
+      renderReqs();
+      if (!document.getElementById('view-req').classList.contains('active')) switchTab('req');
+      flashSaved('✓ Requirements drafted phase-by-phase: ' + reqs.stories.length + ' stories across ' + reqs.epics.length + ' epics — complete, nothing truncated');
+    }
+    // merge one branch's drafted requirements into the accumulated set
+    function mergeReqsChunk(res, allowedIds) {
+      const norm = normalizeReqsResponse(res);
+      norm.personas.forEach(p => {
+        const ex = reqs.personas.find(x => x.name.toLowerCase() === p.name.toLowerCase());
+        if (ex) { if (!ex.definition && p.definition) ex.definition = p.definition; }
+        else reqs.personas.push(p);
+      });
+      norm.epics.forEach(e => {
+        if (!reqs.epics.some(x => x.id === e.id || (x.title && e.title && x.title.toLowerCase() === e.title.toLowerCase()))) reqs.epics.push(e);
+      });
+      norm.stories.forEach(s => {
+        if (allowedIds && s.wbsId != null && !allowedIds.has(s.wbsId)) return; // a branch may not write outside its lane
+        const idx = reqs.stories.findIndex(x => x.id === s.id);
+        if (idx >= 0) {
+          const ex = reqs.stories[idx];
+          if (ex.wbsId == null || ex.wbsId === s.wbsId) reqs.stories[idx] = s;
+          else { s.id = nextStoryId(); reqs.stories.push(s); } // id collision across branches → re-number
+        } else reqs.stories.push(s);
+      });
     }
     // exact name → task, then a normalized (case/punctuation-insensitive) pass so
     // an AI paraphrase like "Kick-off and Discovery" still links to "Kick-off & Discovery"
@@ -4771,7 +4876,7 @@ Return ONLY JSON (no prose, no fences):
       const matches = tasks.filter(t => norm(t.name) === nn);
       return matches.length === 1 ? matches[0] : null; // ambiguous → stay unlinked
     }
-    function applyReqsFromAI(res) {
+    function normalizeReqsResponse(res) {
       if (!res || !Array.isArray(res.stories) || !res.stories.length) throw new Error('response had no stories');
       const clean = v => String(v == null ? '' : v).trim();
       const safeId = (v, pre, i) => { v = clean(v); return /^[A-Za-z0-9_.-]{1,32}$/.test(v) ? v : pre + '-' + (i + 1); };
@@ -4793,10 +4898,13 @@ Return ONLY JSON (no prose, no fences):
           assumptions: Array.isArray(s.assumptions) ? s.assumptions.map(clean).filter(Boolean) : []
         };
       }).filter(s => s.want);
-      reqs = {
+      return {
         personas: Array.isArray(res.personas) ? res.personas.map(p => ({ name: clean(p.name), definition: clean(p.definition) })).filter(p => p.name) : [],
         epics, stories
       };
+    }
+    function applyReqsFromAI(res) {
+      reqs = normalizeReqsResponse(res);
     }
     function exportReqsMarkdown() {
       if (!reqs || !reqs.stories.length) { alert('No requirements yet — draft or add stories first.'); return; }
@@ -5668,7 +5776,7 @@ Rules:
       // partial answer as an assistant prefill so it resumes mid-token-stream —
       // huge plans get stitched together seamlessly across responses.
       let full = '';
-      for (let round = 0; round < 4; round++) {
+      for (let round = 0; round < 8; round++) {
         const prefill = full.replace(/\s+$/, ''); // API rejects trailing whitespace in prefills
         const messages = prefill
           ? [{ role: 'user', content: userContent }, { role: 'assistant', content: prefill }]
@@ -5681,6 +5789,7 @@ Rules:
       return full + '\n/*TRUNCATED*/';
     }
     function parseAIJson(text) {
+      parseAIJson.repaired = false; // set true when we had to cut back to the last complete object
       let s = text.replace('/*TRUNCATED*/', '').trim();
       // strip markdown fences if present
       s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
@@ -5693,12 +5802,23 @@ Rules:
       for (let cut = s.lastIndexOf('},'); cut > 0; cut = s.lastIndexOf('},', cut - 1)) {
         const base = s.slice(0, cut + 1);
         for (const closer of [']}', ']}]}', '}]}', ']}}']) {
-          try { return JSON.parse(base + closer); } catch (e) {}
+          try { const out = JSON.parse(base + closer); parseAIJson.repaired = true; return out; } catch (e) {}
         }
       }
       throw new Error('The AI response was not valid JSON (it may have been cut off). Try again — the request now streams with a much larger limit.');
     }
 
+    // Completeness guard: NEVER hand partial data to a caller that will apply it.
+    // If the output hit the ceiling (even after 8 auto-continuations ≈ 1M tokens)
+    // or the JSON only parsed after truncation-repair, abort — plan untouched.
+    function parseAIJsonStrict(text, what) {
+      if (String(text).indexOf('/*TRUNCATED*/') >= 0)
+        throw new Error('The AI response for ' + what + ' exceeded the maximum output even after 8 auto-continuations. NOTHING was changed. Split the request into smaller pieces (e.g. one phase at a time) and retry.');
+      const res = parseAIJson(text);
+      if (parseAIJson.repaired)
+        throw new Error('The AI response for ' + what + ' arrived incomplete (output or connection was cut). NOTHING was changed — please retry.');
+      return res;
+    }
     async function generateWithAI() {
       const btn = document.getElementById('aiGenerateBtn');
       const status = document.getElementById('aiStatus');
@@ -5744,7 +5864,7 @@ ${aiSchemaHint()}`;
       const onDelta = streamShow(mode === 'merge' ? 'Updating plan' : 'Generating plan');
       try {
         const text = await callAnthropic(prompt, { onDelta });
-        const plan = parseAIJson(text);
+        const plan = parseAIJsonStrict(text, 'the plan'); // partial plans are never applied
         applyAIPlan(plan, mode);
         streamHide(true);
         status.textContent = '✓ Plan ready — review below.';
@@ -5955,7 +6075,7 @@ Rules:
       try {
         const text = await callAnthropic(prompt, { onDelta });
         streamHide(true);
-        const res = parseAIJson(text);
+        const res = parseAIJsonStrict(text, 'the decomposition'); // never apply a partial split
         if (!res || !Array.isArray(res.subtasks) || !res.subtasks.length) throw new Error('AI returned no subtasks.');
         const nameToNew = {};
         const created = [];
@@ -6206,9 +6326,21 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         start: fmtNice(projectStartDate()), finish: fmtNice(finish),
         committed: rv.contingencyUnits > 0 ? fmtNice(rv.committedDate) : null,
         clientSafe: clientSafeReports,
-        scope: tasksInWbsOrder().map(({ task: t, depth }) => ({ wbs: t.wbs, depth, name: t.name, summary: t.isSummary, milestone: t.milestone,
-          deliverable: t.deliverable, description: t.description, acceptance: t.acceptance, owner: t.owner,
-          effort: (clientSafeReports || t.milestone || t.isSummary) ? null : (t.te || 0).toFixed(1) + ' ' + u })),
+        // scope depth: L1/L2/L3 keep the SOW executive-readable on big plans;
+        // rows AT the cutoff show rolled-up effort; milestones always survive
+        scope: (() => {
+          const sel = document.getElementById('sowDepth');
+          const depthSetting = (sel && sel.value) || pricing.sowDepth || 'all';
+          const maxD = depthSetting === 'all' ? Infinity : Number(depthSetting);
+          return tasksInWbsOrder().filter(({ task: t, depth }) => t.milestone || depth < maxD).map(({ task: t, depth }) => ({
+            wbs: t.wbs, depth, name: t.name, summary: t.isSummary, milestone: t.milestone,
+            deliverable: t.deliverable, description: t.description, acceptance: t.acceptance, owner: t.owner,
+            effort: (clientSafeReports || t.milestone) ? null
+              : t.isSummary
+                ? ((depth === maxD - 1) ? leafDescendants(t.id).reduce((sx, x) => sx + (x.te || 0), 0).toFixed(1) + ' ' + u + ' (rolled up)' : null)
+                : (t.te || 0).toFixed(1) + ' ' + u
+          }));
+        })(),
         milestones: tasks.filter(t => t.milestone).map(t => ({ name: t.name, date: fmtNice(t.finishDate) })),
         team: Object.keys(resources).filter(n => !isClientResource(n)).map(n => ({ role: n, capacity: getCapacity(n), billRate: getBillRate(n) })).filter(r => tasks.some(t => taskParticipants(t).some(pr => pr.name === r.role))),
         clientTeam: Object.keys(resources).filter(isClientResource).map(n => ({
@@ -6244,7 +6376,6 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         <h2 style="font-size:16px;margin:16px 0 6px">3. Out of Scope</h2>
         ${d.exclusions.length ? '<ul style="font-size:13px">' + d.exclusions.map(x => '<li>' + h(x) + '</li>').join('') + '</ul>' : `<p style="font-size:13px">${n.outOfScope || '<em>[List explicit exclusions.]</em>'}</p>`}
         <h2 style="font-size:16px;margin:16px 0 6px">4. Timeline &amp; Milestones</h2>
-        ${d.ganttDataUrl ? `<img src="${d.ganttDataUrl}" alt="Project timeline (Gantt)" style="max-width:100%;border:1px solid #d7dde5;border-radius:6px;margin:4px 0 8px"/>` : ''}
         ${d.ganttImg ? `<img src="${d.ganttImg}" alt="Project schedule Gantt chart" style="max-width:100%;border:1px solid #e2e8f0;border-radius:6px;margin:4px 0 10px"/>` : ''}
         <table style="border-collapse:collapse"><tr><th style="${th}">Milestone</th><th style="${th}">Target date</th></tr>
         ${d.milestones.map(m => `<tr><td style="${td}">◆ ${h(m.name)}</td><td style="${td}">${h(m.date)}</td></tr>`).join('') || `<tr><td style="${td}" colspan="2"><em>No milestones defined</em></td></tr>`}</table>
@@ -6270,10 +6401,21 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
     // grouped by epic — the operative definition of "delivered" per deliverable.
     function sowStoriesAppendix() {
       if (!reqs || !Array.isArray(reqs.stories) || !reqs.stories.length) return '';
+      const modeSel = document.getElementById('sowStoriesMode');
+      const mode = (modeSel && modeSel.value) || pricing.sowStoriesMode || 'full';
+      if (mode === 'none') return '';
       const td = 'padding:5px 9px;border:1px solid #d7dde5;font-size:12px;vertical-align:top;';
       const th = td + 'background:#f1f5f9;font-weight:700;text-align:left;';
       const h = x => escapeHtml(x || '');
       const idToTask = {}; tasks.forEach(t => idToTask[t.id] = t);
+      if (mode === 'compact') {
+        return `<h2 style="font-size:16px;margin:16px 0 6px">Appendix — User Stories (summary)</h2>
+          <p style="font-size:12.5px;color:#475569">One line per story; the full Given/When/Then acceptance criteria live in the project's traceability matrix and are available on request (or regenerate this SOW with “Stories: full ACs”).</p>
+          <table style="border-collapse:collapse;width:100%"><tr><th style="${th};width:60px">ID</th><th style="${th}">Story</th><th style="${th};width:60px">ACs</th><th style="${th};width:160px">WBS trace</th></tr>
+          ${reqs.stories.map(s => { const t = s.wbsId != null ? idToTask[s.wbsId] : null;
+            return `<tr><td style="${td}">${h(s.id)}</td><td style="${td}">As a <b>${h(s.persona)}</b>, I want to ${h(s.want)}, so that ${h(s.soThat)}.</td><td style="${td};text-align:center">${(s.ac || []).length}</td><td style="${td}">${t ? h(t.wbs + ' ' + t.name) : '—'}</td></tr>`; }).join('')}
+          </table>`;
+      }
       let out = `<h2 style="font-size:16px;margin:16px 0 6px">Appendix — User Stories &amp; Acceptance Criteria</h2>
         <p style="font-size:12.5px;color:#475569">Each story is accepted when its acceptance criteria pass in the designated environment. Criteria marked <i>error</i>/<i>edge</i> define graceful failure behaviour and boundary handling and are part of the committed scope.</p>`;
       if (reqs.personas && reqs.personas.length) out += `<p style="font-size:12.5px"><b>Personas:</b> ${reqs.personas.map(p => '<b>' + h(p.name) + '</b> — ' + h(p.definition)).join('; ')}</p>`;
@@ -6317,15 +6459,16 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       if (sowEditing) toggleSowEdit(); // close edit mode cleanly first
       sowUserEdited = false;
       if (!ensureCalc()) return;
+      // remember the chosen detail levels with the project (survives reloads)
+      const sdSel = document.getElementById('sowDepth'), smSel = document.getElementById('sowStoriesMode');
+      if (sdSel && sdSel.value) pricing.sowDepth = sdSel.value;
+      if (smSel && smSel.value) pricing.sowStoriesMode = smSel.value;
       const d = sowSkeletonData();
       d.storiesAppendix = sowStoriesAppendix();
-      // embed the Gantt as an image so the SOW carries the visual timeline
-      try {
-        const blob = await svgMarkupToPngBlob(buildGanttSvg().markup, 1.4);
-        d.ganttDataUrl = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob); });
-      } catch (e) { d.ganttDataUrl = null; }
-      // embed the actual Gantt (with milestones, phases, reserves) into the SOW
+      // embed the Gantt ONCE (it used to be embedded twice — two separately
+      // rendered PNGs — doubling document size and localStorage pressure)
       try { d.ganttImg = await svgMarkupToPngDataUrl(buildGanttSvg().markup, 1.5); } catch (e) { d.ganttImg = null; }
+      d.ganttDataUrl = null;
       const hasKey = !!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE));
       let narrative = null;
       if (hasKey) {
@@ -6764,7 +6907,7 @@ Return the COMPLETE updated task list.`;
       const onDelta = streamShow('Applying health-check fixes');
       flashSaved('⏳ AI is applying ' + list.length + ' fix(es)…');
       try {
-        const plan = parseAIJson(await callAnthropic(prompt, { onDelta }));
+        const plan = parseAIJsonStrict(await callAnthropic(prompt, { onDelta }), 'the fixes'); // a repaired/partial task list would silently DROP tasks — never apply it
         applyAIPlan(plan, 'merge');
         streamHide(true);
         healthFindings = { date: fmtISO(new Date()), findings: lintPlan() }; // fresh deterministic lint after fixes
