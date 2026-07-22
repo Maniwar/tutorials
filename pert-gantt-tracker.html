@@ -235,6 +235,8 @@
     .chart-toolbar { display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center; }
     .chart-toolbar .sep { width:1px; height:20px; background:var(--border); margin:0 0.25rem; }
     @keyframes blink { 50% { opacity: 0; } }
+    /* AI stream box floats above the page when triggered from a non-Tasks tab */
+    #aiStreamBox.stream-float { position: fixed; right: 1rem; bottom: 1rem; width: min(560px, 92vw); max-height: 40vh; z-index: 1200; box-shadow: 0 12px 32px rgba(2,6,23,0.45); }
     @media print {
       header, .tabs, .header-actions, .card-header button, .no-print { display: none !important; }
       .view { display: block !important; }
@@ -333,12 +335,13 @@
     <div class="tabs">
       <button class="tab active" data-tab="tasks" onclick="switchTab('tasks')" title="Build the plan: AI from notes, or add activities with 3-point estimates">1. Tasks &amp; Estimates</button>
       <button class="tab" data-tab="wbs" onclick="switchTab('wbs')" title="Work Breakdown Structure with deliverables, scope and acceptance criteria per element">2. WBS &amp; Dictionary</button>
-      <button class="tab" data-tab="pert" onclick="switchTab('pert')" title="Dependency network with the critical path — ES/EF/LS/LF/slack per activity">3. PERT Network</button>
-      <button class="tab" data-tab="gantt" onclick="switchTab('gantt')" title="Schedule on real dates with progress, baseline, reserves and dependency arrows — exportable as an image">4. Gantt &amp; Progress</button>
-      <button class="tab" data-tab="resources" onclick="switchTab('resources')" title="Who does what: capacity, rates, PTO, workload heatmap, over-allocation fixes, rate cards">5. Resources</button>
-      <button class="tab" data-tab="baseline" onclick="switchTab('baseline')" title="Snapshot the committed plan and track slippage vs baseline and actuals">6. Baseline &amp; Variance</button>
-      <button class="tab" data-tab="analytics" onclick="switchTab('analytics')" title="Monte-Carlo forecast, health check, reserves, cost/EVM, criticality">7. Analytics &amp; Risk</button>
-      <button class="tab" data-tab="raid" onclick="switchTab('raid')" title="Risk log, pricing & margin, SOW and change-order drafts">8. RAID &amp; SOW</button>
+      <button class="tab" data-tab="req" onclick="switchTab('req')" title="User stories with Given/When/Then acceptance criteria, NFRs and assumptions — AI-drafted and traced to the WBS">3. Requirements &amp; Stories</button>
+      <button class="tab" data-tab="pert" onclick="switchTab('pert')" title="Dependency network with the critical path — ES/EF/LS/LF/slack per activity">4. PERT Network</button>
+      <button class="tab" data-tab="gantt" onclick="switchTab('gantt')" title="Schedule on real dates with progress, baseline, reserves and dependency arrows — exportable as an image">5. Gantt &amp; Progress</button>
+      <button class="tab" data-tab="resources" onclick="switchTab('resources')" title="Who does what: capacity, rates, PTO, workload heatmap, over-allocation fixes, rate cards">6. Resources</button>
+      <button class="tab" data-tab="baseline" onclick="switchTab('baseline')" title="Snapshot the committed plan and track slippage vs baseline and actuals">7. Baseline &amp; Variance</button>
+      <button class="tab" data-tab="analytics" onclick="switchTab('analytics')" title="Monte-Carlo forecast, health check, reserves, cost/EVM, criticality">8. Analytics &amp; Risk</button>
+      <button class="tab" data-tab="raid" onclick="switchTab('raid')" title="Risk log, pricing & margin, SOW and change-order drafts">9. RAID &amp; SOW</button>
     </div>
 
     <!-- TASKS VIEW -->
@@ -409,7 +412,7 @@
               <select id="aiMode" style="width:auto">
                 <option value="replace">Create / replace all tasks</option>
                 <option value="merge">Update existing (describe the changes)</option>
-                <option value="progress">Update progress from meeting notes</option>
+                <option value="progress">Update progress (paste notes or status replies)</option>
               </select>
               <button class="btn-primary" id="aiGenerateBtn" onclick="generateWithAI()">✨ Generate Plan</button>
               <span id="aiStatus" class="help-text" style="margin:0"></span>
@@ -427,6 +430,7 @@
         <div class="card-header">
           <h2>Activity List — 3-Point Estimates &amp; Progress</h2>
           <div class="toolbar">
+            <button class="btn-secondary btn-sm" onclick="copyUpdateRequest()" title="Copy an email-ready checklist of all open work grouped by owner. Send it out; paste the replies into the AI box above (mode: Update progress) and the plan updates itself.">📮 Copy update request</button>
             <button class="btn-secondary btn-sm" onclick="openAddModal(true)">+ Milestone</button>
             <button class="btn-primary btn-sm" onclick="openAddModal(false)">+ Add Activity</button>
           </div>
@@ -487,6 +491,61 @@
       </div>
     </div>
 
+    <!-- REQUIREMENTS & STORIES VIEW -->
+    <div id="view-req" class="view">
+      <div class="card">
+        <div class="card-header">
+          <h2>Requirements &amp; User Stories <span class="info-icon" title="Epics → user stories → Given/When/Then acceptance criteria, each traced to a WBS work item. The estimation unit for SOWs: a story that isn't testable can't be accepted or invoiced.">i</span></h2>
+          <div class="toolbar no-print">
+            <button class="btn-primary btn-sm" onclick="draftRequirements()" title="AI drafts personas, epics and INVEST user stories with happy/error/edge acceptance criteria for every WBS work item — or fills the gaps if some already exist">🤖 Draft from WBS</button>
+            <button class="btn-secondary btn-sm" onclick="openStoryModal(null)" title="Write a story by hand">+ Add story</button>
+            <button class="btn-secondary btn-sm" onclick="exportReqsMarkdown()" title="Full requirements document: personas, epics, stories, ACs, NFRs, assumptions — ready for the SOW appendix">⬇ Markdown</button>
+            <button class="btn-secondary btn-sm" onclick="exportTraceCSV()" title="Traceability matrix: one row per acceptance criterion — epic → story → AC → WBS item → status">⬇ Traceability (.csv)</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <p class="help-text" style="margin-bottom:0.9rem">
+            <b>Why this matters:</b> stories define <em>what</em> a user needs and <em>why</em>; acceptance criteria are the boundary lines <em>and the billing checklist</em>. A story with only happy-path criteria is typically estimated at 40–60% of its true cost — error paths and edge cases are where the hours go. Each story links to one WBS activity, so completeness rolls up from the plan automatically.
+          </p>
+          <div id="reqContainer"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- story editor modal -->
+    <div class="modal-overlay" id="storyModal">
+      <div class="modal" style="max-width:760px">
+        <div class="modal-header"><h3 id="storyModalTitle">Edit user story</h3><button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeStoryModal()">✕</button></div>
+        <div class="modal-body">
+          <div style="display:grid;grid-template-columns:110px 1fr 1fr;gap:0.75rem">
+            <div class="form-group"><label>ID</label><input id="stId" type="text" placeholder="US-1" /></div>
+            <div class="form-group"><label>Epic</label><select id="stEpic"></select></div>
+            <div class="form-group"><label>WBS activity (traces to) <span class="info-icon" title="The plan task that builds this story — status and completeness roll up from it">i</span></label><select id="stWbs"></select></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;margin-top:0.6rem">
+            <div><label>As a… (persona)</label><input id="stPersona" type="text" placeholder="billing administrator" /></div>
+            <div><label>I want to…</label><input id="stWant" type="text" placeholder="export monthly metrics to CSV" /></div>
+            <div><label>So that…</label><input id="stSoThat" type="text" placeholder="I can report in our BI tool" /></div>
+          </div>
+          <div class="form-group" style="margin-top:0.6rem"><label>Acceptance criteria — one per line, prefix with the path type <span class="info-icon" title="Cover all three: happy = it works; error = user/system does something invalid and it fails gracefully; edge = boundaries, empty states, timeouts, capacity. perf = measurable thresholds. Use Given / When / Then.">i</span></label>
+            <textarea id="stAc" rows="6" placeholder="[happy] Given an admin on the Analytics page, When they export a ≤24-month range, Then a CSV downloads within 5s at p95
+[error] Given a user without the admin role, When they call the export endpoint, Then it returns 403 with no data
+[edge]  Given a range with no records, When they export, Then 'No records found' is shown and no file downloads
+[perf]  Given 100,000 rows, When exported, Then the file completes within 5 s at p95"></textarea></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-top:0.6rem">
+            <div class="form-group"><label>NFRs (one per line) <span class="info-icon" title="Non-functional requirements: performance, availability, security, accessibility, audit… The most under-scoped and most expensive category in an SOW.">i</span></label><textarea id="stNfr" rows="3" placeholder="p95 export ≤ 5 s at 100k rows&#10;WCAG 2.2 AA on the export control"></textarea></div>
+            <div class="form-group"><label>Assumptions &amp; client dependencies (one per line) <span class="info-icon" title="Each assumption should state the impact if false; each client dependency the consequence of a slip — that's what makes the estimate defensible and re-priceable.">i</span></label><textarea id="stAssume" rows="3" placeholder="A: Sentiment API exists as documented — if false +120-200h&#10;D: Client provides labeled data by Sprint 2 — slip = day-for-day extension"></textarea></div>
+          </div>
+          <div id="storyModalError" class="error" style="display:none;margin-top:0.6rem"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-danger" id="stDeleteBtn" onclick="deleteStoryFromModal()" style="margin-right:auto">Delete</button>
+          <button class="btn-secondary" onclick="closeStoryModal()">Cancel</button>
+          <button class="btn-primary" onclick="saveStoryModal()">Save story</button>
+        </div>
+      </div>
+    </div>
+
     <!-- PERT VIEW -->
     <div id="view-pert" class="view">
       <div class="card">
@@ -499,8 +558,28 @@
           </div>
         </div>
         <div class="card-body">
+          <details style="margin-bottom:0.75rem">
+            <summary style="cursor:pointer;font-size:0.85rem;font-weight:600;color:var(--primary)">📖 How to read this diagram (ES, EF, LS, LF, slack — every term defined)</summary>
+            <div style="display:flex;gap:1.25rem;flex-wrap:wrap;align-items:flex-start;background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:0.9rem 1rem;margin-top:0.5rem">
+              <table style="border-collapse:collapse;font-size:0.72rem;min-width:200px" aria-label="sample PERT node">
+                <tr><td style="border:1.5px solid #94a3b8;padding:3px 10px;text-align:center;background:#fff" title="Early Start">ES</td><td style="border:1.5px solid #94a3b8;padding:3px 10px;text-align:center;background:#fff" title="Expected duration"><b>DUR</b></td><td style="border:1.5px solid #94a3b8;padding:3px 10px;text-align:center;background:#fff" title="Early Finish">EF</td></tr>
+                <tr><td colspan="3" style="border:1.5px solid #94a3b8;padding:5px 10px;text-align:center;background:#fff"><b>Activity name</b><br/><span style="color:var(--muted)">owner • dates</span></td></tr>
+                <tr><td style="border:1.5px solid #94a3b8;padding:3px 10px;text-align:center;background:#fff" title="Late Start">LS</td><td style="border:1.5px solid #94a3b8;padding:3px 10px;text-align:center;background:#fff" title="Slack / float"><b>SLACK</b></td><td style="border:1.5px solid #94a3b8;padding:3px 10px;text-align:center;background:#fff" title="Late Finish">LF</td></tr>
+              </table>
+              <ul style="margin:0;padding-left:1.1rem;font-size:0.8rem;line-height:1.6;flex:1;min-width:260px">
+                <li><b>ES — Early Start:</b> the soonest the activity can begin, given its predecessors (counted in working days/weeks from project start).</li>
+                <li><b>DUR — Expected duration:</b> the PERT weighted average (O + 4M + P) ÷ 6.</li>
+                <li><b>EF — Early Finish:</b> ES + DUR — the soonest it can end.</li>
+                <li><b>LS — Late Start:</b> the latest it can begin <em>without delaying the project finish</em>.</li>
+                <li><b>SLACK (float):</b> LS − ES — how much it can slip for free. <b>0 = critical path</b> (red): any delay here moves the end date.</li>
+                <li><b>LF — Late Finish:</b> the latest it can end without delaying the project.</li>
+                <li><b>Arrows</b> run left→right from predecessor to successor. Plain arrows are finish→start; labelled ones (<b>SS</b> start→start, <b>FF</b> finish→finish, <b>SF</b> start→finish, <b>+n/−n</b> lag or lead) mark non-standard links. Red arrows trace the critical path.</li>
+                <li>Bottom strip of each box = <b>% complete</b>; ◆ = milestone; ✓ green = done. Hover any cell for its live values; click a box to edit the task.</li>
+              </ul>
+            </div>
+          </details>
           <div class="pert-container" id="pertContainer"><svg id="pertSvg"></svg></div>
-          <p class="help-text" style="margin-top:0.5rem">PMI-style nodes: top row ES · Duration · EF, bottom row LS · Slack · LF. Red = critical path, green = complete, bar at the bottom of each node = % complete.</p>
+          <p class="help-text" style="margin-top:0.5rem">PMI-style nodes: top row ES · DUR · EF, bottom row LS · SLACK · LF. Red = critical path, green = complete. Columns are dependency levels: everything in a column can only start after its predecessors to the left.</p>
         </div>
       </div>
     </div>
@@ -524,6 +603,7 @@
             <button class="btn-sm btn-secondary" onclick="downloadChartPNG('gantt')">PNG</button>
             <button class="btn-sm btn-secondary" onclick="downloadChartSVG('gantt')">SVG</button>
             <button class="btn-sm btn-success" onclick="copyStatusReport()" title="Copy a formatted status summary (tables + completeness) for pasting into email">📄 Copy status report</button>
+            <button class="btn-sm btn-secondary" onclick="copyUpdateRequest()" title="Copy an email-ready checklist of open work grouped by owner — send it, then paste the replies into Tasks ▸ AI ▸ Update progress">📮 Update request</button>
             <button class="btn-sm btn-secondary no-print" onclick="draftNarrative()" title="AI writes the Progress / Risks / Next-steps narrative included at the top of the report">✨ Narrative</button>
           </div>
         </div>
@@ -837,6 +917,8 @@
     let clientSafeReports = false;// hide financials/internal notes in copied reports
     let sowBaseline = null;       // snapshot taken when the SOW is generated (for change orders)
     let coDraft = '';             // last change-order draft HTML
+    let reqs = null;              // requirements layer: { personas, epics, stories } traced to WBS task ids
+    let editingStoryId = null;    // story being edited in the story modal (null = adding)
 
     // ========================= UTIL =========================
     function escapeHtml(s) {
@@ -922,6 +1004,7 @@
         reserves = { contingency: { value: 0, unit: 'percent' }, management: { value: 0, unit: 'percent' } };
         pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 };
         baselineDate = ''; collapsedIds = new Set(); levelMode = 'none'; calculated = false; mcResult = null;
+        reqs = null; sowBaseline = null; coDraft = '';
         document.getElementById('projectName').value = 'New Engagement';
         document.getElementById('holidays').value = '';
       } else {
@@ -1036,7 +1119,7 @@
         nextId,
         resources, reserves, baselineDate, levelMode, projectBudget,
         raid, nextRaidId, statusHistory, sowDraft, statusNarrative, pricing,
-        clientSafeReports, sowBaseline,
+        clientSafeReports, sowBaseline, reqs,
         collapsedIds: [...collapsedIds],
         tasks: tasks.map(t => ({
           id: t.id, name: t.name, o: t.o, m: t.m, p: t.p, milestone: t.milestone,
@@ -1091,6 +1174,11 @@
       pricing = Object.assign({ model: 'fixed', basis: 'p80', contractPrice: 0 }, data.pricing || {});
       clientSafeReports = !!data.clientSafeReports;
       sowBaseline = (data.sowBaseline && Array.isArray(data.sowBaseline.tasks)) ? data.sowBaseline : null;
+      reqs = (data.reqs && Array.isArray(data.reqs.stories)) ? {
+        personas: Array.isArray(data.reqs.personas) ? data.reqs.personas : [],
+        epics: Array.isArray(data.reqs.epics) ? data.reqs.epics : [],
+        stories: data.reqs.stories
+      } : null;
       collapsedIds = new Set(Array.isArray(data.collapsedIds) ? data.collapsedIds : []);
       nextId = data.nextId || (Math.max(0, ...tasks.map(t => t.id)) + 1);
       calculated = false;
@@ -1157,6 +1245,7 @@
       document.querySelector(`.tab[data-tab="${name}"]`).classList.add('active');
       document.getElementById(`view-${name}`).classList.add('active');
       if (name === 'wbs') renderWBS();
+      if (name === 'req') renderReqs();
       if (name === 'pert' && calculated) renderPERT();
       if (name === 'gantt' && calculated) { renderGantt(); renderNarrativePanel(); }
       if (name === 'resources' && calculated) renderResources();
@@ -1437,7 +1526,7 @@
     function taskStatus(t) {
       if (t.percentComplete >= 100) return { key: 'done', label: 'Complete', cls: 'badge-done' };
       const today = stripTime(new Date());
-      if (calculated && t.startDate && stripTime(t.startDate) <= today && t.percentComplete === 0)
+      if (calculated && t.startDate && stripTime(t.startDate) < today && t.percentComplete === 0)
         return { key: 'late', label: 'Late start', cls: 'badge-blocked' };
       if (t.percentComplete > 0) return { key: 'prog', label: 'In progress', cls: 'badge-prog' };
       return { key: 'notstarted', label: 'Not started', cls: 'badge-notstarted' };
@@ -1492,10 +1581,10 @@
           : '<span class="wbs-twisty-spacer"></span>';
         const nameCell = `<span style="display:inline-flex;align-items:center;padding-left:${depth * 16}px">${twisty}${t.milestone ? '◆ ' : ''}${escapeHtml(t.name)}${collapsedIds.has(t.id) ? ` <span class="help-text" style="font-size:0.68rem;margin-left:4px">(${leafDescendants(t.id).length})</span>` : ''}</span>`;
         const pctCell = summary
-          ? `<span title="rolled up from sub-tasks">${calculated ? (t.percentComplete || 0) + '%' : '—'}</span>`
+          ? `<span title="Rolled up automatically from sub-tasks, weighted by expected duration (TE) — check off the children and this updates itself">${calculated ? (t.percentComplete || 0) + '%' : '—'} <span class="help-text" style="font-size:0.65rem">auto</span></span>`
           : (t.milestone && effectivePreds(t).length)
             ? `<span class="badge ${t.percentComplete >= 100 ? 'badge-done' : 'badge-notstarted'}" title="Tracked automatically — complete when every predecessor reaches 100%">${t.percentComplete >= 100 ? '✓ auto' : 'auto'}</span>`
-            : `<input class="mini-inp" type="number" min="0" max="100" value="${t.percentComplete}" onchange="updatePct(${t.id}, this.value)" onclick="event.stopPropagation()" />`;
+            : `<span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap"><input type="checkbox" ${t.percentComplete >= 100 ? 'checked' : ''} onclick="event.stopPropagation()" onchange="updatePct(${t.id}, this.checked ? 100 : 0)" title="Check off = 100% done (uncheck = 0%). Phase and project %s recompute instantly, TE-weighted." style="width:15px;height:15px;cursor:pointer;accent-color:var(--success)" /><input class="mini-inp" type="number" min="0" max="100" value="${t.percentComplete}" onchange="updatePct(${t.id}, this.value)" onclick="event.stopPropagation()" title="Or type a partial %" /></span>`;
         return `<tr draggable="true" data-task-id="${t.id}" class="${t.isCritical && !t.milestone && !summary ? 'critical' : ''} ${isLate(t) ? 'late' : ''}" style="${summary ? 'font-weight:600;background:#f8fafc' : ''}">
           <td style="cursor:grab;color:var(--muted)" title="Drag to reorder / re-nest">⠿</td>
           <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
@@ -2825,6 +2914,58 @@
             <div class="stat-card warn" style="cursor:help" title="90% confidence — use for hard external deadlines (regulatory, events) where missing is very expensive."><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p90))}</div><div class="label">P90 (${mcResult.p90.toFixed(1)} ${u})</div></div>
             <div class="stat-card critical" style="cursor:help" title="95% confidence — the near-worst-case planning envelope."><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p95))}</div><div class="label">P95 (${mcResult.p95.toFixed(1)} ${u})</div></div>
           </div>`;
+
+        // ---- Why is risk what it is, and what to do about it ----
+        const spreadAbs = mcResult.p90 - mcResult.p50;
+        const spreadPct = mcResult.p50 > 0 ? spreadAbs / mcResult.p50 * 100 : 0;
+        const lvl = spreadPct >= 30 ? ['HIGH', '#b91c1c', '#fee2e2', '#fecaca'] : spreadPct >= 15 ? ['MODERATE', '#b45309', '#fffbeb', '#fde68a'] : ['LOW', '#15803d', '#f0fdf4', '#bbf7d0'];
+        const rvR = computeReserves();
+        const committedUnits = projectDuration + rvR.contingencyUnits;
+        const covered = mcResult.durations.filter(d => d <= committedUnits + 1e-9).length / mcResult.durations.length * 100;
+        const drivers = leaves.filter(t => !t.milestone && (t.variance || 0) > 0)
+          .map(t => ({ t, score: (t.variance || 0) * Math.max(0.05, t.criticality || 0) }))
+          .sort((a, b) => b.score - a.score).slice(0, 5).filter(d => d.score > 0);
+        const totVar = leaves.reduce((s, t) => s + (t.variance || 0) * Math.max(0.05, t.criticality || 0), 0) || 1;
+        const reasons = [];
+        reasons.push(`The gap between the coin-flip finish (P50 = ${mcResult.p50.toFixed(1)} ${u}) and the safe finish (P90 = ${mcResult.p90.toFixed(1)} ${u}) is <b>${spreadAbs.toFixed(1)} ${u} (${spreadPct.toFixed(0)}%)</b> — ${spreadPct >= 30 ? 'your estimates carry a lot of uncertainty, so any committed date is either risky or far out.' : spreadPct >= 15 ? 'a normal amount of estimating uncertainty.' : 'your estimates are tight; the schedule is predictable.'}`);
+        if (covered < 78) reasons.push(`Your committed date (CPM finish + contingency) covers only <b>${covered.toFixed(0)}%</b> of simulated outcomes — below the 80% industry standard for client commitments. Add ${Math.max(0, mcResult.p80 - committedUnits).toFixed(1)} ${u} of contingency to fix that.`);
+        else reasons.push(`Your committed date (CPM finish + contingency) covers <b>${covered.toFixed(0)}%</b> of simulated outcomes — ${covered >= 90 ? 'very safe (you may even be over-buffered).' : 'at or above the 80% commitment standard. Good.'}`);
+        if (drivers.length) reasons.push(`${Math.min(3, drivers.length)} activities drive most of the swing (wide O–P range × time on the critical path): <b>${drivers.slice(0, 3).map(d => escapeHtml(d.t.name)).join(', ')}</b>. Tightening or decomposing these shrinks the whole distribution.`);
+        const driverRows = drivers.map(d => {
+          const t = d.t, share = d.score / totVar * 100;
+          return `<tr>
+            <td>${escapeHtml(t.name)}</td>
+            <td style="font-size:0.8rem">${t.o}–${t.m}–${t.p} <span class="help-text">(P is ${t.o > 0 ? (t.p / t.o).toFixed(1) + '×' : '+' + (t.p - t.o).toFixed(1)} O)</span></td>
+            <td>${((t.criticality || 0) * 100).toFixed(0)}%</td>
+            <td><div style="display:flex;align-items:center;gap:0.4rem"><div class="progress-track" style="flex:1;min-width:60px"><div class="progress-fill" style="width:${Math.min(100, share)}%;background:#f59e0b"></div></div><span style="font-size:0.78rem">${share.toFixed(0)}%</span></div></td>
+            <td style="white-space:nowrap">
+              <button class="btn-sm btn-secondary" onclick="aiDecompose(${t.id})" title="AI splits this into smaller sub-tasks with tighter ranges — smaller pieces = less aggregate uncertainty">⑂ Decompose</button>
+              <button class="btn-sm btn-secondary" onclick="openEditModal(${t.id})" title="Re-estimate O/M/P by hand">✎ Edit</button>
+            </td></tr>`;
+        }).join('');
+        histBlock += `
+          <div style="background:${lvl[2]};border:1px solid ${lvl[3]};border-radius:10px;padding:1rem 1.25rem;margin-top:1.25rem">
+            <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap">
+              <span class="risk-tag" style="background:${lvl[3]};color:${lvl[1]};font-size:0.8rem">Schedule risk: ${lvl[0]}</span>
+              <span class="help-text" style="margin:0">measured as the P50→P90 spread of the simulation — hover any number above for what it means</span>
+            </div>
+            <ul style="margin:0.6rem 0 0.25rem 1.2rem;padding:0;font-size:0.85rem;line-height:1.55">${reasons.map(r => `<li>${r}</li>`).join('')}</ul>
+            ${driverRows ? `
+            <div style="font-size:0.83rem;font-weight:700;margin:0.75rem 0 0.3rem">What's driving it — and how to fix each one</div>
+            <div class="table-wrap"><table>
+              <thead><tr>
+                <th title="The activity whose estimate range moves the finish date the most">Uncertainty driver</th>
+                <th title="Optimistic – Most likely – Pessimistic estimate">O–M–P</th>
+                <th title="% of simulations where this task sat on the critical path">Criticality</th>
+                <th title="Approximate share of total schedule variance contributed by this activity">Share of risk</th>
+                <th></th>
+              </tr></thead><tbody>${driverRows}</tbody></table></div>` : ''}
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem">
+              ${covered < 78 ? `<button class="btn-sm btn-primary" onclick="setContingencyFromP80();renderAnalytics()" title="Sizes the contingency reserve so your committed date = the P80 finish">✅ Set contingency from P80</button>` : ''}
+              ${drivers.length ? `<button class="btn-sm btn-secondary" onclick="mcFixWithAI()" title="Pre-fills an AI change request that decomposes the top uncertainty drivers into smaller, tighter tasks — you review it before it runs">🤖 AI: decompose the top drivers</button>` : ''}
+              <button class="btn-sm btn-secondary" onclick="switchTab('raid')" title="Log the underlying risks so contingency is backed by a register, not a hunch">📋 Log these in the RAID register</button>
+            </div>
+          </div>`;
       }
 
       // criticality index table (near-critical risk)
@@ -3633,7 +3774,7 @@
         col.forEach((t, ti) => rowOf[t.id] = ti);
       });
 
-      const NW = 190, NH = 100, GX = 120, GY = 42, M = 46, TITLE_H = 40, LEGEND_H = 30;
+      const NW = 190, NH = 100, GX = 120, GY = 42, M = 46, TITLE_H = 40, LEGEND_H = 48;
       const colW = NW + GX;
       const maxInCol = Math.max(1, ...levels.map(l => l.length));
       const W = M * 2 + (maxLevel + 1) * colW - GX;
@@ -3681,12 +3822,20 @@
         const chX = Math.min(tx - 10, gapStart + GX * (lanes <= 1 ? 0.5 : (0.22 + 0.56 * lane / (lanes - 1))));
         const stroke = e.crit ? '#dc2626' : '#94a3b8';
         const w = e.crit ? 2.6 : 1.6;
-        const r = 7;
         const dir = ty > sy + 1 ? 1 : ty < sy - 1 ? -1 : 0;
+        // classic network-diagram connector: straight segments with sharp 90° elbows
         const d = dir === 0
           ? `M${sx},${sy} L${tx - 2},${ty}`
-          : `M${sx},${sy} L${chX - r},${sy} Q${chX},${sy} ${chX},${sy + dir * r} L${chX},${ty - dir * r} Q${chX},${ty} ${chX + r},${ty} L${tx - 2},${ty}`;
+          : `M${sx},${sy} L${chX},${sy} L${chX},${ty} L${tx - 2},${ty}`;
         svg += `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${w}" opacity="${e.crit ? 0.95 : 0.65}" marker-end="url(#${e.crit ? 'p-arrC' : 'p-arr'})"><title>${escapeXml((idToTask[e.from] ? idToTask[e.from].name : '?') + '  →  ' + (idToTask[e.to] ? idToTask[e.to].name : '?') + '  (' + e.type + (e.lag ? (e.lag > 0 ? ' +' : ' ') + e.lag : '') + ')' + (e.crit ? '  — critical path' : ''))}</title></path>`;
+        // annotate non-default dependencies (anything other than plain finish→start)
+        if (e.type !== 'FS' || e.lag) {
+          const lbl = e.type + (e.lag ? (e.lag > 0 ? '+' + e.lag : e.lag) : '');
+          const lx = dir === 0 ? (sx + tx) / 2 : chX, lyy = dir === 0 ? sy - 5 : (sy + ty) / 2;
+          svg += `<g><rect x="${lx - lbl.length * 3.1 - 2}" y="${lyy - 8}" width="${lbl.length * 6.2 + 4}" height="12" rx="3" fill="#f8fafc" stroke="${stroke}" stroke-width="0.6" opacity="0.92"/>
+            <text x="${lx}" y="${lyy + 1.5}" font-family="${FF}" font-size="8" font-weight="600" fill="${e.crit ? '#dc2626' : '#64748b'}" text-anchor="middle">${lbl}</text>
+            <title>${escapeXml('Dependency type ' + e.type + (e.lag ? ' with ' + Math.abs(e.lag) + ' ' + unitLabel() + (e.lag > 0 ? ' lag (wait)' : ' lead (overlap)') : '') + ' — FS finish→start, SS start→start, FF finish→finish, SF start→finish')}</title></g>`;
+        }
       });
 
       // nodes
@@ -3731,17 +3880,302 @@
         svg += `<title>${escapeXml(ptip.join('\n'))}</title></g>`;
       });
 
-      // legend
-      const ly = H - 12;
+      // legend — box key plus a definitions line so exported images are self-explanatory
+      const ly = H - 28;
       svg += `<rect x="${M}" y="${ly - 10}" width="14" height="10" rx="2" fill="#fef2f2" stroke="#dc2626" stroke-width="2"/><text x="${M + 19}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">Critical (zero slack)</text>`;
       svg += `<rect x="${M + 140}" y="${ly - 10}" width="14" height="10" rx="2" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/><text x="${M + 159}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">Complete</text>`;
       svg += `<rect x="${M + 240}" y="${ly - 10}" width="14" height="10" rx="2" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/><text x="${M + 259}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">Non-critical</text>`;
+      svg += `<text x="${M + 350}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">→ arrows read left to right: predecessor → successor (labels like SS+2 mark non-standard links)</text>`;
+      svg += `<text x="${M}" y="${H - 10}" font-family="${FF}" font-size="9.5" fill="#64748b">ES = Early Start   •   DUR = expected duration (O+4M+P)/6   •   EF = Early Finish   •   LS = Late Start   •   SLACK = LS − ES (0 ⇒ critical)   •   LF = Late Finish   —   all in ${escapeXml(unitLabel())} from project start</text>`;
 
       svgEl.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
       svgEl.setAttribute('width', W); svgEl.setAttribute('height', H);
       svgEl.setAttribute('viewBox', `0 0 ${W} ${H}`);
       svgEl.innerHTML = svg;
       svgEl.querySelectorAll('[data-popen]').forEach(el => el.addEventListener('click', () => openEditModal(Number(el.dataset.popen), true)));
+    }
+
+    // ========================= REQUIREMENTS & USER STORIES =========================
+    // Epics → INVEST user stories → Given/When/Then acceptance criteria, each
+    // story traced to a WBS activity so status/cost roll up from the plan.
+    const BANNED_AC_WORDS = ['fast', 'quick', 'responsive', 'seamless', 'smooth', 'intuitive', 'user-friendly', 'easy', 'robust', 'reliable', 'scalable', 'real-time', 'secure', 'best practices', 'industry standard'];
+    function bannedIn(text) {
+      const s = String(text || '');
+      return BANNED_AC_WORDS.filter(w => new RegExp('\\b' + w.replace(/[- ]/g, '[- ]') + '\\b', 'i').test(s));
+    }
+    function storyLint(s) {
+      const warns = [];
+      const types = new Set((s.ac || []).map(a => a.type));
+      if (!(s.ac || []).length) warns.push('No acceptance criteria — an untestable story cannot be accepted or invoiced.');
+      else {
+        if (!types.has('error')) warns.push('No error-path AC — stories with only happy paths get estimated at 40–60% of true cost.');
+        if (!types.has('edge')) warns.push('No edge-case AC — boundaries, empty states, timeouts, concurrency.');
+      }
+      if (s.wbsId == null || !tasks.some(t => t.id === s.wbsId)) warns.push('Not linked to a WBS activity — no trace from requirement to schedule/invoice.');
+      if (!s.persona || /^(the )?users?$/i.test(String(s.persona).trim())) warns.push('“As a user” is not a persona — name the role (an admin vs end-user story can differ 3× in cost).');
+      const banned = new Set();
+      (s.ac || []).forEach(a => bannedIn(a.text).forEach(w => banned.add(w)));
+      if (banned.size) warns.push('Untestable words in ACs (' + [...banned].join(', ') + ') — replace with measurable thresholds, e.g. “p95 ≤ 800 ms at 200 concurrent users”.');
+      return warns;
+    }
+    function renderReqs() {
+      const cont = document.getElementById('reqContainer');
+      if (!cont) return;
+      computeWbsCodes();
+      if (!reqs || !Array.isArray(reqs.stories) || !reqs.stories.length) {
+        cont.innerHTML = `<div class="empty-state"><h3>No requirements yet</h3>
+          <p>Draft personas, epics and user stories with Given/When/Then acceptance criteria from your WBS — every story traced to a plan activity.</p>
+          ${tasks.length ? `<button class="btn-primary" style="margin-top:1rem" onclick="draftRequirements()">🤖 Draft from WBS</button>
+          <button class="btn-secondary" style="margin-top:1rem" onclick="openStoryModal(null)">+ Add a story by hand</button>`
+          : '<p class="help-text" style="margin-top:0.5rem">Build the plan first (Tasks tab) — stories trace to WBS activities.</p>'}
+        </div>`;
+        return;
+      }
+      const idToTask = {}; tasks.forEach(t => idToTask[t.id] = t);
+      const stories = reqs.stories, epics = reqs.epics || [];
+      const leaves = leafTasks().filter(t => !t.milestone);
+      const covered = new Set(stories.map(s => s.wbsId).filter(id => id != null));
+      const uncovered = leaves.filter(t => !covered.has(t.id));
+      const allWarns = stories.reduce((n, s) => n + storyLint(s).length, 0);
+      const acCount = stories.reduce((n, s) => n + (s.ac || []).length, 0);
+      let html = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:0.75rem;margin-bottom:1rem">
+        <div class="stat-card"><div class="value">${epics.length}</div><div class="label">Epics</div></div>
+        <div class="stat-card"><div class="value">${stories.length}</div><div class="label">User stories</div></div>
+        <div class="stat-card"><div class="value">${acCount}</div><div class="label">Acceptance criteria</div></div>
+        <div class="stat-card ${uncovered.length ? 'warn' : 'success'}" style="cursor:help" title="${uncovered.length ? 'Activities without a story: ' + escapeHtml(uncovered.slice(0, 8).map(t => t.name).join(', ')) + (uncovered.length > 8 ? '…' : '') : 'Every non-milestone activity has at least one story'}"><div class="value">${leaves.length - uncovered.length}/${leaves.length}</div><div class="label">WBS coverage</div></div>
+        <div class="stat-card ${allWarns ? 'critical' : 'success'}" title="INVEST/testability lint: missing error/edge paths, unlinked stories, vague personas, untestable words"><div class="value">${allWarns}</div><div class="label">Lint warnings</div></div>
+      </div>`;
+      if (reqs.personas && reqs.personas.length) {
+        html += `<details style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">👥 Personas glossary (${reqs.personas.length}) — copy into the SOW; “as a user” stories are unpriceable</summary>
+          <div class="table-wrap" style="margin-top:0.5rem"><table><thead><tr><th>Persona</th><th>Definition</th></tr></thead><tbody>
+          ${reqs.personas.map(p => `<tr><td style="white-space:nowrap"><b>${escapeHtml(p.name)}</b></td><td style="font-size:0.85rem">${escapeHtml(p.definition || '')}</td></tr>`).join('')}
+          </tbody></table></div></details>`;
+      }
+      if (uncovered.length) {
+        html += `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
+          <strong>⚠ ${uncovered.length} WBS activit${uncovered.length === 1 ? 'y has' : 'ies have'} no story:</strong>
+          ${uncovered.slice(0, 12).map(t => escapeHtml(t.wbs + ' ' + t.name)).join(' • ')}${uncovered.length > 12 ? ' …' : ''}
+          <div style="margin-top:0.4rem"><button class="btn-sm btn-secondary" onclick="draftRequirements()">🤖 Draft the missing stories (keeps existing ones)</button></div></div>`;
+      }
+      const typeIcon = { happy: '✅', error: '⚠️', edge: '🧪', perf: '📏' };
+      const typeTip = { happy: 'Happy path — everything works', error: 'Error path — invalid input or failure handled gracefully', edge: 'Edge case — boundaries, empty states, concurrency, timeouts', perf: 'Measured performance threshold' };
+      const rendered = new Set();
+      const epicBlock = (eid, title, need) => {
+        const list = stories.filter(s => (s.epicId || '—') === eid);
+        if (!list.length) return '';
+        list.forEach(s => rendered.add(s.id));
+        return `<div style="margin-bottom:1.1rem">
+          <h3 style="font-size:0.95rem;margin:0 0 0.5rem;cursor:${need ? 'help' : 'default'}" title="${escapeHtml(need || '')}">${escapeHtml(eid)}${title ? ' — ' + escapeHtml(title) : ''} <span class="help-text">(${list.length} stor${list.length === 1 ? 'y' : 'ies'})</span></h3>
+          ${list.map(s => storyCardHtml(s, idToTask, typeIcon, typeTip)).join('')}</div>`;
+      };
+      epics.forEach(ep => { html += epicBlock(ep.id, ep.title, ep.businessNeed); });
+      const leftovers = stories.filter(s => !rendered.has(s.id));
+      if (leftovers.length) html += `<div style="margin-bottom:1.1rem"><h3 style="font-size:0.95rem;margin:0 0 0.5rem">Ungrouped stories</h3>${leftovers.map(s => storyCardHtml(s, idToTask, typeIcon, typeTip)).join('')}</div>`;
+      cont.innerHTML = html;
+      cont.querySelectorAll('[data-story-edit]').forEach(b => b.addEventListener('click', () => openStoryModal(b.dataset.storyEdit)));
+    }
+    function storyCardHtml(s, idToTask, typeIcon, typeTip) {
+      const t = s.wbsId != null ? idToTask[s.wbsId] : null;
+      const pct = t ? (t.percentComplete || 0) : null;
+      const warns = storyLint(s);
+      const acHtml = (s.ac || []).map(a => {
+        const bw = bannedIn(a.text);
+        return `<li style="margin-bottom:0.25rem"><span title="${escapeHtml(typeTip[a.type] || '')}" style="cursor:help">${typeIcon[a.type] || '•'}</span> <b>${escapeHtml(a.id || '')}</b> ${escapeHtml(a.text)}${bw.length ? ` <span class="risk-tag" style="background:#fee2e2;color:#b91c1c;cursor:help" title="Untestable word(s) — cannot be accepted or invoiced. Replace with a number and its measurement condition.">${escapeHtml(bw.join(', '))}</span>` : ''}</li>`;
+      }).join('');
+      return `<div style="background:#fff;border:1px solid var(--border);border-left:4px solid ${warns.length ? 'var(--warn)' : 'var(--success)'};border-radius:10px;padding:0.85rem 1rem;margin-bottom:0.6rem">
+        <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:flex-start;flex-wrap:wrap">
+          <div style="flex:1;min-width:240px;font-size:0.88rem"><b>${escapeHtml(s.id)}</b> — As a <b>${escapeHtml(s.persona || '?')}</b>, I want to <b>${escapeHtml(s.want || '?')}</b>, so that ${escapeHtml(s.soThat || '?')}</div>
+          <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap">
+            ${t ? `<span class="badge badge-info" style="cursor:pointer" onclick="openEditModal(${t.id}, true)" title="Traces to WBS ${escapeHtml(t.wbs)} ${escapeHtml(t.name)} — click to open the activity (dictionary inside)">↳ ${escapeHtml(t.wbs)} ${escapeHtml(t.name.length > 26 ? t.name.slice(0, 24) + '…' : t.name)}</span>
+              <span class="badge ${pct >= 100 ? 'badge-done' : pct > 0 ? 'badge-prog' : 'badge-notstarted'}" title="Status inherited from the linked WBS activity — check work off on the Tasks tab and this follows">${pct >= 100 ? '✓ done' : pct > 0 ? pct + '%' : 'not started'}</span>`
+            : `<span class="badge badge-blocked" title="No linked WBS activity — open the story and pick one so status & cost roll up">unlinked</span>`}
+            <button class="btn-sm btn-secondary" data-story-edit="${escapeHtml(s.id)}" title="Edit this story">✎</button>
+          </div>
+        </div>
+        ${acHtml ? `<ul style="list-style:none;margin:0.5rem 0 0;padding:0;font-size:0.82rem;line-height:1.5">${acHtml}</ul>` : ''}
+        ${(s.nfrs || []).length ? `<div style="margin-top:0.4rem;display:flex;gap:0.35rem;flex-wrap:wrap">${s.nfrs.map(n => `<span class="risk-tag" style="background:#ede9fe;color:#6d28d9;cursor:help" title="Non-functional requirement — often the largest cost driver; must be Required, N/A or Excluded, never blank">NFR: ${escapeHtml(n)}</span>`).join('')}</div>` : ''}
+        ${(s.assumptions || []).length ? `<div class="help-text" style="margin-top:0.35rem;font-size:0.75rem" title="A: assumptions (with impact if false) — D: client dependencies (with slip consequence)">${s.assumptions.map(a => '• ' + escapeHtml(a)).join('<br/>')}</div>` : ''}
+        ${warns.length ? `<div style="margin-top:0.45rem;font-size:0.76rem;color:#b45309">${warns.map(w => '⚠ ' + escapeHtml(w)).join('<br/>')}</div>` : ''}
+      </div>`;
+    }
+    // stories traced to a given WBS task — used by every export for traceability
+    function storiesForTask(taskId) {
+      return (reqs && Array.isArray(reqs.stories)) ? reqs.stories.filter(s => s.wbsId === taskId) : [];
+    }
+    function storyTraceText(taskId, withAc) {
+      return storiesForTask(taskId).map(s =>
+        s.id + ': As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?') + '.'
+        + ((s.ac || []).length ? (withAc
+          ? ' AC: ' + s.ac.map(a => a.id + ' (' + a.type + ') ' + a.text).join(' | ')
+          : ' (' + s.ac.length + ' acceptance criteria)') : '')
+      ).join('  ||  ');
+    }
+    function nextStoryId() {
+      const ids = new Set(((reqs && reqs.stories) || []).map(s => s.id));
+      let n = 1; while (ids.has('US-' + n)) n++;
+      return 'US-' + n;
+    }
+    function openStoryModal(storyId) {
+      if (!reqs) reqs = { personas: [], epics: [], stories: [] };
+      editingStoryId = storyId;
+      const s = storyId != null ? reqs.stories.find(x => x.id === storyId) : null;
+      document.getElementById('storyModalTitle').textContent = s ? 'Edit ' + s.id : 'Add user story';
+      const epicSel = document.getElementById('stEpic');
+      epicSel.innerHTML = '<option value="">(no epic)</option>' + (reqs.epics || []).map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.id + ' — ' + (e.title || ''))}</option>`).join('');
+      computeWbsCodes();
+      const wbsSel = document.getElementById('stWbs');
+      wbsSel.innerHTML = '<option value="">(not linked)</option>' + tasksInWbsOrder().filter(({ task: t }) => !isSummaryId(t.id) && !t.milestone).map(({ task: t, depth }) => `<option value="${t.id}">${' '.repeat(depth * 3)}${escapeHtml(t.wbs + ' ' + t.name)}</option>`).join('');
+      document.getElementById('stId').value = s ? s.id : nextStoryId();
+      epicSel.value = s ? (s.epicId || '') : '';
+      wbsSel.value = s && s.wbsId != null ? String(s.wbsId) : '';
+      document.getElementById('stPersona').value = s ? (s.persona || '') : '';
+      document.getElementById('stWant').value = s ? (s.want || '') : '';
+      document.getElementById('stSoThat').value = s ? (s.soThat || '') : '';
+      document.getElementById('stAc').value = s ? (s.ac || []).map(a => `[${a.type}] ${a.text}`).join('\n') : '';
+      document.getElementById('stNfr').value = s ? (s.nfrs || []).join('\n') : '';
+      document.getElementById('stAssume').value = s ? (s.assumptions || []).join('\n') : '';
+      document.getElementById('stDeleteBtn').style.display = s ? '' : 'none';
+      document.getElementById('storyModalError').style.display = 'none';
+      document.getElementById('storyModal').classList.add('open');
+    }
+    function closeStoryModal() { document.getElementById('storyModal').classList.remove('open'); }
+    function saveStoryModal() {
+      const err = document.getElementById('storyModalError');
+      const id = document.getElementById('stId').value.trim();
+      const want = document.getElementById('stWant').value.trim();
+      if (!id || !want) { err.textContent = 'ID and “I want to…” are required.'; err.style.display = 'block'; return; }
+      if (reqs.stories.some(s => s.id === id && s.id !== editingStoryId)) { err.textContent = 'A story with that ID already exists.'; err.style.display = 'block'; return; }
+      const splitLines = elId => document.getElementById(elId).value.split('\n').map(l => l.trim()).filter(Boolean);
+      const acBase = id.replace(/^US/i, 'AC');
+      const ac = splitLines('stAc').map((l, i) => {
+        const m = l.match(/^\[(happy|error|edge|perf)\]\s*(.*)$/i);
+        return { id: acBase + '.' + (i + 1), type: m ? m[1].toLowerCase() : 'happy', text: m ? m[2] : l };
+      });
+      const story = {
+        id, epicId: document.getElementById('stEpic').value || null,
+        wbsId: document.getElementById('stWbs').value ? Number(document.getElementById('stWbs').value) : null,
+        persona: document.getElementById('stPersona').value.trim(),
+        want, soThat: document.getElementById('stSoThat').value.trim(),
+        ac, nfrs: splitLines('stNfr'), assumptions: splitLines('stAssume')
+      };
+      const idx = editingStoryId != null ? reqs.stories.findIndex(s => s.id === editingStoryId) : -1;
+      if (idx >= 0) reqs.stories[idx] = story; else reqs.stories.push(story);
+      saveLocal(); closeStoryModal(); renderReqs();
+    }
+    function deleteStoryFromModal() {
+      if (editingStoryId == null) return;
+      if (!confirm('Delete ' + editingStoryId + '?')) return;
+      reqs.stories = reqs.stories.filter(s => s.id !== editingStoryId);
+      saveLocal(); closeStoryModal(); renderReqs();
+    }
+    async function draftRequirements() {
+      if (!tasks.length) { alert('Build the plan first (Tasks tab) — stories trace to WBS activities.'); return; }
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) { alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
+      computeWbsCodes();
+      const outline = tasksInWbsOrder().map(({ task: t, depth }) =>
+        `${'  '.repeat(depth)}${t.wbs} | ${t.name}${t.milestone ? ' [milestone]' : ''}${isSummaryId(t.id) ? ' [phase]' : ''}${t.owner ? ' | owner: ' + t.owner : ''}${t.deliverable ? ' | deliverable: ' + t.deliverable : ''}${t.description ? ' | scope: ' + t.description : ''}${t.acceptance ? ' | done-when: ' + t.acceptance : ''}`).join('\n');
+      const existing = (reqs && reqs.stories && reqs.stories.length)
+        ? `\nEXISTING REQUIREMENTS — keep every existing ID stable, improve weak spots (missing error/edge ACs, vague personas, untestable words) and ADD stories for uncovered activities. Return the COMPLETE set:\n${JSON.stringify({ personas: reqs.personas, epics: reqs.epics, stories: reqs.stories.map(s => ({ id: s.id, epicId: s.epicId, wbsName: (tasks.find(t => t.id === s.wbsId) || {}).name || '', persona: s.persona, want: s.want, soThat: s.soThat, ac: s.ac, nfrs: s.nfrs, assumptions: s.assumptions })) })}\n`
+        : '';
+      const prompt = `You are a senior business analyst and delivery lead writing the requirements layer for a billable engagement. Stories and acceptance criteria are the billing checklist: what is not testable cannot be accepted or invoiced.
+
+PROJECT: ${projName()}
+WORK BREAKDOWN STRUCTURE (wbs code | name | details):
+${outline}
+${existing}
+Rules (follow this house style exactly):
+- Every non-milestone LEAF activity gets at least one user story (wbsName = the EXACT activity name). Phases/summary rows become EPICS, not stories — an epic answers "what business capability?" and maps to an SOW section/milestone. Milestones get no stories.
+- Story format, verbatim structure: As a [role or persona], I want to [perform an action or achieve a goal], so that [I get some specific value or benefit]. Stories must satisfy ALL of INVEST — independent (minimal coupling), negotiable, valuable, estimable, small (fits one sprint — split oversized ones by workflow step, business rule, happy-vs-error path, data type, CRUD or interface), testable (pass/fail is objective; an untestable story cannot be accepted or invoiced).
+- Personas are specific named roles ("as a user" is banned — an admin story and an end-user story with identical wording can differ 3× in cost). Define every persona used in personas[] — the glossary belongs in the SOW.
+- Acceptance criteria per story, each ONE criterion in Given [initial state/context] When [specific action or trigger] Then [measurable, observable outcome] form (multiple "And" clauses are fine; a second "When" means split the criterion). Cover ALL THREE path types: the happy path, at least one ERROR path (invalid input / dependency failure rejected gracefully) and at least one EDGE case (boundaries, empty states, maximums, concurrency, timeouts, dependency failure). Add a perf criterion whenever a measurable threshold applies. Happy-path-only stories get estimated at 40–60% of true cost — never produce one. No implementation detail in the Then ("behaviour, not the database table"); binary pass/fail; observable from outside the system.
+- BANNED words in criteria (untestable — every one is a future argument): fast, quick, responsive, seamless, smooth, intuitive, user-friendly, easy, robust, reliable, scalable, real-time, secure, handle, support, manage, best practices, industry standard, etc./and so on/including but not limited to. Always write the number AND its measurement condition instead (e.g. "p95 response ≤ 800 ms under 200 concurrent users", "99.9% monthly availability measured as …", "passes OWASP ASVS Level 2 verification", "90% of test participants complete the task unaided in ≤ 3 minutes").
+- nfrs: run the NFR checklist per story (performance, throughput, availability, recovery RTO/RPO, security standard, authN/authZ, data residency, privacy/compliance, auditability, accessibility, localization, browser/device, observability, retention, interoperability, migration) and attach the applicable ones WITH numbers. A story with no NFRs attached is not estimable — omit the array only if truly none apply.
+- assumptions: strings prefixed "A:" for assumptions — each MUST state the impact if false (e.g. "A: the sentiment service exposes a documented REST endpoint ≤200 ms p95 — impact if false: +120–200 hours, re-baseline the epic"); and "D:" for client dependencies — each MUST state the consequence of a slip (e.g. "D: 1,000 labeled conversations by end of Sprint 2 — if slipped: validation cannot start, day-for-day schedule extension").
+- For AI/probabilistic features, write the outcome in statistical form against a defined evaluation dataset (size, labeling method, inter-annotator agreement), with precision/recall floors, latency at stated concurrency, fallback behaviour on timeout/low confidence, and drift monitoring — never deterministic pass/fail on a probabilistic output.
+- IDs: epics EP-1…, stories US-1…, criteria AC-<storyNo>.<n>. IDs must match ^[A-Za-z0-9_.-]+$.
+Return ONLY JSON (no prose, no fences):
+{"personas":[{"name":"…","definition":"…"}],
+ "epics":[{"id":"EP-1","title":"…","businessNeed":"…","wbsName":"exact phase name or empty string"}],
+ "stories":[{"id":"US-1","epicId":"EP-1","wbsName":"EXACT leaf activity name","persona":"…","want":"…","soThat":"…",
+   "ac":[{"id":"AC-1.1","type":"happy|error|edge|perf","text":"Given … When … Then …"}],
+   "nfrs":["…"],"assumptions":["A: … — impact if false: …","D: … — if slipped: …"]}]}`;
+      const onDelta = streamShow('Drafting requirements & user stories');
+      flashSaved('⏳ AI drafting requirements…');
+      try {
+        const res = parseAIJson(await callAnthropic(prompt, { onDelta }));
+        streamHide(true);
+        applyReqsFromAI(res);
+        saveLocal(); renderReqs();
+        if (!document.getElementById('view-req').classList.contains('active')) switchTab('req');
+        flashSaved('✓ ' + reqs.stories.length + ' stories drafted across ' + reqs.epics.length + ' epics — review the lint flags');
+      } catch (e) { streamHide(false); alert('Requirements drafting failed: ' + (e.message || e)); }
+    }
+    function applyReqsFromAI(res) {
+      if (!res || !Array.isArray(res.stories) || !res.stories.length) throw new Error('response had no stories');
+      const byName = {}; tasks.forEach(t => byName[t.name.trim().toLowerCase()] = t);
+      const clean = v => String(v == null ? '' : v).trim();
+      const safeId = (v, pre, i) => { v = clean(v); return /^[A-Za-z0-9_.-]{1,32}$/.test(v) ? v : pre + '-' + (i + 1); };
+      const epics = Array.isArray(res.epics) ? res.epics.map((e, i) => ({
+        id: safeId(e.id, 'EP', i), title: clean(e.title), businessNeed: clean(e.businessNeed),
+        wbsId: (byName[clean(e.wbsName).toLowerCase()] || {}).id != null ? byName[clean(e.wbsName).toLowerCase()].id : null
+      })) : [];
+      const stories = res.stories.map((s, i) => {
+        const t = byName[clean(s.wbsName).toLowerCase()];
+        return {
+          id: safeId(s.id, 'US', i), epicId: clean(s.epicId) || null,
+          wbsId: t ? t.id : null,
+          persona: clean(s.persona), want: clean(s.want), soThat: clean(s.soThat),
+          ac: Array.isArray(s.ac) ? s.ac.map((a, j) => ({
+            id: safeId(a.id, 'AC-' + (i + 1), j), type: ['happy', 'error', 'edge', 'perf'].includes(clean(a.type)) ? clean(a.type) : 'happy', text: clean(a.text)
+          })).filter(a => a.text) : [],
+          nfrs: Array.isArray(s.nfrs) ? s.nfrs.map(clean).filter(Boolean) : [],
+          assumptions: Array.isArray(s.assumptions) ? s.assumptions.map(clean).filter(Boolean) : []
+        };
+      }).filter(s => s.want);
+      reqs = {
+        personas: Array.isArray(res.personas) ? res.personas.map(p => ({ name: clean(p.name), definition: clean(p.definition) })).filter(p => p.name) : [],
+        epics, stories
+      };
+    }
+    function exportReqsMarkdown() {
+      if (!reqs || !reqs.stories.length) { alert('No requirements yet — draft or add stories first.'); return; }
+      computeWbsCodes();
+      const idToTask = {}; tasks.forEach(t => idToTask[t.id] = t);
+      const L = ['# Requirements & User Stories — ' + projName(), '',
+        '_Generated ' + fmtNice(new Date()) + '. Trace: epic → story → acceptance criteria → WBS activity. Acceptance criteria are the billing checklist: a deliverable is accepted when its criteria pass._', ''];
+      if (reqs.personas.length) { L.push('## Personas'); reqs.personas.forEach(p => L.push('- **' + p.name + '** — ' + p.definition)); L.push(''); }
+      const rendered = new Set();
+      const emit = (title, list) => {
+        if (!list.length) return;
+        L.push('## ' + title, '');
+        list.forEach(s => {
+          rendered.add(s.id);
+          const t = s.wbsId != null ? idToTask[s.wbsId] : null;
+          L.push('### ' + s.id + (t ? ' · WBS ' + t.wbs + ' ' + t.name + ' (' + (t.percentComplete || 0) + '% complete)' : ' · (not linked to WBS)'));
+          L.push('As a **' + (s.persona || '?') + '**, I want to **' + (s.want || '?') + '**, so that ' + (s.soThat || '?') + '.', '');
+          if ((s.ac || []).length) { L.push('**Acceptance criteria**'); s.ac.forEach(a => L.push('- `' + a.id + '` *(' + a.type + ')* ' + a.text)); L.push(''); }
+          if ((s.nfrs || []).length) { L.push('**Non-functional requirements**'); s.nfrs.forEach(n => L.push('- ' + n)); L.push(''); }
+          if ((s.assumptions || []).length) { L.push('**Assumptions & client dependencies**'); s.assumptions.forEach(a => L.push('- ' + a)); L.push(''); }
+        });
+      };
+      (reqs.epics || []).forEach(ep => emit(ep.id + ' — ' + ep.title + (ep.businessNeed ? '\n_' + ep.businessNeed + '_' : ''), reqs.stories.filter(s => (s.epicId || '—') === ep.id)));
+      emit('Ungrouped stories', reqs.stories.filter(s => !rendered.has(s.id)));
+      download(safeName() + '-requirements.md', L.join('\n'), 'text/markdown');
+    }
+    function exportTraceCSV() {
+      if (!reqs || !reqs.stories.length) { alert('No requirements yet — draft or add stories first.'); return; }
+      computeWbsCodes();
+      const idToTask = {}; tasks.forEach(t => idToTask[t.id] = t);
+      const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+      const rows = [['Epic', 'Story ID', 'User story', 'Persona', 'AC ID', 'AC type', 'Acceptance criterion', 'WBS', 'Activity', 'Owner', '% complete', 'Status']];
+      reqs.stories.forEach(s => {
+        const t = s.wbsId != null ? idToTask[s.wbsId] : null;
+        const base = [s.epicId || '', s.id, 'As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?'), s.persona || ''];
+        const tail = t ? [t.wbs, t.name, t.owner || '', (t.percentComplete || 0) + '%', taskStatus(t).label] : ['', '', '', '', 'unlinked'];
+        if (!(s.ac || []).length) rows.push([...base, '', '', '', ...tail]);
+        (s.ac || []).forEach(a => rows.push([...base, a.id, a.type, a.text, ...tail]));
+      });
+      download(safeName() + '-traceability.csv', rows.map(r => r.map(esc).join(',')).join('\n'), 'text/csv');
     }
 
     // ========================= EXPORTS =========================
@@ -3817,6 +4251,46 @@
       el.textContent = msg;
       clearTimeout(flashSaved._t);
       flashSaved._t = setTimeout(() => { el.textContent = ''; }, 3000);
+    }
+
+    // ---- Status-update round trip ----
+    // 1) copyUpdateRequest() → email/Slack-ready checklist of open work, grouped
+    //    by owner, with blanks to fill in.
+    // 2) People reply inline. 3) Paste the replies into Tasks ▸ AI mode
+    //    "Update progress" → %s, actual dates and TE-weighted rollups update.
+    async function copyUpdateRequest() {
+      if (!tasks.length) { alert('No activities yet.'); return; }
+      if (!calculated) ensureCalc();
+      computeWbsCodes();
+      const open = leafTasks().filter(t => (t.percentComplete || 0) < 100 && !(t.milestone && effectivePreds(t).length));
+      if (!open.length) { alert('Everything is already at 100% — nothing to chase. 🎉'); return; }
+      const byOwner = {};
+      open.forEach(t => { const o = (t.owner || '').trim() || 'Unassigned'; (byOwner[o] = byOwner[o] || []).push(t); });
+      const L = [];
+      L.push('STATUS UPDATE REQUEST — ' + projName() + ' — ' + fmtNice(new Date()));
+      L.push('');
+      L.push('Please update your items below: replace ____ with today\'s % complete (or "done"),');
+      L.push('add the actual finish date for anything completed, and flag blockers.');
+      L.push('Reply with the whole list — it gets pasted straight back into the plan.');
+      Object.keys(byOwner).sort((a, b) => a === 'Unassigned' ? 1 : b === 'Unassigned' ? -1 : a.localeCompare(b)).forEach(o => {
+        L.push('');
+        L.push('== ' + o + ' ==');
+        byOwner[o].forEach(t => {
+          const win = calculated && t.startDate ? fmtNice(t.startDate) + ' → ' + fmtNice(t.finishDate) + ', ' : '';
+          L.push(`• [${t.wbs}] ${t.name}${t.milestone ? ' (milestone)' : ''} — ${win}currently ${t.percentComplete || 0}%${isLate(t) ? '  ⚠ behind schedule' : ''}`);
+          L.push('    now at: ____%    actual finish (if done): YYYY-MM-DD    blockers/notes:');
+        });
+      });
+      L.push('');
+      L.push('— generated by ' + projName() + ' plan. PM: paste the replies into Tasks ▸ AI ▸ "Update progress" and every %, actual date and phase rollup updates automatically.');
+      const text = L.join('\n');
+      try {
+        await navigator.clipboard.writeText(text);
+        flashSaved('✓ Update request copied — paste into email/Slack; paste replies back via AI ▸ Update progress');
+      } catch (e) {
+        download(safeName() + '-update-request.txt', text, 'text/plain');
+        alert('Clipboard unavailable here — downloaded the request as a .txt instead.');
+      }
     }
 
     function toggleClientSafe(btn) {
@@ -3936,7 +4410,7 @@
     function exportCSV() {
       if (!ensureCalc()) return;
       const u = unitLabel();
-      const rows = [['WBS','Type','Activity','Owner','Units%','Milestone','O','M','P','TE ('+u+')','Variance','Predecessors','Start','Finish','Baseline Start','Baseline Finish','Actual Start','Actual Finish','ES','EF','Slack','% Complete','Critical','Criticality %','Deliverable','Description','Acceptance','Status']];
+      const rows = [['WBS','Type','Activity','Owner','Units%','Milestone','O','M','P','TE ('+u+')','Variance','Predecessors','Start','Finish','Baseline Start','Baseline Finish','Actual Start','Actual Finish','ES','EF','Slack','% Complete','Critical','Criticality %','Deliverable','Description','Acceptance','Status','User stories']];
       tasksInWbsOrder().forEach(({ task: t }) => rows.push([
         t.wbs, t.isSummary ? 'Summary' : (t.milestone ? 'Milestone' : 'Task'), t.name, t.owner, t.isSummary ? '' : t.units,
         t.milestone ? 'Yes' : '', (t.milestone||t.isSummary)?'':t.o, (t.milestone||t.isSummary)?'':t.m, (t.milestone||t.isSummary)?'':t.p,
@@ -3945,7 +4419,8 @@
         t.baseStart?fmtISO(t.baseStart):'', t.baseFinish?fmtISO(t.baseFinish):'', t.actualStart||'', t.actualFinish||'',
         (t.es||0).toFixed(2), (t.ef||0).toFixed(2), (t.slack||0).toFixed(2), t.percentComplete||0,
         t.isCritical ? 'Yes' : '', ((t.criticality||0)*100).toFixed(0),
-        t.deliverable||'', t.description||'', t.acceptance||'', t.isSummary?'Summary':taskStatus(t).label
+        t.deliverable||'', t.description||'', t.acceptance||'', t.isSummary?'Summary':taskStatus(t).label,
+        storiesForTask(t.id).map(s => s.id).join(', ')
       ]));
       download(safeName() + '.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
     }
@@ -3964,13 +4439,18 @@
     }
     function exportWBSDictionaryCSV() {
       if (!ensureCalc()) return;
-      const rows = [['WBS','Level','Element','Type','Owner','Start','Finish','Duration','% Complete','Deliverable','Description / scope','Acceptance criteria']];
-      tasksInWbsOrder().forEach(({ task: t, depth }) => rows.push([
-        t.wbs, depth + 1, t.name, t.isSummary ? 'Summary' : (t.milestone ? 'Milestone' : 'Work package'),
-        t.owner || '', t.startDate?fmtISO(t.startDate):'', t.finishDate?fmtISO(t.finishDate):'',
-        t.milestone ? '0' : (t.te||0).toFixed(1), (t.percentComplete||0)+'%',
-        t.deliverable||'', t.description||'', t.acceptance||''
-      ]));
+      const rows = [['WBS','Level','Element','Type','Owner','Start','Finish','Duration','% Complete','Deliverable','Description / scope','Acceptance criteria','User stories (trace)','Story acceptance criteria']];
+      tasksInWbsOrder().forEach(({ task: t, depth }) => {
+        const st = storiesForTask(t.id);
+        rows.push([
+          t.wbs, depth + 1, t.name, t.isSummary ? 'Summary' : (t.milestone ? 'Milestone' : 'Work package'),
+          t.owner || '', t.startDate?fmtISO(t.startDate):'', t.finishDate?fmtISO(t.finishDate):'',
+          t.milestone ? '0' : (t.te||0).toFixed(1), (t.percentComplete||0)+'%',
+          t.deliverable||'', t.description||'', t.acceptance||'',
+          st.map(s => s.id + ' — As a ' + (s.persona||'?') + ', I want to ' + (s.want||'?') + ', so that ' + (s.soThat||'?')).join(' || '),
+          st.flatMap(s => (s.ac||[]).map(a => a.id + ' (' + a.type + ') ' + a.text)).join(' || ')
+        ]);
+      });
       download(safeName() + '-wbs-dictionary.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
     }
 
@@ -3999,7 +4479,7 @@
           dateStr(t.startDate), dateStr(t.finishDate),
           ((t.percentComplete||0)/100).toFixed(2),
           preds, taskParticipants(t).map(pr => pr.name).join(', ') || '',
-          [t.isSummary ? 'Summary' : '', t.milestone ? 'Milestone' : '', (!t.milestone && !t.isSummary && t.units !== 100) ? ('Allocation ' + t.units + '%') : '', t.deliverable ? ('Deliverable: ' + t.deliverable) : ''].filter(Boolean).join('; ')
+          [t.isSummary ? 'Summary' : '', t.milestone ? 'Milestone' : '', (!t.milestone && !t.isSummary && t.units !== 100) ? ('Allocation ' + t.units + '%') : '', t.deliverable ? ('Deliverable: ' + t.deliverable) : '', storiesForTask(t.id).length ? ('Stories: ' + storyTraceText(t.id, true)) : ''].filter(Boolean).join('; ')
         ]);
       });
       download(safeName() + '-smartsheet.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
@@ -4095,7 +4575,8 @@
         <Work>${t.isSummary ? 'PT0H0M0S' : dur}</Work>
         <Milestone>${t.milestone ? 1 : 0}</Milestone>
         <PercentComplete>${Math.round(t.percentComplete || 0)}</PercentComplete>
-        <PercentWorkComplete>${Math.round(t.percentComplete || 0)}</PercentWorkComplete>${preds}
+        <PercentWorkComplete>${Math.round(t.percentComplete || 0)}</PercentWorkComplete>${storiesForTask(t.id).length ? `
+        <Notes>${escapeXml('User stories — ' + storyTraceText(t.id, true))}</Notes>` : ''}${preds}
       </Task>`;
       });
 
@@ -4218,7 +4699,7 @@
         { id: 2, type: 'Assumption', title: 'Client provides a data steward 2 days/week during mapping', probability: 3, impact: 3, owner: 'A. Rivera', mitigation: 'Named in SOW client obligations', description: '', status: 'Open', taskId: 5, createdAt: fmtISO(new Date()) },
         { id: 3, type: 'Exclusion', title: 'Historical data older than 24 months is out of scope for migration', probability: 3, impact: 3, owner: '', mitigation: '', description: '', status: 'Open', taskId: null, createdAt: fmtISO(new Date()) }
       ];
-      nextRaidId = 4; statusHistory = []; sowDraft = ''; statusNarrative = null; healthFindings = null;
+      nextRaidId = 4; statusHistory = []; sowDraft = ''; statusNarrative = null; healthFindings = null; reqs = null;
       pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 };
       reserves = { contingency: { value: 10, unit: 'percent' }, management: { value: 5, unit: 'percent' } };
       baselineDate = ''; collapsedIds = new Set(); levelMode = 'none'; projectBudget = 0; calculated = false;
@@ -4228,7 +4709,7 @@
     }
     function resetProject() {
       if (tasks.length && !confirm('Clear all activities and start fresh?')) return;
-      tasks = []; nextId = 1; calculated = false; mcResult = null; resources = {}; resourceLoad = null;
+      tasks = []; nextId = 1; calculated = false; mcResult = null; resources = {}; resourceLoad = null; reqs = null;
       reserves = { contingency: { value: 0, unit: 'percent' }, management: { value: 0, unit: 'percent' } }; baselineDate = '';
       collapsedIds = new Set(); levelMode = 'none'; projectBudget = 0; unleveledDuration = null;
       document.getElementById('projectName').value = 'New Engagement';
@@ -4357,6 +4838,10 @@
       const head = document.getElementById('aiStreamHead');
       const txt = document.getElementById('aiStreamText');
       if (!box) return () => {};
+      // the box lives on the Tasks tab — float it above whatever tab is active
+      // so AI work started from Analytics/Gantt/etc. streams in visibly too
+      const tasksActive = document.getElementById('view-tasks').classList.contains('active');
+      box.classList.toggle('stream-float', !tasksActive);
       box.style.display = 'block';
       head.textContent = label;
       txt.textContent = '';
@@ -4370,7 +4855,7 @@
     }
     function streamHide(ok) {
       const box = document.getElementById('aiStreamBox');
-      if (box) setTimeout(() => { box.style.display = 'none'; }, ok ? 600 : 4000);
+      if (box) setTimeout(() => { box.style.display = 'none'; box.classList.remove('stream-float'); }, ok ? 600 : 4000);
     }
 
     function aiSchemaHint() {
@@ -4418,63 +4903,82 @@ Rules:
       const key = (document.getElementById('aiKey').value.trim()) || localStorage.getItem(AI_KEY_STORE);
       if (!key) throw new Error('No API key. Click “⚙ API Key”, paste your Anthropic key, and Save.');
       const model = document.getElementById('aiModel').value || 'claude-sonnet-5';
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': key,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
-          model,
-          // per-model output ceilings — Sonnet 5 & Haiku 4.5 allow 64k, Opus 4.8 32k
-          max_tokens: opts.maxTokens || (model.indexOf('opus') >= 0 ? 32000 : 64000),
-          stream: true,                           // stream so the user sees progress immediately
-          messages: [{ role: 'user', content: userContent }]
-        })
-      });
-      if (!res.ok) {
-        let detail = '';
-        try { const j = await res.json(); detail = j.error ? j.error.message : JSON.stringify(j); } catch (e) { detail = res.statusText; }
-        if (res.status === 401) throw new Error('Invalid API key (401). Check the key in ⚙ API Key.');
-        if (res.status === 429) throw new Error('Rate limited (429). Wait a moment and try again.');
-        throw new Error(`API error ${res.status}: ${detail}`);
-      }
-      // Parse the SSE stream, surfacing deltas as they arrive
-      let text = '';
-      let stopReason = null;
-      if (res.body && res.body.getReader) {
-        const reader = res.body.getReader();
-        const dec = new TextDecoder();
-        let buf = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += dec.decode(value, { stream: true });
-          const lines = buf.split('\n');
-          buf = lines.pop();
-          for (const line of lines) {
-            if (!line.startsWith('data:')) continue;
-            const payload = line.slice(5).trim();
-            if (!payload || payload === '[DONE]') continue;
-            try {
-              const ev = JSON.parse(payload);
-              if (ev.type === 'content_block_delta' && ev.delta && ev.delta.text) {
-                text += ev.delta.text;
-                if (opts.onDelta) { try { opts.onDelta(ev.delta.text, text); } catch (e) {} }
-              }
-              if (ev.type === 'message_delta' && ev.delta && ev.delta.stop_reason) stopReason = ev.delta.stop_reason;
-              if (ev.type === 'error') throw new Error(ev.error ? ev.error.message : 'stream error');
-            } catch (e) { if (e && e.message && !String(e.message).startsWith('Unexpected')) throw e; }
-          }
+      // per-model output ceilings: Sonnet 5 / Opus 4.8 allow 128k output tokens, Haiku 4.5 64k
+      const maxTok = opts.maxTokens || (model.indexOf('haiku') >= 0 ? 64000 : 128000);
+
+      const once = async (messages, baseText) => {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-api-key': key,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: maxTok,
+            stream: true,                         // stream so the user sees progress immediately
+            messages
+          })
+        });
+        if (!res.ok) {
+          let detail = '';
+          try { const j = await res.json(); detail = j.error ? j.error.message : JSON.stringify(j); } catch (e) { detail = res.statusText; }
+          if (res.status === 401) throw new Error('Invalid API key (401). Check the key in ⚙ API Key.');
+          if (res.status === 429) throw new Error('Rate limited (429). Wait a moment and try again.');
+          throw new Error(`API error ${res.status}: ${detail}`);
         }
-      } else { // very old browsers: fall back to non-streamed JSON
-        const data = await res.json();
-        text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+        // Parse the SSE stream, surfacing deltas as they arrive
+        let text = '';
+        let stopReason = null;
+        if (res.body && res.body.getReader) {
+          const reader = res.body.getReader();
+          const dec = new TextDecoder();
+          let buf = '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            const lines = buf.split('\n');
+            buf = lines.pop();
+            for (const line of lines) {
+              if (!line.startsWith('data:')) continue;
+              const payload = line.slice(5).trim();
+              if (!payload || payload === '[DONE]') continue;
+              try {
+                const ev = JSON.parse(payload);
+                if (ev.type === 'content_block_delta' && ev.delta && ev.delta.text) {
+                  text += ev.delta.text;
+                  if (opts.onDelta) { try { opts.onDelta(ev.delta.text, baseText + text); } catch (e) {} }
+                }
+                if (ev.type === 'message_delta' && ev.delta && ev.delta.stop_reason) stopReason = ev.delta.stop_reason;
+                if (ev.type === 'error') throw new Error(ev.error ? ev.error.message : 'stream error');
+              } catch (e) { if (e && e.message && !String(e.message).startsWith('Unexpected')) throw e; }
+            }
+          }
+        } else { // very old browsers: fall back to non-streamed JSON
+          const data = await res.json();
+          text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+        }
+        return { text, stopReason };
+      };
+
+      // Auto-continuation: if the model hits the output ceiling, resend with the
+      // partial answer as an assistant prefill so it resumes mid-token-stream —
+      // huge plans get stitched together seamlessly across responses.
+      let full = '';
+      for (let round = 0; round < 4; round++) {
+        const prefill = full.replace(/\s+$/, ''); // API rejects trailing whitespace in prefills
+        const messages = prefill
+          ? [{ role: 'user', content: userContent }, { role: 'assistant', content: prefill }]
+          : [{ role: 'user', content: userContent }];
+        if (prefill) full = prefill;
+        const r = await once(messages, full);
+        full += r.text;
+        if (r.stopReason !== 'max_tokens') return full;
       }
-      if (stopReason === 'max_tokens') text += '\n/*TRUNCATED*/';
-      return text;
+      return full + '\n/*TRUNCATED*/';
     }
     function parseAIJson(text) {
       let s = text.replace('/*TRUNCATED*/', '').trim();
@@ -5015,7 +5519,38 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         <h2 style="font-size:16px;margin:16px 0 6px">${d.price ? '8' : '7'}. Acceptance Process</h2><p style="font-size:13px">${n.acceptanceProcess || 'Deliverables are accepted against the acceptance criteria in §2. The client has five (5) business days to review each deliverable; absent written feedback within that window the deliverable is deemed accepted.'}</p>
         <h2 style="font-size:16px;margin:16px 0 6px">${d.price ? '9' : '8'}. Change Control</h2><p style="font-size:13px">${n.changeControl || 'Changes to scope, schedule, or price require a written change order describing the impact, approved by both parties before work proceeds.'}</p>
         ${d.risks.length ? `<h2 style="font-size:16px;margin:16px 0 6px">Appendix — Key Delivery Risks</h2><ul style="font-size:13px">${d.risks.map(x => '<li>' + h(x) + '</li>').join('')}</ul>` : ''}
+        ${d.storiesAppendix ? d.storiesAppendix : ''}
       </div>`;
+    }
+    // Appendix B: user stories & acceptance criteria (from the Requirements tab),
+    // grouped by epic — the operative definition of "delivered" per deliverable.
+    function sowStoriesAppendix() {
+      if (!reqs || !Array.isArray(reqs.stories) || !reqs.stories.length) return '';
+      const td = 'padding:5px 9px;border:1px solid #d7dde5;font-size:12px;vertical-align:top;';
+      const th = td + 'background:#f1f5f9;font-weight:700;text-align:left;';
+      const h = x => escapeHtml(x || '');
+      const idToTask = {}; tasks.forEach(t => idToTask[t.id] = t);
+      let out = `<h2 style="font-size:16px;margin:16px 0 6px">Appendix — User Stories &amp; Acceptance Criteria</h2>
+        <p style="font-size:12.5px;color:#475569">Each story is accepted when its acceptance criteria pass in the designated environment. Criteria marked <i>error</i>/<i>edge</i> define graceful failure behaviour and boundary handling and are part of the committed scope.</p>`;
+      if (reqs.personas && reqs.personas.length) out += `<p style="font-size:12.5px"><b>Personas:</b> ${reqs.personas.map(p => '<b>' + h(p.name) + '</b> — ' + h(p.definition)).join('; ')}</p>`;
+      const rendered = new Set();
+      const block = (title, list) => {
+        if (!list.length) return '';
+        list.forEach(s => rendered.add(s.id));
+        return `<h3 style="font-size:13.5px;margin:10px 0 4px">${h(title)}</h3>
+          <table style="border-collapse:collapse;width:100%"><tr><th style="${th};width:70px">ID</th><th style="${th}">Story &amp; acceptance criteria</th><th style="${th};width:150px">WBS trace</th></tr>
+          ${list.map(s => {
+            const t = s.wbsId != null ? idToTask[s.wbsId] : null;
+            return `<tr><td style="${td}">${h(s.id)}</td><td style="${td}">As a <b>${h(s.persona)}</b>, I want to ${h(s.want)}, so that ${h(s.soThat)}.
+              ${(s.ac || []).length ? '<ul style="margin:4px 0 0 14px;padding:0">' + s.ac.map(a => `<li><i>${h(a.type)}</i> — ${h(a.text)}</li>`).join('') + '</ul>' : ''}
+              ${(s.nfrs || []).length ? `<div style="margin-top:3px;color:#475569"><b>NFRs:</b> ${s.nfrs.map(h).join('; ')}</div>` : ''}</td>
+              <td style="${td}">${t ? h(t.wbs + ' ' + t.name) : '—'}</td></tr>`;
+          }).join('')}</table>`;
+      };
+      let body = '';
+      (reqs.epics || []).forEach(ep => { body += block(ep.id + ' — ' + (ep.title || ''), reqs.stories.filter(s => (s.epicId || '—') === ep.id)); });
+      body += block('Other stories', reqs.stories.filter(s => !rendered.has(s.id)));
+      return body ? out + body : '';
     }
     async function svgMarkupToPngDataUrl(markup, scale) {
       scale = scale || 1.5;
@@ -5036,6 +5571,7 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       if (!tasks.length) { alert('Build the plan first.'); return; }
       if (!ensureCalc()) return;
       const d = sowSkeletonData();
+      d.storiesAppendix = sowStoriesAppendix();
       // embed the Gantt as an image so the SOW carries the visual timeline
       try {
         const blob = await svgMarkupToPngBlob(buildGanttSvg().markup, 1.4);
@@ -5258,11 +5794,13 @@ Plan:\n${planSummary}
 ${histPromptBlock()}
 Return ONLY JSON: {"findings":[{"severity":"high|medium|low","area":"Missing scope|Estimate realism|Sequencing|Risk|Other","finding":"specific observation","recommendation":"concrete action"}]}
 Focus on: scope that is obviously missing for this type of work; estimates that contradict the historical data; sequencing that looks wrong; single points of failure. 3-8 findings, concrete, no generic advice.`;
-          const res = parseAIJson(await callAnthropic(prompt));
+          const onDelta = streamShow('AI plan review');
+          const res = parseAIJson(await callAnthropic(prompt, { onDelta }));
+          streamHide(true);
           if (res && Array.isArray(res.findings)) {
             res.findings.forEach(fd => findings.push({ severity: ['high','medium','low'].includes(fd.severity) ? fd.severity : 'medium', area: '🤖 ' + String(fd.area || 'AI review'), finding: String(fd.finding || ''), recommendation: String(fd.recommendation || '') }));
           }
-        } catch (e) { findings.push({ severity: 'info', area: 'AI review', finding: 'AI review unavailable: ' + (e.message || e), recommendation: 'Deterministic checks above still apply.' }); }
+        } catch (e) { streamHide(false); findings.push({ severity: 'info', area: 'AI review', finding: 'AI review unavailable: ' + (e.message || e), recommendation: 'Deterministic checks above still apply.' }); }
       }
       healthFindings = { date: fmtISO(new Date()), findings };
       saveLocal(); renderHealth();
@@ -5288,6 +5826,24 @@ Focus on: scope that is obviously missing for this type of work; estimates that 
         ${fixable.length ? `<div class="toolbar no-print" style="margin-top:0.6rem"><button class="btn-primary btn-sm" onclick="aiFixFindings()" title="The AI edits the plan to address every fixable finding — you review the result">🔧 Fix all with AI (${fixable.length})</button><span class="help-text">applies the recommendations as a plan update — every change stays editable</span></div>` : ''}`
         : '<div class="conflict-card ok"><strong style="color:var(--success)">✓ No issues found.</strong> Estimates, structure and resourcing all look sound.</div>'}`;
     }
+    // From the Monte-Carlo risk read-out: pre-fill an AI change request that
+    // decomposes the top uncertainty drivers, and let the user review/run it.
+    function mcFixWithAI() {
+      if (!mcResult) return;
+      const drivers = leafTasks().filter(t => !t.milestone && (t.variance || 0) > 0)
+        .map(t => ({ t, score: (t.variance || 0) * Math.max(0.05, t.criticality || 0) }))
+        .sort((a, b) => b.score - a.score).slice(0, 3).filter(d => d.score > 0);
+      if (!drivers.length) return;
+      const req = 'Reduce schedule uncertainty: decompose each of these high-variance activities into 2-4 smaller sub-tasks with tighter O/M/P ranges (same overall expected effort, same owner unless a split obviously needs another role):\n'
+        + drivers.map(d => `- "${d.t.name}" (currently ${d.t.o}/${d.t.m}/${d.t.p})`).join('\n')
+        + '\nKeep every other task, estimate, owner and dependency exactly as it is.';
+      document.getElementById('aiMode').value = 'merge';
+      document.getElementById('aiNotes').value = req;
+      switchTab('tasks');
+      document.getElementById('aiNotes').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      flashSaved('✍ Change request pre-filled — review it, then press ✨ Generate Plan');
+    }
+
     // per-finding fix buttons render inside the rows
     async function aiFixFindings(singleIndex) {
       if (!healthFindings) return;
