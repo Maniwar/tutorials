@@ -223,8 +223,14 @@
     .rl-cell { position:absolute; top:3px; height:28px; border-right:1px solid rgba(255,255,255,0.6); border-radius:2px; }
     .rl-cell.over { outline:1px solid #991b1b; z-index:1; }
     .rl-cap { width:56px; padding:0.2rem 0.35rem; font-size:0.78rem; }
+    .rl-rate { width:62px; padding:0.2rem 0.35rem; font-size:0.78rem; }
     .conflict-card { border:1px solid var(--border); border-left:4px solid var(--critical); border-radius:8px; padding:0.75rem 1rem; margin-top:0.75rem; background:#fff; }
     .conflict-card.ok { border-left-color: var(--success); }
+    .wbs-twisty { background:transparent; border:none; cursor:pointer; padding:0 4px 0 0; font-size:0.85rem; color:var(--muted); width:18px; }
+    .wbs-twisty:hover { color: var(--primary); }
+    .wbs-twisty-spacer { display:inline-block; width:18px; }
+    .chart-toolbar { display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center; }
+    .chart-toolbar .sep { width:1px; height:20px; background:var(--border); margin:0 0.25rem; }
     @media print {
       header, .tabs, .header-actions, .card-header button, .no-print { display: none !important; }
       .view { display: block !important; }
@@ -247,11 +253,19 @@
           <div class="grp">Project tools</div>
           <button onclick="exportMSProjectXML()">📅 Microsoft Project (.xml)</button>
           <button onclick="exportSmartsheetCSV()">📊 Smartsheet (.csv)</button>
+          <div class="grp">Communications</div>
+          <button onclick="copyStatusReport()">📄 Copy status report (email-ready)</button>
+          <button onclick="copyChartImage('gantt')">📋 Copy Gantt as image</button>
+          <button onclick="copyChartImage('pert')">📋 Copy PERT as image</button>
+          <button onclick="downloadChartPNG('gantt')">🖼 Gantt (.png)</button>
+          <button onclick="downloadChartPNG('pert')">🖼 PERT (.png)</button>
           <div class="grp">Data</div>
           <button onclick="exportCSV()">Spreadsheet (.csv)</button>
+          <button onclick="exportWBSDictionaryCSV()">WBS dictionary (.csv)</button>
           <button onclick="exportJSON()">Backup / Reopen (.json)</button>
           <div class="grp">Visuals</div>
-          <button onclick="exportPertSVG()">PERT diagram (.svg)</button>
+          <button onclick="downloadChartSVG('gantt')">Gantt (.svg)</button>
+          <button onclick="downloadChartSVG('pert')">PERT (.svg)</button>
           <button onclick="window.print()">Print / Save PDF</button>
         </div>
       </details>
@@ -317,10 +331,19 @@
         <div class="card-body">
           <!-- settings (collapsed) -->
           <div id="aiSettings" style="display:none;background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:1rem">
+            <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:0.7rem 0.9rem;margin-bottom:0.85rem;font-size:0.83rem">
+              <strong>Which key goes here?</strong> An <strong>Anthropic API key</strong> — it always starts with <code style="background:#dbeafe;padding:1px 5px;border-radius:4px">sk-ant-</code>.
+              <ol style="margin:0.4rem 0 0 1.2rem;padding:0">
+                <li>Go to <strong>console.anthropic.com</strong> → sign in → <strong>API Keys</strong> → <em>Create Key</em>.</li>
+                <li>Copy the full key (shown once, e.g. <code>sk-ant-api03-…</code>) and paste it below.</li>
+              </ol>
+              <div style="margin-top:0.35rem;color:var(--muted)">Not this: your claude.ai login, a Claude Pro/Max subscription, or an OpenAI key (<code>sk-proj-…</code>) — those won't work. API usage is billed separately at console.anthropic.com.</div>
+            </div>
             <div style="display:grid;grid-template-columns:2fr 1fr auto auto;gap:0.75rem;align-items:end">
               <div>
                 <label>Anthropic API Key</label>
-                <input id="aiKey" type="password" placeholder="sk-ant-..." autocomplete="off" />
+                <input id="aiKey" type="password" placeholder="sk-ant-api03-..." autocomplete="off" oninput="validateKeyFormat()" />
+                <div id="aiKeyHint" class="help-text" style="min-height:1em"></div>
               </div>
               <div>
                 <label>Model</label>
@@ -333,8 +356,28 @@
               <button class="btn-primary" onclick="saveApiKey()">Save Key</button>
               <button class="btn-danger" onclick="clearApiKey()">Clear</button>
             </div>
-            <p class="help-text">🔒 Your key is stored only in this browser (localStorage) and sent directly to Anthropic — never to any server of ours, and never included in project exports. Get a key at console.anthropic.com.</p>
+            <p class="help-text">🔒 Stored only in this browser (localStorage) and sent directly to Anthropic — never to any other server, and never included in project exports or reports.</p>
           </div>
+
+          <!-- historical data knowledge base -->
+          <details id="histPanel" style="margin-bottom:0.9rem">
+            <summary style="cursor:pointer;font-size:0.85rem;font-weight:600;color:var(--primary)">📚 Historical estimation data <span id="histBadge" class="help-text" style="font-weight:400"></span></summary>
+            <div style="background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:0.9rem;margin-top:0.5rem">
+              <p class="help-text" style="margin:0 0 0.6rem">Give the AI your past-project numbers so estimates are calibrated to <em>your</em> delivery history — e.g. “CRM rollout, 2 integrations: build took 14d”, “Type-B migration: UAT typically 1.5× the estimate”. Paste notes below or load a file (.md, .txt, .csv, .json). Used in every Generate / Update / Decompose call.</p>
+              <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem">
+                <label class="btn-sm btn-secondary" style="cursor:pointer;margin:0">Load file
+                  <input type="file" accept=".md,.txt,.csv,.json,.markdown" onchange="loadHistFile(event)" style="display:none" />
+                </label>
+                <button class="btn-sm btn-danger" onclick="clearHistData()">Clear</button>
+                <span id="histStatus" class="help-text" style="margin:0;align-self:center"></span>
+              </div>
+              <textarea id="histData" rows="5" placeholder="e.g.
+## Past CRM implementations (mid-market)
+- Discovery: 3-5d typical; add 2d per extra business unit
+- Build: 10d base + 4d per integration; Salesforce→SAP ran 1.4x estimate
+- UAT: never under 5d regardless of size…" onchange="saveHistData()"></textarea>
+            </div>
+          </details>
 
           <div style="display:grid;grid-template-columns:1fr;gap:0.75rem">
             <div>
@@ -373,6 +416,7 @@
             <table id="taskTable">
               <thead>
                 <tr>
+                  <th></th>
                   <th>WBS</th>
                   <th>Activity</th>
                   <th>Owner</th>
@@ -422,15 +466,15 @@
       <div class="card">
         <div class="card-header">
           <h2>PERT Network Diagram (Activity-on-Node)</h2>
-          <span class="help-text">Critical path highlighted in red</span>
+          <div class="chart-toolbar no-print">
+            <button class="btn-sm btn-primary" onclick="copyChartImage('pert')" title="Copy diagram as image">📋 Copy image</button>
+            <button class="btn-sm btn-secondary" onclick="downloadChartPNG('pert')">PNG</button>
+            <button class="btn-sm btn-secondary" onclick="downloadChartSVG('pert')">SVG</button>
+          </div>
         </div>
         <div class="card-body">
           <div class="pert-container" id="pertContainer"><svg id="pertSvg"></svg></div>
-          <div class="legend">
-            <div class="legend-item"><div class="legend-swatch" style="background:#fef2f2;border:2px solid #dc2626"></div>Critical activity (zero slack)</div>
-            <div class="legend-item"><div class="legend-swatch" style="background:white;border:2px solid #94a3b8"></div>Non-critical</div>
-            <div class="legend-item"><span style="font-weight:600">TE</span> = Expected duration &nbsp;|&nbsp; <span style="font-weight:600">ES–EF</span> = Early Start – Early Finish</div>
-          </div>
+          <p class="help-text" style="margin-top:0.5rem">PMI-style nodes: top row ES · Duration · EF, bottom row LS · Slack · LF. Red = critical path, green = complete, bar at the bottom of each node = % complete.</p>
         </div>
       </div>
     </div>
@@ -440,17 +484,24 @@
       <div class="card">
         <div class="card-header">
           <h2>Gantt Chart — Schedule &amp; Progress</h2>
-          <span class="help-text">Real calendar dates • dark fill = % complete • diamond = milestone • red line = today</span>
+          <div class="chart-toolbar no-print">
+            <button class="btn-sm btn-secondary" onclick="setCollapseLevel(0)" title="Phases only">L1</button>
+            <button class="btn-sm btn-secondary" onclick="setCollapseLevel(1)" title="Phases + work packages">L2</button>
+            <button class="btn-sm btn-secondary" onclick="setCollapseLevel(Infinity)" title="Expand everything">All</button>
+            <div class="sep"></div>
+            <button class="btn-sm btn-secondary" onclick="ganttZoom(-1)" title="Zoom out">−</button>
+            <button class="btn-sm btn-secondary" onclick="ganttZoom(1)" title="Zoom in">+</button>
+            <button class="btn-sm btn-secondary" onclick="ganttZoom(0)" title="Fit width">Fit</button>
+            <div class="sep"></div>
+            <button class="btn-sm btn-primary" onclick="copyChartImage('gantt')" title="Copy chart as image for email/slides">📋 Copy image</button>
+            <button class="btn-sm btn-secondary" onclick="downloadChartPNG('gantt')">PNG</button>
+            <button class="btn-sm btn-secondary" onclick="downloadChartSVG('gantt')">SVG</button>
+            <button class="btn-sm btn-success" onclick="copyStatusReport()" title="Copy a formatted status summary (tables + completeness) for pasting into email">📄 Copy status report</button>
+          </div>
         </div>
         <div class="card-body">
-          <div class="gantt-container" id="ganttContainer"></div>
-          <div class="legend">
-            <div class="legend-item"><div class="legend-swatch" style="background:linear-gradient(90deg,#dc2626,#ef4444)"></div>Critical path</div>
-            <div class="legend-item"><div class="legend-swatch" style="background:linear-gradient(90deg,#2563eb,#3b82f6)"></div>Non-critical</div>
-            <div class="legend-item"><div class="legend-swatch" style="background:#7c3aed;transform:rotate(45deg);width:12px;height:12px"></div>Milestone</div>
-            <div class="legend-item"><div style="width:24px;height:10px;background:repeating-linear-gradient(90deg,#cbd5e1,#cbd5e1 3px,transparent 3px,transparent 6px)"></div>Slack (float)</div>
-            <div class="legend-item"><div class="legend-swatch" style="background:rgba(0,0,0,.28)"></div>% complete</div>
-          </div>
+          <div class="gantt-container" id="ganttContainer" style="background:white;border:1px solid var(--border);border-radius:8px"></div>
+          <p class="help-text" style="margin-top:0.5rem">Click ▸/▾ on a phase to collapse or drill in • click any bar to edit the task • the exported image includes the title, legend and completeness so it's ready to paste into communications.</p>
         </div>
       </div>
     </div>
@@ -461,7 +512,8 @@
         <div class="card-header">
           <h2>Resource Workload &amp; Over-allocation</h2>
           <div class="toolbar no-print">
-            <button class="btn-primary btn-sm" onclick="autoLevel()" title="Delay non-critical tasks within their slack to remove conflicts without moving the finish date">⚖ Auto-level within slack</button>
+            <button class="btn-primary btn-sm" onclick="autoLevel()" title="Delay non-critical tasks within their slack — finish date stays fixed">⚖ Level within slack</button>
+            <button class="btn-sm" style="background:#fef3c7;color:#b45309" onclick="autoLevelExtend()" title="Resolve every conflict even if the finish date must move out — use when you can't add people">📅 Level &amp; extend timeline</button>
             <button class="btn-secondary btn-sm" onclick="clearLeveling()">↺ Clear leveling</button>
           </div>
         </div>
@@ -557,7 +609,7 @@
             <input id="mP" type="number" min="0" step="0.1" placeholder="Worst case" />
           </div>
         </div>
-        <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:0.75rem">
+        <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:0.75rem">
           <div class="form-group">
             <label>Owner / Resource</label>
             <input id="mOwner" type="text" placeholder="e.g. A. Rivera" list="ownerList" />
@@ -571,6 +623,10 @@
             <label>% Complete</label>
             <input id="mPct" type="number" min="0" max="100" step="1" value="0" />
           </div>
+          <div class="form-group">
+            <label>Fixed cost $ <span class="info-icon" title="One-off cost (licences, travel, vendor fee). Labor cost comes from the owner's day rate on the Resources tab.">i</span></label>
+            <input id="mFixedCost" type="number" min="0" step="100" value="0" />
+          </div>
         </div>
         <div class="form-group">
           <label>Dependencies (predecessors)</label>
@@ -583,8 +639,8 @@
           <select id="mParent"><option value="">— top level —</option></select>
           <p class="help-text">Nest this under a phase/deliverable to build the Work Breakdown Structure. Parents become summary rows that roll up their children.</p>
         </div>
-        <details style="margin-bottom:1rem">
-          <summary style="cursor:pointer;font-size:0.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">WBS dictionary &amp; actuals (optional)</summary>
+        <details id="dictDetails" style="margin-bottom:1rem">
+          <summary style="cursor:pointer;font-size:0.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">WBS dictionary &amp; actuals</summary>
           <div style="padding-top:0.75rem">
             <div class="form-group">
               <label>Description / scope</label>
@@ -615,6 +671,7 @@
         <div id="modalError" class="error" style="display:none"></div>
       </div>
       <div class="modal-footer">
+        <button class="btn-secondary" style="margin-right:auto" onclick="viewInWbs()" title="Open the WBS dictionary at this element">📖 View in WBS dictionary</button>
         <button class="btn-secondary" onclick="closeModal()">Cancel</button>
         <button class="btn-primary" id="modalSaveBtn" onclick="saveActivity()">Save Activity</button>
       </div>
@@ -637,6 +694,12 @@
       management: { value: 0, unit: 'percent' }
     };
     let baselineDate = ''; // ISO date the baseline snapshot was taken
+    let collapsedIds = new Set(); // WBS summaries currently collapsed in Gantt/tables
+    let levelMode = 'none';       // 'none' | 'slack' | 'extend' — how levelDelay is treated
+    let unleveledDuration = null; // CPM duration with all leveling removed (for banners)
+    let ganttDayW = null;         // null = auto zoom; otherwise px per day
+    let projectBudget = 0;        // optional cost budget for variance tracking
+    let dragTaskId = null;        // row being dragged in the task table
 
     // ========================= UTIL =========================
     function escapeHtml(s) {
@@ -662,8 +725,8 @@
         id: 0, name: '', o: 0, m: 0, p: 0, milestone: false,
         owner: '', units: 100, levelDelay: 0, percentComplete: 0, predecessors: [],
         parentId: null, description: '', deliverable: '', acceptance: '',
-        actualStart: '', actualFinish: '',
-        baseStart: null, baseFinish: null, baseTe: null,
+        actualStart: '', actualFinish: '', fixedCost: 0,
+        baseStart: null, baseFinish: null, baseTe: null, baseCost: null,
         te: 0, variance: 0, es: 0, ef: 0, ls: 0, lf: 0, slack: 0, wbs: '', isSummary: false,
         isCritical: false, criticality: 0, startDate: null, finishDate: null, overallocated: false
       }, o);
@@ -688,16 +751,18 @@
         durationUnit: document.getElementById('durationUnit').value,
         holidays: document.getElementById('holidays').value,
         nextId,
-        resources, reserves, baselineDate,
+        resources, reserves, baselineDate, levelMode, projectBudget,
+        collapsedIds: [...collapsedIds],
         tasks: tasks.map(t => ({
           id: t.id, name: t.name, o: t.o, m: t.m, p: t.p, milestone: t.milestone,
           owner: t.owner, units: t.units, levelDelay: t.levelDelay,
           percentComplete: t.percentComplete, predecessors: t.predecessors,
           parentId: t.parentId, description: t.description, deliverable: t.deliverable,
           acceptance: t.acceptance, actualStart: t.actualStart, actualFinish: t.actualFinish,
+          fixedCost: t.fixedCost || 0,
           baseStart: t.baseStart ? fmtISO(new Date(t.baseStart)) : null,
           baseFinish: t.baseFinish ? fmtISO(new Date(t.baseFinish)) : null,
-          baseTe: t.baseTe
+          baseTe: t.baseTe, baseCost: (t.baseCost == null ? null : t.baseCost)
         }))
       };
     }
@@ -716,9 +781,11 @@
         parentId: (t.parentId == null ? null : t.parentId),
         description: t.description || '', deliverable: t.deliverable || '', acceptance: t.acceptance || '',
         actualStart: t.actualStart || '', actualFinish: t.actualFinish || '',
+        fixedCost: Number(t.fixedCost) || 0,
         baseStart: t.baseStart ? new Date(t.baseStart + 'T00:00:00') : null,
         baseFinish: t.baseFinish ? new Date(t.baseFinish + 'T00:00:00') : null,
-        baseTe: (t.baseTe == null ? null : Number(t.baseTe))
+        baseTe: (t.baseTe == null ? null : Number(t.baseTe)),
+        baseCost: (t.baseCost == null ? null : Number(t.baseCost))
       }));
       resources = (data.resources && typeof data.resources === 'object') ? data.resources : {};
       if (data.reserves && typeof data.reserves === 'object') {
@@ -728,6 +795,9 @@
         };
       } else reserves = { contingency: { value: 0, unit: 'percent' }, management: { value: 0, unit: 'percent' } };
       baselineDate = data.baselineDate || '';
+      levelMode = ['none','slack','extend'].includes(data.levelMode) ? data.levelMode : 'none';
+      projectBudget = Number(data.projectBudget) || 0;
+      collapsedIds = new Set(Array.isArray(data.collapsedIds) ? data.collapsedIds : []);
       nextId = data.nextId || (Math.max(0, ...tasks.map(t => t.id)) + 1);
       calculated = false;
     }
@@ -810,6 +880,7 @@
       document.getElementById('mOwner').value = '';
       document.getElementById('mUnits').value = 100;
       document.getElementById('mPct').value = 0;
+      document.getElementById('mFixedCost').value = 0;
       document.getElementById('mMilestone').checked = !!isMilestone;
       document.getElementById('modalError').style.display = 'none';
       document.getElementById('depRows').innerHTML = '';
@@ -824,10 +895,12 @@
       document.getElementById('modal').classList.add('open');
       document.getElementById('mName').focus();
     }
-    function openEditModal(id) {
+    function openEditModal(id, expandDict) {
       const t = tasks.find(x => x.id === id);
       if (!t) return;
       editingId = id;
+      const dd = document.getElementById('dictDetails');
+      if (dd) dd.open = !!expandDict || !!(t.deliverable || t.description || t.acceptance);
       document.getElementById('modalTitle').textContent = t.milestone ? 'Edit Milestone' : 'Edit Activity';
       document.getElementById('mName').value = t.name;
       document.getElementById('mO').value = t.o;
@@ -836,6 +909,7 @@
       document.getElementById('mOwner').value = t.owner || '';
       document.getElementById('mUnits').value = (t.units == null ? 100 : t.units);
       document.getElementById('mPct').value = t.percentComplete || 0;
+      document.getElementById('mFixedCost').value = t.fixedCost || 0;
       document.getElementById('mMilestone').checked = !!t.milestone;
       document.getElementById('modalError').style.display = 'none';
       document.getElementById('depRows').innerHTML = '';
@@ -914,6 +988,7 @@
       const owner = document.getElementById('mOwner').value.trim();
       let units = parseFloat(document.getElementById('mUnits').value);
       if (isNaN(units) || units < 0) units = 100;
+      const fixedCost = Math.max(0, parseFloat(document.getElementById('mFixedCost').value) || 0);
       const parentVal = document.getElementById('mParent').value;
       const parentId = parentVal ? Number(parentVal) : null;
       if (editingId != null && parentId != null && wouldCreateCycleParent(editingId, parentId))
@@ -934,7 +1009,7 @@
       const seen = {}; preds.forEach(pr => seen[pr.id] = pr);
       const finalPreds = Object.values(seen).filter(pr => pr.id !== editingId);
 
-      const fields = { name, o, m, p, milestone: isMs, owner, units, percentComplete: pct, predecessors: finalPreds,
+      const fields = { name, o, m, p, milestone: isMs, owner, units, fixedCost, percentComplete: pct, predecessors: finalPreds,
         parentId, description, deliverable, acceptance, actualStart, actualFinish };
       if (editingId === null) {
         tasks.push(makeTask(Object.assign({ id: nextId++ }, fields)));
@@ -956,7 +1031,23 @@
       saveLocal();
       refreshAll();
     }
+    // Milestones track completion automatically: complete exactly when every
+    // predecessor feeding them is 100% done (manual entry only for milestones
+    // with no predecessors at all).
+    function updateMilestoneCompletion() {
+      leafTasks().forEach(t => {
+        if (!t.milestone) return;
+        const preds = effectivePreds(t);
+        if (!preds.length) return; // nothing feeds it — leave manual control
+        const allDone = preds.every(p => {
+          const pt = tasks.find(x => x.id === p.id);
+          return pt && (pt.percentComplete || 0) >= 100;
+        });
+        t.percentComplete = allDone ? 100 : 0;
+      });
+    }
     function rollupProgress() {
+      updateMilestoneCompletion();
       // recompute summary %complete from leaf descendants (te-weighted); no schedule change
       tasksInWbsOrder().slice().sort((a, b) => b.depth - a.depth).forEach(({ task: t }) => {
         if (!isSummaryId(t.id)) return;
@@ -1016,19 +1107,25 @@
       if (tasks.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
       empty.style.display = 'none';
       computeWbsCodes();
-      tbody.innerHTML = tasksInWbsOrder().map(({ task: t, depth }) => {
+      tbody.innerHTML = visibleWbsOrder().map(({ task: t, depth }) => {
         const summary = t.isSummary;
         const teStr = t.milestone ? '◆' : (calculated ? (t.te || 0).toFixed(2) : '—');
-        const slackStr = (calculated && !summary) ? t.slack.toFixed(1) : (calculated && summary ? t.slack.toFixed(1) : '—');
+        const slackStr = calculated ? (Math.abs(t.slack) < 0.05 ? '0.0' : t.slack.toFixed(1)) : '—';
         const st = taskStatus(t);
         const statusBadge = !calculated ? '<span class="badge badge-slack">Pending</span>'
           : summary ? '<span class="badge badge-info">Summary</span>'
           : (t.isCritical && !t.milestone ? '<span class="badge badge-critical">Critical</span>' : `<span class="badge ${st.cls}">${st.label}</span>`);
-        const nameCell = `<span style="padding-left:${depth * 16}px">${summary ? '▾ ' : (t.milestone ? '◆ ' : '')}${escapeHtml(t.name)}</span>`;
+        const twisty = summary
+          ? `<button class="wbs-twisty" onclick="toggleCollapse(${t.id})" title="${collapsedIds.has(t.id) ? 'Expand' : 'Collapse'}">${collapsedIds.has(t.id) ? '▸' : '▾'}</button>`
+          : '<span class="wbs-twisty-spacer"></span>';
+        const nameCell = `<span style="display:inline-flex;align-items:center;padding-left:${depth * 16}px">${twisty}${t.milestone ? '◆ ' : ''}${escapeHtml(t.name)}${collapsedIds.has(t.id) ? ` <span class="help-text" style="font-size:0.68rem;margin-left:4px">(${leafDescendants(t.id).length})</span>` : ''}</span>`;
         const pctCell = summary
           ? `<span title="rolled up from sub-tasks">${calculated ? (t.percentComplete || 0) + '%' : '—'}</span>`
-          : `<input class="mini-inp" type="number" min="0" max="100" value="${t.percentComplete}" onchange="updatePct(${t.id}, this.value)" onclick="event.stopPropagation()" />`;
-        return `<tr class="${t.isCritical && !t.milestone && !summary ? 'critical' : ''} ${isLate(t) ? 'late' : ''}" style="${summary ? 'font-weight:600;background:#f8fafc' : ''}">
+          : (t.milestone && effectivePreds(t).length)
+            ? `<span class="badge ${t.percentComplete >= 100 ? 'badge-done' : 'badge-notstarted'}" title="Tracked automatically — complete when every predecessor reaches 100%">${t.percentComplete >= 100 ? '✓ auto' : 'auto'}</span>`
+            : `<input class="mini-inp" type="number" min="0" max="100" value="${t.percentComplete}" onchange="updatePct(${t.id}, this.value)" onclick="event.stopPropagation()" />`;
+        return `<tr draggable="true" data-task-id="${t.id}" class="${t.isCritical && !t.milestone && !summary ? 'critical' : ''} ${isLate(t) ? 'late' : ''}" style="${summary ? 'font-weight:600;background:#f8fafc' : ''}">
+          <td style="cursor:grab;color:var(--muted)" title="Drag to reorder / re-nest">⠿</td>
           <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
           <td>${nameCell}</td>
           <td style="font-size:0.8rem" title="${t.overallocated ? escapeHtml((t.owner||'')+' is over-allocated during this task') : ''}">${t.overallocated ? '<span style="color:var(--critical)" title="over-allocated">⚠ </span>' : ''}${escapeHtml(t.owner || '—')}${(!t.milestone && !summary && t.units !== 100) ? ` <span class="help-text" style="font-size:0.68rem">@${t.units}%</span>` : ''}</td>
@@ -1043,11 +1140,15 @@
           <td>${pctCell}</td>
           <td>${statusBadge}</td>
           <td style="white-space:nowrap">
+            <button class="btn-sm btn-secondary" onclick="outdentTask(${t.id})" title="Outdent (promote a level)">⇤</button>
+            <button class="btn-sm btn-secondary" onclick="indentTask(${t.id})" title="Indent (nest under the row above)">⇥</button>
+            <button class="btn-sm btn-secondary" onclick="aiDecompose(${t.id})" title="AI: decompose into sub-tasks">⑂</button>
             <button class="btn-sm btn-secondary" onclick="openEditModal(${t.id})">Edit</button>
             <button class="btn-sm btn-danger" onclick="deleteTask(${t.id})">✕</button>
           </td>
         </tr>`;
       }).join('');
+      bindRowDragHandlers();
     }
 
     // ========================= WBS / HIERARCHY =========================
@@ -1070,16 +1171,69 @@
       while (stack.length && guard++ < 10000) { const t = stack.pop(); res.push(t); stack.push(...childrenOf(t.id)); }
       return res;
     }
-    // Expand a leaf task's predecessors: a dependency on a summary means "after all
-    // of the summary's leaf work", so it expands to that summary's leaf descendants.
+    // Expand a leaf task's predecessors:
+    //  - a dependency ON a summary means "after all of the summary's leaf work",
+    //    so it expands to that summary's leaf descendants;
+    //  - a leaf INHERITS the predecessors of every ancestor summary (so when a
+    //    task with dependencies is decomposed into sub-tasks, the constraint
+    //    still applies to all of its children).
+    // Leaves entering / leaving a summary's subtree (no predecessor / no successor
+    // inside the same subtree). Used to apply start-type vs finish-type summary
+    // dependencies to the right leaves instead of over-constraining all of them.
+    function subtreeEntryLeaves(sumId) {
+      const inSub = new Set(allDescendants(sumId).map(d => d.id));
+      return leafDescendants(sumId).filter(l => !l.predecessors.some(p => inSub.has(p.id)));
+    }
+    function subtreeExitLeaves(sumId) {
+      const inSub = new Set(allDescendants(sumId).map(d => d.id));
+      const referenced = new Set();
+      allDescendants(sumId).forEach(x => x.predecessors.forEach(p => { if (inSub.has(p.id)) referenced.add(p.id); }));
+      return leafDescendants(sumId).filter(l => !referenced.has(l.id));
+    }
     function effectivePreds(t) {
       const out = [];
-      t.predecessors.forEach(p => {
+      const seenKeys = new Set();
+      const ownDescendants = new Set(allDescendants(t.id).map(d => d.id));
+      const add = (id, type, lag) => {
+        if (id === t.id || ownDescendants.has(id)) return;
+        const key = id + '|' + type + '|' + lag;
+        if (seenKeys.has(key)) return;
+        seenKeys.add(key);
+        out.push({ id, type, lag });
+      };
+      // Direct predecessors. A dependency ON a summary uses:
+      //  FS/FF (finish-anchored): all leaves — max over finishes = summary finish. Correct.
+      //  SS/SF (start-anchored): entry leaves only — they define the summary's start.
+      const push = (p) => {
         const pt = tasks.find(x => x.id === p.id);
         if (!pt) return;
-        if (isSummaryId(p.id)) leafDescendants(p.id).forEach(d => { if (d.id !== t.id) out.push({ id: d.id, type: p.type, lag: p.lag }); });
-        else if (p.id !== t.id) out.push({ id: p.id, type: p.type, lag: p.lag });
-      });
+        if (isSummaryId(p.id)) {
+          const targets = (p.type === 'SS' || p.type === 'SF') ? subtreeEntryLeaves(p.id) : leafDescendants(p.id);
+          targets.forEach(d => add(d.id, p.type, p.lag));
+        } else add(p.id, p.type, p.lag);
+      };
+      t.predecessors.forEach(push);
+      // Inherited from ancestor summaries:
+      //  FS/SS constrain the summary's START (= every child's start) — apply to all children.
+      //  FF/SF constrain the summary's FINISH — apply only to the subtree's exit leaves,
+      //  otherwise early children would be wrongly delayed.
+      let cur = t.parentId, guard = 0;
+      while (cur != null && guard++ < 1000) {
+        const par = tasks.find(x => x.id === cur);
+        if (!par) break;
+        const isExit = par.predecessors.some(p => p.type === 'FF' || p.type === 'SF')
+          ? subtreeExitLeaves(par.id).some(l => l.id === t.id) : false;
+        par.predecessors.forEach(p => {
+          if (p.type === 'FF' || p.type === 'SF') { if (!isExit) return; }
+          const pt = tasks.find(x => x.id === p.id);
+          if (!pt) return;
+          if (isSummaryId(p.id)) {
+            const targets = (p.type === 'SS' || p.type === 'SF') ? subtreeEntryLeaves(p.id) : leafDescendants(p.id);
+            targets.forEach(d => add(d.id, p.type, p.lag));
+          } else add(p.id, p.type, p.lag);
+        });
+        cur = par.parentId;
+      }
       return out;
     }
     function wouldCreateCycleParent(taskId, parentId) {
@@ -1201,10 +1355,12 @@
           t.variance = Math.pow((t.p - t.o) / 6, 2);
         }
       });
-      // Baseline schedule with NO leveling, to learn each task's true late start
-      // (the latest it can begin without moving the finish date). Resource-leveling
-      // delays are then clamped to this so a stale/large levelDelay — e.g. left over
-      // after durations change — can never silently push the project end out.
+      // Baseline schedule with NO leveling, to learn the un-leveled finish and each
+      // task's true late start. In 'slack' mode, leveling delays are clamped to the
+      // un-leveled late start so a stale delay can never silently push the project
+      // end out. In 'extend' mode the user explicitly chose to let leveling move
+      // the finish date — no clamp, and the extension is reported in the UI.
+      unleveledDuration = null;
       const anyDelay = tasks.some(t => t.levelDelay > 0);
       if (anyDelay) {
         const saved = tasks.map(t => t.levelDelay);
@@ -1212,10 +1368,13 @@
         const base = computeSchedule(t => t.te);
         tasks.forEach((t, i) => t.levelDelay = saved[i]);
         if (base.ok) {
-          tasks.forEach(t => {
-            const bls = base.ls[t.id];
-            if (Number.isFinite(bls)) t.levelDelay = Math.min(t.levelDelay, Math.max(0, bls));
-          });
+          unleveledDuration = base.projectDuration;
+          if (levelMode !== 'extend') {
+            tasks.forEach(t => {
+              const bls = base.ls[t.id];
+              if (Number.isFinite(bls)) t.levelDelay = Math.min(t.levelDelay, Math.max(0, bls));
+            });
+          }
         }
       }
 
@@ -1239,6 +1398,8 @@
         else t.finishDate = addWorkingDays(start, Math.max(startIdx, Math.round(efD) - 1), holidays);
       });
 
+      // milestones auto-complete when all their predecessors are done
+      updateMilestoneCompletion();
       // summary tasks: roll up from children (deepest first)
       const ordered = tasksInWbsOrder();
       ordered.slice().sort((a, b) => b.depth - a.depth).forEach(({ task: t }) => {
@@ -1439,7 +1600,9 @@
       const perResource = {};
       tasks.forEach(t => t.overallocated = false);
       const owners = syncResources();
-      owners.forEach(name => {
+      // include manually-added roster entries even if nothing is assigned to them yet
+      const allNames = new Set([...owners, ...Object.keys(resources)]);
+      allNames.forEach(name => {
         perResource[name] = { name, capacity: getCapacity(name), days: {}, peak: 0, overDays: [], unitDays: 0 };
       });
 
@@ -1517,6 +1680,7 @@
     // can move further. Sets task.levelDelay (a start-no-earlier-than constraint).
     function autoLevel() {
       if (!calculated) { alert('Calculate first.'); return; }
+      levelMode = 'slack';
       recompute();
       const before = resourceLoad ? resourceLoad.overResourceDays : 0;
       let moved = 0, iter = 0;
@@ -1556,12 +1720,215 @@
       if (el) el.textContent = `Leveling: applied ${moved} shift(s), project end unchanged. Over-allocated days ${before} → ${after}` +
         (after ? ' — remaining conflicts can\'t be resolved within slack; reduce Units %, raise capacity, reassign, or accept a later finish.' : ' ✓ resolved.');
     }
+    // Level allowing the finish date to move: resolve every conflict by delaying
+    // tasks until the resource frees up, even past their late start. Use when the
+    // team genuinely can't be added to and the timeline must give.
+    function autoLevelExtend() {
+      if (!calculated) { alert('Calculate first.'); return; }
+      levelMode = 'extend';
+      recompute();
+      const before = resourceLoad ? resourceLoad.overResourceDays : 0;
+      const endBefore = Math.max(0, ...leafTasks().map(t => t.ef), 0);
+      let moved = 0, iter = 0;
+      const MAX_ITER = 600;
+      let stuck = new Set(); // resource|day keys that cannot be improved by delaying
+      while (iter++ < MAX_ITER) {
+        const rl = resourceLoad;
+        if (!rl || rl.overResourceDays === 0) break;
+        let best = null;
+        Object.values(rl.perResource).forEach(R => {
+          R.overDays.forEach(iso => {
+            const key = R.name + '|' + iso;
+            if (stuck.has(key)) return;
+            if (!best || iso < best.iso) best = { R, iso, key };
+          });
+        });
+        if (!best) break; // every remaining conflict is unresolvable by delay
+        const conflictTasks = best.R.days[best.iso].tasks.map(id => tasks.find(t => t.id === id)).filter(Boolean);
+        const movable = conflictTasks.filter(t => t.percentComplete < 100)
+          .sort((a, b) => b.ls - a.ls || b.id - a.id);
+        if (!movable.length) { stuck.add(best.key); continue; }
+        const cand = movable[0];
+        const others = conflictTasks.filter(t => t.id !== cand.id);
+        if (!others.length) {
+          // the task ALONE exceeds capacity (units > capacity) — no delay can ever fix it
+          stuck.add(best.key); continue;
+        }
+        const target = Math.max(Math.min(...others.map(t => t.ef)), cand.es + 0.5, cand.levelDelay + 0.5);
+        if (target <= cand.levelDelay + 1e-6) { stuck.add(best.key); continue; }
+        cand.levelDelay = target;
+        moved++;
+        recompute();
+        stuck = new Set(); // schedule changed — previously stuck days may now be fixable
+      }
+      recompute();
+      renderTaskTable(); renderGantt(); renderResources(); renderAnalytics();
+      saveLocal();
+      const after = resourceLoad ? resourceLoad.overResourceDays : 0;
+      const endAfter = Math.max(0, ...leafTasks().map(t => t.ef), 0);
+      const ext = endAfter - endBefore;
+      const el = document.getElementById('levelStatus');
+      if (el) el.textContent = `Extend-leveling: applied ${moved} shift(s). Over-allocated days ${before} → ${after}.` +
+        (ext > 0.01 ? ` Finish moved out by ${ext.toFixed(1)} ${unitLabel()} — review and re-baseline if you accept the new dates.` : ' Finish date unchanged.') +
+        (after ? ' Remaining conflicts cannot be fixed by delaying (a task alone exceeds its owner\'s capacity) — reduce Units %, raise capacity, or reassign.' : '');
+    }
+    // Mend by adding people: raise a resource's capacity.
+    function addCapacity(name, amount) {
+      if (!resources[name]) resources[name] = { capacity: 100 };
+      resources[name].capacity = (Number(resources[name].capacity) || 100) + amount;
+      saveLocal();
+      if (calculated) { recompute(); renderTaskTable(); renderResources(); renderAnalytics(); renderGantt(); }
+    }
+    function raiseCapacityToPeak(name) {
+      if (!calculated) return;
+      computeResourceLoad();
+      const R = resourceLoad.perResource[name];
+      if (!R) return;
+      setCapacity(name, Math.ceil(R.peak));
+    }
     function clearLeveling() {
       tasks.forEach(t => t.levelDelay = 0);
+      levelMode = 'none';
       if (calculated) recompute();
       renderTaskTable(); renderGantt(); renderResources(); renderAnalytics();
       saveLocal();
       const el = document.getElementById('levelStatus'); if (el) { el.textContent = 'Leveling cleared — schedule reset to earliest starts.'; delete el.dataset.stuck; }
+    }
+
+    // ========================= COST / BUDGET =========================
+    function getRate(name) {
+      const r = resources[name];
+      return (r && Number.isFinite(+r.rate)) ? +r.rate : 0; // cost per working day at 100%
+    }
+    function setRate(name, val) {
+      if (!resources[name]) resources[name] = { capacity: 100 };
+      resources[name].rate = Math.max(0, parseFloat(val) || 0);
+      saveLocal();
+      if (calculated && document.getElementById('view-analytics').classList.contains('active')) renderAnalytics();
+      renderResources();
+    }
+    // Planned cost of a leaf = fixed cost + owner day-rate × working days × units.
+    function taskCost(t) {
+      if (t.isSummary) return leafDescendants(t.id).reduce((s, x) => s + taskCost(x), 0);
+      const labor = getRate((t.owner || '').trim()) * unitToWorkingDays(t.te || 0) * ((Number.isFinite(+t.units) ? +t.units : 100) / 100);
+      return (Number(t.fixedCost) || 0) + labor;
+    }
+    function projectCost() { return leafTasks().reduce((s, t) => s + taskCost(t), 0); }
+    function earnedValue() { return leafTasks().reduce((s, t) => s + taskCost(t) * ((t.percentComplete || 0) / 100), 0); }
+    function fmtMoney(v) {
+      if (!Number.isFinite(v)) return '—';
+      return '$' + Math.round(v).toLocaleString();
+    }
+    function setBudget(val) {
+      projectBudget = Math.max(0, parseFloat(val) || 0);
+      saveLocal();
+      if (calculated) renderAnalytics();
+    }
+
+    // ========================= COLLAPSE / EXPAND =========================
+    function hasCollapsedAncestor(t) {
+      let cur = t.parentId, guard = 0;
+      while (cur != null && guard++ < 1000) {
+        if (collapsedIds.has(cur)) return true;
+        const p = tasks.find(x => x.id === cur);
+        cur = p ? p.parentId : null;
+      }
+      return false;
+    }
+    function visibleWbsOrder() { return tasksInWbsOrder().filter(({ task }) => !hasCollapsedAncestor(task)); }
+    function viewInWbs() {
+      const id = editingId;
+      closeModal();
+      if (id == null) { switchTab('wbs'); return; }
+      // expand every ancestor so the row is visible, then highlight it
+      let cur = tasks.find(x => x.id === id);
+      let guard = 0;
+      while (cur && cur.parentId != null && guard++ < 1000) { collapsedIds.delete(cur.parentId); cur = tasks.find(x => x.id === cur.parentId); }
+      switchTab('wbs');
+      renderWBS();
+      const row = document.querySelector(`#wbsContainer tr[data-wbsrow="${id}"]`);
+      if (row) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        row.style.transition = 'background 0.4s';
+        const orig = row.style.background;
+        row.style.background = '#fef9c3';
+        setTimeout(() => { row.style.background = orig; }, 2200);
+      }
+    }
+    function toggleCollapse(id) {
+      if (collapsedIds.has(id)) collapsedIds.delete(id); else collapsedIds.add(id);
+      saveLocal();
+      renderTaskTable(); renderWBS();
+      if (calculated) renderGantt();
+    }
+    // Collapse to a logical level: hide everything deeper than `depth`
+    // (0 = phases only, 1 = phases + work packages, Infinity = expand all).
+    function setCollapseLevel(depth) {
+      collapsedIds = new Set();
+      if (depth !== Infinity) {
+        tasksInWbsOrder().forEach(({ task, depth: d }) => {
+          if (isSummaryId(task.id) && d >= depth) collapsedIds.add(task.id);
+        });
+      }
+      saveLocal();
+      renderTaskTable(); renderWBS();
+      if (calculated) renderGantt();
+    }
+
+    // ========================= REORDER / INDENT =========================
+    // Sibling order = order within the tasks array; tasksInWbsOrder walks it.
+    function moveTaskAfter(dragId, targetId) {
+      if (dragId === targetId) return;
+      const drag = tasks.find(t => t.id === dragId);
+      const target = tasks.find(t => t.id === targetId);
+      if (!drag || !target) return;
+      if (allDescendants(dragId).some(d => d.id === targetId)) return; // can't drop into own subtree
+      drag.parentId = target.parentId; // adopt target's level
+      const fromIdx = tasks.indexOf(drag);
+      tasks.splice(fromIdx, 1);
+      const toIdx = tasks.indexOf(target);
+      tasks.splice(toIdx + 1, 0, drag);
+      saveLocal();
+      refreshAll();
+    }
+    function indentTask(id) {
+      const t = tasks.find(x => x.id === id); if (!t) return;
+      // previous sibling (same parent, appearing earlier in array) becomes the parent
+      const siblings = tasks.filter(x => x.parentId === t.parentId);
+      const idx = siblings.indexOf(t);
+      if (idx <= 0) return; // nothing above to nest under
+      const newParent = siblings[idx - 1];
+      if (newParent.milestone) return;
+      if (wouldCreateCycleParent(id, newParent.id)) return;
+      t.parentId = newParent.id;
+      collapsedIds.delete(newParent.id); // keep the new child visible
+      saveLocal();
+      refreshAll();
+    }
+    function outdentTask(id) {
+      const t = tasks.find(x => x.id === id); if (!t || t.parentId == null) return;
+      const parent = tasks.find(x => x.id === t.parentId);
+      t.parentId = parent ? parent.parentId : null;
+      // place right after the old parent so the outline reads naturally
+      if (parent) {
+        const fromIdx = tasks.indexOf(t);
+        tasks.splice(fromIdx, 1);
+        tasks.splice(tasks.indexOf(parent) + 1, 0, t);
+      }
+      saveLocal();
+      refreshAll();
+    }
+    function bindRowDragHandlers() {
+      const tbody = document.getElementById('taskBody');
+      if (!tbody) return;
+      tbody.querySelectorAll('tr[data-task-id]').forEach(tr => {
+        const id = Number(tr.dataset.taskId);
+        tr.addEventListener('dragstart', e => { dragTaskId = id; tr.style.opacity = '0.4'; e.dataTransfer.effectAllowed = 'move'; });
+        tr.addEventListener('dragend', () => { dragTaskId = null; tr.style.opacity = ''; tbody.querySelectorAll('tr').forEach(r => r.style.borderBottom = ''); });
+        tr.addEventListener('dragover', e => { if (dragTaskId != null && dragTaskId !== id) { e.preventDefault(); tr.style.borderBottom = '2px solid var(--primary)'; } });
+        tr.addEventListener('dragleave', () => { tr.style.borderBottom = ''; });
+        tr.addEventListener('drop', e => { e.preventDefault(); tr.style.borderBottom = ''; if (dragTaskId != null) moveTaskAfter(dragTaskId, id); });
+      });
     }
 
     // ========================= ANALYTICS =========================
@@ -1613,6 +1980,7 @@
         t.baseStart = t.startDate ? new Date(t.startDate) : null;
         t.baseFinish = t.finishDate ? new Date(t.finishDate) : null;
         t.baseTe = t.te;
+        t.baseCost = taskCost(t);
       });
       baselineDate = fmtISO(new Date());
       saveLocal(); renderBaseline(); renderTaskTable(); renderGantt();
@@ -1767,6 +2135,28 @@
           <div class="stat-card critical"><div class="value" style="font-size:1.05rem">${fmtNice(rv.totalDate)}</div><div class="label">Total incl. mgmt reserve</div></div>
         </div>`;
 
+      // Cost & budget layer
+      const cost = projectCost();
+      const ev = earnedValue();
+      const phases = tasks.filter(t => t.isSummary && (t.parentId == null || !tasks.some(x => x.id === t.parentId)));
+      const phaseRows = phases.map(ph => {
+        const c = taskCost(ph);
+        return `<tr><td>${escapeHtml(ph.wbs + ' ' + ph.name)}</td><td style="text-align:right">${fmtMoney(c)}</td><td style="text-align:right">${fmtMoney(c * (ph.percentComplete || 0) / 100)}</td><td style="text-align:right">${ph.percentComplete || 0}%</td></tr>`;
+      }).join('');
+      const budgetVar = projectBudget ? cost - projectBudget : null;
+      const costBlock = `
+        <h3 style="margin:1.5rem 0 0.5rem;font-size:1rem">Cost &amp; Budget <span class="help-text">(labor = owner day-rate × effort × units, set rates on the Resources tab; + fixed costs per task)</span></h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.75rem">
+          <div class="stat-card"><div class="value" style="font-size:1.15rem">${fmtMoney(cost)}</div><div class="label">Planned cost (estimate)</div></div>
+          <div class="stat-card success"><div class="value" style="font-size:1.15rem">${fmtMoney(ev)}</div><div class="label">Earned value (work done)</div></div>
+          <div class="stat-card">
+            <div class="value" style="font-size:1.05rem"><input type="number" min="0" step="1000" value="${projectBudget || ''}" placeholder="—" style="width:110px;text-align:center;font-weight:700" onchange="setBudget(this.value)" /></div>
+            <div class="label">Budget ($)</div>
+          </div>
+          ${projectBudget ? `<div class="stat-card ${budgetVar > 0 ? 'critical' : 'success'}"><div class="value" style="font-size:1.15rem">${budgetVar > 0 ? '+' : ''}${fmtMoney(budgetVar)}</div><div class="label">${budgetVar > 0 ? 'Over budget' : 'Headroom'}</div></div>` : ''}
+        </div>
+        ${phaseRows ? `<div class="table-wrap" style="margin-top:0.75rem"><table><thead><tr><th>Phase</th><th style="text-align:right">Planned cost</th><th style="text-align:right">Earned</th><th style="text-align:right">%</th></tr></thead><tbody>${phaseRows}</tbody></table></div>` : ''}`;
+
       document.getElementById('analyticsContent').innerHTML = `
         ${targetBlock}
         <h3 style="margin-bottom:0.5rem;font-size:1rem">Critical Path</h3>
@@ -1777,133 +2167,278 @@
           <li><strong>Overall progress:</strong> ${prog.toFixed(1)}% complete (TE-weighted)</li>
         </ul>
         ${reservesBlock}
+        ${costBlock}
         ${histBlock}
         ${critTable}
         <p class="help-text" style="margin-top:1rem">Monte Carlo samples each activity from a Beta-PERT distribution and re-runs the critical-path calculation ${mcResult ? mcResult.iters.toLocaleString() : ''} times — more robust than the normal approximation, especially for skewed estimates. Use P80/P90 dates for commitments, not the deterministic mean.</p>
       `;
     }
 
-    // ========================= GANTT =========================
-    function renderGantt() {
-      const container = document.getElementById('ganttContainer');
-      if (!calculated || tasks.length === 0) { container.innerHTML = '<div class="empty-state"><h3>Calculate first</h3></div>'; return; }
+    // ========================= GANTT (SVG) =========================
+    const FF = 'Segoe UI, system-ui, sans-serif';
+    const GANTT_ZOOMS = [3, 4, 6, 9, 13, 18, 24, 30];
+    function ganttZoom(delta) {
+      if (delta === 0) { ganttDayW = null; renderGantt(); return; }
+      const cur = ganttDayW || (renderGantt._lastAutoDayW || 13);
+      let idx = 0, bestD = Infinity;
+      GANTT_ZOOMS.forEach((z, i) => { const d = Math.abs(z - cur); if (d < bestD) { bestD = d; idx = i; } });
+      idx = Math.min(GANTT_ZOOMS.length - 1, Math.max(0, idx + delta));
+      ganttDayW = GANTT_ZOOMS[idx];
+      renderGantt();
+    }
+    function ownerInitials(name) {
+      const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return '';
+      return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+    }
+    function ownerColor(name) {
+      let h = 0; const s = String(name || '');
+      for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+      return `hsl(${h},55%,45%)`;
+    }
+    function escapeXml(sv) {
+      return String(sv).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+    }
+
+    // Build the whole Gantt as ONE self-contained SVG (all styles inline) so the
+    // exact on-screen chart can be exported to PNG/SVG or copied to the clipboard.
+    function buildGanttSvg() {
       const holidays = getHolidaySet();
       const start = projectStartDate();
       const rv = computeReserves();
-      // display rows in WBS/tree order (summaries + leaves + milestones)
-      const ordered = tasksInWbsOrder();
-      const rowIndexOf = {}; ordered.forEach((o, i) => rowIndexOf[o.task.id] = i);
+      const rows = visibleWbsOrder();
+      const rowIndexOf = {}; rows.forEach((o, i) => rowIndexOf[o.task.id] = i);
+      const visibleIds = new Set(rows.map(o => o.task.id));
 
-      // timeline span (include slack tails + reserve buffers)
+      // span
       let maxFinish = start;
       tasks.forEach(t => { if (t.finishDate && t.finishDate > maxFinish) maxFinish = t.finishDate; });
       leafTasks().forEach(t => {
-        const slackDays = unitToWorkingDays(t.slack);
-        if (slackDays > 0 && t.finishDate) { const lf = addWorkingDays(t.finishDate, Math.ceil(slackDays), holidays); if (lf > maxFinish) maxFinish = lf; }
+        const sd = unitToWorkingDays(t.slack);
+        if (sd > 0 && t.finishDate) { const lf = addWorkingDays(t.finishDate, Math.ceil(sd), holidays); if (lf > maxFinish) maxFinish = lf; }
       });
       if (rv.totalDate > maxFinish) maxFinish = rv.totalDate;
       const totalDays = Math.max(1, calDaysBetween(start, maxFinish) + 3);
-      const dayW = totalDays > 120 ? 8 : totalDays > 90 ? 10 : totalDays > 45 ? 16 : 26;
-      const timelineW = totalDays * dayW;
-      const today = stripTime(new Date());
-      const todayOffset = calDaysBetween(start, today);
-      const dateX = d => (d ? calDaysBetween(start, d) * dayW : 0);
-      const ROWH = 34;
+      const autoW = Math.min(24, Math.max(3, Math.floor(1150 / totalDays)));
+      renderGantt._lastAutoDayW = autoW;
+      const dayW = ganttDayW || autoW;
 
-      // header
-      let months = '', dayCells = '', weekendBands = '';
+      const PAD = 12, LABELW = 300, TITLE_H = 44, MON_H = 20, DAY_H = 24, ROWH = 30, BAR_H = 16, LEGEND_H = 34;
+      const HEADER_H = MON_H + DAY_H;
+      const chartW = totalDays * dayW;
+      const hasReserve = rv.contingencyUnits > 0 || rv.managementUnits > 0;
+      const bodyH = rows.length * ROWH + (hasReserve ? ROWH : 0);
+      // legend must always fit inside the exported image — floor the width on it
+      const legendItems = [
+        ['url(#g-crit)', 'Critical path'], ['url(#g-norm)', 'On track'], ['url(#g-done)', 'Complete'],
+        ['#1e293b', 'Phase / summary'], ['#7c3aed', 'Milestone ◆'], ['url(#g-hatchS)', 'Slack'],
+        ['#94a3b8', 'Baseline'], ['url(#g-hatchC)', 'Contingency'], ['url(#g-hatchM)', 'Mgmt reserve']
+      ];
+      const legendW = legendItems.reduce((sw, it) => sw + 26 + it[1].length * 5.6 + 14, 0) + 265;
+      const W = Math.max(PAD * 2 + LABELW + chartW, PAD * 2 + legendW);
+      const H = PAD * 2 + TITLE_H + HEADER_H + bodyH + LEGEND_H;
+      const X0 = PAD + LABELW;                 // chart x origin
+      const Y0 = PAD + TITLE_H + HEADER_H;     // rows y origin
+      const dateX = d => d ? X0 + calDaysBetween(start, d) * dayW : X0;
+      const today = stripTime(new Date());
+      const todayOff = calDaysBetween(start, today);
+
+      let svg = '';
+      // defs
+      svg += `<defs>
+        <linearGradient id="g-crit" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ef4444"/><stop offset="1" stop-color="#b91c1c"/></linearGradient>
+        <linearGradient id="g-norm" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#1d4ed8"/></linearGradient>
+        <linearGradient id="g-done" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4ade80"/><stop offset="1" stop-color="#16a34a"/></linearGradient>
+        <pattern id="g-hatchS" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#94a3b8" stroke-width="2"/></pattern>
+        <pattern id="g-hatchC" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)"><rect width="7" height="7" fill="#fef3c7"/><line x1="0" y1="0" x2="0" y2="7" stroke="#f59e0b" stroke-width="2.5"/></pattern>
+        <pattern id="g-hatchM" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)"><rect width="7" height="7" fill="#fee2e2"/><line x1="0" y1="0" x2="0" y2="7" stroke="#ef4444" stroke-width="2.5"/></pattern>
+        <marker id="g-arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/></marker>
+        <marker id="g-arrC" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#dc2626"/></marker>
+        <clipPath id="g-clip"><rect x="${X0}" y="${PAD + TITLE_H}" width="${W - X0 - PAD + 2}" height="${HEADER_H + bodyH + 2}"/></clipPath>
+      </defs>`;
+      // canvas
+      svg += `<rect x="0" y="0" width="${W}" height="${H}" fill="white"/>`;
+
+      // title strip
+      const prog = overallProgress();
+      const finish = durationToDate(Math.max(0, ...leafTasks().map(t => t.ef), 0));
+      svg += `<text x="${PAD}" y="${PAD + 20}" font-family="${FF}" font-size="17" font-weight="700" fill="#0f172a">${escapeXml(projName())}</text>`;
+      svg += `<text x="${PAD}" y="${PAD + 36}" font-family="${FF}" font-size="11" fill="#64748b">Generated ${escapeXml(new Date().toLocaleDateString())}  •  ${prog.toFixed(0)}% complete  •  forecast finish ${escapeXml(fmtNice(finish))}${hasReserve ? '  •  committed ' + escapeXml(fmtNice(rv.committedDate)) : ''}${mcResult ? '  •  P80 ' + escapeXml(fmtNice(durationToDate(mcResult.p80))) : ''}</text>`;
+
+      // header background + month/day tiers
+      svg += `<rect x="${X0}" y="${PAD + TITLE_H}" width="${chartW}" height="${HEADER_H}" fill="#f8fafc"/>`;
       let curMonth = -1;
       for (let i = 0; i < totalDays; i++) {
         const d = new Date(start); d.setDate(d.getDate() + i);
-        const left = i * dayW;
-        if (d.getMonth() !== curMonth) { curMonth = d.getMonth(); months += `<div class="gantt-month" style="left:${left}px">${d.toLocaleDateString(undefined,{month:'short',year:'2-digit'})}</div>`; }
-        const weekend = (d.getDay() === 0 || d.getDay() === 6) || holidays.has(fmtISO(d));
-        const isToday = calDaysBetween(start, d) === todayOffset;
-        dayCells += `<div class="gantt-daycell ${weekend?'weekend':''} ${isToday?'today':''}" style="left:${left}px;width:${dayW}px">${dayW >= 16 ? d.getDate() : ''}</div>`;
-        if (weekend) weekendBands += `<div class="gantt-weekend-band" style="left:${left}px;width:${dayW}px"></div>`;
-      }
-
-      const todayLine = (todayOffset >= 0 && todayOffset <= totalDays) ? `<div class="gantt-today-line" style="left:${todayOffset*dayW}px"></div>` : '';
-      const committedMarker = rv.committedUnits > rv.cpmUnits ? `<div class="gantt-vmarker" style="left:${dateX(rv.committedDate)+dayW}px" title="Committed finish (with contingency)"></div>` : '';
-      const totalMarker = rv.totalUnits > rv.committedUnits ? `<div class="gantt-vmarker total" style="left:${dateX(rv.totalDate)+dayW}px" title="Total finish (with mgmt reserve)"></div>` : '';
-
-      const rows = ordered.map(({ task: t, depth }) => {
-        const barLeft = dateX(t.startDate);
-        const isMs = t.milestone;
-        const spanDays = t.finishDate ? (calDaysBetween(t.startDate, t.finishDate) + 1) : 1;
-        const barW = Math.max(dayW, spanDays * dayW);
-        const tip = `${t.name} | ${fmtNice(t.startDate)} → ${fmtNice(t.finishDate)} | ${t.percentComplete||0}% done${!t.isSummary?' | slack '+t.slack.toFixed(1):''}`;
-        let bar;
-        if (t.isSummary) {
-          bar = `<div class="gantt-summary" style="left:${barLeft}px;width:${barW}px" title="${escapeHtml(tip)}"></div>`;
-        } else if (isMs) {
-          bar = `<div class="gantt-milestone" style="left:${barLeft}px" title="${escapeHtml(tip)}"></div>
-                 <div class="gantt-ms-label" style="left:${barLeft+26}px">${escapeHtml(t.name)}</div>`;
-        } else {
-          const slackDays = unitToWorkingDays(t.slack);
-          const slackW = slackDays > 0 ? slackDays * dayW : 0;
-          const label = t.te.toFixed(1);
-          const baseBar = (t.baseStart && t.baseFinish) ? `<div class="gantt-baseline" style="left:${dateX(t.baseStart)}px;width:${Math.max(dayW,(calDaysBetween(t.baseStart,t.baseFinish)+1)*dayW)}px" title="Baseline ${fmtNice(t.baseStart)} → ${fmtNice(t.baseFinish)}"></div>` : '';
-          bar = `${baseBar}<div class="gantt-bar ${t.isCritical?'critical':'normal'}" style="left:${barLeft}px;width:${barW}px" title="${escapeHtml(tip)}">
-                   <div class="bar-progress" style="width:${t.percentComplete||0}%"></div>
-                   <span class="bar-text">${label}${t.percentComplete>0?' · '+t.percentComplete+'%':''}</span>
-                 </div>
-                 ${slackW > 1 ? `<div class="gantt-slack" style="left:${barLeft+barW}px;width:${slackW}px" title="Slack / float"></div>` : ''}`;
+        const x = X0 + i * dayW;
+        if (d.getMonth() !== curMonth) {
+          curMonth = d.getMonth();
+          svg += `<line x1="${x}" y1="${PAD + TITLE_H}" x2="${x}" y2="${Y0 + bodyH}" stroke="#cbd5e1" stroke-width="1"/>`;
+          svg += `<text x="${x + 4}" y="${PAD + TITLE_H + 14}" font-family="${FF}" font-size="11" font-weight="700" fill="#334155">${escapeXml(d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' }))}</text>`;
         }
-        const lateMark = isLate(t) ? '<span title="Behind schedule" style="color:var(--warn)">⚠</span>' : '';
-        return `<div class="gantt-row" style="height:${ROWH}px">
-          <div class="gantt-label" title="${escapeHtml(t.name)}"><span style="padding-left:${depth*12}px">${lateMark}${t.isSummary?'▾ ':(isMs?'◆ ':'')}${escapeHtml(t.name)}</span></div>
-          <div class="gantt-bars" style="width:${timelineW}px">${weekendBands}${todayLine}${committedMarker}${totalMarker}${bar}</div>
-        </div>`;
-      }).join('');
-
-      // reserve/buffer row
-      let reserveRow = '';
-      if (rv.contingencyUnits > 0 || rv.managementUnits > 0) {
-        const contL = dateX(rv.cpmDate) + dayW, contR = dateX(rv.committedDate) + dayW;
-        const mgmtR = dateX(rv.totalDate) + dayW;
-        reserveRow = `<div class="gantt-row" style="height:${ROWH}px">
-          <div class="gantt-label"><span style="color:var(--warn)">▸ Schedule reserve</span></div>
-          <div class="gantt-bars" style="width:${timelineW}px">${weekendBands}${todayLine}
-            ${rv.contingencyUnits>0?`<div class="gantt-reserve-cont" style="left:${contL}px;width:${Math.max(2,contR-contL)}px" title="Contingency reserve → committed finish ${fmtNice(rv.committedDate)}"></div>`:''}
-            ${rv.managementUnits>0?`<div class="gantt-reserve-mgmt" style="left:${contR}px;width:${Math.max(2,mgmtR-contR)}px" title="Management reserve → total finish ${fmtNice(rv.totalDate)}"></div>`:''}
-          </div>
-        </div>`;
+        const wknd = (d.getDay() === 0 || d.getDay() === 6) || holidays.has(fmtISO(d));
+        if (wknd) svg += `<rect x="${x}" y="${Y0}" width="${dayW}" height="${bodyH}" fill="#f1f5f9"/>`;
+        if (dayW >= 13) {
+          svg += `<text x="${x + dayW / 2}" y="${PAD + TITLE_H + MON_H + 15}" font-family="${FF}" font-size="9" fill="#94a3b8" text-anchor="middle">${d.getDate()}</text>`;
+        } else if (d.getDay() === 1) { // Mondays as week ticks
+          svg += `<text x="${x + 2}" y="${PAD + TITLE_H + MON_H + 15}" font-family="${FF}" font-size="9" fill="#94a3b8">${d.getDate()}</text>`;
+          svg += `<line x1="${x}" y1="${Y0}" x2="${x}" y2="${Y0 + bodyH}" stroke="#e2e8f0" stroke-width="1"/>`;
+        }
+        if (dayW >= 13) svg += `<line x1="${x}" y1="${Y0}" x2="${x}" y2="${Y0 + bodyH}" stroke="#f1f5f9" stroke-width="1"/>`;
       }
+      svg += `<line x1="${PAD}" y1="${Y0}" x2="${W - PAD}" y2="${Y0}" stroke="#cbd5e1" stroke-width="1.5"/>`;
 
-      // dependency link lines (leaf -> leaf), critical links in red — SVG overlay over the bars area
-      const headerH = 44;
-      let depPaths = '';
+      // row stripes + labels
+      rows.forEach(({ task: t, depth }, i) => {
+        const y = Y0 + i * ROWH;
+        if (i % 2 === 1) svg += `<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROWH}" fill="#f8fafc" opacity="0.55"/>`;
+        svg += `<line x1="${PAD}" y1="${y + ROWH}" x2="${W - PAD}" y2="${y + ROWH}" stroke="#f1f5f9" stroke-width="1"/>`;
+        const isSum = t.isSummary;
+        const tx = PAD + 4 + depth * 14 + 14;
+        // collapse twisty for summaries (clickable)
+        if (isSum) {
+          const open = !collapsedIds.has(t.id);
+          const cx = PAD + 2 + depth * 14, cy = y + ROWH / 2;
+          svg += `<g data-gtoggle="${t.id}" style="cursor:pointer"><rect x="${cx - 2}" y="${cy - 8}" width="16" height="16" fill="transparent"/>` +
+            (open
+              ? `<polygon points="${cx},${cy - 3} ${cx + 10},${cy - 3} ${cx + 5},${cy + 5}" fill="#475569"/>`
+              : `<polygon points="${cx + 1},${cy - 5} ${cx + 9},${cy} ${cx + 1},${cy + 5}" fill="#475569"/>`) + `</g>`;
+        }
+        const nm = t.name.length > 30 ? t.name.slice(0, 28) + '…' : t.name;
+        const doneMark = (t.percentComplete >= 100) ? '✓ ' : '';
+        svg += `<g data-gopen="${t.id}" style="cursor:pointer"><text x="${tx}" y="${y + ROWH / 2 + 4}" font-family="${FF}" font-size="${isSum ? 12 : 11.5}" font-weight="${isSum ? 700 : 400}" fill="${t.percentComplete >= 100 ? '#16a34a' : '#1e293b'}">${escapeXml(doneMark)}${t.milestone ? '◆ ' : ''}${escapeXml(nm)}${isSum && collapsedIds.has(t.id) ? ' (+' + leafDescendants(t.id).length + ')' : ''}</text><title>${escapeXml(t.name)} — click to edit</title></g>`;
+        // owner chip + pct at right edge of label column
+        const chipX = PAD + LABELW - 66;
+        if (t.owner && !isSum) {
+          svg += `<circle cx="${chipX}" cy="${y + ROWH / 2}" r="8.5" fill="${ownerColor(t.owner)}"/><text x="${chipX}" y="${y + ROWH / 2 + 3}" font-family="${FF}" font-size="7.5" font-weight="700" fill="white" text-anchor="middle">${escapeXml(ownerInitials(t.owner))}</text>`;
+        }
+        const pct = t.percentComplete || 0;
+        svg += `<text x="${PAD + LABELW - 12}" y="${y + ROWH / 2 + 4}" font-family="${FF}" font-size="10" font-weight="600" fill="${pct >= 100 ? '#16a34a' : pct > 0 ? '#2563eb' : '#94a3b8'}" text-anchor="end">${pct}%</text>`;
+      });
+
+      // label column divider
+      svg += `<line x1="${X0}" y1="${PAD + TITLE_H}" x2="${X0}" y2="${Y0 + bodyH}" stroke="#cbd5e1" stroke-width="1.5"/>`;
+
+      // chart-area layer (clipped so nothing bleeds into the label column)
+      svg += `<g clip-path="url(#g-clip)">`;
+      let links = '';
       leafTasks().forEach(t => {
-        const si = rowIndexOf[t.id]; if (si == null) return;
-        const sX = dateX(t.startDate); const sY = si * ROWH + ROWH / 2;
+        if (!visibleIds.has(t.id)) return;
+        const si = rowIndexOf[t.id];
+        const sX = dateX(t.startDate), sY = Y0 + si * ROWH + ROWH / 2;
         effectivePreds(t).forEach(p => {
-          const pt = tasks.find(x => x.id === p.id); if (!pt) return;
-          const pi = rowIndexOf[p.id]; if (pi == null) return;
-          const pEndX = dateX(pt.finishDate) + (pt.milestone ? 11 : Math.max(dayW, (calDaysBetween(pt.startDate, pt.finishDate) + 1) * dayW));
-          const pY = pi * ROWH + ROWH / 2;
+          const pt = tasks.find(x => x.id === p.id);
+          if (!pt || !visibleIds.has(p.id)) return;
+          const pi = rowIndexOf[p.id];
+          const spanW = pt.milestone ? 12 : Math.max(dayW, (calDaysBetween(pt.startDate, pt.finishDate) + 1) * dayW);
+          const pX = dateX(pt.startDate) + spanW;
+          const pY = Y0 + pi * ROWH + ROWH / 2;
           const crit = t.isCritical && pt.isCritical;
-          const x1 = pEndX, x2 = Math.max(sX, x1 + 4);
-          depPaths += `<path d="M${x1},${pY} L${x1+6},${pY} L${x1+6},${sY} L${x2},${sY}" fill="none" stroke="${crit?'#dc2626':'#94a3b8'}" stroke-width="${crit?2:1.3}" marker-end="url(#gt-arrow${crit?'-c':''})" opacity="${crit?0.95:0.6}"/>`;
+          const stroke = crit ? '#dc2626' : '#94a3b8';
+          const mk = crit ? 'g-arrC' : 'g-arr';
+          const bend = pX + 7;
+          if (sX >= bend + 4) {
+            links += `<path d="M${pX},${pY} L${bend},${pY} L${bend},${sY} L${sX - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${crit ? 2 : 1.3}" opacity="${crit ? 0.95 : 0.55}" marker-end="url(#${mk})"/>`;
+          } else { // S-route when successor starts before pred ends visually
+            const midY = pY + (sY > pY ? ROWH / 2 : -ROWH / 2);
+            links += `<path d="M${pX},${pY} L${bend},${pY} L${bend},${midY} L${sX - 8},${midY} L${sX - 8},${sY} L${sX - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${crit ? 2 : 1.3}" opacity="${crit ? 0.95 : 0.55}" marker-end="url(#${mk})"/>`;
+          }
         });
       });
-      const svgH = ordered.length * ROWH + (reserveRow ? ROWH : 0);
-      const depSvg = `<svg class="gantt-dep-svg" style="left:210px;top:${headerH}px;width:${timelineW}px;height:${svgH}px" width="${timelineW}" height="${svgH}">
-        <defs>
-          <marker id="gt-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/></marker>
-          <marker id="gt-arrow-c" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#dc2626"/></marker>
-        </defs>${depPaths}</svg>`;
+      svg += links;
 
-      container.innerHTML = `
-        <div class="gantt-chart" style="position:relative;min-width:${210 + timelineW}px">
-          <div class="gantt-header-row">
-            <div class="gantt-corner"></div>
-            <div class="gantt-timeline" style="width:${timelineW}px">${months}${dayCells}</div>
-          </div>
-          ${rows}
-          ${reserveRow}
-          ${depSvg}
-        </div>`;
+      // bars
+      rows.forEach(({ task: t }, i) => {
+        const y = Y0 + i * ROWH;
+        const bx = dateX(t.startDate);
+        const spanDays = t.finishDate ? (calDaysBetween(t.startDate, t.finishDate) + 1) : 1;
+        const bw = Math.max(dayW, spanDays * dayW);
+        const tipParts = [
+          `${t.wbs}  ${t.name}`,
+          `${fmtNice(t.startDate)} → ${fmtNice(t.finishDate)}  •  ${t.percentComplete || 0}% done${!t.isSummary ? '  •  slack ' + (Math.abs(t.slack || 0) < 0.05 ? '0.0' : (t.slack || 0).toFixed(1)) : ''}${t.owner ? '  •  ' + t.owner : ''}`
+        ];
+        if (t.deliverable) tipParts.push('Deliverable: ' + t.deliverable);
+        if (t.description) tipParts.push('Scope: ' + (t.description.length > 90 ? t.description.slice(0, 88) + '…' : t.description));
+        if (t.acceptance) tipParts.push('Done when: ' + (t.acceptance.length > 90 ? t.acceptance.slice(0, 88) + '…' : t.acceptance));
+        tipParts.push('Click to open / edit (WBS dictionary inside)');
+        const tip = tipParts.join('\n');
+        if (t.isSummary) {
+          svg += `<g data-gopen="${t.id}" style="cursor:pointer"><rect x="${bx}" y="${y + 10}" width="${bw}" height="7" rx="2" fill="#1e293b"/>` +
+            `<rect x="${bx}" y="${y + 10}" width="3" height="13" fill="#1e293b"/><rect x="${bx + bw - 3}" y="${y + 10}" width="3" height="13" fill="#1e293b"/>` +
+            `<rect x="${bx}" y="${y + 10}" width="${bw * (t.percentComplete || 0) / 100}" height="7" rx="2" fill="#16a34a"/>` +
+            `<title>${escapeXml(tip)}</title></g>`;
+        } else if (t.milestone) {
+          const done = t.percentComplete >= 100;
+          const cx = bx + 6, cy = y + ROWH / 2;
+          const msLabelRight = (cx + 84) < (W - PAD);
+          svg += `<g data-gopen="${t.id}" style="cursor:pointer"><rect x="${cx - 7}" y="${cy - 7}" width="14" height="14" rx="2" transform="rotate(45 ${cx} ${cy})" fill="${done ? '#16a34a' : '#7c3aed'}"/>` +
+            `<text x="${msLabelRight ? cx + 14 : cx - 14}" y="${cy + 4}" font-family="${FF}" font-size="10" font-weight="600" fill="${done ? '#16a34a' : '#6d28d9'}" ${msLabelRight ? '' : 'text-anchor="end"'}>${done ? '✓ ' : ''}${escapeXml(fmtNice(t.finishDate))}</text>` +
+            `<title>${escapeXml(tip)}</title></g>`;
+        } else {
+          const done = t.percentComplete >= 100;
+          const grad = done ? 'g-done' : (t.isCritical ? 'g-crit' : 'g-norm');
+          const slackW = unitToWorkingDays(t.slack) > 0 ? unitToWorkingDays(t.slack) * dayW : 0;
+          // baseline underbar
+          if (t.baseStart && t.baseFinish) {
+            const bbx = dateX(t.baseStart);
+            const bbw = Math.max(4, (calDaysBetween(t.baseStart, t.baseFinish) + 1) * dayW);
+            svg += `<rect x="${bbx}" y="${y + 24}" width="${bbw}" height="3.5" rx="1.5" fill="#94a3b8"><title>Baseline ${escapeXml(fmtNice(t.baseStart))} → ${escapeXml(fmtNice(t.baseFinish))}</title></rect>`;
+          }
+          if (slackW > 2) svg += `<rect x="${bx + bw}" y="${y + 10}" width="${slackW}" height="8" rx="3" fill="url(#g-hatchS)" opacity="0.5"><title>Slack / float</title></rect>`;
+          svg += `<g data-gopen="${t.id}" style="cursor:pointer">` +
+            `<rect x="${bx}" y="${y + 7}" width="${bw}" height="${BAR_H}" rx="4" fill="url(#${grad})"/>`;
+          const pctw = bw * Math.min(100, t.percentComplete || 0) / 100;
+          if (pctw > 0 && !done) svg += `<rect x="${bx}" y="${y + 7}" width="${pctw}" height="${BAR_H}" rx="4" fill="#0f172a" opacity="0.32"/>`;
+          const lbl = `${(t.te || 0).toFixed(1)}${done ? ' ✓' : (t.percentComplete > 0 ? ' · ' + t.percentComplete + '%' : '')}`;
+          if (bw >= 56) svg += `<text x="${bx + 6}" y="${y + 7 + BAR_H - 4.5}" font-family="${FF}" font-size="9.5" font-weight="600" fill="white">${escapeXml(lbl)}</text>`;
+          else svg += `<text x="${bx + bw + (slackW > 2 ? slackW : 0) + 5}" y="${y + 7 + BAR_H - 4.5}" font-family="${FF}" font-size="9.5" font-weight="600" fill="#475569">${escapeXml(lbl)}</text>`;
+          svg += `<title>${escapeXml(tip)}</title></g>`;
+        }
+      });
+
+      // reserve row
+      if (hasReserve) {
+        const y = Y0 + rows.length * ROWH;
+        svg += `<text x="${PAD + 6}" y="${y + ROWH / 2 + 4}" font-family="${FF}" font-size="11" font-weight="600" fill="#b45309">▸ Schedule reserve</text>`;
+        const x1 = dateX(rv.cpmDate) + dayW, x2 = dateX(rv.committedDate) + dayW, x3 = dateX(rv.totalDate) + dayW;
+        if (rv.contingencyUnits > 0) svg += `<rect x="${x1}" y="${y + 8}" width="${Math.max(3, x2 - x1)}" height="14" rx="3" fill="url(#g-hatchC)" stroke="#f59e0b"><title>Contingency reserve → committed ${escapeXml(fmtNice(rv.committedDate))}</title></rect>`;
+        if (rv.managementUnits > 0) svg += `<rect x="${x2}" y="${y + 8}" width="${Math.max(3, x3 - x2)}" height="14" rx="3" fill="url(#g-hatchM)" stroke="#ef4444"><title>Management reserve → total ${escapeXml(fmtNice(rv.totalDate))}</title></rect>`;
+        svg += `<line x1="${x2}" y1="${Y0}" x2="${x2}" y2="${y + ROWH}" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="5,3"/>`;
+        if (rv.managementUnits > 0) svg += `<line x1="${x3}" y1="${Y0}" x2="${x3}" y2="${y + ROWH}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="5,3"/>`;
+      }
+
+      // today line (chip drawn after the clipped layer so it is never cut off)
+      if (todayOff >= 0 && todayOff <= totalDays) {
+        const x = X0 + todayOff * dayW;
+        svg += `<line x1="${x}" y1="${PAD + TITLE_H + MON_H}" x2="${x}" y2="${Y0 + bodyH}" stroke="#ef4444" stroke-width="1.8"/>`;
+      }
+      svg += `</g>`; // end clipped chart layer
+      if (todayOff >= 0 && todayOff <= totalDays) {
+        const x = Math.max(X0 + 20, X0 + todayOff * dayW);
+        svg += `<rect x="${x - 20}" y="${PAD + TITLE_H + 1}" width="40" height="15" rx="7" fill="#ef4444"/><text x="${x}" y="${PAD + TITLE_H + 12}" font-family="${FF}" font-size="9" font-weight="700" fill="white" text-anchor="middle">TODAY</text>`;
+      }
+
+      // legend (baked into the export)
+      const ly = Y0 + bodyH + 20;
+      let lx = PAD;
+      legendItems.forEach(([fill, label]) => {
+        svg += `<rect x="${lx}" y="${ly - 9}" width="16" height="10" rx="2" fill="${fill}"/>`;
+        svg += `<text x="${lx + 20}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">${escapeXml(label)}</text>`;
+        lx += 26 + label.length * 5.6 + 14;
+      });
+      svg += `<text x="${W - PAD}" y="${ly}" font-family="${FF}" font-size="9" fill="#94a3b8" text-anchor="end">dark overlay on bars = % complete • red line = today</text>`;
+
+      return { markup: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${svg}</svg>`, W, H };
+    }
+
+    function renderGantt() {
+      const container = document.getElementById('ganttContainer');
+      if (!calculated || tasks.length === 0) { container.innerHTML = '<div class="empty-state"><h3>Calculate first</h3></div>'; return; }
+      const { markup } = buildGanttSvg();
+      container.innerHTML = markup;
+      // bind collapse + open-editor clicks
+      container.querySelectorAll('[data-gtoggle]').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); toggleCollapse(Number(el.dataset.gtoggle)); }));
+      container.querySelectorAll('[data-gopen]').forEach(el => el.addEventListener('click', () => openEditModal(Number(el.dataset.gopen), true)));
     }
 
     // ========================= RESOURCES RENDER =========================
@@ -1914,9 +2449,39 @@
       const rl = resourceLoad;
       const names = Object.keys(rl.perResource).sort((a, b) => rl.perResource[b].overDays.length - rl.perResource[a].overDays.length || a.localeCompare(b));
       if (!names.length) {
-        cont.innerHTML = '<div class="empty-state"><h3>No resources assigned</h3><p>Add an <strong>Owner / Resource</strong> to activities (in their Edit dialog) to track workload and catch over-allocation.</p></div>';
+        cont.innerHTML = `<div class="empty-state"><h3>No resources yet</h3><p>Add people/teams here, then assign them as <strong>Owner</strong> on activities — workload and over-allocation are tracked automatically.</p>
+          <button class="btn-primary" style="margin-top:1rem" onclick="addResourcePrompt()">➕ Add resource</button></div>`;
         return;
       }
+      // ---- managed roster table ----
+      const rosterRows = names.map((name, ri) => {
+        const R = rl.perResource[name];
+        const assigned = tasks.filter(t => (t.owner || '').trim() === name && !t.isSummary && !t.milestone);
+        const effort = assigned.reduce((s, t) => s + unitToWorkingDays(t.te || 0) * ((+t.units || 100) / 100), 0);
+        const over = R.overDays.length;
+        return `<tr>
+          <td style="font-weight:600">${escapeHtml(name)}</td>
+          <td><input class="mini-inp rl-cap" data-ri="${ri}" type="number" min="1" step="10" value="${R.capacity}" title="Capacity % — 100 = 1 full-time person, 300 = a 3-person team" /></td>
+          <td><input class="mini-inp rl-rate" data-ri="${ri}" type="number" min="0" step="50" value="${getRate(name)}" title="Cost per working day at 100% (feeds the budget layer)" /></td>
+          <td>${assigned.length}</td>
+          <td>${effort.toFixed(1)}d</td>
+          <td>${Math.round(R.peak)}%</td>
+          <td>${over ? `<span class="badge badge-critical">over ×${over}d</span>` : '<span class="badge badge-ok">OK</span>'}</td>
+          <td style="white-space:nowrap">
+            <button class="btn-sm btn-secondary" data-res-rename="${ri}">Rename</button>
+            <button class="btn-sm btn-danger" data-res-remove="${ri}">✕</button>
+          </td>
+        </tr>`;
+      }).join('');
+      const roster = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.4rem">
+          <h3 style="font-size:0.95rem">Resource roster</h3>
+          <button class="btn-sm btn-primary no-print" onclick="addResourcePrompt()">➕ Add resource</button>
+        </div>
+        <div class="table-wrap" style="margin-bottom:1rem"><table>
+          <thead><tr><th>Resource</th><th>Capacity %</th><th>Day rate $</th><th>Tasks</th><th>Planned effort</th><th>Peak load</th><th>Status</th><th></th></tr></thead>
+          <tbody>${rosterRows}</tbody>
+        </table></div>`;
       const holidays = getHolidaySet();
       const start = projectStartDate();
       let maxFinish = start;
@@ -1954,8 +2519,7 @@
           <div class="rl-label">
             <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
             <div style="display:flex;align-items:center;gap:5px;margin-top:3px">
-              <span class="help-text" style="margin:0">Cap%</span>
-              <input class="mini-inp rl-cap" data-ri="${ri}" type="number" min="1" step="10" value="${R.capacity}" title="Capacity % (100 = 1 FTE)" />
+              <span class="help-text" style="margin:0">cap ${R.capacity}%</span>
               <span class="risk-tag" style="background:${over ? '#fee2e2' : '#dcfce7'};color:${over ? '#b91c1c' : '#15803d'}">${over ? 'peak ' + Math.round(R.peak) + '%' : 'OK'}</span>
             </div>
           </div>
@@ -1984,25 +2548,38 @@
               <td>${t.isCritical ? '<span class="badge badge-critical">critical</span>' : t.slack.toFixed(1) + ' ' + u}</td>
             </tr>`).join('');
           const advice = movable.length
-            ? `Move a non-critical task within its slack — e.g. delay <strong>${escapeHtml(movable[0].name)}</strong> (has ${movable[0].slack.toFixed(1)} ${u} of float). Try <em>Auto-level within slack</em> above.`
-            : `All overlapping tasks are on the critical path (no float). To resolve you must <strong>reduce Units %</strong>, <strong>raise ${escapeHtml(name)}'s capacity</strong> (add people), <strong>reassign</strong> a task, or accept a later finish.`;
+            ? `Move a non-critical task within its slack — e.g. delay <strong>${escapeHtml(movable[0].name)}</strong> (has ${movable[0].slack.toFixed(1)} ${u} of float). Try <em>Level within slack</em> above.`
+            : `All overlapping tasks are on the critical path (no float). Mend it by <strong>adding capacity</strong> (buttons below), <strong>reducing Units %</strong>, <strong>reassigning</strong> a task, or <strong>Level &amp; extend timeline</strong> to accept a later finish.`;
           summary += `<div class="conflict-card">
             <div style="font-weight:700;margin-bottom:0.25rem">${escapeHtml(name)} — peak ${Math.round(R.peak)}% vs ${R.capacity}% capacity <span class="help-text" style="font-weight:400">(over on: ${ranges})</span></div>
             <div class="table-wrap"><table><thead><tr><th>Overlapping task</th><th>Units</th><th>Window</th><th>Slack</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
             <p class="help-text" style="margin-top:0.5rem">💡 ${advice}</p>
+            <div class="toolbar no-print" style="margin-top:0.5rem">
+              <button class="btn-sm btn-success" data-mend-add="${names.indexOf(name)}" title="Raise ${escapeHtml(name)}'s capacity by one full-time person">➕ Add 1 person to ${escapeHtml(name)}</button>
+              <button class="btn-sm btn-secondary" data-mend-peak="${names.indexOf(name)}" title="Raise capacity to exactly cover the peak load">⤒ Raise capacity to peak (${Math.round(R.peak)}%)</button>
+              <button class="btn-sm" style="background:#fef3c7;color:#b45309" onclick="autoLevelExtend()" title="Push conflicting work later, extending the finish date">📅 Extend timeline instead</button>
+            </div>
           </div>`;
         });
       }
 
       const leveledCount = tasks.filter(t => t.levelDelay > 0).length;
-      const levelBanner = leveledCount
-        ? `<div class="conflict-card" style="border-left-color:var(--primary);margin-top:0;margin-bottom:0.75rem;background:#eff6ff">
-             ⚖ <strong>Resource leveling is applied</strong> — ${leveledCount} task${leveledCount>1?'s have':' has'} a start-no-earlier-than shift (project end unchanged).
-             If you later change durations or dependencies, re-run leveling or
-             <button class="btn-sm btn-secondary" style="margin-left:6px" onclick="clearLeveling()">Clear leveling</button>.
-           </div>` : '';
+      let levelBanner = '';
+      if (leveledCount) {
+        const curDur = Math.max(0, ...leafTasks().map(t => t.ef), 0);
+        const ext = (unleveledDuration != null) ? curDur - unleveledDuration : 0;
+        const extNote = (levelMode === 'extend' && ext > 0.01)
+          ? `<span style="color:var(--warn);font-weight:700"> Finish extended by ${ext.toFixed(1)} ${u} vs the un-leveled plan</span> — if the client accepts the new dates, <button class="btn-sm btn-secondary" onclick="setBaseline()">re-baseline</button>.`
+          : ' (project end unchanged).';
+        levelBanner = `<div class="conflict-card" style="border-left-color:${levelMode === 'extend' ? 'var(--warn)' : 'var(--primary)'};margin-top:0;margin-bottom:0.75rem;background:${levelMode === 'extend' ? '#fffbeb' : '#eff6ff'}">
+             ⚖ <strong>Resource leveling is applied (${levelMode === 'extend' ? 'timeline may extend' : 'within slack'})</strong> — ${leveledCount} task${leveledCount>1?'s have':' has'} a start-no-earlier-than shift${extNote}
+             <button class="btn-sm btn-secondary" style="margin-left:6px" onclick="clearLeveling()">Clear leveling</button>
+           </div>`;
+      }
       cont.innerHTML = `
         ${levelBanner}
+        ${roster}
+        <h3 style="font-size:0.95rem;margin-bottom:0.4rem">Daily workload heatmap</h3>
         <div class="rl-wrap">
           <div class="rl-chart" style="min-width:${180 + trackW}px">
             <div class="rl-headrow"><div class="rl-corner"></div><div class="rl-monthtrack" style="width:${trackW}px">${monthHdr}</div></div>
@@ -2016,9 +2593,24 @@
         </div>
         ${summary}`;
 
-      // bind capacity inputs by index (safe against names with quotes)
+      // bind inputs/buttons by index (safe against names with quotes)
       cont.querySelectorAll('input.rl-cap').forEach(inp => {
         inp.addEventListener('change', () => setCapacity(names[Number(inp.dataset.ri)], inp.value));
+      });
+      cont.querySelectorAll('input.rl-rate').forEach(inp => {
+        inp.addEventListener('change', () => setRate(names[Number(inp.dataset.ri)], inp.value));
+      });
+      cont.querySelectorAll('[data-mend-add]').forEach(btn => {
+        btn.addEventListener('click', () => addCapacity(names[Number(btn.dataset.mendAdd)], 100));
+      });
+      cont.querySelectorAll('[data-mend-peak]').forEach(btn => {
+        btn.addEventListener('click', () => raiseCapacityToPeak(names[Number(btn.dataset.mendPeak)]));
+      });
+      cont.querySelectorAll('[data-res-rename]').forEach(btn => {
+        btn.addEventListener('click', () => renameResource(names[Number(btn.dataset.resRename)]));
+      });
+      cont.querySelectorAll('[data-res-remove]').forEach(btn => {
+        btn.addEventListener('click', () => removeResource(names[Number(btn.dataset.resRemove)]));
       });
     }
 
@@ -2029,27 +2621,37 @@
       if (!tasks.length) { cont.innerHTML = '<div class="empty-state"><h3>No activities yet</h3><p>Add activities and nest them under phases to build the WBS.</p></div>'; return; }
       computeWbsCodes();
       const u = unitLabel();
-      const rows = tasksInWbsOrder().map(({ task: t, depth }) => {
-        const dur = t.milestone ? '◆' : (calculated ? (t.isSummary ? (t.te || 0).toFixed(1) : t.te.toFixed(1)) : '—');
-        return `<tr class="${t.isSummary ? '' : ''}" style="${t.isSummary ? 'font-weight:700;background:#f8fafc' : ''}">
+      const anyCost = projectCost() > 0;
+      const rows = visibleWbsOrder().map(({ task: t, depth }) => {
+        const dur = t.milestone ? '◆' : (calculated ? (t.te || 0).toFixed(1) : '—');
+        const twisty = t.isSummary
+          ? `<button class="wbs-twisty" onclick="toggleCollapse(${t.id})" title="${collapsedIds.has(t.id) ? 'Expand' : 'Collapse'}">${collapsedIds.has(t.id) ? '▸' : '▾'}</button>`
+          : '<span class="wbs-twisty-spacer"></span>';
+        return `<tr data-wbsrow="${t.id}" style="cursor:pointer;${t.isSummary ? 'font-weight:700;background:#f8fafc' : ''}" ondblclick="openEditModal(${t.id}, true)" title="Double-click to edit">
           <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
-          <td style="padding-left:${8 + depth * 18}px">${t.isSummary ? '▾ ' : (t.milestone ? '◆ ' : '')}${escapeHtml(t.name)}</td>
+          <td style="padding-left:${8 + depth * 18}px"><span style="display:inline-flex;align-items:center">${twisty}${t.milestone ? '◆ ' : ''}${escapeHtml(t.name)}${collapsedIds.has(t.id) ? ` <span class="help-text" style="font-size:0.68rem;margin-left:4px">(+${leafDescendants(t.id).length})</span>` : ''}</span></td>
           <td style="font-size:0.8rem">${escapeHtml(t.owner || '—')}</td>
           <td>${dur}</td>
           <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.startDate) : '—'}</td>
           <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.finishDate) : '—'}</td>
           <td>${calculated ? (t.percentComplete || 0) + '%' : '—'}</td>
+          ${anyCost ? `<td style="text-align:right;font-size:0.8rem">${fmtMoney(taskCost(t))}</td>` : ''}
           <td style="font-size:0.8rem">${escapeHtml(t.deliverable || '—')}</td>
           <td style="font-size:0.8rem;max-width:280px">${escapeHtml(t.description || '')}</td>
           <td style="font-size:0.8rem">${escapeHtml(t.acceptance || '')}</td>
         </tr>`;
       }).join('');
       cont.innerHTML = `
+        <div class="toolbar no-print" style="margin-bottom:0.6rem">
+          <button class="btn-sm btn-secondary" onclick="setCollapseLevel(0)">L1 · Phases</button>
+          <button class="btn-sm btn-secondary" onclick="setCollapseLevel(1)">L2</button>
+          <button class="btn-sm btn-secondary" onclick="setCollapseLevel(Infinity)">Expand all</button>
+        </div>
         <div class="table-wrap"><table>
-          <thead><tr><th>WBS</th><th>Element</th><th>Owner</th><th>Dur (${u})</th><th>Start</th><th>Finish</th><th>%</th><th>Deliverable</th><th>Description / scope</th><th>Acceptance</th></tr></thead>
+          <thead><tr><th>WBS</th><th>Element</th><th>Owner</th><th>Dur (${u})</th><th>Start</th><th>Finish</th><th>%</th>${anyCost ? '<th style="text-align:right">Cost</th>' : ''}<th>Deliverable</th><th>Description / scope</th><th>Acceptance</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
-        <p class="help-text" style="margin-top:0.75rem">Bold rows are summary/phase elements (they roll up their children). Edit any element to set its WBS parent, deliverable, description and acceptance criteria for the WBS dictionary.</p>`;
+        <p class="help-text" style="margin-top:0.75rem">Bold rows are summary/phase elements (they roll up children). Use ▸/▾ to drill in, the ⑂ button on the Tasks tab to have AI decompose a task further, and Edit to fill deliverable / scope / acceptance for the dictionary.</p>`;
     }
 
     // ========================= BASELINE vs VARIANCE VIEW =========================
@@ -2130,11 +2732,13 @@
       if (document.getElementById('view-gantt').classList.contains('active')) renderGantt();
     }
 
-    // ========================= PERT DIAGRAM =========================
+    // ========================= PERT DIAGRAM (SVG) =========================
+    // PMI-style activity-on-node cards:  ES | Dur | EF  /  name+owner  /  LS | Slack | LF
+    // All presentation attributes are inline so the SVG exports faithfully.
     function renderPERT() {
       const svgEl = document.getElementById('pertSvg');
       if (!calculated || tasks.length === 0) { svgEl.innerHTML = ''; return; }
-      const nodes = leafTasks(); // PERT network is over activities (leaves), not summaries
+      const nodes = leafTasks();
       const idToTask = {}; tasks.forEach(t => idToTask[t.id] = t);
       const predsOf = {}; nodes.forEach(t => predsOf[t.id] = effectivePreds(t));
       const level = {}; nodes.forEach(t => level[t.id] = 0);
@@ -2142,61 +2746,231 @@
       while (changed && guard < 400) {
         changed = false; guard++;
         nodes.forEach(t => {
-          let maxPred = 0;
-          predsOf[t.id].forEach(p => { if ((level[p.id]||0)+1 > maxPred) maxPred = (level[p.id]||0)+1; });
-          if (maxPred > level[t.id]) { level[t.id] = maxPred; changed = true; }
+          let mx = 0;
+          predsOf[t.id].forEach(p => { if ((level[p.id] || 0) + 1 > mx) mx = (level[p.id] || 0) + 1; });
+          if (mx > level[t.id]) { level[t.id] = mx; changed = true; }
         });
       }
       const maxLevel = Math.max(0, ...Object.values(level));
       const levels = Array.from({ length: maxLevel + 1 }, () => []);
       nodes.forEach(t => levels[level[t.id]].push(t));
+      levels.forEach(col => col.sort((a, b) => a.es - b.es || a.name.localeCompare(b.name)));
 
-      const nodeW = 150, nodeH = 74, gapX = 80, gapY = 26, margin = 40;
-      const colWidth = nodeW + gapX;
+      const NW = 190, NH = 100, GX = 95, GY = 30, M = 46, TITLE_H = 40, LEGEND_H = 30;
+      const colW = NW + GX;
       const maxInCol = Math.max(1, ...levels.map(l => l.length));
-      const svgW = margin * 2 + (maxLevel + 1) * colWidth;
-      const svgH = margin * 2 + maxInCol * (nodeH + gapY);
+      const W = M * 2 + (maxLevel + 1) * colW - GX;
+      const H = TITLE_H + M * 2 + maxInCol * (NH + GY) - GY + LEGEND_H;
       const pos = {};
       levels.forEach((col, li) => {
-        const totalH = col.length * (nodeH + gapY) - gapY;
-        const startY = margin + (svgH - 2 * margin - totalH) / 2;
-        col.forEach((t, ti) => { pos[t.id] = { x: margin + li * colWidth, y: startY + ti * (nodeH + gapY) }; });
+        const totalH = col.length * (NH + GY) - GY;
+        const y0 = TITLE_H + M + (H - TITLE_H - LEGEND_H - 2 * M - totalH) / 2;
+        col.forEach((t, ti) => pos[t.id] = { x: M + li * colW, y: y0 + ti * (NH + GY) });
       });
 
       let svg = `<defs>
-        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/></marker>
-        <marker id="arrowhead-crit" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/></marker>
+        <marker id="p-arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/></marker>
+        <marker id="p-arrC" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/></marker>
+        <filter id="p-shadow" x="-10%" y="-10%" width="130%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#0f172a" flood-opacity="0.12"/></filter>
       </defs>`;
+      svg += `<rect x="0" y="0" width="${W}" height="${H}" fill="#f8fafc"/>`;
+      svg += `<text x="${M}" y="26" font-family="${FF}" font-size="16" font-weight="700" fill="#0f172a">${escapeXml(projName())} — PERT network</text>`;
+      svg += `<text x="${W - M}" y="26" font-family="${FF}" font-size="10.5" fill="#64748b" text-anchor="end">ES | Dur | EF  •  LS | Slack | LF  •  red = critical path  •  generated ${escapeXml(new Date().toLocaleDateString())}</text>`;
+
+      // edges under nodes
       nodes.forEach(t => predsOf[t.id].forEach(p => {
         const from = pos[p.id], to = pos[t.id]; if (!from || !to) return;
-        const x1 = from.x + nodeW, y1 = from.y + nodeH/2, x2 = to.x, y2 = to.y + nodeH/2, mx = (x1+x2)/2;
-        const isCrit = t.isCritical && idToTask[p.id] && idToTask[p.id].isCritical;
-        svg += `<path class="edge ${isCrit?'critical':''}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" marker-end="url(#${isCrit?'arrowhead-crit':'arrowhead'})"/>`;
+        const x1 = from.x + NW, y1 = from.y + NH / 2, x2 = to.x, y2 = to.y + NH / 2, mx = (x1 + x2) / 2;
+        const crit = t.isCritical && idToTask[p.id] && idToTask[p.id].isCritical;
+        svg += `<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2 - 2},${y2}" fill="none" stroke="${crit ? '#dc2626' : '#94a3b8'}" stroke-width="${crit ? 2.6 : 1.6}" opacity="${crit ? 0.95 : 0.6}" marker-end="url(#${crit ? 'p-arrC' : 'p-arr'})"/>`;
       }));
+
+      // nodes
       nodes.forEach(t => {
-        const p = pos[t.id];
-        const cls = t.isCritical ? 'node-rect critical' : 'node-rect';
-        const nm = t.name.length > 18 ? t.name.slice(0,16)+'…' : t.name;
-        svg += `<g transform="translate(${p.x},${p.y})">
-          <rect class="${cls}" width="${nodeW}" height="${nodeH}"/>
-          <text class="node-title" x="10" y="20">${t.milestone?'◆ ':''}${escapeHtml(nm)}</text>
-          <text class="node-meta" x="10" y="38">TE ${t.te.toFixed(1)} | Slack ${t.slack.toFixed(1)} | ${t.percentComplete}%</text>
-          <text class="node-meta" x="10" y="54">ES ${t.es.toFixed(1)} → EF ${t.ef.toFixed(1)}</text>
-          <text class="node-meta" x="10" y="68">${fmtNice(t.startDate)} → ${fmtNice(t.finishDate)}</text>
-        </g>`;
+        const P = pos[t.id];
+        const done = t.percentComplete >= 100;
+        const crit = t.isCritical;
+        const border = done ? '#16a34a' : crit ? '#dc2626' : '#94a3b8';
+        const fill = done ? '#f0fdf4' : crit ? '#fef2f2' : '#ffffff';
+        const cellW = NW / 3;
+        const topY = P.y, rowH = 21, nameY = P.y + rowH, nameH = NH - rowH * 2 - 6, botY = P.y + NH - rowH - 6, progY = P.y + NH - 6;
+        const fmt1 = v => (Number.isFinite(v) ? (Math.abs(v) < 0.05 ? '0.0' : v.toFixed(1)) : '—');
+        svg += `<g filter="url(#p-shadow)" data-popen="${t.id}" style="cursor:pointer">`;
+        svg += `<rect x="${P.x}" y="${P.y}" width="${NW}" height="${NH}" rx="8" fill="${fill}" stroke="${border}" stroke-width="${crit || done ? 2.5 : 1.5}"/>`;
+        // top row: ES | Dur | EF
+        svg += `<line x1="${P.x}" y1="${topY + rowH}" x2="${P.x + NW}" y2="${topY + rowH}" stroke="${border}" stroke-width="0.8" opacity="0.5"/>`;
+        svg += `<line x1="${P.x}" y1="${botY}" x2="${P.x + NW}" y2="${botY}" stroke="${border}" stroke-width="0.8" opacity="0.5"/>`;
+        [1, 2].forEach(k => {
+          svg += `<line x1="${P.x + cellW * k}" y1="${topY}" x2="${P.x + cellW * k}" y2="${topY + rowH}" stroke="${border}" stroke-width="0.8" opacity="0.4"/>`;
+          svg += `<line x1="${P.x + cellW * k}" y1="${botY}" x2="${P.x + cellW * k}" y2="${botY + rowH}" stroke="${border}" stroke-width="0.8" opacity="0.4"/>`;
+        });
+        const cellTxt = (x, y, v, bold) => `<text x="${x + cellW / 2}" y="${y + 14.5}" font-family="${FF}" font-size="10" ${bold ? 'font-weight="700"' : ''} fill="#334155" text-anchor="middle">${escapeXml(v)}</text>`;
+        svg += cellTxt(P.x, topY, fmt1(t.es), false) + cellTxt(P.x + cellW, topY, fmt1(t.te), true) + cellTxt(P.x + cellW * 2, topY, fmt1(t.ef), false);
+        svg += cellTxt(P.x, botY, fmt1(t.ls), false) + cellTxt(P.x + cellW, botY, fmt1(t.slack), true) + cellTxt(P.x + cellW * 2, botY, fmt1(t.lf), false);
+        // name + owner + dates
+        const nm = t.name.length > 24 ? t.name.slice(0, 22) + '…' : t.name;
+        svg += `<text x="${P.x + NW / 2}" y="${nameY + 17}" font-family="${FF}" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle">${t.milestone ? '◆ ' : ''}${done ? '✓ ' : ''}${escapeXml(nm)}</text>`;
+        svg += `<text x="${P.x + NW / 2}" y="${nameY + 32}" font-family="${FF}" font-size="9" fill="#64748b" text-anchor="middle">${escapeXml((t.owner ? t.owner + ' • ' : '') + fmtNice(t.startDate) + ' → ' + fmtNice(t.finishDate))}</text>`;
+        // progress strip
+        svg += `<rect x="${P.x + 1}" y="${progY}" width="${NW - 2}" height="5" fill="#e2e8f0"/>`;
+        svg += `<rect x="${P.x + 1}" y="${progY}" width="${(NW - 2) * Math.min(100, t.percentComplete || 0) / 100}" height="5" fill="${done ? '#16a34a' : '#2563eb'}"/>`;
+        const ptip = [`${t.wbs}  ${t.name} — ${t.percentComplete || 0}% complete, slack ${fmt1(t.slack)}`];
+        if (t.deliverable) ptip.push('Deliverable: ' + t.deliverable);
+        if (t.description) ptip.push('Scope: ' + (t.description.length > 90 ? t.description.slice(0, 88) + '…' : t.description));
+        ptip.push('Click to open / edit (WBS dictionary inside)');
+        svg += `<title>${escapeXml(ptip.join('\n'))}</title></g>`;
       });
-      svgEl.setAttribute('width', svgW); svgEl.setAttribute('height', svgH);
-      svgEl.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`);
+
+      // legend
+      const ly = H - 12;
+      svg += `<rect x="${M}" y="${ly - 10}" width="14" height="10" rx="2" fill="#fef2f2" stroke="#dc2626" stroke-width="2"/><text x="${M + 19}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">Critical (zero slack)</text>`;
+      svg += `<rect x="${M + 140}" y="${ly - 10}" width="14" height="10" rx="2" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/><text x="${M + 159}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">Complete</text>`;
+      svg += `<rect x="${M + 240}" y="${ly - 10}" width="14" height="10" rx="2" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/><text x="${M + 259}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">Non-critical</text>`;
+
+      svgEl.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      svgEl.setAttribute('width', W); svgEl.setAttribute('height', H);
+      svgEl.setAttribute('viewBox', `0 0 ${W} ${H}`);
       svgEl.innerHTML = svg;
+      svgEl.querySelectorAll('[data-popen]').forEach(el => el.addEventListener('click', () => openEditModal(Number(el.dataset.popen), true)));
     }
 
     // ========================= EXPORTS =========================
     function download(filename, content, mime) {
       const blob = new Blob([content], { type: mime });
+      downloadBlobFile(blob, filename);
+    }
+    function downloadBlobFile(blob, filename) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = filename; a.click();
       URL.revokeObjectURL(url);
+    }
+
+    // ---- Chart image exports (PNG / SVG / clipboard) ----
+    function chartSvgMarkup(which) {
+      if (!tasks.length) return null;
+      if (!ensureCalc()) return null;
+      if (which === 'gantt') { return buildGanttSvg().markup; }
+      renderPERT();
+      const el = document.getElementById('pertSvg');
+      return el && el.innerHTML ? new XMLSerializer().serializeToString(el) : null;
+    }
+    async function svgMarkupToPngBlob(markup, scale) {
+      scale = scale || 2;
+      const img = new Image();
+      const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup);
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+      const m = markup.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/);
+      const w = m ? parseFloat(m[1]) : img.width, h = m ? parseFloat(m[2]) : img.height;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(w * scale); canvas.height = Math.round(h * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'white'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0);
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+      if (!blob) throw new Error('Chart too large to rasterize — zoom out (−) and try again.');
+      return blob;
+    }
+    async function downloadChartPNG(which) {
+      const markup = chartSvgMarkup(which);
+      if (!markup) { alert('Nothing to export yet — add activities and Calculate first.'); return; }
+      try {
+        const blob = await svgMarkupToPngBlob(markup, 2);
+        downloadBlobFile(blob, safeName() + '-' + which + '.png');
+      } catch (e) { alert('PNG export failed: ' + e.message); }
+    }
+    function downloadChartSVG(which) {
+      const markup = chartSvgMarkup(which);
+      if (!markup) { alert('Nothing to export yet — add activities and Calculate first.'); return; }
+      download(safeName() + '-' + which + '.svg', '<?xml version="1.0" encoding="UTF-8"?>\n' + markup, 'image/svg+xml');
+    }
+    async function copyChartImage(which) {
+      const markup = chartSvgMarkup(which);
+      if (!markup) { alert('Nothing to copy yet — add activities and Calculate first.'); return; }
+      try {
+        const blob = await svgMarkupToPngBlob(markup, 2);
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        flashSaved('✓ Image copied — paste into email/slides');
+      } catch (e) {
+        // clipboard blocked (browser/permission) — fall back to a download
+        try {
+          const blob = await svgMarkupToPngBlob(markup, 2);
+          downloadBlobFile(blob, safeName() + '-' + which + '.png');
+          alert('Clipboard not available here — downloaded the PNG instead.');
+        } catch (e2) { alert('Could not export image: ' + e2.message); }
+      }
+    }
+    function flashSaved(msg) {
+      const el = document.getElementById('savedIndicator');
+      if (!el) return;
+      el.textContent = msg;
+      clearTimeout(flashSaved._t);
+      flashSaved._t = setTimeout(() => { el.textContent = ''; }, 3000);
+    }
+
+    // ---- Status report for PM handoff (rich-text copy, email-ready) ----
+    function buildStatusReportHtml() {
+      const u = unitLabel();
+      const prog = overallProgress();
+      const leaves = leafTasks();
+      const projDur = Math.max(0, ...leaves.map(t => t.ef), 0);
+      const finish = durationToDate(projDur);
+      const rv = computeReserves();
+      const rl = resourceLoad || computeResourceLoad();
+      const critNames = leaves.filter(t => t.isCritical && !t.milestone).sort((a, b) => a.es - b.es).map(t => t.name).join(' → ');
+      const td = 'padding:5px 9px;border:1px solid #d7dde5;font-size:12.5px;';
+      const th = td + 'background:#f1f5f9;font-weight:700;text-align:left;';
+      const statusOf = t => t.percentComplete >= 100 ? '✅ Complete' : (isLate(t) ? '🔴 Behind' : t.percentComplete > 0 ? '🔵 In progress' : '⚪ Not started');
+      const msRows = tasks.filter(t => t.milestone).map(t =>
+        `<tr><td style="${td}">◆ ${escapeHtml(t.name)}</td><td style="${td}">${fmtNice(t.finishDate)}</td><td style="${td}">${statusOf(t)}</td></tr>`).join('');
+      const taskRows = tasksInWbsOrder().map(({ task: t, depth }) => {
+        const bold = t.isSummary ? 'font-weight:700;background:#f8fafc;' : '';
+        const varD = (t.baseFinish && t.finishDate) ? calDaysBetween(t.baseFinish, currentFinish(t)) : null;
+        return `<tr><td style="${td}${bold}">${t.wbs}</td>
+          <td style="${td}${bold}padding-left:${9 + depth * 14}px">${t.milestone ? '◆ ' : ''}${escapeHtml(t.name)}</td>
+          <td style="${td}${bold}">${escapeHtml(t.owner || '')}</td>
+          <td style="${td}${bold}">${fmtNice(t.startDate)}</td>
+          <td style="${td}${bold}">${fmtNice(t.finishDate)}</td>
+          <td style="${td}${bold}text-align:right">${t.percentComplete || 0}%</td>
+          <td style="${td}${bold}">${t.isSummary ? '' : statusOf(t)}</td>
+          <td style="${td}${bold}text-align:right;color:${varD > 0 ? '#b91c1c' : varD < 0 ? '#15803d' : '#64748b'}">${varD == null ? '—' : (varD > 0 ? '+' : '') + varD + 'd'}</td></tr>`;
+      }).join('');
+      const cost = projectCost();
+      const costLine = (cost > 0 || projectBudget > 0)
+        ? `<p style="margin:6px 0;font-size:13px"><b>Cost:</b> planned ${fmtMoney(cost)}${projectBudget ? ` vs budget ${fmtMoney(projectBudget)} (${cost > projectBudget ? '<span style="color:#b91c1c">+' + fmtMoney(cost - projectBudget) + ' over</span>' : fmtMoney(projectBudget - cost) + ' headroom'})` : ''} • earned value to date ${fmtMoney(earnedValue())}</p>` : '';
+      const overLine = rl.overResourceDays
+        ? `<p style="margin:6px 0;font-size:13px;color:#b91c1c"><b>⚠ Resourcing:</b> ${rl.overResourceDays} over-allocated resource-day(s) — ${rl.resourcesOver.map(escapeHtml).join(', ')}. Mitigation in progress (level, add capacity, or extend).</p>` : '';
+      const baseLine = hasBaseline()
+        ? `<p style="margin:6px 0;font-size:13px"><b>Baseline (${escapeHtml(baselineDate)}):</b> variance ${(() => { const bf = new Date(Math.max(...tasks.filter(t => t.baseFinish).map(t => t.baseFinish.getTime()))); const v = calDaysBetween(bf, new Date(Math.max(...leaves.map(t => currentFinish(t).getTime())))); return (v > 0 ? '<span style="color:#b91c1c">+' + v + 'd late</span>' : v < 0 ? '<span style="color:#15803d">' + v + 'd early</span>' : 'on plan'); })()}</p>` : '';
+      return `<div style="font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;max-width:860px">
+        <h2 style="margin:0 0 4px">${escapeHtml(projName())} — Status Report</h2>
+        <p style="margin:2px 0 10px;color:#64748b;font-size:12px">Generated ${new Date().toLocaleDateString()} • PERT 3-point estimates • ${mcResult ? mcResult.iters.toLocaleString() + ' Monte-Carlo simulations' : 'deterministic CPM'}</p>
+        <p style="margin:6px 0;font-size:13px"><b>Overall:</b> ${prog.toFixed(0)}% complete • forecast finish <b>${fmtNice(finish)}</b>${mcResult ? ` • P80 ${fmtNice(durationToDate(mcResult.p80))} • P90 ${fmtNice(durationToDate(mcResult.p90))}` : ''}${rv.contingencyUnits > 0 ? ` • committed (with contingency) ${fmtNice(rv.committedDate)}` : ''}</p>
+        ${baseLine}${costLine}${overLine}
+        <p style="margin:6px 0;font-size:13px"><b>Critical path:</b> ${escapeHtml(critNames) || '—'}</p>
+        ${msRows ? `<h3 style="margin:14px 0 4px;font-size:14px">Milestones</h3><table style="border-collapse:collapse"><tr><th style="${th}">Milestone</th><th style="${th}">Date</th><th style="${th}">Status</th></tr>${msRows}</table>` : ''}
+        <h3 style="margin:14px 0 4px;font-size:14px">Work breakdown &amp; completeness</h3>
+        <table style="border-collapse:collapse"><tr><th style="${th}">WBS</th><th style="${th}">Task</th><th style="${th}">Owner</th><th style="${th}">Start</th><th style="${th}">Finish</th><th style="${th}">%</th><th style="${th}">Status</th><th style="${th}">Var</th></tr>${taskRows}</table>
+        <p style="margin:10px 0 0;color:#94a3b8;font-size:11px">Var = finish variance vs baseline (calendar days). Generated by Engagement PERT &amp; Gantt Tracker.</p>
+      </div>`;
+    }
+    async function copyStatusReport() {
+      if (!ensureCalc()) { alert('Add activities and Calculate first.'); return; }
+      const html = buildStatusReportHtml();
+      const plain = html.replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, ' ')
+        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#?\w{2,8};/g, ' ')
+        .replace(/\s+/g, ' ').trim();
+      try {
+        await navigator.clipboard.write([new ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([plain], { type: 'text/plain' })
+        })]);
+        flashSaved('✓ Status report copied — paste into email');
+      } catch (e) {
+        download(safeName() + '-status-report.html', html, 'text/html');
+        alert('Clipboard not available here — downloaded the report as HTML instead (open it and copy, or attach it).');
+      }
     }
     function projName() { return document.getElementById('projectName').value || 'engagement'; }
     function safeName() { return projName().replace(/[^\w\-]+/g, '-'); }
@@ -2316,7 +3090,9 @@
       tasksInWbsOrder().forEach(({ task: t, depth }, i) => {
         const uid = t.id;
         // Summary tasks carry no predecessor links or work; MSP derives their span.
-        const preds = t.isSummary ? '' : t.predecessors.filter(p => tasks.some(x => x.id === p.id)).map(p => `
+        // Leaves export their EFFECTIVE links (summary deps expanded + inherited),
+        // so the schedule in Project matches the one shown here.
+        const preds = t.isSummary ? '' : effectivePreds(t).map(p => `
         <PredecessorLink>
           <PredecessorUID>${p.id}</PredecessorUID>
           <Type>${typeCode[p.type] != null ? typeCode[p.type] : 1}</Type>
@@ -2417,13 +3193,7 @@
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
     }
 
-    function exportPertSVG() {
-      if (!ensureCalc()) return;
-      renderPERT();
-      const svg = document.getElementById('pertSvg').outerHTML;
-      const full = '<?xml version="1.0" encoding="UTF-8"?>\n' + svg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
-      download(safeName() + '-pert.svg', full, 'image/svg+xml');
-    }
+    function exportPertSVG() { downloadChartSVG('pert'); }
 
     // ========================= SAMPLE / RESET =========================
     function loadSample() {
@@ -2446,9 +3216,16 @@
         mk(9, 'Go-Live & Hypercare', 2, 3, 5, [8], 'PMO', 13, 'Live system'),
         makeTask({ id: 10, name: 'Project Closed', milestone: true, o:0,m:0,p:0, predecessors: [normalizePred(9)], owner: 'PMO', parentId: 13 })
       ];
+      // some in-flight progress so completeness indicators / handoff report show real data
+      const pcts = { 1: 100, 2: 100, 3: 100, 4: 60, 5: 30 };
+      tasks.forEach(t => { if (pcts[t.id] != null) t.percentComplete = pcts[t.id]; });
       nextId = 14;
-      resources = {}; reserves = { contingency: { value: 10, unit: 'percent' }, management: { value: 5, unit: 'percent' } };
-      baselineDate = ''; calculated = false;
+      resources = {
+        'PMO': { capacity: 100, rate: 900 }, 'A. Rivera': { capacity: 100, rate: 1200 },
+        'L. Chen': { capacity: 100, rate: 1300 }, 'Dev Team': { capacity: 300, rate: 1100 }, 'QA': { capacity: 100, rate: 950 }
+      };
+      reserves = { contingency: { value: 10, unit: 'percent' }, management: { value: 5, unit: 'percent' } };
+      baselineDate = ''; collapsedIds = new Set(); levelMode = 'none'; projectBudget = 0; calculated = false;
       document.getElementById('projectName').value = 'Sample Client Engagement – CRM Rollout';
       if (!document.getElementById('projectStart').value) document.getElementById('projectStart').value = fmtISO(new Date());
       renderTaskTable(); switchTab('tasks'); saveLocal();
@@ -2457,6 +3234,7 @@
       if (tasks.length && !confirm('Clear all activities and start fresh?')) return;
       tasks = []; nextId = 1; calculated = false; mcResult = null; resources = {}; resourceLoad = null;
       reserves = { contingency: { value: 0, unit: 'percent' }, management: { value: 0, unit: 'percent' } }; baselineDate = '';
+      collapsedIds = new Set(); levelMode = 'none'; projectBudget = 0; unleveledDuration = null;
       document.getElementById('projectName').value = 'New Engagement';
       document.getElementById('holidays').value = '';
       document.getElementById('summaryGrid').innerHTML = '';
@@ -2506,6 +3284,74 @@
       document.getElementById('aiKey').value = '';
       try { localStorage.removeItem(AI_KEY_STORE); } catch (e) {}
       updateKeyBadge();
+      validateKeyFormat();
+    }
+    function validateKeyFormat() {
+      const hint = document.getElementById('aiKeyHint');
+      if (!hint) return true;
+      const k = document.getElementById('aiKey').value.trim();
+      if (!k) { hint.textContent = ''; return true; }
+      if (k.startsWith('sk-ant-')) { hint.textContent = '✓ Looks like a valid Anthropic key format.'; hint.style.color = 'var(--success)'; return true; }
+      if (/^sk-(proj|svcacct|None)?/.test(k) || k.startsWith('sk-')) {
+        hint.textContent = '⚠ That looks like an OpenAI key (sk-…). You need an ANTHROPIC key starting with sk-ant- from console.anthropic.com.';
+        hint.style.color = 'var(--critical)'; return false;
+      }
+      hint.textContent = '⚠ Anthropic API keys start with sk-ant- . Double-check you copied the right value.';
+      hint.style.color = 'var(--warn)'; return false;
+    }
+
+    // ---- Historical estimation data (knowledge base for AI calibration) ----
+    const HIST_STORE = 'pertGantt.histData';
+    const HIST_MAX = 120000; // chars kept in storage
+    const HIST_PROMPT_MAX = 24000; // chars included per AI call
+    function loadHistData() {
+      try {
+        const v = localStorage.getItem(HIST_STORE) || '';
+        const ta = document.getElementById('histData');
+        if (ta) ta.value = v;
+        updateHistBadge();
+      } catch (e) {}
+    }
+    function saveHistData() {
+      const ta = document.getElementById('histData');
+      if (!ta) return;
+      let v = ta.value;
+      if (v.length > HIST_MAX) { v = v.slice(0, HIST_MAX); ta.value = v; }
+      try { localStorage.setItem(HIST_STORE, v); } catch (e) {}
+      updateHistBadge();
+      const s = document.getElementById('histStatus');
+      if (s) { s.textContent = '✓ Saved (' + Math.round(v.length / 1000) + 'k chars)'; setTimeout(() => s.textContent = '', 2500); }
+    }
+    function clearHistData() {
+      const ta = document.getElementById('histData');
+      if (ta) ta.value = '';
+      try { localStorage.removeItem(HIST_STORE); } catch (e) {}
+      updateHistBadge();
+    }
+    function updateHistBadge() {
+      const b = document.getElementById('histBadge');
+      if (!b) return;
+      const v = (localStorage.getItem(HIST_STORE) || '');
+      b.textContent = v ? `— loaded (${Math.round(v.length / 1000)}k chars, used in every AI call)` : '— none loaded';
+    }
+    function loadHistFile(ev) {
+      const file = ev.target.files[0]; if (!file) return;
+      if (file.size > 2 * 1024 * 1024) { alert('File too large (max 2 MB). Trim it to the relevant history.'); ev.target.value = ''; return; }
+      const reader = new FileReader();
+      reader.onload = e => {
+        const ta = document.getElementById('histData');
+        const existing = ta.value.trim();
+        ta.value = (existing ? existing + '\n\n' : '') + `--- ${file.name} ---\n` + String(e.target.result);
+        saveHistData();
+      };
+      reader.readAsText(file);
+      ev.target.value = '';
+    }
+    function histPromptBlock() {
+      const v = (localStorage.getItem(HIST_STORE) || '').trim();
+      if (!v) return '';
+      const clipped = v.length > HIST_PROMPT_MAX ? v.slice(0, HIST_PROMPT_MAX) + '\n…(truncated)' : v;
+      return `\nHISTORICAL DELIVERY DATA (the user's own past-project benchmarks — calibrate every estimate against this. When the work matches a pattern here — e.g. "implementations of type X take Y" — prefer these numbers over generic guesses, scaled for stated differences):\n"""\n${clipped}\n"""\n`;
     }
 
     function aiSchemaHint() {
@@ -2524,8 +3370,9 @@
       "owner": "person/role or empty string",
       "units": 100,           // % of the owner this task consumes while active (100 = full-time; use less for part-time work)
       "parent": "",           // optional: exact name of a phase/deliverable this task rolls up under (for WBS grouping)
-      "deliverable": "",      // optional: the tangible output/deliverable
-      "description": "",      // optional: short scope note for the WBS dictionary
+      "deliverable": "",      // REQUIRED: the tangible output (one line)
+      "description": "",      // REQUIRED: scope statement for the WBS dictionary (one line)
+      "acceptance": "",       // REQUIRED: acceptance criteria / definition of done (one line)
       "dependsOn": ["exact names of predecessor tasks that must finish first"]
     }
   ],
@@ -2541,6 +3388,7 @@ Rules:
 - Set realistic dependencies so the plan sequences correctly; use parallel work where the notes imply it. dependsOn must reference names that appear in this same tasks array.
 - Mark clear checkpoints (go-live, sign-off, approval, kickoff decision) as milestones with 0/0/0 durations.
 - Assign owners only when named or clearly implied. Default units to 100 unless the notes say a task is part-time or shared.
+- Draft the FULL WBS dictionary: every task (including phases and milestones) gets a concise deliverable, description, and acceptance — never leave them blank.
 - In "resources", list each distinct owner once. Give teams a capacityPercent > 100 (e.g. a 3-developer team = 300); individuals default to 100. Omit "resources" only if no owners are assigned.`;
     }
 
@@ -2601,12 +3449,13 @@ Rules:
       if (mode === 'merge' && tasks.length) {
         const current = { projectName: document.getElementById('projectName').value, durationUnit: document.getElementById('durationUnit').value,
           tasks: tasks.map(t => ({ name: t.name, optimistic: t.o, mostLikely: t.m, pessimistic: t.p, milestone: t.milestone, owner: t.owner, units: t.units,
+            parent: (tasks.find(x => x.id === t.parentId) || {}).name || '',
             dependsOn: t.predecessors.map(p => (tasks.find(x => x.id === p.id) || {}).name).filter(Boolean) })),
           resources: Object.keys(resources).map(n => ({ name: n, capacityPercent: getCapacity(n) })) };
         prompt = `You are a project planning assistant for engagement/project managers.
 Here is the CURRENT project plan as JSON:
 ${JSON.stringify(current, null, 2)}
-
+${histPromptBlock()}
 Apply the following change request, keeping everything else intact and preserving existing tasks/estimates unless the request changes them:
 """${notes}"""
 
@@ -2616,7 +3465,7 @@ Return the COMPLETE updated task list (not just the changes).`;
         prompt = `You are a project planning assistant for engagement/project managers.
 Read the following notes/description and turn it into a structured, estimated project plan.
 """${notes}"""
-
+${histPromptBlock()}
 ${aiSchemaHint()}`;
       }
 
@@ -2669,6 +3518,7 @@ ${aiSchemaHint()}`;
         built.push(makeTask({ id, name, o, m, p, milestone: isMs,
           owner: String(pt.owner || '').trim(), units,
           deliverable: String(pt.deliverable || '').trim(), description: String(pt.description || '').trim(),
+          acceptance: String(pt.acceptance || '').trim(),
           predecessors: [], _dependsOn: pt.dependsOn || [], _parent: String(pt.parent || '').trim() }));
       });
       // resolve dependencies + WBS parent by name
@@ -2715,6 +3565,80 @@ ${aiSchemaHint()}`;
       if (tasks.length) { if (recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderPERT(); } }
     }
 
+    // ---- AI: decompose one task into finer sub-tasks (deeper WBS) ----
+    async function aiDecompose(id) {
+      const t = tasks.find(x => x.id === id);
+      if (!t) return;
+      if (t.milestone) { alert('Milestones are zero-duration checkpoints — decompose a work task instead.'); return; }
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) {
+        switchTab('tasks');
+        document.getElementById('aiSettings').style.display = 'block';
+        alert('Add your Anthropic API key first (⚙ API Key in the AI Plan Builder).');
+        return;
+      }
+      const already = isSummaryId(id);
+      if (already && !confirm(`"${t.name}" already has sub-tasks. Add another level of decomposition under it?`)) return;
+      if (!already && (t.percentComplete || 0) > 0 &&
+          !confirm(`"${t.name}" is ${t.percentComplete}% complete. Its progress will carry over to each new sub-task (and roll up from them afterwards). Continue?`)) return;
+      const unit = document.getElementById('durationUnit').value;
+      const siblings = leafTasks().filter(x => x.id !== id).slice(0, 30)
+        .map(x => `${x.name} (~${(x.te || ((x.o + 4 * x.m + x.p) / 6) || 0).toFixed(1)} ${unit}${x.owner ? ', ' + x.owner : ''})`).join('; ');
+      const prompt = `You are helping an engagement manager decompose one task of a project plan into a finer work breakdown.
+Project: ${document.getElementById('projectName').value} (durations in ${unit}).
+TASK TO DECOMPOSE: "${t.name}" — O=${t.o}, M=${t.m}, P=${t.p} ${unit}${t.owner ? ', owner ' + t.owner : ''}${t.description ? ', scope: ' + t.description : ''}${t.deliverable ? ', deliverable: ' + t.deliverable : ''}.
+Other tasks in the plan for context: ${siblings || '(none)'}.
+${histPromptBlock()}
+Return ONLY a JSON object (no prose, no fences):
+{"subtasks":[{"name":"...","optimistic":n,"mostLikely":n,"pessimistic":n,"owner":"","units":100,"deliverable":"","description":"","acceptance":"","dependsOn":["names among these subtasks only"]}]}
+Rules:
+- 3 to 8 concrete, trackable sub-tasks that fully cover the parent's scope.
+- The sum of mostLikely values should be close to the parent's M (${t.m} ${unit}) unless the historical data clearly says otherwise.
+- optimistic <= mostLikely <= pessimistic for each.
+- Default owner to "${t.owner || ''}" unless a sub-task clearly belongs to someone else.
+- dependsOn may only reference sub-task names in this same array (sequence them realistically; parallel where sensible).
+- Fill deliverable, description and acceptance for every sub-task (one line each) — they populate the WBS dictionary.`;
+      flashSaved('⏳ Decomposing "' + t.name.slice(0, 24) + '"…');
+      try {
+        const text = await callAnthropic(prompt);
+        const res = parseAIJson(text);
+        if (!res || !Array.isArray(res.subtasks) || !res.subtasks.length) throw new Error('AI returned no subtasks.');
+        const nameToNew = {};
+        const created = [];
+        res.subtasks.forEach(st => {
+          const nm = String(st.name || '').trim();
+          if (!nm) return;
+          let o = Number(st.optimistic) || 0, m = Number(st.mostLikely) || 0, p = Number(st.pessimistic) || 0;
+          const arr = [o, m, p].sort((a, b) => a - b); o = arr[0]; m = arr[1]; p = arr[2];
+          if (p <= 0) return; // skip empty durations
+          let units = Number(st.units);
+          if (!Number.isFinite(units) || units < 0) units = t.units || 100;
+          const nt = makeTask({ id: nextId++, name: nm, o, m, p,
+            percentComplete: (isSummaryId(id) ? 0 : (t.percentComplete || 0)),
+            owner: String(st.owner || '').trim() || t.owner || '', units,
+            deliverable: String(st.deliverable || '').trim(), description: String(st.description || '').trim(),
+            acceptance: String(st.acceptance || '').trim(),
+            parentId: id, predecessors: [] });
+          nameToNew[nm.toLowerCase()] = nt.id;
+          created.push([nt, st.dependsOn || []]);
+        });
+        if (!created.length) throw new Error('AI subtasks were empty/invalid.');
+        created.forEach(([nt, deps]) => {
+          deps.forEach(dn => {
+            const pid = nameToNew[String(dn || '').trim().toLowerCase()];
+            if (pid && pid !== nt.id) nt.predecessors.push({ id: pid, type: 'FS', lag: 0 });
+          });
+          tasks.push(nt);
+        });
+        collapsedIds.delete(id); // reveal the new children
+        if (created[0][0].owner) syncResources();
+        saveLocal();
+        refreshAll();
+        flashSaved(`✓ "${t.name.slice(0, 20)}" decomposed into ${created.length} sub-tasks`);
+      } catch (e) {
+        alert('Decompose failed: ' + (e.message || e));
+      }
+    }
+
     // ========================= INIT =========================
     (function init() {
       // default start date = today
@@ -2723,6 +3647,8 @@ ${aiSchemaHint()}`;
       if (!startInput.value) startInput.value = fmtISO(new Date());
       renderTaskTable();
       loadApiKey();
+      loadHistData();
+      validateKeyFormat();
       document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
       // save project name on change
       document.getElementById('projectName').addEventListener('input', () => saveLocal());
