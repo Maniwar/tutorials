@@ -437,6 +437,7 @@
         <div class="card-header">
           <h2>Activity List — 3-Point Estimates &amp; Progress</h2>
           <div class="toolbar">
+            <button class="btn-secondary btn-sm" onclick="scanAndRepair()" title="Scan the plan for drift and gaps — unassigned or rate-less work after roster changes, tasks with no estimates, stale roster entries, orphaned/missing user stories — then fix each finding: 🔧 AI repair, 🔗 auto-relink, or a jump to the right tab.">🩺 Scan &amp; repair</button>
             <button class="btn-secondary btn-sm" onclick="copyUpdateRequest()" title="Copy an email-ready TABLE of all open work (one per owner, yellow fill-in cells for %, done-date and blockers). Send it; paste the filled reply into the AI box above (mode: Update progress) — %s, actual dates and rollups update, blockers land in RAID.">📮 Copy update request</button>
             <button class="btn-secondary btn-sm" onclick="openAddModal(true)">+ Milestone</button>
             <button class="btn-primary btn-sm" onclick="openAddModal(false)">+ Add Activity</button>
@@ -4195,9 +4196,12 @@
         const m = l.match(/^\[(happy|error|edge|perf)\]\s*(.*)$/i);
         return { id: acBase + '.' + (i + 1), type: m ? m[1].toLowerCase() : 'happy', text: m ? m[2] : l };
       });
+      const wbsIdVal = document.getElementById('stWbs').value ? Number(document.getElementById('stWbs').value) : null;
+      const wbsTask = wbsIdVal != null ? tasks.find(t => t.id === wbsIdVal) : null;
       const story = {
         id, epicId: document.getElementById('stEpic').value || null,
-        wbsId: document.getElementById('stWbs').value ? Number(document.getElementById('stWbs').value) : null,
+        wbsId: wbsIdVal,
+        wbsName: wbsTask ? wbsTask.name : '',
         persona: document.getElementById('stPersona').value.trim(),
         want, soThat: document.getElementById('stSoThat').value.trim(),
         ac, nfrs: splitLines('stNfr'), assumptions: splitLines('stAssume')
@@ -4268,6 +4272,7 @@ Return ONLY JSON (no prose, no fences):
         return {
           id: safeId(s.id, 'US', i), epicId: clean(s.epicId) || null,
           wbsId: t ? t.id : null,
+          wbsName: t ? t.name : clean(s.wbsName), // remembered so orphaned links can self-heal
           persona: clean(s.persona), want: clean(s.want), soThat: clean(s.soThat),
           ac: Array.isArray(s.ac) ? s.ac.map((a, j) => ({
             id: safeId(a.id, 'AC-' + (i + 1), j), type: ['happy', 'error', 'edge', 'perf'].includes(clean(a.type)) ? clean(a.type) : 'happy', text: clean(a.text)
@@ -6025,6 +6030,29 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`));
           [...pto].some(iso => { const d = new Date(iso + 'T00:00:00'); return d >= stripTime(t.startDate) && d <= stripTime(t.finishDate); }));
         if (hit.length) findings.push({ severity: 'high', area: 'Resourcing', finding: `${rn} has PTO during: ${hit.map(t => '"' + t.name + '"').join(', ')}`, recommendation: 'Shift the work (level), reassign, or extend the task around the PTO dates.' });
       });
+
+      // ---- plan↔roster drift (re-plans, deleted people, hand-added work) ----
+      const partNames = new Set();
+      tasks.forEach(t => taskParticipants(t).forEach(pr => partNames.add(pr.name)));
+      Object.keys(resources).forEach(rn => {
+        if (!partNames.has(rn)) findings.push({ severity: 'low', area: 'Roster', finding: `"${rn}" is on the roster but does no work in this plan`, recommendation: 'Left over from an earlier version of the plan? Remove them (Resources tab) or assign work, so costing and exports stay clean.', jump: 'resources' });
+      });
+      const anyRates = Object.values(resources).some(r => r && ((+r.rate || 0) > 0 || (+r.billRate || 0) > 0));
+      if (anyRates) [...partNames].forEach(rn => {
+        const r = resources[rn] || {};
+        if (getKind(rn) !== 'client' && !(+r.rate || 0) && !(+r.billRate || 0))
+          findings.push({ severity: 'medium', area: 'Roster', finding: `"${rn}" does billable work but has NO cost/bill rate`, recommendation: 'Probably auto-added from a task owner the roster didn’t know — their effort prices at $0, understating cost, margin and the SOW. Set rates or apply a rate card (Resources tab).', jump: 'resources' });
+      });
+      leaves.forEach(t => {
+        if (!t.o && !t.m && !t.p) findings.push({ severity: 'high', area: 'Estimates', finding: `"${t.name}" has no O/M/P estimate at all`, recommendation: 'Give it a 3-point estimate — or let the AI propose one calibrated to the plan and your history.' });
+      });
+      if (reqs && Array.isArray(reqs.stories) && reqs.stories.length) {
+        const orphans = reqs.stories.filter(s => s.wbsId == null || !tasks.some(t => t.id === s.wbsId));
+        if (orphans.length) findings.push({ severity: 'medium', area: 'Requirements', finding: `${orphans.length} user stor${orphans.length === 1 ? 'y is' : 'ies are'} not linked to any WBS activity (its task was deleted or renamed): ${orphans.slice(0, 6).map(s => s.id).join(', ')}${orphans.length > 6 ? '…' : ''}`, recommendation: 'Auto-relink matches by remembered task name; relink the rest in the story editor.', relink: true });
+        const covered = new Set(reqs.stories.map(s => s.wbsId));
+        const untold = leaves.filter(t => !covered.has(t.id));
+        if (untold.length) findings.push({ severity: 'low', area: 'Requirements', finding: `${untold.length} activit${untold.length === 1 ? 'y has' : 'ies have'} no user story`, recommendation: 'Requirements tab ▸ 🤖 Draft from WBS adds the missing stories while keeping existing ones.', jump: 'req' });
+      }
       return findings;
     }
     async function runHealthCheck() {
@@ -6064,14 +6092,46 @@ Focus on: scope that is obviously missing for this type of work; estimates that 
           <td style="font-size:0.8rem;white-space:nowrap">${escapeHtml(fd.area)}</td>
           <td style="font-size:0.85rem">${escapeHtml(fd.finding)}</td>
           <td style="font-size:0.85rem;color:var(--muted)">${escapeHtml(fd.recommendation)}</td>
-          <td class="no-print">${fd.recommendation && fd.severity !== 'info' ? `<button class="btn-sm btn-secondary" onclick="aiFixFindings(${fi})" title="AI applies just this recommendation">🔧 Fix</button>` : ''}</td></tr>`;
+          <td class="no-print">${fd.relink ? `<button class="btn-sm btn-secondary" onclick="repairOrphanStories()" title="Re-attach stories to tasks by their remembered task name">🔗 Relink</button>`
+            : fd.jump ? `<button class="btn-sm btn-secondary" onclick="switchTab('${fd.jump}')" title="Open the tab where this is fixed">→ ${fd.jump === 'resources' ? 'Resources' : 'Requirements'}</button>`
+            : fd.recommendation && fd.severity !== 'info' ? `<button class="btn-sm btn-secondary" onclick="aiFixFindings(${fi})" title="AI applies just this recommendation">🔧 Fix</button>` : ''}</td></tr>`;
       }).join('');
-      const fixable = healthFindings.findings.filter(fd => fd.recommendation && fd.severity !== 'info');
+      const fixable = healthFindings.findings.filter(fd => fd.recommendation && fd.severity !== 'info' && !fd.jump && !fd.relink);
       cont.innerHTML = trend + `<h3 style="font-size:0.95rem;margin:1rem 0 0.5rem">Health check — ${escapeHtml(healthFindings.date)} (${healthFindings.findings.length} finding${healthFindings.findings.length === 1 ? '' : 's'})</h3>
         ${healthFindings.findings.length ? `<div class="table-wrap"><table><thead><tr><th></th><th>Area</th><th>Finding</th><th>Recommendation</th><th class="no-print"></th></tr></thead><tbody>${rows}</tbody></table></div>
         ${fixable.length ? `<div class="toolbar no-print" style="margin-top:0.6rem"><button class="btn-primary btn-sm" onclick="aiFixFindings()" title="The AI edits the plan to address every fixable finding — you review the result">🔧 Fix all with AI (${fixable.length})</button><span class="help-text">applies the recommendations as a plan update — every change stays editable</span></div>` : ''}`
         : '<div class="conflict-card ok"><strong style="color:var(--success)">✓ No issues found.</strong> Estimates, structure and resourcing all look sound.</div>'}`;
     }
+    // 🩺 One-stop scan: recompute, run every deterministic gap check (+ AI review
+    // with a key) and land on the findings with their fix buttons.
+    function scanAndRepair() {
+      if (!tasks.length) { alert('Add or generate a plan first.'); return; }
+      if (!ensureCalc()) return;
+      switchTab('analytics');
+      runHealthCheck();
+      const el = document.getElementById('healthContainer');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    // Re-attach orphaned stories (task deleted/renamed) using the task name each
+    // story remembers; refresh the snapshot on healthy links so future renames heal.
+    function repairOrphanStories() {
+      if (!reqs || !Array.isArray(reqs.stories)) return;
+      const byName = {}; tasks.forEach(t => byName[t.name.trim().toLowerCase()] = t);
+      let fixed = 0, still = 0;
+      reqs.stories.forEach(s => {
+        const t = s.wbsId != null ? tasks.find(x => x.id === s.wbsId) : null;
+        if (t) { s.wbsName = t.name; return; }
+        const m = byName[String(s.wbsName || '').trim().toLowerCase()];
+        if (m) { s.wbsId = m.id; s.wbsName = m.name; fixed++; } else { s.wbsId = null; still++; }
+      });
+      saveLocal();
+      if (document.getElementById('view-req').classList.contains('active')) renderReqs();
+      healthFindings = { date: fmtISO(new Date()), findings: lintPlan() };
+      renderHealth();
+      flashSaved(`🔗 ${fixed} stor${fixed === 1 ? 'y' : 'ies'} relinked${still ? ' — ' + still + ' still unlinked: open each in the story editor and pick its activity' : ''}`);
+      return { fixed, still };
+    }
+
     // From the Monte-Carlo risk read-out: pre-fill an AI change request that
     // decomposes the top uncertainty drivers, and let the user review/run it.
     function mcFixWithAI() {
@@ -6095,7 +6155,7 @@ Focus on: scope that is obviously missing for this type of work; estimates that 
       if (!healthFindings) return;
       if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) { alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
       const list = (singleIndex != null ? [healthFindings.findings[singleIndex]] : healthFindings.findings)
-        .filter(fd => fd && fd.recommendation && fd.severity !== 'info');
+        .filter(fd => fd && fd.recommendation && fd.severity !== 'info' && !fd.jump && !fd.relink);
       if (!list.length) return;
       const instructions = list.map((fd, i) => `${i + 1}. [${fd.area}] ${fd.finding} — DO THIS: ${fd.recommendation}`).join('\n');
       const current = { projectName: document.getElementById('projectName').value, durationUnit: document.getElementById('durationUnit').value,
@@ -6108,6 +6168,7 @@ Focus on: scope that is obviously missing for this type of work; estimates that 
 CURRENT PLAN:\n${JSON.stringify(current, null, 2)}
 ${histPromptBlock()}
 APPLY THESE FIXES (change only what each fix requires; keep everything else identical — same names, estimates, owners, structure):\n${instructions}
+When a fix needs an owner assigned or reassigned, prefer people already listed in "resources" (matching skills implied by their other tasks) before inventing anyone new. When a fix needs missing O/M/P estimates, size them relative to comparable tasks in this plan and the historical data.
 ${aiSchemaHint()}
 Return the COMPLETE updated task list.`;
       const onDelta = streamShow('Applying health-check fixes');
