@@ -2808,7 +2808,7 @@
         });
         const maxCount = Math.max(...counts);
         histBlock = `
-          <h3 style="margin:1.25rem 0 0.5rem;font-size:1rem">Completion Distribution (${mcResult.iters.toLocaleString()} simulations, Beta-PERT)</h3>
+          <h3 style="margin:1.25rem 0 0.5rem;font-size:1rem" title="Each bar = how many of the ${mcResult.iters.toLocaleString()} simulated project runs finished in that duration bucket. A wide spread means your estimates carry a lot of uncertainty." style="cursor:help">Completion Distribution <span class="help-text">(${mcResult.iters.toLocaleString()} simulations — every run re-rolls each task within its O–P range)</span></h3>
           <div style="display:flex;align-items:flex-end;gap:2px;height:120px;padding:0.5rem;background:#f8fafc;border-radius:8px;border:1px solid var(--border)">
             ${counts.map((c,i) => {
               const dLow = (min + i/bins*span);
@@ -2820,10 +2820,10 @@
             <span>${min.toFixed(1)} ${u}</span><span>P50 ${mcResult.p50.toFixed(1)}</span><span>P80 ${mcResult.p80.toFixed(1)}</span><span>P90 ${mcResult.p90.toFixed(1)}</span><span>${max.toFixed(1)} ${u}</span>
           </div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:0.75rem;margin-top:1rem">
-            <div class="stat-card"><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p50))}</div><div class="label">P50 (${mcResult.p50.toFixed(1)} ${u})</div></div>
-            <div class="stat-card warn"><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p80))}</div><div class="label">P80 (${mcResult.p80.toFixed(1)} ${u})</div></div>
-            <div class="stat-card warn"><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p90))}</div><div class="label">P90 (${mcResult.p90.toFixed(1)} ${u})</div></div>
-            <div class="stat-card critical"><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p95))}</div><div class="label">P95 (${mcResult.p95.toFixed(1)} ${u})</div></div>
+            <div class="stat-card" style="cursor:help" title="Half the simulated runs finished by this date, half ran longer. A coin flip — fine internally, risky as a promise."><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p50))}</div><div class="label">P50 (${mcResult.p50.toFixed(1)} ${u})</div></div>
+            <div class="stat-card warn" style="cursor:help" title="80% of simulated runs finished by this date — the standard commit level for client dates. Only 1-in-5 chance of overrunning."><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p80))}</div><div class="label">P80 (${mcResult.p80.toFixed(1)} ${u})</div></div>
+            <div class="stat-card warn" style="cursor:help" title="90% confidence — use for hard external deadlines (regulatory, events) where missing is very expensive."><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p90))}</div><div class="label">P90 (${mcResult.p90.toFixed(1)} ${u})</div></div>
+            <div class="stat-card critical" style="cursor:help" title="95% confidence — the near-worst-case planning envelope."><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p95))}</div><div class="label">P95 (${mcResult.p95.toFixed(1)} ${u})</div></div>
           </div>`;
       }
 
@@ -2955,6 +2955,25 @@
             <b>3. Set your reserves.</b> In <b>Reserves &amp; Buffers</b> below (or the ⏱ Reserves button on the Gantt): click <b>from P80</b> to size contingency so your committed date carries 80% confidence; add a management reserve on top for unknowns. They appear as hatched bars at the end of the Gantt — quote the <em>committed</em> date to the client.<br/>
             <b>4. Fix what drives risk.</b> The health check and the criticality table tell you which estimates to tighten and what the plan is missing — use the 🔧 buttons to have the AI apply fixes.<br/>
             <b>5. Track the money.</b> Cost &amp; Budget shows planned cost, earned value and (once you enter actual costs) CPI and the at-completion forecast against your baseline.
+          </div>
+        </details>
+        <details style="margin-bottom:1rem">
+          <summary style="cursor:pointer;font-weight:600;font-size:0.9rem;color:var(--primary)">📚 Glossary — every term on this tab in one line each</summary>
+          <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:0.8rem 1rem;margin-top:0.5rem;font-size:0.85rem;line-height:1.7">
+            <b>TE</b> — expected duration: (Optimistic + 4×Likely + Pessimistic) ÷ 6.&nbsp;
+            <b>Slack / float</b> — days a task can slip before the finish date moves; zero = <b>critical</b>.&nbsp;
+            <b>σ (sigma)</b> — spread of the critical path; bigger = less certain finish.&nbsp;
+            <b>P50/P80/P90/P95</b> — the duration/cost that 50/80/90/95% of simulated runs stayed within; P50 ≈ coin flip, <b>commit P80+</b>.&nbsp;
+            <b>Criticality index</b> — % of simulations where a task landed on the critical path (high = it drives your risk even with slack today).&nbsp;
+            <b>Contingency reserve</b> — buffer for known risks, inside the committed date.&nbsp;
+            <b>Management reserve</b> — leadership-held buffer for unknowns, beyond it.&nbsp;
+            <b>PV</b> — $ of work the baseline says should be done by today.&nbsp;
+            <b>EV</b> — $ of work actually done (earned value).&nbsp;
+            <b>AC</b> — $ actually spent.&nbsp;
+            <b>SV / CV</b> — EV−PV / EV−AC (negative = behind / over).&nbsp;
+            <b>SPI / CPI</b> — EV÷PV / EV÷AC (below 1.0 = behind schedule / over cost).&nbsp;
+            <b>BAC / EAC</b> — budget at completion / forecast cost at completion (BAC÷CPI).&nbsp;
+            <b>Downside margin</b> — margin if cost lands at P80 instead of the estimate.
           </div>
         </details>
         ${targetBlock}
@@ -3635,13 +3654,40 @@
       svg += `<text x="${M}" y="26" font-family="${FF}" font-size="16" font-weight="700" fill="#0f172a">${escapeXml(projName())} — PERT network</text>`;
       svg += `<text x="${W - M}" y="26" font-family="${FF}" font-size="10.5" fill="#64748b" text-anchor="end">ES | Dur | EF  •  LS | Slack | LF  •  red = critical path  •  generated ${escapeXml(new Date().toLocaleDateString())}</text>`;
 
-      // edges under nodes
+      // edges — classic network-diagram routing: orthogonal elbows that exit the
+      // RIGHT edge and enter the LEFT edge, staggered ports so arrows never pile
+      // onto one point, and per-gap vertical lanes so parallel edges don't overlap.
+      const edges = [];
       nodes.forEach(t => predsOf[t.id].forEach(p => {
-        const from = pos[p.id], to = pos[t.id]; if (!from || !to) return;
-        const x1 = from.x + NW, y1 = from.y + NH / 2, x2 = to.x, y2 = to.y + NH / 2, mx = (x1 + x2) / 2;
-        const crit = t.isCritical && idToTask[p.id] && idToTask[p.id].isCritical;
-        svg += `<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2 - 2},${y2}" fill="none" stroke="${crit ? '#dc2626' : '#94a3b8'}" stroke-width="${crit ? 2.6 : 1.6}" opacity="${crit ? 0.95 : 0.6}" marker-end="url(#${crit ? 'p-arrC' : 'p-arr'})"><title>${escapeXml((idToTask[p.id] ? idToTask[p.id].name : '?') + '  →  ' + t.name + '  (' + p.type + (p.lag ? (p.lag > 0 ? ' +' : ' ') + p.lag : '') + ')' + (crit ? '  — critical path' : ''))}</title></path>`;
+        if (pos[p.id] && pos[t.id]) edges.push({ from: p.id, to: t.id, type: p.type, lag: p.lag,
+          crit: t.isCritical && idToTask[p.id] && idToTask[p.id].isCritical });
       }));
+      const outCnt = {}, inCnt = {};
+      edges.forEach(e => { outCnt[e.from] = (outCnt[e.from] || 0) + 1; inCnt[e.to] = (inCnt[e.to] || 0) + 1; });
+      // stable port order that follows the vertical layout → fewer crossings
+      edges.sort((a, b) => (pos[a.to].y - pos[b.to].y) || (pos[a.from].y - pos[b.from].y));
+      const outIdx = {}, inIdx = {};
+      const portY = (nodeY, idx, cnt) => nodeY + NH * (cnt <= 1 ? 0.5 : (0.26 + 0.48 * idx / (cnt - 1)));
+      const laneOf = {}, laneCnt = {};
+      edges.forEach(e => { const gap = level[e.from]; laneOf[e.from + '>' + e.to] = (laneCnt[gap] = (laneCnt[gap] || 0) + 1) - 1; });
+      edges.forEach(e => {
+        const oi = (outIdx[e.from] = (outIdx[e.from] || 0)); outIdx[e.from]++;
+        const ii = (inIdx[e.to] = (inIdx[e.to] || 0)); inIdx[e.to]++;
+        const sx = pos[e.from].x + NW, sy = portY(pos[e.from].y, oi, outCnt[e.from]);
+        const tx = pos[e.to].x, ty = portY(pos[e.to].y, ii, inCnt[e.to]);
+        const gap = level[e.from];
+        const lanes = laneCnt[gap] || 1, lane = laneOf[e.from + '>' + e.to] || 0;
+        const gapStart = M + gap * colW + NW;
+        const chX = Math.min(tx - 10, gapStart + GX * (lanes <= 1 ? 0.5 : (0.22 + 0.56 * lane / (lanes - 1))));
+        const stroke = e.crit ? '#dc2626' : '#94a3b8';
+        const w = e.crit ? 2.6 : 1.6;
+        const r = 7;
+        const dir = ty > sy + 1 ? 1 : ty < sy - 1 ? -1 : 0;
+        const d = dir === 0
+          ? `M${sx},${sy} L${tx - 2},${ty}`
+          : `M${sx},${sy} L${chX - r},${sy} Q${chX},${sy} ${chX},${sy + dir * r} L${chX},${ty - dir * r} Q${chX},${ty} ${chX + r},${ty} L${tx - 2},${ty}`;
+        svg += `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${w}" opacity="${e.crit ? 0.95 : 0.65}" marker-end="url(#${e.crit ? 'p-arrC' : 'p-arr'})"><title>${escapeXml((idToTask[e.from] ? idToTask[e.from].name : '?') + '  →  ' + (idToTask[e.to] ? idToTask[e.to].name : '?') + '  (' + e.type + (e.lag ? (e.lag > 0 ? ' +' : ' ') + e.lag : '') + ')' + (e.crit ? '  — critical path' : ''))}</title></path>`;
+      });
 
       // nodes
       nodes.forEach(t => {
@@ -4382,7 +4428,8 @@ Rules:
         },
         body: JSON.stringify({
           model,
-          max_tokens: opts.maxTokens || 32000,   // big plans need room — truncation breaks JSON
+          // per-model output ceilings — Sonnet 5 & Haiku 4.5 allow 64k, Opus 4.8 32k
+          max_tokens: opts.maxTokens || (model.indexOf('opus') >= 0 ? 32000 : 64000),
           stream: true,                           // stream so the user sees progress immediately
           messages: [{ role: 'user', content: userContent }]
         })
@@ -4949,6 +4996,7 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         <h2 style="font-size:16px;margin:16px 0 6px">3. Out of Scope</h2>
         ${d.exclusions.length ? '<ul style="font-size:13px">' + d.exclusions.map(x => '<li>' + h(x) + '</li>').join('') + '</ul>' : `<p style="font-size:13px">${n.outOfScope || '<em>[List explicit exclusions.]</em>'}</p>`}
         <h2 style="font-size:16px;margin:16px 0 6px">4. Timeline &amp; Milestones</h2>
+        ${d.ganttDataUrl ? `<img src="${d.ganttDataUrl}" alt="Project timeline (Gantt)" style="max-width:100%;border:1px solid #d7dde5;border-radius:6px;margin:4px 0 8px"/>` : ''}
         ${d.ganttImg ? `<img src="${d.ganttImg}" alt="Project schedule Gantt chart" style="max-width:100%;border:1px solid #e2e8f0;border-radius:6px;margin:4px 0 10px"/>` : ''}
         <table style="border-collapse:collapse"><tr><th style="${th}">Milestone</th><th style="${th}">Target date</th></tr>
         ${d.milestones.map(m => `<tr><td style="${td}">◆ ${h(m.name)}</td><td style="${td}">${h(m.date)}</td></tr>`).join('') || `<tr><td style="${td}" colspan="2"><em>No milestones defined</em></td></tr>`}</table>
@@ -4988,6 +5036,11 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       if (!tasks.length) { alert('Build the plan first.'); return; }
       if (!ensureCalc()) return;
       const d = sowSkeletonData();
+      // embed the Gantt as an image so the SOW carries the visual timeline
+      try {
+        const blob = await svgMarkupToPngBlob(buildGanttSvg().markup, 1.4);
+        d.ganttDataUrl = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob); });
+      } catch (e) { d.ganttDataUrl = null; }
       // embed the actual Gantt (with milestones, phases, reserves) into the SOW
       try { d.ganttImg = await svgMarkupToPngDataUrl(buildGanttSvg().markup, 1.5); } catch (e) { d.ganttImg = null; }
       const hasKey = !!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE));
