@@ -724,6 +724,7 @@
         </div>
         <div class="card-body">
           <p class="help-text" style="margin-bottom:0.75rem">Assembled from the plan itself: scope &amp; deliverables from the WBS dictionary, milestones, team &amp; rates, pricing from the Monte-Carlo basis above, assumptions/exclusions from the RAID log. With an API key the narrative sections are drafted by AI; without one you get the structured skeleton to edit.</p>
+          <div id="coHistory"></div>
           <div id="sowContainer" style="border:1px solid var(--border);border-radius:10px;padding:1rem;max-height:560px;overflow:auto;background:white">
             <div class="empty-state"><h3>No SOW draft yet</h3><p>Click <strong>Generate SOW draft</strong> — the plan, dictionary, milestones, pricing and RAID entries become a client-ready starting document.</p></div>
           </div>
@@ -917,6 +918,7 @@
     let clientSafeReports = false;// hide financials/internal notes in copied reports
     let sowBaseline = null;       // snapshot taken when the SOW is generated (for change orders)
     let coDraft = '';             // last change-order draft HTML
+    let coLog = [];               // approved change orders: {no, date, scope, finishDelta, priceDelta, newFinish, newPrice}
     let reqs = null;              // requirements layer: { personas, epics, stories } traced to WBS task ids
     let editingStoryId = null;    // story being edited in the story modal (null = adding)
 
@@ -1004,7 +1006,7 @@
         reserves = { contingency: { value: 0, unit: 'percent' }, management: { value: 0, unit: 'percent' } };
         pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 };
         baselineDate = ''; collapsedIds = new Set(); levelMode = 'none'; calculated = false; mcResult = null;
-        reqs = null; sowBaseline = null; coDraft = '';
+        reqs = null; sowBaseline = null; coDraft = ''; coLog = [];
         document.getElementById('projectName').value = 'New Engagement';
         document.getElementById('holidays').value = '';
       } else {
@@ -1119,7 +1121,7 @@
         nextId,
         resources, reserves, baselineDate, levelMode, projectBudget,
         raid, nextRaidId, statusHistory, sowDraft, statusNarrative, pricing,
-        clientSafeReports, sowBaseline, reqs,
+        clientSafeReports, sowBaseline, reqs, coLog,
         collapsedIds: [...collapsedIds],
         tasks: tasks.map(t => ({
           id: t.id, name: t.name, o: t.o, m: t.m, p: t.p, milestone: t.milestone,
@@ -1179,6 +1181,7 @@
         epics: Array.isArray(data.reqs.epics) ? data.reqs.epics : [],
         stories: data.reqs.stories
       } : null;
+      coLog = Array.isArray(data.coLog) ? data.coLog : [];
       collapsedIds = new Set(Array.isArray(data.collapsedIds) ? data.collapsedIds : []);
       nextId = data.nextId || (Math.max(0, ...tasks.map(t => t.id)) + 1);
       calculated = false;
@@ -1251,7 +1254,7 @@
       if (name === 'resources' && calculated) renderResources();
       if (name === 'baseline' && calculated) renderBaseline();
       if (name === 'analytics' && calculated) { renderAnalytics(); renderHealth(); }
-      if (name === 'raid') { renderRaid(); if (sowDraft) document.getElementById('sowContainer').innerHTML = sowDraft; }
+      if (name === 'raid') { renderRaid(); renderCoHistory(); if (sowDraft && !draftChangeOrder._pending) document.getElementById('sowContainer').innerHTML = sowDraft; }
     }
 
     // ========================= MODAL =========================
@@ -3809,32 +3812,66 @@
       edges.sort((a, b) => (pos[a.to].y - pos[b.to].y) || (pos[a.from].y - pos[b.from].y));
       const outIdx = {}, inIdx = {};
       const portY = (nodeY, idx, cnt) => nodeY + NH * (cnt <= 1 ? 0.5 : (0.26 + 0.48 * idx / (cnt - 1)));
-      const laneOf = {}, laneCnt = {};
-      edges.forEach(e => { const gap = level[e.from]; laneOf[e.from + '>' + e.to] = (laneCnt[gap] = (laneCnt[gap] || 0) + 1) - 1; });
+      // Vertical-lane bookkeeping per COLUMN GAP: every edge takes a lane in its
+      // source gap; edges that detour around intermediate columns also take a
+      // lane in the gap just before their target, so parallel runs never overlap.
+      const laneKeys = {}, gapUse = {};
+      edges.forEach(e => {
+        const k = e.from + '>' + e.to;
+        const sGap = level[e.from], tGap = level[e.to] - 1;
+        laneKeys[k] = { s: (gapUse[sGap] = (gapUse[sGap] || 0) + 1) - 1 };
+        if (tGap !== sGap) laneKeys[k].t = (gapUse[tGap] = (gapUse[tGap] || 0) + 1) - 1;
+      });
+      const chXof = (gapIdx, lane) => {
+        const lanes = gapUse[gapIdx] || 1;
+        return M + gapIdx * colW + NW + GX * (lanes <= 1 ? 0.5 : (0.18 + 0.64 * lane / (lanes - 1)));
+      };
+      const contentTop = TITLE_H + M, contentBot = H - LEGEND_H - M;
+      let hwyCount = 0;
       edges.forEach(e => {
         const oi = (outIdx[e.from] = (outIdx[e.from] || 0)); outIdx[e.from]++;
         const ii = (inIdx[e.to] = (inIdx[e.to] || 0)); inIdx[e.to]++;
         const sx = pos[e.from].x + NW, sy = portY(pos[e.from].y, oi, outCnt[e.from]);
         const tx = pos[e.to].x, ty = portY(pos[e.to].y, ii, inCnt[e.to]);
-        const gap = level[e.from];
-        const lanes = laneCnt[gap] || 1, lane = laneOf[e.from + '>' + e.to] || 0;
-        const gapStart = M + gap * colW + NW;
-        const chX = Math.min(tx - 10, gapStart + GX * (lanes <= 1 ? 0.5 : (0.22 + 0.56 * lane / (lanes - 1))));
+        const k = e.from + '>' + e.to;
+        const x1 = Math.min(tx - 12, chXof(level[e.from], laneKeys[k].s));
         const stroke = e.crit ? '#dc2626' : '#94a3b8';
         const w = e.crit ? 2.6 : 1.6;
         const dir = ty > sy + 1 ? 1 : ty < sy - 1 ? -1 : 0;
-        // classic network-diagram connector: straight segments with sharp 90° elbows
-        const d = dir === 0
-          ? `M${sx},${sy} L${tx - 2},${ty}`
-          : `M${sx},${sy} L${chX},${sy} L${chX},${ty} L${tx - 2},${ty}`;
+        const span = level[e.to] - level[e.from];
+        // would the horizontal approach at the target's height slice through a
+        // node in one of the columns being skipped?
+        let blocked = false;
+        if (span > 1) {
+          for (let c = level[e.from] + 1; c < level[e.to] && !blocked; c++)
+            blocked = levels[c].some(n => { const P = pos[n.id]; return ty > P.y - 8 && ty < P.y + NH + 8; });
+        }
+        let d, lx, lyy; // path + label anchor
+        if (!blocked) {
+          // classic connector: straight segments with sharp 90° elbows
+          d = dir === 0 ? `M${sx},${sy} L${tx - 2},${ty}` : `M${sx},${sy} L${x1},${sy} L${x1},${ty} L${tx - 2},${ty}`;
+          lx = dir === 0 ? (sx + tx) / 2 : Math.max(x1 + 14, (x1 + tx) / 2); lyy = ty - 6;
+        } else {
+          // detour: drop into a clear corridor above/below all nodes, travel to the
+          // gap before the target, then come back in — never through a node box
+          const x2 = chXof(level[e.to] - 1, laneKeys[k].t);
+          const useTop = (sy + ty) / 2 < (contentTop + contentBot) / 2;
+          const hy = useTop ? contentTop - 14 - (hwyCount % 3) * 8 : contentBot + 14 + (hwyCount % 3) * 8;
+          hwyCount++;
+          d = `M${sx},${sy} L${x1},${sy} L${x1},${hy} L${x2},${hy} L${x2},${ty} L${tx - 2},${ty}`;
+          lx = (x1 + x2) / 2; lyy = hy - 5;
+        }
         svg += `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${w}" opacity="${e.crit ? 0.95 : 0.65}" marker-end="url(#${e.crit ? 'p-arrC' : 'p-arr'})"><title>${escapeXml((idToTask[e.from] ? idToTask[e.from].name : '?') + '  →  ' + (idToTask[e.to] ? idToTask[e.to].name : '?') + '  (' + e.type + (e.lag ? (e.lag > 0 ? ' +' : ' ') + e.lag : '') + ')' + (e.crit ? '  — critical path' : ''))}</title></path>`;
-        // annotate non-default dependencies (anything other than plain finish→start)
-        if (e.type !== 'FS' || e.lag) {
-          const lbl = e.type + (e.lag ? (e.lag > 0 ? '+' + e.lag : e.lag) : '');
-          const lx = dir === 0 ? (sx + tx) / 2 : chX, lyy = dir === 0 ? sy - 5 : (sy + ty) / 2;
+        // annotate EVERY arrow with its dependency type; non-default links get a chip
+        const lbl = e.type + (e.lag ? (e.lag > 0 ? '+' + e.lag : e.lag) : '');
+        const plainFS = e.type === 'FS' && !e.lag;
+        const tip = 'Dependency: ' + (idToTask[e.from] ? idToTask[e.from].name : '?') + ' → ' + (idToTask[e.to] ? idToTask[e.to].name : '?') + ' (' + lbl + (e.lag ? ', ' + Math.abs(e.lag) + ' ' + unitLabel() + (e.lag > 0 ? ' lag/wait' : ' lead/overlap') : '') + ') — FS finish→start, SS start→start, FF finish→finish, SF start→finish';
+        if (plainFS) {
+          svg += `<text x="${lx}" y="${lyy}" font-family="${FF}" font-size="7.5" fill="${e.crit ? '#dc2626' : '#94a3b8'}" text-anchor="middle">${lbl}<title>${escapeXml(tip)}</title></text>`;
+        } else {
           svg += `<g><rect x="${lx - lbl.length * 3.1 - 2}" y="${lyy - 8}" width="${lbl.length * 6.2 + 4}" height="12" rx="3" fill="#f8fafc" stroke="${stroke}" stroke-width="0.6" opacity="0.92"/>
             <text x="${lx}" y="${lyy + 1.5}" font-family="${FF}" font-size="8" font-weight="600" fill="${e.crit ? '#dc2626' : '#64748b'}" text-anchor="middle">${lbl}</text>
-            <title>${escapeXml('Dependency type ' + e.type + (e.lag ? ' with ' + Math.abs(e.lag) + ' ' + unitLabel() + (e.lag > 0 ? ' lag (wait)' : ' lead (overlap)') : '') + ' — FS finish→start, SS start→start, FF finish→finish, SF start→finish')}</title></g>`;
+            <title>${escapeXml(tip)}</title></g>`;
         }
       });
 
@@ -4699,7 +4736,7 @@ Return ONLY JSON (no prose, no fences):
         { id: 2, type: 'Assumption', title: 'Client provides a data steward 2 days/week during mapping', probability: 3, impact: 3, owner: 'A. Rivera', mitigation: 'Named in SOW client obligations', description: '', status: 'Open', taskId: 5, createdAt: fmtISO(new Date()) },
         { id: 3, type: 'Exclusion', title: 'Historical data older than 24 months is out of scope for migration', probability: 3, impact: 3, owner: '', mitigation: '', description: '', status: 'Open', taskId: null, createdAt: fmtISO(new Date()) }
       ];
-      nextRaidId = 4; statusHistory = []; sowDraft = ''; statusNarrative = null; healthFindings = null; reqs = null;
+      nextRaidId = 4; statusHistory = []; sowDraft = ''; statusNarrative = null; healthFindings = null; reqs = null; coLog = []; sowBaseline = null; coDraft = '';
       pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 };
       reserves = { contingency: { value: 10, unit: 'percent' }, management: { value: 5, unit: 'percent' } };
       baselineDate = ''; collapsedIds = new Set(); levelMode = 'none'; projectBudget = 0; calculated = false;
@@ -4709,7 +4746,7 @@ Return ONLY JSON (no prose, no fences):
     }
     function resetProject() {
       if (tasks.length && !confirm('Clear all activities and start fresh?')) return;
-      tasks = []; nextId = 1; calculated = false; mcResult = null; resources = {}; resourceLoad = null; reqs = null;
+      tasks = []; nextId = 1; calculated = false; mcResult = null; resources = {}; resourceLoad = null; reqs = null; coLog = []; sowBaseline = null; coDraft = '';
       reserves = { contingency: { value: 0, unit: 'percent' }, management: { value: 0, unit: 'percent' } }; baselineDate = '';
       collapsedIds = new Set(); levelMode = 'none'; projectBudget = 0; unleveledDuration = null;
       document.getElementById('projectName').value = 'New Engagement';
@@ -5599,14 +5636,7 @@ Professional, client-ready, no hype, no invented facts.`;
         } catch (e) { alert('AI narrative failed (' + (e.message || e) + ') — generating the structured skeleton instead.'); }
       }
       sowDraft = sowAssembleHtml(d, narrative);
-      // snapshot for change-order diffs
-      const revNow = laborRevenue() + leafTasks().reduce((sx, t) => sx + (+t.fixedCost || 0), 0);
-      sowBaseline = {
-        date: fmtISO(new Date()),
-        finish: fmtISO(durationToDate(Math.max(0, ...leafTasks().map(t => t.ef), 0))),
-        price: pricing.contractPrice || (revNow > 0 ? Math.round(revNow * riskUplift(pricing.basis)) : 0),
-        tasks: leafTasks().map(t => ({ name: t.name, te: +(t.te || 0).toFixed(2), milestone: !!t.milestone }))
-      };
+      sowBaseline = snapshotSowBaseline(); // baseline for change-order diffs
       saveLocal();
       document.getElementById('sowContainer').innerHTML = sowDraft;
       flashSaved('✓ SOW draft ready — review, then Copy or Download (baseline captured for change orders)');
@@ -5625,6 +5655,19 @@ Professional, client-ready, no hype, no invented facts.`;
     function downloadSOW() {
       if (!sowDraft) { alert('Generate the SOW draft first.'); return; }
       download(safeName() + '-sow.html', sowDraft, 'text/html');
+    }
+
+    // Snapshot the current plan as the contract baseline that change orders diff
+    // against. Taken when the SOW is generated AND every time a CO is approved,
+    // so each successive CO covers only the changes since the last approval.
+    function snapshotSowBaseline() {
+      const revNow = laborRevenue() + leafTasks().reduce((sx, t) => sx + (+t.fixedCost || 0), 0);
+      return {
+        date: fmtISO(new Date()),
+        finish: fmtISO(durationToDate(Math.max(0, ...leafTasks().map(t => t.ef), 0))),
+        price: pricing.contractPrice || (revNow > 0 ? Math.round(revNow * riskUplift(pricing.basis)) : 0),
+        tasks: leafTasks().map(t => ({ name: t.name, te: +(t.te || 0).toFixed(2), milestone: !!t.milestone }))
+      };
     }
 
     // ---- Change order: diff current plan vs the SOW baseline ----
@@ -5663,9 +5706,11 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`));
       const td = 'padding:5px 9px;border:1px solid #d7dde5;font-size:12.5px;';
       const th = td + 'background:#f1f5f9;font-weight:700;text-align:left;';
       const u = unitLabel();
+      const coNo = 'CO-' + String(coLog.length + 1).padStart(3, '0');
+      const amendedNote = coLog.length ? ' as previously amended by ' + coLog.map(c => c.no).join(', ') : '';
       coDraft = `<div style="font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;max-width:860px">
-        <h1 style="margin:0 0 2px;font-size:20px">Change Order — ${escapeHtml(projName())}</h1>
-        <p style="color:#64748b;font-size:12px;margin:0 0 12px">DRAFT ${new Date().toLocaleDateString()} • references SOW baseline of ${escapeHtml(sowBaseline.date)}</p>
+        <h1 style="margin:0 0 2px;font-size:20px">Change Order ${coNo} — ${escapeHtml(projName())}</h1>
+        <p style="color:#64748b;font-size:12px;margin:0 0 12px">DRAFT ${new Date().toLocaleDateString()} • diffs against the contract baseline of ${escapeHtml(sowBaseline.date)}${escapeHtml(amendedNote)}</p>
         ${rationale ? `<p style="font-size:13px">${rationale}</p>` : '<p style="font-size:13px"><em>[Describe why this change is needed.]</em></p>'}
         <h2 style="font-size:15px;margin:12px 0 6px">Scope changes</h2>
         <table style="border-collapse:collapse"><tr><th style="${th}">Change</th><th style="${th}">Item</th><th style="${th}">Effort</th></tr>
@@ -5680,13 +5725,54 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`));
           ${sowBaseline.price ? `<tr><th style="${th}">Price</th><td style="${td}">${fmtMoney(sowBaseline.price)} → ${fmtMoney(curPrice)} (${priceDelta >= 0 ? '+' : ''}${fmtMoney(Math.abs(priceDelta)).replace('$', priceDelta < 0 ? '−$' : '$')})</td></tr>` : ''}
         </table>
         <h2 style="font-size:15px;margin:12px 0 6px">Approval</h2>
-        <p style="font-size:13px">This change order amends the SOW dated ${escapeHtml(sowBaseline.date)}. All other terms remain unchanged.</p>
+        <p style="font-size:13px">This change order (${coNo}) amends the SOW dated ${escapeHtml(sowBaseline.date)}${escapeHtml(amendedNote)}. All other terms remain unchanged.</p>
         <table style="border-collapse:collapse;margin-top:8px"><tr>
           <td style="${td};width:260px">Client approval: ______________________ Date: ______</td>
           <td style="${td};width:260px">Provider approval: ______________________ Date: ______</td></tr></table>
       </div>`;
-      document.getElementById('sowContainer').innerHTML = coDraft;
-      flashSaved('✓ Change order drafted — review, then 📋 Copy CO');
+      // remember what this draft covers so approval can log it and roll the baseline
+      draftChangeOrder._pending = {
+        no: coNo,
+        scope: [added.length ? added.length + ' added' : '', removed.length ? removed.length + ' removed' : '', changed.length ? changed.length + ' re-estimated' : ''].filter(Boolean).join(', ') || 'schedule/price only',
+        detail: [...added.map(t => '+ ' + t.name), ...removed.map(t => '− ' + t.name), ...changed.map(c => '≈ ' + c.t.name + ' ' + c.from.toFixed(1) + '→' + c.to.toFixed(1))].join('; '),
+        finishDelta, priceDelta, newFinish: curFinish, newPrice: curPrice
+      };
+      document.getElementById('sowContainer').innerHTML = coDraft +
+        `<div class="no-print" style="margin-top:0.75rem;padding:0.7rem 0.9rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap">
+          <button class="btn-sm btn-success" onclick="approveChangeOrder()" title="Logs ${coNo} in the change history and rolls the contract baseline to today's plan — the NEXT change order will diff only changes made after this one">✅ Mark ${coNo} approved &amp; roll baseline</button>
+          <span class="help-text" style="margin:0">after the client signs — keeps successive change orders incremental instead of re-listing old changes</span>
+        </div>`;
+      flashSaved('✓ ' + coNo + ' drafted — review, 📋 Copy CO, then mark approved once signed');
+    }
+    function approveChangeOrder() {
+      const p = draftChangeOrder._pending;
+      if (!p) { alert('Draft a change order first (Δ Change order).'); return; }
+      coLog.push({ no: p.no, date: fmtISO(new Date()), scope: p.scope, detail: p.detail, finishDelta: p.finishDelta, priceDelta: p.priceDelta, newFinish: p.newFinish, newPrice: p.newPrice });
+      sowBaseline = snapshotSowBaseline(); // next CO diffs from here
+      draftChangeOrder._pending = null;
+      saveLocal();
+      renderCoHistory();
+      flashSaved('✓ ' + p.no + ' logged and baseline rolled — the next change order starts from today’s plan');
+    }
+    function renderCoHistory() {
+      const el = document.getElementById('coHistory');
+      if (!el) return;
+      if (!coLog.length) { el.innerHTML = ''; return; }
+      const cumSched = coLog.reduce((s, c) => s + (c.finishDelta || 0), 0);
+      const cumPrice = coLog.reduce((s, c) => s + (c.priceDelta || 0), 0);
+      el.innerHTML = `<details open style="margin-bottom:0.75rem">
+        <summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">📑 Change-order history (${coLog.length}) — cumulative: ${cumSched >= 0 ? '+' : ''}${cumSched} days, ${cumPrice >= 0 ? '+' : ''}${fmtMoney(Math.abs(cumPrice)).replace('$', cumPrice < 0 ? '−$' : '$')}</summary>
+        <div class="table-wrap" style="margin-top:0.5rem"><table>
+          <thead><tr><th>CO</th><th>Approved</th><th>Scope</th><th>Schedule Δ</th><th>Price Δ</th><th>New finish</th></tr></thead>
+          <tbody>${coLog.map(c => `<tr title="${escapeHtml(c.detail || '')}">
+            <td><b>${escapeHtml(c.no)}</b></td><td style="white-space:nowrap">${escapeHtml(c.date)}</td>
+            <td style="font-size:0.82rem">${escapeHtml(c.scope)}</td>
+            <td>${c.finishDelta >= 0 ? '+' : ''}${c.finishDelta} d</td>
+            <td>${c.priceDelta >= 0 ? '+' : ''}${fmtMoney(Math.abs(c.priceDelta)).replace('$', c.priceDelta < 0 ? '−$' : '$')}</td>
+            <td style="white-space:nowrap">${escapeHtml(c.newFinish || '')}</td></tr>`).join('')}</tbody>
+        </table></div>
+        <p class="help-text" style="margin-top:0.4rem">Running total per the change-control log — nobody gets surprised at the end. Hover a row for the task-level detail.</p>
+      </details>`;
     }
     async function copyCO() {
       if (!coDraft) { alert('Draft a change order first (Δ Change order).'); return; }
