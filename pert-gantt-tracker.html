@@ -265,6 +265,7 @@
           <button onclick="exportMSProjectXML()">📅 Microsoft Project (.xml)</button>
           <button onclick="exportSmartsheetCSV()">📊 Smartsheet (.csv)</button>
           <div class="grp">Communications</div>
+          <button onclick="toggleClientSafe(this)" id="clientSafeBtn">🕶 Client-safe reports: OFF</button>
           <button onclick="copyStatusReport()">📄 Copy status report (email-ready)</button>
           <button onclick="draftNarrative()">✨ Draft AI narrative for report</button>
           <button onclick="copySOW()">📑 Copy SOW draft</button>
@@ -611,6 +612,8 @@
             <button class="btn-primary btn-sm" onclick="generateSOW()">✨ Generate SOW draft</button>
             <button class="btn-secondary btn-sm" onclick="copySOW()">📋 Copy (rich text)</button>
             <button class="btn-secondary btn-sm" onclick="downloadSOW()">Download (.html)</button>
+            <button class="btn-sm" style="background:#fef3c7;color:#b45309" onclick="draftChangeOrder()" title="Diff the current plan against the SOW baseline and draft a change order">Δ Change order</button>
+            <button class="btn-secondary btn-sm" onclick="copyCO()" title="Copy the last change-order draft">📋 Copy CO</button>
           </div>
         </div>
         <div class="card-body">
@@ -743,7 +746,7 @@
                 <input id="mAcceptance" type="text" placeholder="Definition of done" />
               </div>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
               <div class="form-group">
                 <label>Actual start (if begun)</label>
                 <input id="mActualStart" type="date" />
@@ -751,6 +754,10 @@
               <div class="form-group">
                 <label>Actual finish (if done)</label>
                 <input id="mActualFinish" type="date" />
+              </div>
+              <div class="form-group">
+                <label>Actual cost $ <span class="info-icon" title="Cost actually incurred so far — feeds CPI / EAC forecasting.">i</span></label>
+                <input id="mActualCost" type="number" min="0" step="100" value="0" />
               </div>
             </div>
           </div>
@@ -794,6 +801,9 @@
     let statusNarrative = null;   // {date, text} AI exec summary for the status report
     let pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 }; // bill-side settings
     let healthFindings = null;    // last health-check results
+    let clientSafeReports = false;// hide financials/internal notes in copied reports
+    let sowBaseline = null;       // snapshot taken when the SOW is generated (for change orders)
+    let coDraft = '';             // last change-order draft HTML
 
     // ========================= UTIL =========================
     function escapeHtml(s) {
@@ -819,7 +829,7 @@
         id: 0, name: '', o: 0, m: 0, p: 0, milestone: false,
         owner: '', units: 100, levelDelay: 0, percentComplete: 0, predecessors: [],
         parentId: null, description: '', deliverable: '', acceptance: '',
-        actualStart: '', actualFinish: '', fixedCost: 0,
+        actualStart: '', actualFinish: '', fixedCost: 0, actualCost: 0,
         baseStart: null, baseFinish: null, baseTe: null, baseCost: null,
         te: 0, variance: 0, es: 0, ef: 0, ls: 0, lf: 0, slack: 0, wbs: '', isSummary: false,
         isCritical: false, criticality: 0, startDate: null, finishDate: null, overallocated: false
@@ -850,9 +860,10 @@
       const act = activeProjectId();
       const items = Object.entries(idx).sort((a, b) => (b[1].updatedAt || '').localeCompare(a[1].updatedAt || ''));
       el.innerHTML = items.map(([id, meta]) =>
-        `<button data-proj="${id}" style="${id === act ? 'font-weight:700;color:var(--primary)' : ''}">${id === act ? '● ' : ''}${escapeHtml(meta.name || 'Untitled')} <span class="help-text" style="font-size:0.65rem">${escapeHtml((meta.updatedAt || '').slice(0, 10))}</span></button>`
+        `<div style="display:flex;align-items:center"><button data-proj="${id}" style="flex:1;${id === act ? 'font-weight:700;color:var(--primary)' : ''}">${id === act ? '● ' : ''}${escapeHtml(meta.name || 'Untitled')} <span class="help-text" style="font-size:0.65rem">${escapeHtml((meta.updatedAt || '').slice(0, 10))}</span></button>${id !== act ? `<button data-cmp="${id}" title="Compare with current (what-if)" style="width:auto;padding:0.2rem 0.4rem">⚖</button>` : ''}</div>`
       ).join('') || '<div class="grp">No saved projects yet</div>';
       el.querySelectorAll('[data-proj]').forEach(btn => btn.addEventListener('click', () => switchProject(btn.dataset.proj)));
+      el.querySelectorAll('[data-cmp]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); compareProject(btn.dataset.cmp); }));
     }
     function switchProject(id) {
       if (id === activeProjectId()) return;
@@ -916,6 +927,49 @@
       renderProjectMenu();
     }
 
+    // What-if comparison: current live plan vs a saved project/scenario
+    function compareProject(otherId) {
+      const idx = projIndex();
+      const other = idx[otherId];
+      if (!other) return;
+      saveLocal(); // refresh current metrics
+      const mine = projIndex()[activeProjectId()] || {};
+      let otherTasks = [];
+      try {
+        const raw = JSON.parse(localStorage.getItem(PROJ_PREFIX + otherId) || '{}');
+        const parentIds = new Set((raw.tasks || []).map(t => t.parentId).filter(x => x != null));
+        otherTasks = (raw.tasks || []).filter(t => !parentIds.has(t.id)) // leaves only, matching the current side
+          .map(t => ({ name: t.name, te: t.milestone ? 0 : +(((+t.o || 0) + 4 * (+t.m || 0) + (+t.p || 0)) / 6).toFixed(2) }));
+      } catch (e) {}
+      const mineNames = new Map(leafTasks().map(t => [t.name.toLowerCase(), t]));
+      const otherNames = new Map(otherTasks.map(t => [t.name.toLowerCase(), t]));
+      const onlyMine = [...mineNames.values()].filter(t => !otherNames.has(t.name.toLowerCase())).map(t => t.name);
+      const onlyOther = [...otherNames.values()].filter(t => !mineNames.has(t.name.toLowerCase())).map(t => t.name);
+      const differ = [...mineNames.values()].filter(t => { const o = otherNames.get(t.name.toLowerCase()); return o && Math.abs((t.te || 0) - o.te) > 0.05; })
+        .map(t => `${t.name}: ${otherNames.get(t.name.toLowerCase()).te.toFixed(1)} → ${(t.te || 0).toFixed(1)}`);
+      const m1 = mine.metrics || {}, m2 = other.metrics || {};
+      const row = (l, a, b2) => `<tr><th style="text-align:left;padding:4px 10px">${l}</th><td style="padding:4px 10px">${a ?? '—'}</td><td style="padding:4px 10px">${b2 ?? '—'}</td></tr>`;
+      const html = `<div class="modal" style="max-width:640px"><div class="modal-header"><h3>⚖ Scenario compare</h3>
+          <button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="document.getElementById('cmpOverlay').remove()">✕</button></div>
+        <div class="modal-body">
+          <table style="width:100%;font-size:0.9rem"><tr><th></th><th style="text-align:left;padding:4px 10px">CURRENT: ${escapeHtml(mine.name || '')}</th><th style="text-align:left;padding:4px 10px">${escapeHtml(other.name || '')}</th></tr>
+            ${row('Finish', m1.finish, m2.finish)}${row('Duration (' + unitLabel() + ')', m1.dur, m2.dur)}
+            ${row('Cost', m1.cost != null ? fmtMoney(m1.cost) : null, m2.cost != null ? fmtMoney(m2.cost) : null)}
+            ${row('% complete', m1.pct != null ? m1.pct + '%' : null, m2.pct != null ? m2.pct + '%' : null)}
+            ${row('Over-allocated days', m1.over, m2.over)}${row('Tasks', m1.tasks, m2.tasks)}</table>
+          ${onlyMine.length ? `<p style="font-size:0.85rem;margin-top:0.6rem"><b>Only in current:</b> ${onlyMine.map(escapeHtml).join(', ')}</p>` : ''}
+          ${onlyOther.length ? `<p style="font-size:0.85rem"><b>Only in ${escapeHtml(other.name || 'other')}:</b> ${onlyOther.map(escapeHtml).join(', ')}</p>` : ''}
+          ${differ.length ? `<p style="font-size:0.85rem"><b>Effort differs:</b> ${differ.map(escapeHtml).join('; ')}</p>` : ''}
+          <p class="help-text" style="margin-top:0.6rem">Scenario metrics come from each project's last save. Tip: use 📂 → Duplicate to branch a what-if, change it, then compare here.</p>
+        </div></div>`;
+      const overlay = document.createElement('div');
+      overlay.id = 'cmpOverlay';
+      overlay.className = 'modal-overlay open';
+      overlay.innerHTML = html;
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+      document.body.appendChild(overlay);
+    }
+
     // ========================= PERSISTENCE =========================
     function markDirty() { saveLocal(); }
     function saveLocal() {
@@ -925,7 +979,13 @@
         const id = activeProjectId();
         localStorage.setItem(PROJ_PREFIX + id, JSON.stringify(data));
         const idx = projIndex();
-        idx[id] = { name: data.projectName || 'Untitled', updatedAt: new Date().toISOString() };
+        idx[id] = { name: data.projectName || 'Untitled', updatedAt: new Date().toISOString(),
+          metrics: calculated ? {
+            finish: fmtISO(durationToDate(Math.max(0, ...leafTasks().map(t => t.ef), 0))),
+            dur: +Math.max(0, ...leafTasks().map(t => t.ef), 0).toFixed(1),
+            pct: Math.round(overallProgress()), cost: Math.round(projectCost()),
+            over: resourceLoad ? resourceLoad.overResourceDays : 0, tasks: tasks.length
+          } : (idx[id] && idx[id].metrics) || null };
         saveProjIndex(idx);
         renderProjectMenu();
         const el = document.getElementById('savedIndicator');
@@ -943,6 +1003,7 @@
         nextId,
         resources, reserves, baselineDate, levelMode, projectBudget,
         raid, nextRaidId, statusHistory, sowDraft, statusNarrative, pricing,
+        clientSafeReports, sowBaseline,
         collapsedIds: [...collapsedIds],
         tasks: tasks.map(t => ({
           id: t.id, name: t.name, o: t.o, m: t.m, p: t.p, milestone: t.milestone,
@@ -950,7 +1011,7 @@
           percentComplete: t.percentComplete, predecessors: t.predecessors,
           parentId: t.parentId, description: t.description, deliverable: t.deliverable,
           acceptance: t.acceptance, actualStart: t.actualStart, actualFinish: t.actualFinish,
-          fixedCost: t.fixedCost || 0,
+          fixedCost: t.fixedCost || 0, actualCost: t.actualCost || 0,
           baseStart: t.baseStart ? fmtISO(new Date(t.baseStart)) : null,
           baseFinish: t.baseFinish ? fmtISO(new Date(t.baseFinish)) : null,
           baseTe: t.baseTe, baseCost: (t.baseCost == null ? null : t.baseCost)
@@ -972,7 +1033,7 @@
         parentId: (t.parentId == null ? null : t.parentId),
         description: t.description || '', deliverable: t.deliverable || '', acceptance: t.acceptance || '',
         actualStart: t.actualStart || '', actualFinish: t.actualFinish || '',
-        fixedCost: Number(t.fixedCost) || 0,
+        fixedCost: Number(t.fixedCost) || 0, actualCost: Number(t.actualCost) || 0,
         baseStart: t.baseStart ? new Date(t.baseStart + 'T00:00:00') : null,
         baseFinish: t.baseFinish ? new Date(t.baseFinish + 'T00:00:00') : null,
         baseTe: (t.baseTe == null ? null : Number(t.baseTe)),
@@ -994,6 +1055,8 @@
       sowDraft = typeof data.sowDraft === 'string' ? data.sowDraft : '';
       statusNarrative = (data.statusNarrative && data.statusNarrative.text) ? data.statusNarrative : null;
       pricing = Object.assign({ model: 'fixed', basis: 'p80', contractPrice: 0 }, data.pricing || {});
+      clientSafeReports = !!data.clientSafeReports;
+      sowBaseline = (data.sowBaseline && Array.isArray(data.sowBaseline.tasks)) ? data.sowBaseline : null;
       collapsedIds = new Set(Array.isArray(data.collapsedIds) ? data.collapsedIds : []);
       nextId = data.nextId || (Math.max(0, ...tasks.map(t => t.id)) + 1);
       calculated = false;
@@ -1088,6 +1151,7 @@
       document.getElementById('mAcceptance').value = '';
       document.getElementById('mActualStart').value = '';
       document.getElementById('mActualFinish').value = '';
+      document.getElementById('mActualCost').value = 0;
       populateOwnerList();
       populateParentSelect(null, null);
       toggleMilestoneFields();
@@ -1117,6 +1181,7 @@
       document.getElementById('mAcceptance').value = t.acceptance || '';
       document.getElementById('mActualStart').value = t.actualStart || '';
       document.getElementById('mActualFinish').value = t.actualFinish || '';
+      document.getElementById('mActualCost').value = t.actualCost || 0;
       populateOwnerList();
       populateParentSelect(id, t.parentId);
       t.predecessors.forEach(p => addDepRow(p));
@@ -1197,6 +1262,7 @@
       const acceptance = document.getElementById('mAcceptance').value.trim();
       const actualStart = document.getElementById('mActualStart').value || '';
       const actualFinish = document.getElementById('mActualFinish').value || '';
+      const actualCost = Math.max(0, parseFloat(document.getElementById('mActualCost').value) || 0);
 
       const preds = [];
       document.querySelectorAll('#depRows .dep-row').forEach(r => {
@@ -1208,7 +1274,7 @@
       const seen = {}; preds.forEach(pr => seen[pr.id] = pr);
       const finalPreds = Object.values(seen).filter(pr => pr.id !== editingId);
 
-      const fields = { name, o, m, p, milestone: isMs, owner, units, fixedCost, percentComplete: pct, predecessors: finalPreds,
+      const fields = { name, o, m, p, milestone: isMs, owner, units, fixedCost, actualCost, percentComplete: pct, predecessors: finalPreds,
         parentId, description, deliverable, acceptance, actualStart, actualFinish };
       if (editingId === null) {
         tasks.push(makeTask(Object.assign({ id: nextId++ }, fields)));
@@ -1805,7 +1871,7 @@
       // include manually-added roster entries even if nothing is assigned to them yet
       const allNames = new Set([...owners, ...Object.keys(resources)]);
       allNames.forEach(name => {
-        perResource[name] = { name, capacity: getCapacity(name), days: {}, peak: 0, overDays: [], unitDays: 0 };
+        perResource[name] = { name, capacity: getCapacity(name), days: {}, peak: 0, overDays: [], unitDays: 0, ptoSet: parsePtoSet(name) };
       });
 
       // Precompute a working-day index -> date list (index 0 = first working day on/after start).
@@ -1843,7 +1909,8 @@
         Object.keys(R.days).forEach(iso => {
           const day = R.days[iso];
           if (day.load > R.peak) R.peak = day.load;
-          if (day.load > R.capacity + 1e-6) {
+          const capToday = R.ptoSet.has(iso) ? 0 : R.capacity; // PTO day: any assigned work is a conflict
+          if (day.load > capToday + 1e-6) {
             R.overDays.push(iso);
             overResourceDays++;
             day.tasks.forEach(id => { const t = tasks.find(x => x.id === id); if (t) t.overallocated = true; });
@@ -2026,6 +2093,219 @@
       renderTaskTable(); renderGantt(); renderResources(); renderAnalytics();
       saveLocal();
       const el = document.getElementById('levelStatus'); if (el) { el.textContent = 'Leveling cleared — schedule reset to earliest starts.'; delete el.dataset.stuck; }
+    }
+
+    // ========================= RATE CARDS (global library) =========================
+    // Named role->rate cards shared across ALL projects:
+    //   pertGantt.rateCards -> { id: {name, discountPct, currency, roles:[{role,cost,bill}], updatedAt} }
+    const RATECARDS_KEY = 'pertGantt.rateCards';
+    const RATECARD_DEFAULT_KEY = 'pertGantt.defaultRateCard';
+    let rcEditingId = null; // card being edited in the panel
+    let rcApplyingId = null; // card being mapped/applied
+    function rateCards() { try { return JSON.parse(localStorage.getItem(RATECARDS_KEY) || '{}'); } catch (e) { return {}; } }
+    function saveRateCards(rc) { try { localStorage.setItem(RATECARDS_KEY, JSON.stringify(rc)); } catch (e) {} }
+    function newRateCard() {
+      const name = (prompt('Rate card name (e.g. "2026 Standard", "Preferred client −10%"):') || '').trim();
+      if (!name) return;
+      const rc = rateCards();
+      const id = 'rc' + Date.now().toString(36);
+      rc[id] = { name, discountPct: 0, currency: 'USD', updatedAt: new Date().toISOString(),
+        roles: [{ role: 'Consultant', cost: 900, bill: 1500 }] };
+      saveRateCards(rc);
+      rcEditingId = id; rcApplyingId = null;
+      renderResources();
+    }
+    function saveCurrentRatesAsCard() {
+      const roles = Object.keys(resources).filter(n => getRate(n) || getBillRate(n))
+        .map(n => ({ role: n, cost: getRate(n), bill: getBillRate(n) }));
+      if (!roles.length) { alert('No rates set on this project yet.'); return; }
+      const name = (prompt('Save current project rates as card named:') || '').trim();
+      if (!name) return;
+      const rc = rateCards();
+      const id = 'rc' + Date.now().toString(36);
+      rc[id] = { name, discountPct: 0, currency: 'USD', roles, updatedAt: new Date().toISOString() };
+      saveRateCards(rc);
+      renderResources();
+      flashSaved('✓ Rate card "' + name + '" saved — available in every project');
+    }
+    function deleteRateCard(id) {
+      const rc = rateCards();
+      if (!rc[id]) return;
+      if (!confirm(`Delete rate card "${rc[id].name}"?`)) return;
+      delete rc[id];
+      saveRateCards(rc);
+      if (localStorage.getItem(RATECARD_DEFAULT_KEY) === id) localStorage.removeItem(RATECARD_DEFAULT_KEY);
+      if (rcEditingId === id) rcEditingId = null;
+      if (rcApplyingId === id) rcApplyingId = null;
+      renderResources();
+    }
+    function setDefaultRateCard(id) {
+      try { if (id) localStorage.setItem(RATECARD_DEFAULT_KEY, id); else localStorage.removeItem(RATECARD_DEFAULT_KEY); } catch (e) {}
+      renderResources();
+    }
+    function rcMatchRole(resourceName, roles) {
+      const n = resourceName.toLowerCase();
+      let hit = roles.findIndex(r => r.role.toLowerCase() === n);
+      if (hit >= 0) return hit;
+      hit = roles.findIndex(r => n.includes(r.role.toLowerCase()) || r.role.toLowerCase().includes(n));
+      return hit; // -1 = no match
+    }
+    function applyRateCard(id, mapping) {
+      // mapping: { resourceName: roleIndex|-1 }
+      const card = rateCards()[id];
+      if (!card) return;
+      const disc = 1 - (Number(card.discountPct) || 0) / 100;
+      let applied = 0;
+      Object.keys(mapping).forEach(rn => {
+        const ri = mapping[rn];
+        if (ri < 0 || !card.roles[ri]) return;
+        if (!resources[rn]) resources[rn] = { capacity: 100 };
+        resources[rn].rate = +card.roles[ri].cost || 0;
+        resources[rn].billRate = Math.round((+card.roles[ri].bill || 0) * disc);
+        resources[rn].role = card.roles[ri].role;
+        applied++;
+      });
+      pricing.rateCardId = id;
+      rcApplyingId = null;
+      saveLocal();
+      if (calculated) recompute();
+      renderResources(); renderAnalytics(); renderPricing();
+      flashSaved(`✓ "${card.name}" applied to ${applied} resource(s)${card.discountPct ? ' (bill −' + card.discountPct + '%)' : ''}`);
+    }
+    function renderRateCardPanel(names) {
+      const rc = rateCards();
+      const ids = Object.keys(rc).sort((a, b) => (rc[b].updatedAt || '').localeCompare(rc[a].updatedAt || ''));
+      const defId = localStorage.getItem(RATECARD_DEFAULT_KEY) || '';
+      const options = ids.map(id => `<option value="${id}" ${id === (pricing.rateCardId || defId) ? 'selected' : ''}>${escapeHtml(rc[id].name)}${rc[id].discountPct ? ' (−' + rc[id].discountPct + '%)' : ''}${id === defId ? ' ★' : ''}</option>`).join('');
+      let editor = '';
+      if (rcEditingId && rc[rcEditingId]) {
+        const c = rc[rcEditingId];
+        editor = `<div style="background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:0.9rem;margin-top:0.6rem">
+          <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:0.6rem;margin-bottom:0.5rem">
+            <div><label>Card name</label><input id="rcName" value="${escapeHtml(c.name)}" /></div>
+            <div><label>Bill discount %</label><input id="rcDisc" type="number" min="0" max="90" value="${c.discountPct || 0}" /></div>
+            <div><label>Currency label</label><input id="rcCur" value="${escapeHtml(c.currency || 'USD')}" /></div>
+          </div>
+          <table><thead><tr><th>Role</th><th>Cost $/d</th><th>Bill $/d</th><th></th></tr></thead><tbody id="rcRows">
+            ${c.roles.map((r, i) => `<tr>
+              <td><input class="rc-role" data-i="${i}" value="${escapeHtml(r.role)}" /></td>
+              <td><input class="rc-cost mini-inp" style="width:90px" data-i="${i}" type="number" min="0" step="50" value="${r.cost}" /></td>
+              <td><input class="rc-bill mini-inp" style="width:90px" data-i="${i}" type="number" min="0" step="50" value="${r.bill}" /></td>
+              <td><button class="btn-sm btn-danger" data-rc-del="${i}">✕</button></td></tr>`).join('')}
+          </tbody></table>
+          <div class="toolbar" style="margin-top:0.5rem">
+            <button class="btn-sm btn-secondary" onclick="rcAddRole()">+ Role</button>
+            <button class="btn-sm btn-primary" onclick="rcSaveEditor()">Save card</button>
+            <button class="btn-sm btn-secondary" onclick="rcEditingId=null;renderResources()">Close</button>
+            <button class="btn-sm btn-secondary" onclick="setDefaultRateCard('${rcEditingId}')" title="Auto-selected in every project">★ Make default</button>
+            <button class="btn-sm btn-danger" onclick="deleteRateCard('${rcEditingId}')">Delete card</button>
+          </div></div>`;
+      }
+      let applier = '';
+      if (rcApplyingId && rc[rcApplyingId]) {
+        const c = rc[rcApplyingId];
+        renderRateCardPanel._applyNames = names.slice(); // same order as the selects below
+        applier = `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:0.9rem;margin-top:0.6rem">
+          <div style="font-weight:700;margin-bottom:0.4rem">Apply "${escapeHtml(c.name)}" — map each resource to a role${c.discountPct ? ' (bill rates get −' + c.discountPct + '%)' : ''}</div>
+          ${names.map((n, ni) => {
+            const pre = rcMatchRole(n, c.roles);
+            return `<div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.3rem">
+              <span style="width:160px;font-size:0.85rem;font-weight:600;overflow:hidden;text-overflow:ellipsis">${escapeHtml(n)}</span>
+              <select class="rc-map mini-inp" style="width:auto" data-res="${ni}">
+                <option value="-1">— skip —</option>
+                ${c.roles.map((r, i) => `<option value="${i}" ${i === pre ? 'selected' : ''}>${escapeHtml(r.role)} (${fmtMoney(r.cost)}/${fmtMoney(r.bill)})</option>`).join('')}
+              </select></div>`;
+          }).join('')}
+          <div class="toolbar" style="margin-top:0.5rem">
+            <button class="btn-sm btn-primary" onclick="rcConfirmApply()">Apply rates</button>
+            <button class="btn-sm btn-secondary" onclick="rcApplyingId=null;renderResources()">Cancel</button>
+          </div></div>`;
+      }
+      return `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.4rem;flex-wrap:wrap;gap:0.5rem">
+          <h3 style="font-size:0.95rem">💳 Rate cards <span class="help-text" style="font-weight:400">(shared across all projects)</span></h3>
+          <div class="toolbar no-print">
+            <select id="rcSelect" class="mini-inp" style="width:auto;min-width:150px">${options || '<option value="">— none saved —</option>'}</select>
+            <button class="btn-sm btn-primary" onclick="rcStartApply()" ${ids.length ? '' : 'disabled'}>Apply to project…</button>
+            <button class="btn-sm btn-secondary" onclick="rcStartEdit()" ${ids.length ? '' : 'disabled'}>Edit</button>
+            <button class="btn-sm btn-secondary" onclick="newRateCard()">New card</button>
+            <button class="btn-sm btn-secondary" onclick="saveCurrentRatesAsCard()" title="Turn this project's rates into a reusable card">Save rates as card</button>
+          </div>
+        </div>${editor}${applier}`;
+    }
+    function rcStartEdit() {
+      const sel = document.getElementById('rcSelect');
+      if (sel && sel.value) { rcEditingId = sel.value; rcApplyingId = null; renderResources(); }
+    }
+    function rcStartApply() {
+      const sel = document.getElementById('rcSelect');
+      if (sel && sel.value) { rcApplyingId = sel.value; rcEditingId = null; renderResources(); }
+    }
+    function rcAddRole() {
+      const rc = rateCards();
+      if (!rc[rcEditingId]) return;
+      rcSaveEditor(true);
+      const rc2 = rateCards();
+      rc2[rcEditingId].roles.push({ role: 'New role', cost: 0, bill: 0 });
+      saveRateCards(rc2);
+      renderResources();
+    }
+    function rcSaveEditor(silent) {
+      const rc = rateCards();
+      const c = rc[rcEditingId];
+      if (!c) return;
+      c.name = (document.getElementById('rcName').value || c.name).trim();
+      c.discountPct = Math.max(0, Math.min(90, parseFloat(document.getElementById('rcDisc').value) || 0));
+      c.currency = (document.getElementById('rcCur').value || 'USD').trim();
+      const roles = [];
+      document.querySelectorAll('#rcRows tr').forEach(tr => {
+        const role = tr.querySelector('.rc-role').value.trim();
+        if (!role) return;
+        roles.push({ role, cost: Math.max(0, parseFloat(tr.querySelector('.rc-cost').value) || 0), bill: Math.max(0, parseFloat(tr.querySelector('.rc-bill').value) || 0) });
+      });
+      if (roles.length) c.roles = roles;
+      c.updatedAt = new Date().toISOString();
+      saveRateCards(rc);
+      if (!silent) { rcEditingId = null; renderResources(); flashSaved('✓ Rate card saved'); }
+    }
+    function rcConfirmApply() {
+      const mapping = {};
+      const names = renderRateCardPanel._applyNames || [];
+      document.querySelectorAll('.rc-map').forEach(sel => {
+        const n = names[Number(sel.dataset.res)];
+        if (n != null) mapping[n] = Number(sel.value);
+      });
+      applyRateCard(rcApplyingId, mapping);
+    }
+    function rcBindEditor(cont) {
+      cont.querySelectorAll('[data-rc-del]').forEach(btn => btn.addEventListener('click', () => {
+        rcSaveEditor(true);
+        const rc = rateCards();
+        rc[rcEditingId].roles.splice(Number(btn.dataset.rcDel), 1);
+        saveRateCards(rc);
+        renderResources();
+      }));
+    }
+
+    // ========================= PTO / RESOURCE CALENDARS =========================
+    // resources[name].pto = "2026-08-03..2026-08-07, 2026-09-01" (dates & ranges)
+    function parsePtoSet(name) {
+      const raw = (resources[name] && resources[name].pto) || '';
+      const set = new Set();
+      raw.split(',').map(x => x.trim()).filter(Boolean).forEach(part => {
+        const m = part.match(/^(\d{4}-\d{2}-\d{2})\s*\.\.\s*(\d{4}-\d{2}-\d{2})$/);
+        if (m) {
+          const d = new Date(m[1] + 'T00:00:00'), end = new Date(m[2] + 'T00:00:00');
+          let g = 0;
+          while (d <= end && g++ < 400) { set.add(fmtISO(d)); d.setDate(d.getDate() + 1); }
+        } else if (/^\d{4}-\d{2}-\d{2}$/.test(part)) set.add(part);
+      });
+      return set;
+    }
+    function setPto(name, val) {
+      if (!resources[name]) resources[name] = { capacity: 100 };
+      resources[name].pto = (val || '').trim();
+      saveLocal();
+      if (calculated) { recompute(); renderTaskTable(); renderResources(); renderAnalytics(); }
     }
 
     // ========================= COST / BUDGET =========================
@@ -2389,7 +2669,32 @@
           </div>
           ${projectBudget ? `<div class="stat-card ${budgetVar > 0 ? 'critical' : 'success'}"><div class="value" style="font-size:1.15rem">${budgetVar > 0 ? '+' : ''}${fmtMoney(budgetVar)}</div><div class="label">${budgetVar > 0 ? 'Over budget' : 'Headroom'}</div></div>` : ''}
         </div>
-        ${phaseRows ? `<div class="table-wrap" style="margin-top:0.75rem"><table><thead><tr><th>Phase</th><th style="text-align:right">Planned cost</th><th style="text-align:right">Earned</th><th style="text-align:right">%</th></tr></thead><tbody>${phaseRows}</tbody></table></div>` : ''}`;
+        ${phaseRows ? `<div class="table-wrap" style="margin-top:0.75rem"><table><thead><tr><th>Phase</th><th style="text-align:right">Planned cost</th><th style="text-align:right">Earned</th><th style="text-align:right">%</th></tr></thead><tbody>${phaseRows}</tbody></table></div>` : ''}
+        ${(() => {
+          // EVM: PV from schedule elapsed-to-today, EV from %complete, AC from actual costs
+          const todayT = stripTime(new Date()).getTime();
+          const BAC = cost;
+          const AC = leafTasks().reduce((sx, t) => sx + (Number(t.actualCost) || 0), 0);
+          const PV = leafTasks().reduce((sx, t) => {
+            if (!t.startDate || !t.finishDate || t.milestone) return sx;
+            const s0 = stripTime(t.startDate).getTime(), f0 = stripTime(t.finishDate).getTime() + 86400000;
+            const frac = todayT <= s0 ? 0 : todayT >= f0 ? 1 : (todayT - s0) / (f0 - s0);
+            return sx + taskCost(t) * frac;
+          }, 0);
+          if (BAC <= 0) return '';
+          const SPI = PV > 0 ? ev / PV : null;
+          const CPI = AC > 0 ? ev / AC : null;
+          const EAC = CPI ? BAC / CPI : null;
+          const card = (v, l, sub, bad) => `<div class="stat-card ${bad === true ? 'critical' : bad === false ? 'success' : ''}"><div class="value" style="font-size:1.05rem">${v}</div><div class="label">${l}</div><div class="help-text" style="font-size:0.65rem">${sub}</div></div>`;
+          return `<h3 style="margin:1rem 0 0.5rem;font-size:0.95rem">Earned value (enter Actual cost $ per task to unlock CPI/EAC)</h3>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.75rem">
+              ${card(fmtMoney(PV), 'Planned value (PV)', 'work scheduled by today', null)}
+              ${card(fmtMoney(AC), 'Actual cost (AC)', 'entered on tasks', null)}
+              ${card(SPI == null ? '—' : SPI.toFixed(2), 'SPI', SPI == null ? '' : SPI < 1 ? 'behind schedule' : 'on/ahead of schedule', SPI == null ? null : SPI < 0.95)}
+              ${card(CPI == null ? '—' : CPI.toFixed(2), 'CPI', CPI == null ? 'needs actual costs' : CPI < 1 ? 'over cost' : 'under cost', CPI == null ? null : CPI < 0.95)}
+              ${card(EAC == null ? '—' : fmtMoney(EAC), 'EAC forecast', EAC == null ? '' : 'BAC ' + fmtMoney(BAC) + (EAC > BAC ? ' → +' + fmtMoney(EAC - BAC) + ' overrun' : ' → under'), EAC == null ? null : EAC > BAC * 1.02)}
+            </div>`;
+        })()}`;
 
       document.getElementById('analyticsContent').innerHTML = `
         ${targetBlock}
@@ -2698,6 +3003,7 @@
           <td><input class="mini-inp rl-cap" data-ri="${ri}" type="number" min="1" step="10" value="${R.capacity}" title="Capacity % — 100 = 1 full-time person, 300 = a 3-person team" /></td>
           <td><input class="mini-inp rl-rate" data-ri="${ri}" type="number" min="0" step="50" value="${getRate(name)}" title="COST per working day at 100% (feeds the budget layer)" /></td>
           <td><input class="mini-inp rl-bill" data-ri="${ri}" type="number" min="0" step="50" value="${getBillRate(name)}" title="BILL rate per day (client-facing — feeds pricing & SOW)" /></td>
+          <td><input class="mini-inp rl-pto" data-ri="${ri}" style="width:150px" value="${escapeHtml((resources[name] && resources[name].pto) || '')}" placeholder="2026-08-03..2026-08-07" title="PTO / unavailable dates: single dates or ranges (start..end), comma separated. Work scheduled on these days is flagged." /></td>
           <td>${assigned.length}</td>
           <td>${effort.toFixed(1)}d</td>
           <td>${Math.round(R.peak)}%</td>
@@ -2714,7 +3020,7 @@
           <button class="btn-sm btn-primary no-print" onclick="addResourcePrompt()">➕ Add resource</button>
         </div>
         <div class="table-wrap" style="margin-bottom:1rem"><table>
-          <thead><tr><th>Resource</th><th>Capacity %</th><th>Cost $/d</th><th>Bill $/d</th><th>Tasks</th><th>Planned effort</th><th>Peak load</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Resource</th><th>Capacity %</th><th>Cost $/d</th><th>Bill $/d</th><th>PTO / unavailable</th><th>Tasks</th><th>Planned effort</th><th>Peak load</th><th>Status</th><th></th></tr></thead>
           <tbody>${rosterRows}</tbody>
         </table></div>`;
       const holidays = getHolidaySet();
@@ -2742,11 +3048,13 @@
           const iso = fmtISO(dd);
           const day = R.days[iso];
           const load = day ? day.load : 0;
+          const isPto = R.ptoSet && R.ptoSet.has(iso);
           const ratio = R.capacity > 0 ? load / R.capacity : 0;
           let bg = '#f8fafc';
-          if (load > 0) bg = ratio <= 1 ? `rgba(37,99,235,${(0.2 + 0.55 * ratio).toFixed(3)})` : '#dc2626';
+          if (isPto) bg = load > 0 ? '#dc2626' : '#e9d5ff';
+          else if (load > 0) bg = ratio <= 1 ? `rgba(37,99,235,${(0.2 + 0.55 * ratio).toFixed(3)})` : '#dc2626';
           const tnames = day ? day.tasks.map(id => { const t = tasks.find(x => x.id === id); return t ? t.name : ''; }).filter(Boolean).join(', ') : '';
-          const tip = `${name} — ${dd.toLocaleDateString()}: ${Math.round(load)}% of ${R.capacity}% capacity${tnames ? ' | ' + tnames : ''}`;
+          const tip = `${name} — ${dd.toLocaleDateString()}: ${isPto ? 'PTO' + (load > 0 ? ' but ' + Math.round(load) + '% assigned!' : '') : Math.round(load) + '% of ' + R.capacity + '% capacity'}${tnames ? ' | ' + tnames : ''}`;
           cells += `<div class="rl-cell${load > R.capacity + 1e-6 ? ' over' : ''}" style="left:${i * cellW}px;width:${cellW}px;background:${bg}" title="${escapeHtml(tip)}"></div>`;
         });
         const over = R.overDays.length;
@@ -2813,6 +3121,7 @@
       }
       cont.innerHTML = `
         ${levelBanner}
+        ${renderRateCardPanel(names)}
         ${roster}
         <h3 style="font-size:0.95rem;margin-bottom:0.4rem">Daily workload heatmap</h3>
         <div class="rl-wrap">
@@ -2824,7 +3133,8 @@
         <div class="legend" style="margin-top:0.5rem">
           <div class="legend-item"><div class="legend-swatch" style="background:rgba(37,99,235,0.4)"></div>Within capacity</div>
           <div class="legend-item"><div class="legend-swatch" style="background:rgba(37,99,235,0.75)"></div>Near capacity</div>
-          <div class="legend-item"><div class="legend-swatch" style="background:#dc2626"></div>Over capacity</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#dc2626"></div>Over capacity / work on PTO</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#e9d5ff"></div>PTO</div>
         </div>
         ${summary}`;
 
@@ -2838,6 +3148,10 @@
       cont.querySelectorAll('input.rl-bill').forEach(inp => {
         inp.addEventListener('change', () => setBillRate(names[Number(inp.dataset.ri)], inp.value));
       });
+      cont.querySelectorAll('input.rl-pto').forEach(inp => {
+        inp.addEventListener('change', () => setPto(names[Number(inp.dataset.ri)], inp.value));
+      });
+      rcBindEditor(cont);
       cont.querySelectorAll('[data-mend-add]').forEach(btn => {
         btn.addEventListener('click', () => addCapacity(names[Number(btn.dataset.mendAdd)], 100));
       });
@@ -3147,6 +3461,17 @@
       flashSaved._t = setTimeout(() => { el.textContent = ''; }, 3000);
     }
 
+    function toggleClientSafe(btn) {
+      clientSafeReports = !clientSafeReports;
+      saveLocal();
+      updateClientSafeBtn();
+      flashSaved(clientSafeReports ? '🕶 Client-safe ON — reports omit financials & internal notes' : 'Client-safe OFF — full internal reports');
+    }
+    function updateClientSafeBtn() {
+      const b = document.getElementById('clientSafeBtn');
+      if (b) b.textContent = '🕶 Client-safe reports: ' + (clientSafeReports ? 'ON' : 'OFF');
+    }
+
     // ---- Status report for PM handoff (rich-text copy, email-ready) ----
     function buildStatusReportHtml() {
       const u = unitLabel();
@@ -3175,9 +3500,9 @@
           <td style="${td}${bold}text-align:right;color:${varD > 0 ? '#b91c1c' : varD < 0 ? '#15803d' : '#64748b'}">${varD == null ? '—' : (varD > 0 ? '+' : '') + varD + 'd'}</td></tr>`;
       }).join('');
       const cost = projectCost();
-      const costLine = (cost > 0 || projectBudget > 0)
+      const costLine = clientSafeReports ? '' : (cost > 0 || projectBudget > 0)
         ? `<p style="margin:6px 0;font-size:13px"><b>Cost:</b> planned ${fmtMoney(cost)}${projectBudget ? ` vs budget ${fmtMoney(projectBudget)} (${cost > projectBudget ? '<span style="color:#b91c1c">+' + fmtMoney(cost - projectBudget) + ' over</span>' : fmtMoney(projectBudget - cost) + ' headroom'})` : ''} • earned value to date ${fmtMoney(earnedValue())}</p>` : '';
-      const overLine = rl.overResourceDays
+      const overLine = clientSafeReports ? '' : rl.overResourceDays
         ? `<p style="margin:6px 0;font-size:13px;color:#b91c1c"><b>⚠ Resourcing:</b> ${rl.overResourceDays} over-allocated resource-day(s) — ${rl.resourcesOver.map(escapeHtml).join(', ')}. Mitigation in progress (level, add capacity, or extend).</p>` : '';
       const baseLine = hasBaseline()
         ? `<p style="margin:6px 0;font-size:13px"><b>Baseline (${escapeHtml(baselineDate)}):</b> variance ${(() => { const bf = new Date(Math.max(...tasks.filter(t => t.baseFinish).map(t => t.baseFinish.getTime()))); const v = calDaysBetween(bf, new Date(Math.max(...leaves.map(t => currentFinish(t).getTime())))); return (v > 0 ? '<span style="color:#b91c1c">+' + v + 'd late</span>' : v < 0 ? '<span style="color:#15803d">' + v + 'd early</span>' : 'on plan'); })()}</p>` : '';
@@ -3190,7 +3515,7 @@
         ${openRisks.map(r => `<tr><td style="${td}">${r.type}</td><td style="${td}">${escapeHtml(r.title)}</td><td style="${td}">${r.probability * r.impact}</td><td style="${td}">${escapeHtml(r.mitigation || '')}</td><td style="${td}">${r.status}</td></tr>`).join('')}</table>` : '';
       return `<div style="font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;max-width:860px">
         <h2 style="margin:0 0 4px">${escapeHtml(projName())} — Status Report</h2>
-        <p style="margin:2px 0 10px;color:#64748b;font-size:12px">Generated ${new Date().toLocaleDateString()} • PERT 3-point estimates • ${mcResult ? mcResult.iters.toLocaleString() + ' Monte-Carlo simulations' : 'deterministic CPM'}</p>
+        <p style="margin:2px 0 10px;color:#64748b;font-size:12px">Generated ${new Date().toLocaleDateString()} • PERT 3-point estimates • ${mcResult ? mcResult.iters.toLocaleString() + ' Monte-Carlo simulations' : 'deterministic CPM'}${clientSafeReports ? ' • client version' : ''}</p>
         ${narrBlock}
         <p style="margin:6px 0;font-size:13px"><b>Overall:</b> ${prog.toFixed(0)}% complete • forecast finish <b>${fmtNice(finish)}</b>${mcResult ? ` • P80 ${fmtNice(durationToDate(mcResult.p80))} • P90 ${fmtNice(durationToDate(mcResult.p90))}` : ''}${rv.contingencyUnits > 0 ? ` • committed (with contingency) ${fmtNice(rv.committedDate)}` : ''}</p>
         ${baseLine}${costLine}${overLine}
@@ -4198,9 +4523,17 @@ Professional, client-ready, no hype, no invented facts.`;
         } catch (e) { alert('AI narrative failed (' + (e.message || e) + ') — generating the structured skeleton instead.'); }
       }
       sowDraft = sowAssembleHtml(d, narrative);
+      // snapshot for change-order diffs
+      const revNow = laborRevenue() + leafTasks().reduce((sx, t) => sx + (+t.fixedCost || 0), 0);
+      sowBaseline = {
+        date: fmtISO(new Date()),
+        finish: fmtISO(durationToDate(Math.max(0, ...leafTasks().map(t => t.ef), 0))),
+        price: pricing.contractPrice || (revNow > 0 ? Math.round(revNow * riskUplift(pricing.basis)) : 0),
+        tasks: leafTasks().map(t => ({ name: t.name, te: +(t.te || 0).toFixed(2), milestone: !!t.milestone }))
+      };
       saveLocal();
       document.getElementById('sowContainer').innerHTML = sowDraft;
-      flashSaved('✓ SOW draft ready — review, then Copy or Download');
+      flashSaved('✓ SOW draft ready — review, then Copy or Download (baseline captured for change orders)');
     }
     async function copySOW() {
       if (!sowDraft) { alert('Generate the SOW draft first.'); return; }
@@ -4216,6 +4549,79 @@ Professional, client-ready, no hype, no invented facts.`;
     function downloadSOW() {
       if (!sowDraft) { alert('Generate the SOW draft first.'); return; }
       download(safeName() + '-sow.html', sowDraft, 'text/html');
+    }
+
+    // ---- Change order: diff current plan vs the SOW baseline ----
+    async function draftChangeOrder() {
+      if (!sowBaseline) { alert('Generate the SOW first — that captures the contract baseline the change order diffs against.'); return; }
+      if (!ensureCalc()) return;
+      const baseByName = {};
+      sowBaseline.tasks.forEach(t => baseByName[t.name.toLowerCase()] = t);
+      const curLeaves = leafTasks();
+      const curNames = new Set(curLeaves.map(t => t.name.toLowerCase()));
+      const added = curLeaves.filter(t => !baseByName[t.name.toLowerCase()]);
+      const removed = sowBaseline.tasks.filter(t => !curNames.has(t.name.toLowerCase()));
+      const changed = curLeaves.filter(t => {
+        const b = baseByName[t.name.toLowerCase()];
+        return b && Math.abs((t.te || 0) - b.te) > 0.05;
+      }).map(t => ({ t, from: baseByName[t.name.toLowerCase()].te, to: +(t.te || 0).toFixed(2) }));
+      const curFinish = fmtISO(durationToDate(Math.max(0, ...curLeaves.map(t => t.ef), 0)));
+      const finishDelta = calDaysBetween(new Date(sowBaseline.finish + 'T00:00:00'), new Date(curFinish + 'T00:00:00'));
+      const revNow = laborRevenue() + curLeaves.reduce((sx, t) => sx + (+t.fixedCost || 0), 0);
+      const curPrice = pricing.contractPrice || (revNow > 0 ? Math.round(revNow * riskUplift(pricing.basis)) : 0);
+      const priceDelta = curPrice - (sowBaseline.price || 0);
+      if (!added.length && !removed.length && !changed.length && Math.abs(finishDelta) < 1 && Math.abs(priceDelta) < 1) {
+        alert('No differences vs the SOW baseline of ' + sowBaseline.date + ' — nothing to change-order.');
+        return;
+      }
+      let rationale = '';
+      if (document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE)) {
+        try {
+          flashSaved('⏳ Drafting change-order rationale…');
+          const res = parseAIJson(await callAnthropic(`Write a 2-3 sentence professional rationale paragraph for a project change order.
+Changes: added tasks: ${added.map(t => t.name).join(', ') || 'none'}; removed: ${removed.map(t => t.name).join(', ') || 'none'}; effort changes: ${changed.map(c => c.t.name + ' ' + c.from + '→' + c.to).join(', ') || 'none'}. Schedule impact ${finishDelta >= 0 ? '+' : ''}${finishDelta} days. Price impact ${priceDelta >= 0 ? '+' : ''}$${Math.abs(priceDelta).toLocaleString()}.
+Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`));
+          rationale = escapeHtml(String((res && res.rationale) || ''));
+        } catch (e) { /* skeleton without narrative */ }
+      }
+      const td = 'padding:5px 9px;border:1px solid #d7dde5;font-size:12.5px;';
+      const th = td + 'background:#f1f5f9;font-weight:700;text-align:left;';
+      const u = unitLabel();
+      coDraft = `<div style="font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;max-width:860px">
+        <h1 style="margin:0 0 2px;font-size:20px">Change Order — ${escapeHtml(projName())}</h1>
+        <p style="color:#64748b;font-size:12px;margin:0 0 12px">DRAFT ${new Date().toLocaleDateString()} • references SOW baseline of ${escapeHtml(sowBaseline.date)}</p>
+        ${rationale ? `<p style="font-size:13px">${rationale}</p>` : '<p style="font-size:13px"><em>[Describe why this change is needed.]</em></p>'}
+        <h2 style="font-size:15px;margin:12px 0 6px">Scope changes</h2>
+        <table style="border-collapse:collapse"><tr><th style="${th}">Change</th><th style="${th}">Item</th><th style="${th}">Effort</th></tr>
+          ${added.map(t => `<tr><td style="${td};color:#15803d">Added</td><td style="${td}">${escapeHtml(t.name)}</td><td style="${td}">${(t.te || 0).toFixed(1)} ${u}</td></tr>`).join('')}
+          ${removed.map(t => `<tr><td style="${td};color:#b91c1c">Removed</td><td style="${td}">${escapeHtml(t.name)}</td><td style="${td}">−${t.te.toFixed(1)} ${u}</td></tr>`).join('')}
+          ${changed.map(c => `<tr><td style="${td};color:#b45309">Re-estimated</td><td style="${td}">${escapeHtml(c.t.name)}</td><td style="${td}">${c.from.toFixed(1)} → ${c.to.toFixed(1)} ${u}</td></tr>`).join('')}
+          ${!added.length && !removed.length && !changed.length ? `<tr><td style="${td}" colspan="3">No task-level scope changes (schedule/price only)</td></tr>` : ''}
+        </table>
+        <h2 style="font-size:15px;margin:12px 0 6px">Impact</h2>
+        <table style="border-collapse:collapse">
+          <tr><th style="${th}">Schedule</th><td style="${td}">${sowBaseline.finish} → ${curFinish} (${finishDelta >= 0 ? '+' : ''}${finishDelta} calendar days)</td></tr>
+          ${sowBaseline.price ? `<tr><th style="${th}">Price</th><td style="${td}">${fmtMoney(sowBaseline.price)} → ${fmtMoney(curPrice)} (${priceDelta >= 0 ? '+' : ''}${fmtMoney(Math.abs(priceDelta)).replace('$', priceDelta < 0 ? '−$' : '$')})</td></tr>` : ''}
+        </table>
+        <h2 style="font-size:15px;margin:12px 0 6px">Approval</h2>
+        <p style="font-size:13px">This change order amends the SOW dated ${escapeHtml(sowBaseline.date)}. All other terms remain unchanged.</p>
+        <table style="border-collapse:collapse;margin-top:8px"><tr>
+          <td style="${td};width:260px">Client approval: ______________________ Date: ______</td>
+          <td style="${td};width:260px">Provider approval: ______________________ Date: ______</td></tr></table>
+      </div>`;
+      document.getElementById('sowContainer').innerHTML = coDraft;
+      flashSaved('✓ Change order drafted — review, then 📋 Copy CO');
+    }
+    async function copyCO() {
+      if (!coDraft) { alert('Draft a change order first (Δ Change order).'); return; }
+      const plain = coDraft.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+      try {
+        await navigator.clipboard.write([new ClipboardItem({
+          'text/html': new Blob([coDraft], { type: 'text/html' }),
+          'text/plain': new Blob([plain], { type: 'text/plain' })
+        })]);
+        flashSaved('✓ Change order copied');
+      } catch (e) { download(safeName() + '-change-order.html', coDraft, 'text/html'); }
     }
 
     // ========================= STATUS SNAPSHOTS & TREND =========================
@@ -4289,6 +4695,14 @@ Professional, client-ready, no hype, no invented facts.`;
       }
       const over = resourceLoad ? resourceLoad.overResourceDays : 0;
       if (over) findings.push({ severity: 'high', area: 'Resourcing', finding: `${over} over-allocated resource-day(s)`, recommendation: 'Resolve on the Resources tab (level, add capacity, or extend) before committing dates.' });
+      // scheduled work landing on PTO days
+      Object.keys(resources).forEach(rn => {
+        const pto = parsePtoSet(rn);
+        if (!pto.size) return;
+        const hit = leaves.filter(t => (t.owner || '').trim() === rn && t.startDate && t.finishDate &&
+          [...pto].some(iso => { const d = new Date(iso + 'T00:00:00'); return d >= stripTime(t.startDate) && d <= stripTime(t.finishDate); }));
+        if (hit.length) findings.push({ severity: 'high', area: 'Resourcing', finding: `${rn} has PTO during: ${hit.map(t => '"' + t.name + '"').join(', ')}`, recommendation: 'Shift the work (level), reassign, or extend the task around the PTO dates.' });
+      });
       return findings;
     }
     async function runHealthCheck() {
@@ -4383,6 +4797,7 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
       renderTaskTable();
       renderProjectMenu();
       renderRaid();
+      updateClientSafeBtn();
       loadApiKey();
       loadHistData();
       validateKeyFormat();
