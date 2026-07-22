@@ -936,7 +936,10 @@
         const t = idToTask[id];
         const dur = durOf(t);
         const succs = successors[id] || [];
-        let lateFinish = Infinity;
+        // Project completion is a hard upper bound on every activity's late finish,
+        // including tasks that finish at the end but have SS/FF/SF successors that
+        // finish earlier — start from projectDuration, then tighten with successors.
+        let lateFinish = projectDuration;
         succs.forEach(s => {
           const L = s.lag;
           const sDur = durOf(idToTask[s.id]);
@@ -949,7 +952,6 @@
           }
           if (cand < lateFinish) lateFinish = cand;
         });
-        if (lateFinish === Infinity) lateFinish = projectDuration;
         lf[id] = lateFinish; ls[id] = lateFinish - dur;
       }
 
@@ -965,6 +967,24 @@
           t.variance = Math.pow((t.p - t.o) / 6, 2);
         }
       });
+      // Baseline schedule with NO leveling, to learn each task's true late start
+      // (the latest it can begin without moving the finish date). Resource-leveling
+      // delays are then clamped to this so a stale/large levelDelay — e.g. left over
+      // after durations change — can never silently push the project end out.
+      const anyDelay = tasks.some(t => t.levelDelay > 0);
+      if (anyDelay) {
+        const saved = tasks.map(t => t.levelDelay);
+        tasks.forEach(t => t.levelDelay = 0);
+        const base = computeSchedule(t => t.te);
+        tasks.forEach((t, i) => t.levelDelay = saved[i]);
+        if (base.ok) {
+          tasks.forEach(t => {
+            const bls = base.ls[t.id];
+            if (Number.isFinite(bls)) t.levelDelay = Math.min(t.levelDelay, Math.max(0, bls));
+          });
+        }
+      }
+
       const sched = computeSchedule(t => t.te);
       if (!sched.ok) { alert('Cycle detected in dependencies. Please fix predecessor links.'); return false; }
 
@@ -1089,7 +1109,7 @@
         for (let i = topo.length - 1; i >= 0; i--) {
           const id = topo[i]; const t = idToTask[id]; const d = dur[id];
           const succs = base.successors[id] || [];
-          let lateFinish = Infinity;
+          let lateFinish = proj; // project end caps every activity's late finish
           succs.forEach(s => {
             const L = s.lag;
             let cand;
@@ -1101,7 +1121,6 @@
             }
             if (cand < lateFinish) lateFinish = cand;
           });
-          if (lateFinish === Infinity) lateFinish = proj;
           lf[id] = lateFinish; ls[id] = lateFinish - d;
           if (Math.abs((ls[id] - es[id])) < 1e-6) critCount[id]++;
         }
@@ -1159,9 +1178,12 @@
     }
 
     // Build per-resource, per-working-day allocation and detect over-allocation.
-    // Allocation on a day = sum of `units` of every non-milestone task assigned to
-    // that resource whose scheduled window covers the day. Over-allocated when the
-    // day's total exceeds the resource capacity.
+    // A resource's load on a working day = sum over its non-milestone tasks of
+    // (units × the fraction of that working day the task actually occupies). Using
+    // the fractional CPM interval [es, ef) rather than rounded whole-day windows
+    // means two strictly sequential sub-day tasks (e.g. hours mode) that share a
+    // calendar day sum to their true combined intensity instead of double-counting.
+    // Over-allocated when the day's total exceeds the resource capacity.
     function computeResourceLoad() {
       const holidays = getHolidaySet();
       const perResource = {};
@@ -1171,25 +1193,32 @@
         perResource[name] = { name, capacity: getCapacity(name), days: {}, peak: 0, overDays: [], unitDays: 0 };
       });
 
+      // Precompute a working-day index -> date list (index 0 = first working day on/after start).
+      const start = projectStartDate();
+      let maxIdx = 0;
+      tasks.forEach(t => { if (!t.milestone) maxIdx = Math.max(maxIdx, Math.ceil(unitToWorkingDays(t.ef)) + 1); });
+      const dayDates = [];
+      { const dd = new Date(start); while (!isWorkingDay(dd, holidays)) dd.setDate(dd.getDate() + 1);
+        for (let k = 0; k <= maxIdx; k++) { dayDates.push(new Date(dd)); do { dd.setDate(dd.getDate() + 1); } while (!isWorkingDay(dd, holidays)); } }
+
       tasks.forEach(t => {
         const name = (t.owner || '').trim();
-        if (!name || t.milestone || !t.startDate || !t.finishDate) return;
+        if (!name || t.milestone) return;
         const units = Number.isFinite(+t.units) ? +t.units : 100;
         if (units <= 0) return;
         const R = perResource[name];
-        // iterate working days in [startDate, finishDate]
-        const d = new Date(t.startDate);
-        let guard = 0;
-        while (d <= t.finishDate && guard < 5000) {
-          guard++;
-          if (isWorkingDay(d, holidays)) {
-            const iso = fmtISO(d);
-            if (!R.days[iso]) R.days[iso] = { load: 0, tasks: [] };
-            R.days[iso].load += units;
-            R.days[iso].tasks.push(t.id);
-            R.unitDays += units;
-          }
-          d.setDate(d.getDate() + 1);
+        const esD = unitToWorkingDays(t.es), efD = unitToWorkingDays(t.ef);
+        if (efD - esD <= 1e-9) return;
+        const firstIdx = Math.max(0, Math.floor(esD + 1e-9));
+        const lastIdx = Math.min(dayDates.length - 1, Math.ceil(efD - 1e-9) - 1);
+        for (let k = firstIdx; k <= lastIdx; k++) {
+          const overlap = Math.min(efD, k + 1) - Math.max(esD, k); // fraction of working-day k occupied
+          if (overlap <= 1e-9) continue;
+          const iso = fmtISO(dayDates[k]);
+          if (!R.days[iso]) R.days[iso] = { load: 0, tasks: [] };
+          R.days[iso].load += overlap * units;
+          R.days[iso].tasks.push(t.id);
+          R.unitDays += overlap * units;
         }
       });
 
@@ -1514,7 +1543,7 @@
           let bg = '#f8fafc';
           if (load > 0) bg = ratio <= 1 ? `rgba(37,99,235,${(0.2 + 0.55 * ratio).toFixed(3)})` : '#dc2626';
           const tnames = day ? day.tasks.map(id => { const t = tasks.find(x => x.id === id); return t ? t.name : ''; }).filter(Boolean).join(', ') : '';
-          const tip = `${name} — ${dd.toLocaleDateString()}: ${load}% of ${R.capacity}% capacity${tnames ? ' | ' + tnames : ''}`;
+          const tip = `${name} — ${dd.toLocaleDateString()}: ${Math.round(load)}% of ${R.capacity}% capacity${tnames ? ' | ' + tnames : ''}`;
           cells += `<div class="rl-cell${load > R.capacity + 1e-6 ? ' over' : ''}" style="left:${i * cellW}px;width:${cellW}px;background:${bg}" title="${escapeHtml(tip)}"></div>`;
         });
         const over = R.overDays.length;
@@ -1524,7 +1553,7 @@
             <div style="display:flex;align-items:center;gap:5px;margin-top:3px">
               <span class="help-text" style="margin:0">Cap%</span>
               <input class="mini-inp rl-cap" data-ri="${ri}" type="number" min="1" step="10" value="${R.capacity}" title="Capacity % (100 = 1 FTE)" />
-              <span class="risk-tag" style="background:${over ? '#fee2e2' : '#dcfce7'};color:${over ? '#b91c1c' : '#15803d'}">${over ? 'peak ' + R.peak + '%' : 'OK'}</span>
+              <span class="risk-tag" style="background:${over ? '#fee2e2' : '#dcfce7'};color:${over ? '#b91c1c' : '#15803d'}">${over ? 'peak ' + Math.round(R.peak) + '%' : 'OK'}</span>
             </div>
           </div>
           <div class="rl-track" style="width:${trackW}px">${cells}</div>
@@ -1555,7 +1584,7 @@
             ? `Move a non-critical task within its slack — e.g. delay <strong>${escapeHtml(movable[0].name)}</strong> (has ${movable[0].slack.toFixed(1)} ${u} of float). Try <em>Auto-level within slack</em> above.`
             : `All overlapping tasks are on the critical path (no float). To resolve you must <strong>reduce Units %</strong>, <strong>raise ${escapeHtml(name)}'s capacity</strong> (add people), <strong>reassign</strong> a task, or accept a later finish.`;
           summary += `<div class="conflict-card">
-            <div style="font-weight:700;margin-bottom:0.25rem">${escapeHtml(name)} — peak ${R.peak}% vs ${R.capacity}% capacity <span class="help-text" style="font-weight:400">(over on: ${ranges})</span></div>
+            <div style="font-weight:700;margin-bottom:0.25rem">${escapeHtml(name)} — peak ${Math.round(R.peak)}% vs ${R.capacity}% capacity <span class="help-text" style="font-weight:400">(over on: ${ranges})</span></div>
             <div class="table-wrap"><table><thead><tr><th>Overlapping task</th><th>Units</th><th>Window</th><th>Slack</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
             <p class="help-text" style="margin-top:0.5rem">💡 ${advice}</p>
           </div>`;
@@ -2101,12 +2130,25 @@ ${aiSchemaHint()}`;
       });
 
       tasks = built; // both create and merge return the full list
-      // resource capacities from the plan (falls back to 100 via syncResources)
+      // Resource capacities. In merge mode keep any capacities the user already set
+      // (the AI may omit a resource it didn't touch); in create mode start clean.
+      const prevResources = resources;
       resources = {};
+      if (mode === 'merge') {
+        for (const k in prevResources) {
+          const c = +(prevResources[k] && prevResources[k].capacity);
+          resources[k] = { capacity: (Number.isFinite(c) && c > 0) ? c : 100 };
+        }
+      }
+      // Map so a plan resource name matches an existing owner regardless of case
+      // (dependency resolution is already case-insensitive; keep capacities aligned).
+      const ownerByLower = {};
+      built.forEach(t => { const o = (t.owner || '').trim(); if (o) ownerByLower[o.toLowerCase()] = o; });
       if (Array.isArray(plan.resources)) {
         plan.resources.forEach(r => {
-          const nm = String((r && r.name) || '').trim();
+          let nm = String((r && r.name) || '').trim();
           if (!nm) return;
+          nm = ownerByLower[nm.toLowerCase()] || nm; // canonicalize to the owner's casing
           const cap = Number(r.capacityPercent != null ? r.capacityPercent : r.capacity);
           resources[nm] = { capacity: (Number.isFinite(cap) && cap > 0) ? cap : 100 };
         });
