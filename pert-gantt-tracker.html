@@ -3804,28 +3804,47 @@
       }
       // ---- critical-path chain drawn ON TOP: a continuous bold red line running
       // under each zero-slack bar and elbowing to the next, so the path reads as
-      // one line across the whole chart (milestones join as points)
-      const critVis = leafTasks()
-        .filter(t => visibleIds.has(t.id) && t.isCritical && t.startDate)
-        .sort((a, b) => (a.es - b.es) || (a.ef - b.ef));
-      if (critVis.length > 1) {
-        let cp = '';
-        critVis.forEach(t => {
-          if (t.milestone) return;
-          const y = Y0 + rowIndexOf[t.id] * ROWH + ROWH / 2 + BAR_H / 2 + 2;
-          cp += ` M${dateX(t.startDate)},${y} L${dateX(t.finishDate) + dayW},${y}`;
+      // one line across the whole chart. When the path runs through a COLLAPSED
+      // phase, the line routes through that phase's summary row (red under the
+      // black bar = critical work inside — expand ▸ to see it) instead of
+      // vanishing, so the chain never breaks.
+      const critNodes = [];
+      leafTasks().forEach(t => {
+        if (visibleIds.has(t.id) && t.isCritical && t.startDate)
+          critNodes.push({ rowId: t.id, sd: t.startDate, fd: t.finishDate || t.startDate, point: !!t.milestone, sum: false });
+      });
+      rows.forEach(({ task: t }) => {
+        if (!t.isSummary || !collapsedIds.has(t.id)) return;
+        const cl = leafDescendants(t.id).filter(l => l.isCritical && l.startDate);
+        if (!cl.length) return;
+        critNodes.push({
+          rowId: t.id,
+          sd: new Date(Math.min(...cl.map(l => l.startDate.getTime()))),
+          fd: new Date(Math.max(...cl.map(l => (l.finishDate || l.startDate).getTime()))),
+          point: false, sum: true
         });
-        for (let ci = 0; ci < critVis.length - 1; ci++) {
-          const a = critVis[ci], b2 = critVis[ci + 1];
-          const ay = Y0 + rowIndexOf[a.id] * ROWH + ROWH / 2 + (a.milestone ? 0 : BAR_H / 2 + 2);
-          const by = Y0 + rowIndexOf[b2.id] * ROWH + ROWH / 2 + (b2.milestone ? 0 : BAR_H / 2 + 2);
-          const ax = dateX(a.finishDate) + (a.milestone ? 0 : dayW);
-          const bx = dateX(b2.startDate);
+      });
+      critNodes.sort((a, b) => (a.sd - b.sd) || (a.fd - b.fd));
+      if (critNodes.length > 1 || (critNodes.length === 1 && critNodes[0].sum)) {
+        const yOf = n => Y0 + rowIndexOf[n.rowId] * ROWH + ROWH / 2 + (n.point ? 0 : BAR_H / 2 + 2);
+        let cp = '';
+        critNodes.forEach(n => {
+          if (n.point) return;
+          const y = yOf(n);
+          cp += ` M${dateX(n.sd)},${y} L${dateX(n.fd) + dayW},${y}`;
+        });
+        for (let ci = 0; ci < critNodes.length - 1; ci++) {
+          const a = critNodes[ci], b2 = critNodes[ci + 1];
+          const ay = yOf(a), by = yOf(b2);
+          const ax = dateX(a.fd) + (a.point ? 0 : dayW);
+          const bx = dateX(b2.sd);
+          if (bx <= ax - dayW) continue; // overlapping spans (nested rollups) need no connector
           const mx = Math.max(ax, Math.min(bx, ax + Math.max(4, (bx - ax) / 2)));
           cp += ay === by ? ` M${ax},${ay} L${bx},${by}` : ` M${ax},${ay} L${mx},${ay} L${mx},${by} L${bx},${by}`;
         }
+        const nSums = critNodes.filter(n => n.sum).length;
         svg += `<g><path d="${cp.trim()}" fill="none" stroke="#dc2626" stroke-width="2.5" opacity="0.85" stroke-linecap="round" stroke-linejoin="round"/>
-          <title>${escapeXml('CRITICAL PATH — the zero-slack chain (' + critVis.length + ' activities): any delay on this line moves the finish date day-for-day. Shorten it via ⑂ decompose, added resources, or re-sequencing — Analytics ▸ Criticality Index has per-task fixes.')}</title></g>`;
+          <title>${escapeXml('CRITICAL PATH — the zero-slack chain: any delay on this line moves the finish date day-for-day.' + (nSums ? ' A red run under a BLACK phase bar means the path goes through that collapsed group — click its ▸ to see the tasks.' : '') + ' Shorten it via ⑂ decompose, added resources, or re-sequencing — Analytics ▸ Criticality Index has per-task fixes.')}</title></g>`;
       }
       svg += `</g>`; // end clipped chart layer
       if (todayOff >= 0 && todayOff <= totalDays) {
