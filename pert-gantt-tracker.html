@@ -5805,14 +5805,19 @@ ${aiSchemaHint()}`;
       });
 
       tasks = built; // both create and merge return the full list
-      // Resource capacities. In merge mode keep any capacities the user already set
-      // (the AI may omit a resource it didn't touch); in create mode start clean.
+      // Resources. The AI schema carries only name/capacity/kind — NEVER rates,
+      // PTO or roles — so applying a plan must never wipe those. Keep the full
+      // previous entry for every resource that survives (case-insensitive name
+      // match), in BOTH merge and replace mode.
       const prevResources = resources;
+      const prevByLower = {};
+      for (const k in prevResources) prevByLower[k.toLowerCase()] = prevResources[k];
       resources = {};
       if (mode === 'merge') {
         for (const k in prevResources) {
-          const c = +(prevResources[k] && prevResources[k].capacity);
-          resources[k] = { capacity: (Number.isFinite(c) && c > 0) ? c : 100 };
+          const old = prevResources[k] || {};
+          const c = +old.capacity;
+          resources[k] = Object.assign({}, old, { capacity: (Number.isFinite(c) && c > 0) ? c : 100 });
         }
       }
       // Map so a plan resource name matches an existing owner regardless of case
@@ -5825,10 +5830,25 @@ ${aiSchemaHint()}`;
           if (!nm) return;
           nm = ownerByLower[nm.toLowerCase()] || nm; // canonicalize to the owner's casing
           const cap = Number(r.capacityPercent != null ? r.capacityPercent : r.capacity);
-          resources[nm] = { capacity: (Number.isFinite(cap) && cap > 0) ? cap : 100, kind: r.kind === 'client' ? 'client' : 'internal' };
+          const old = resources[nm] || prevByLower[nm.toLowerCase()] || {};
+          resources[nm] = Object.assign({}, old, {
+            capacity: (Number.isFinite(cap) && cap > 0) ? cap : ((+old.capacity > 0) ? +old.capacity : 100),
+            kind: r.kind === 'client' ? 'client' : (old.kind || 'internal') // AI can flag client, never silently demote one
+          });
         });
       }
       syncResources();
+      // final safety net: anyone who existed before under the same name gets their
+      // rate / bill rate / PTO / role back if the pass above lost them
+      for (const nm in resources) {
+        const old = prevByLower[nm.toLowerCase()];
+        if (!old) continue;
+        const cur = resources[nm];
+        ['rate', 'billRate', 'pto', 'role'].forEach(f => {
+          if ((cur[f] == null || cur[f] === '' || cur[f] === 0) && old[f] != null && old[f] !== '' && old[f] !== 0) cur[f] = old[f];
+        });
+        if (!cur.kind && old.kind) cur.kind = old.kind;
+      }
       nextId = idc;
       calculated = false;
       renderTaskTable();
