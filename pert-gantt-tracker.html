@@ -199,6 +199,21 @@
     .export-panel button:hover { background: #f1f5f9; }
     .export-panel .grp { font-size: 0.68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 0.4rem 0.6rem 0.15rem; font-weight: 700; }
     .risk-tag { display:inline-block; padding: 0.1rem 0.45rem; border-radius: 6px; font-size: 0.7rem; font-weight:700; }
+    /* Resource workload heatmap */
+    .rl-wrap { overflow-x: auto; padding-bottom: 0.5rem; }
+    .rl-chart { position: relative; }
+    .rl-headrow { display:flex; height: 22px; }
+    .rl-corner { width: 180px; flex-shrink:0; }
+    .rl-monthtrack { position: relative; flex:1; }
+    .rl-month { position:absolute; top:0; font-size:0.68rem; font-weight:700; color:var(--text); border-left:1px solid var(--border); padding-left:3px; white-space:nowrap; }
+    .rl-row { display:flex; align-items:stretch; border-bottom:1px solid #f1f5f9; }
+    .rl-label { width:180px; flex-shrink:0; padding:6px 8px 6px 0; font-size:0.8rem; }
+    .rl-track { position:relative; height:34px; background:#fafcff; }
+    .rl-cell { position:absolute; top:3px; height:28px; border-right:1px solid rgba(255,255,255,0.6); border-radius:2px; }
+    .rl-cell.over { outline:1px solid #991b1b; z-index:1; }
+    .rl-cap { width:56px; padding:0.2rem 0.35rem; font-size:0.78rem; }
+    .conflict-card { border:1px solid var(--border); border-left:4px solid var(--critical); border-radius:8px; padding:0.75rem 1rem; margin-top:0.75rem; background:#fff; }
+    .conflict-card.ok { border-left-color: var(--success); }
     @media print {
       header, .tabs, .header-actions, .card-header button, .no-print { display: none !important; }
       .view { display: block !important; }
@@ -274,7 +289,8 @@
       <button class="tab active" data-tab="tasks" onclick="switchTab('tasks')">1. Tasks &amp; Estimates</button>
       <button class="tab" data-tab="pert" onclick="switchTab('pert')">2. PERT Network</button>
       <button class="tab" data-tab="gantt" onclick="switchTab('gantt')">3. Gantt &amp; Progress</button>
-      <button class="tab" data-tab="analytics" onclick="switchTab('analytics')">4. Analytics &amp; Risk</button>
+      <button class="tab" data-tab="resources" onclick="switchTab('resources')">4. Resources &amp; Workload</button>
+      <button class="tab" data-tab="analytics" onclick="switchTab('analytics')">5. Analytics &amp; Risk</button>
     </div>
 
     <!-- TASKS VIEW -->
@@ -410,6 +426,28 @@
       </div>
     </div>
 
+    <!-- RESOURCES VIEW -->
+    <div id="view-resources" class="view">
+      <div class="card">
+        <div class="card-header">
+          <h2>Resource Workload &amp; Over-allocation</h2>
+          <div class="toolbar no-print">
+            <button class="btn-primary btn-sm" onclick="autoLevel()" title="Delay non-critical tasks within their slack to remove conflicts without moving the finish date">⚖ Auto-level within slack</button>
+            <button class="btn-secondary btn-sm" onclick="clearLeveling()">↺ Clear leveling</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <p class="help-text" style="margin-bottom:0.5rem">
+            Each person/team has a capacity (100% = one full-time equivalent). A cell turns
+            <span style="color:var(--critical);font-weight:700">red</span> on any day their assigned work exceeds capacity.
+            Set a task's allocation with <strong>Units %</strong> (in its Edit dialog); raise a capacity below for a team resource (e.g. 300% = 3 people).
+          </p>
+          <div id="levelStatus" class="help-text" style="margin-bottom:0.75rem"></div>
+          <div id="resourcesContainer"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ANALYTICS VIEW -->
     <div id="view-analytics" class="view">
       <div class="summary-grid" id="summaryGrid"></div>
@@ -474,10 +512,15 @@
             <input id="mP" type="number" min="0" step="0.1" placeholder="Worst case" />
           </div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+        <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:0.75rem">
           <div class="form-group">
             <label>Owner / Resource</label>
-            <input id="mOwner" type="text" placeholder="e.g. A. Rivera" />
+            <input id="mOwner" type="text" placeholder="e.g. A. Rivera" list="ownerList" />
+            <datalist id="ownerList"></datalist>
+          </div>
+          <div class="form-group">
+            <label>Units % <span class="info-icon" title="How much of the resource this task consumes while active. 100 = full-time. Two 100% tasks at once for one person = over-allocated.">i</span></label>
+            <input id="mUnits" type="number" min="0" step="5" value="100" />
           </div>
           <div class="form-group">
             <label>% Complete</label>
@@ -507,6 +550,8 @@
     let editingId = null;
     let calculated = false;
     let mcResult = null; // Monte Carlo output
+    let resources = {};  // name -> { capacity: percent }  (100 = 1 FTE)
+    let resourceLoad = null; // computed per-day allocation / over-allocation
 
     // ========================= UTIL =========================
     function escapeHtml(s) {
@@ -530,9 +575,9 @@
     function makeTask(o) {
       return Object.assign({
         id: 0, name: '', o: 0, m: 0, p: 0, milestone: false,
-        owner: '', percentComplete: 0, predecessors: [],
+        owner: '', units: 100, levelDelay: 0, percentComplete: 0, predecessors: [],
         te: 0, variance: 0, es: 0, ef: 0, ls: 0, lf: 0, slack: 0,
-        isCritical: false, criticality: 0, startDate: null, finishDate: null
+        isCritical: false, criticality: 0, startDate: null, finishDate: null, overallocated: false
       }, o);
     }
 
@@ -555,9 +600,11 @@
         durationUnit: document.getElementById('durationUnit').value,
         holidays: document.getElementById('holidays').value,
         nextId,
+        resources,
         tasks: tasks.map(t => ({
           id: t.id, name: t.name, o: t.o, m: t.m, p: t.p, milestone: t.milestone,
-          owner: t.owner, percentComplete: t.percentComplete, predecessors: t.predecessors
+          owner: t.owner, units: t.units, levelDelay: t.levelDelay,
+          percentComplete: t.percentComplete, predecessors: t.predecessors
         }))
       };
     }
@@ -569,9 +616,12 @@
       tasks = (data.tasks || []).map(t => makeTask({
         id: t.id, name: t.name, o: +t.o, m: +t.m, p: +t.p,
         milestone: !!t.milestone, owner: t.owner || '',
+        units: (t.units == null ? 100 : Number(t.units)),
+        levelDelay: Number(t.levelDelay) || 0,
         percentComplete: Number(t.percentComplete) || 0,
         predecessors: (t.predecessors || []).map(normalizePred)
       }));
+      resources = (data.resources && typeof data.resources === 'object') ? data.resources : {};
       nextId = data.nextId || (Math.max(0, ...tasks.map(t => t.id)) + 1);
       calculated = false;
     }
@@ -637,6 +687,7 @@
       document.getElementById(`view-${name}`).classList.add('active');
       if (name === 'pert' && calculated) renderPERT();
       if (name === 'gantt' && calculated) renderGantt();
+      if (name === 'resources' && calculated) renderResources();
       if (name === 'analytics' && calculated) renderAnalytics();
     }
 
@@ -649,10 +700,12 @@
       document.getElementById('mM').value = '';
       document.getElementById('mP').value = '';
       document.getElementById('mOwner').value = '';
+      document.getElementById('mUnits').value = 100;
       document.getElementById('mPct').value = 0;
       document.getElementById('mMilestone').checked = !!isMilestone;
       document.getElementById('modalError').style.display = 'none';
       document.getElementById('depRows').innerHTML = '';
+      populateOwnerList();
       toggleMilestoneFields();
       document.getElementById('modal').classList.add('open');
       document.getElementById('mName').focus();
@@ -667,10 +720,12 @@
       document.getElementById('mM').value = t.m;
       document.getElementById('mP').value = t.p;
       document.getElementById('mOwner').value = t.owner || '';
+      document.getElementById('mUnits').value = (t.units == null ? 100 : t.units);
       document.getElementById('mPct').value = t.percentComplete || 0;
       document.getElementById('mMilestone').checked = !!t.milestone;
       document.getElementById('modalError').style.display = 'none';
       document.getElementById('depRows').innerHTML = '';
+      populateOwnerList();
       t.predecessors.forEach(p => addDepRow(p));
       toggleMilestoneFields();
       document.getElementById('modal').classList.add('open');
@@ -679,6 +734,12 @@
     function toggleMilestoneFields() {
       const ms = document.getElementById('mMilestone').checked;
       document.getElementById('estFields').style.display = ms ? 'none' : 'grid';
+    }
+    function populateOwnerList() {
+      const dl = document.getElementById('ownerList');
+      if (!dl) return;
+      const names = new Set([...tasks.map(t => (t.owner || '').trim()).filter(Boolean), ...Object.keys(resources)]);
+      dl.innerHTML = [...names].map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
     }
     function predOptionsHtml(selectedId) {
       return tasks.filter(t => t.id !== editingId)
@@ -719,6 +780,8 @@
 
       const pct = Math.min(100, Math.max(0, parseFloat(document.getElementById('mPct').value) || 0));
       const owner = document.getElementById('mOwner').value.trim();
+      let units = parseFloat(document.getElementById('mUnits').value);
+      if (isNaN(units) || units < 0) units = 100;
 
       const preds = [];
       document.querySelectorAll('#depRows .dep-row').forEach(r => {
@@ -731,11 +794,12 @@
       const finalPreds = Object.values(seen);
 
       if (editingId === null) {
-        tasks.push(makeTask({ id: nextId++, name, o, m, p, milestone: isMs, owner, percentComplete: pct, predecessors: finalPreds }));
+        tasks.push(makeTask({ id: nextId++, name, o, m, p, milestone: isMs, owner, units, percentComplete: pct, predecessors: finalPreds }));
       } else {
         const t = tasks.find(x => x.id === editingId);
-        Object.assign(t, { name, o, m, p, milestone: isMs, owner, percentComplete: pct, predecessors: finalPreds });
+        Object.assign(t, { name, o, m, p, milestone: isMs, owner, units, percentComplete: pct, predecessors: finalPreds });
       }
+      if (owner) syncResources();
       calculated = false;
       closeModal();
       renderTaskTable();
@@ -802,7 +866,7 @@
         return `<tr class="${t.isCritical && !t.milestone ? 'critical' : ''} ${isLate(t) ? 'late' : ''}">
           <td><strong>${t.id}</strong></td>
           <td>${t.milestone ? '◆ ' : ''}${escapeHtml(t.name)}</td>
-          <td style="font-size:0.8rem">${escapeHtml(t.owner || '—')}</td>
+          <td style="font-size:0.8rem" title="${t.overallocated ? escapeHtml((t.owner||'')+' is over-allocated during this task') : ''}">${t.overallocated ? '<span style="color:var(--critical)" title="over-allocated">⚠ </span>' : ''}${escapeHtml(t.owner || '—')}${(!t.milestone && t.units !== 100) ? ` <span class="help-text" style="font-size:0.68rem">@${t.units}%</span>` : ''}</td>
           <td>${t.milestone ? '—' : t.o}</td>
           <td>${t.milestone ? '—' : t.m}</td>
           <td>${t.milestone ? '—' : t.p}</td>
@@ -859,6 +923,7 @@
           }
           if (s > start) start = s;
         });
+        if (t.levelDelay && t.levelDelay > start) start = t.levelDelay; // resource-leveling / start-no-earlier-than
         if (start < 0) start = 0;
         es[id] = start; ef[id] = start + dur;
       });
@@ -928,6 +993,7 @@
         }
       });
       calculated = true;
+      computeResourceLoad();
       runMonteCarlo();
       return true;
     }
@@ -938,6 +1004,7 @@
       renderTaskTable();
       renderAnalytics();
       renderGantt();
+      renderResources();
       renderPERT();
       saveLocal();
       const btn = document.querySelector('button[onclick="calculate()"]');
@@ -1010,6 +1077,7 @@
             }
             if (s > start) start = s;
           });
+          if (t.levelDelay && t.levelDelay > start) start = t.levelDelay;
           if (start < 0) start = 0;
           es[id] = start; ef[id] = start + dur[id];
         });
@@ -1071,6 +1139,152 @@
       return hits / mcResult.durations.length;
     }
 
+    // ========================= RESOURCES / CAPACITY =========================
+    // Ensure every assigned owner has a capacity entry (default 100% = 1 FTE).
+    function syncResources() {
+      const owners = new Set(tasks.map(t => (t.owner || '').trim()).filter(Boolean));
+      owners.forEach(o => { if (!resources[o]) resources[o] = { capacity: 100 }; });
+      return owners;
+    }
+    function getCapacity(name) {
+      const r = resources[name];
+      return (r && Number.isFinite(+r.capacity)) ? +r.capacity : 100;
+    }
+    function setCapacity(name, val) {
+      const c = Math.max(1, parseFloat(val) || 0) || 100;
+      if (!resources[name]) resources[name] = {};
+      resources[name].capacity = c;
+      saveLocal();
+      if (calculated) { computeResourceLoad(); renderResources(); renderTaskTable(); if (document.getElementById('view-analytics').classList.contains('active')) renderAnalytics(); }
+    }
+
+    // Build per-resource, per-working-day allocation and detect over-allocation.
+    // Allocation on a day = sum of `units` of every non-milestone task assigned to
+    // that resource whose scheduled window covers the day. Over-allocated when the
+    // day's total exceeds the resource capacity.
+    function computeResourceLoad() {
+      const holidays = getHolidaySet();
+      const perResource = {};
+      tasks.forEach(t => t.overallocated = false);
+      const owners = syncResources();
+      owners.forEach(name => {
+        perResource[name] = { name, capacity: getCapacity(name), days: {}, peak: 0, overDays: [], unitDays: 0 };
+      });
+
+      tasks.forEach(t => {
+        const name = (t.owner || '').trim();
+        if (!name || t.milestone || !t.startDate || !t.finishDate) return;
+        const units = Number.isFinite(+t.units) ? +t.units : 100;
+        if (units <= 0) return;
+        const R = perResource[name];
+        // iterate working days in [startDate, finishDate]
+        const d = new Date(t.startDate);
+        let guard = 0;
+        while (d <= t.finishDate && guard < 5000) {
+          guard++;
+          if (isWorkingDay(d, holidays)) {
+            const iso = fmtISO(d);
+            if (!R.days[iso]) R.days[iso] = { load: 0, tasks: [] };
+            R.days[iso].load += units;
+            R.days[iso].tasks.push(t.id);
+            R.unitDays += units;
+          }
+          d.setDate(d.getDate() + 1);
+        }
+      });
+
+      let overResourceDays = 0;
+      const resourcesOver = [];
+      Object.values(perResource).forEach(R => {
+        Object.keys(R.days).forEach(iso => {
+          const day = R.days[iso];
+          if (day.load > R.peak) R.peak = day.load;
+          if (day.load > R.capacity + 1e-6) {
+            R.overDays.push(iso);
+            overResourceDays++;
+            day.tasks.forEach(id => { const t = tasks.find(x => x.id === id); if (t) t.overallocated = true; });
+          }
+        });
+        R.overDays.sort();
+        if (R.overDays.length) resourcesOver.push(R.name);
+      });
+
+      resourceLoad = { perResource, overResourceDays, resourcesOver };
+      return resourceLoad;
+    }
+
+    // Group an ISO-date list into contiguous working-day ranges for display.
+    function groupDateRanges(isoList) {
+      const holidays = getHolidaySet();
+      const sorted = isoList.slice().sort();
+      const ranges = [];
+      let start = null, prev = null;
+      sorted.forEach(iso => {
+        const d = new Date(iso + 'T00:00:00');
+        if (prev) {
+          // next working day after prev
+          const nxt = new Date(prev); do { nxt.setDate(nxt.getDate() + 1); } while (!isWorkingDay(nxt, holidays));
+          if (fmtISO(nxt) !== iso) { ranges.push([start, prev]); start = d; }
+        } else start = d;
+        prev = d;
+      });
+      if (start) ranges.push([start, prev]);
+      return ranges;
+    }
+
+    // Best-effort resource leveling that keeps the project end date fixed:
+    // repeatedly delay the most-movable (highest-slack, non-critical, incomplete)
+    // conflicting task within its available slack until conflicts clear or no task
+    // can move further. Sets task.levelDelay (a start-no-earlier-than constraint).
+    function autoLevel() {
+      if (!calculated) { alert('Calculate first.'); return; }
+      recompute();
+      const before = resourceLoad ? resourceLoad.overResourceDays : 0;
+      let moved = 0, iter = 0;
+      const MAX_ITER = 400;
+      while (iter++ < MAX_ITER) {
+        const rl = resourceLoad;
+        if (!rl || rl.overResourceDays === 0) break;
+        // earliest over-allocated resource-day (deterministic, front-to-back)
+        let best = null;
+        Object.values(rl.perResource).forEach(R => {
+          R.overDays.forEach(iso => { if (!best || iso < best.iso) best = { R, iso }; });
+        });
+        if (!best) break;
+        const conflictTasks = best.R.days[best.iso].tasks.map(id => tasks.find(t => t.id === id)).filter(Boolean);
+        // movable = non-critical, incomplete, with positive slack; move the one with most float
+        const movable = conflictTasks
+          .filter(t => !t.isCritical && t.slack > 1e-6 && t.percentComplete < 100)
+          .sort((a, b) => b.slack - a.slack);
+        if (!movable.length) break; // this day cannot be resolved within slack
+        const cand = movable[0];
+        const others = conflictTasks.filter(t => t.id !== cand.id);
+        const earliestFreeEf = others.length ? Math.min(...others.map(t => t.ef)) : cand.es;
+        // push candidate's start to when the resource frees up, but never past its late
+        // start (that would extend the project). Must strictly increase levelDelay or we stop.
+        const target = Math.min(earliestFreeEf, cand.ls);
+        const newDelay = Math.max(cand.levelDelay, target);
+        if (newDelay <= cand.levelDelay + 1e-6) break; // no forward progress possible → stop
+        cand.levelDelay = newDelay;
+        moved++;
+        recompute();
+      }
+      recompute();
+      renderTaskTable(); renderGantt(); renderResources(); renderAnalytics();
+      saveLocal();
+      const after = resourceLoad ? resourceLoad.overResourceDays : 0;
+      const el = document.getElementById('levelStatus');
+      if (el) el.textContent = `Leveling: applied ${moved} shift(s), project end unchanged. Over-allocated days ${before} → ${after}` +
+        (after ? ' — remaining conflicts can\'t be resolved within slack; reduce Units %, raise capacity, reassign, or accept a later finish.' : ' ✓ resolved.');
+    }
+    function clearLeveling() {
+      tasks.forEach(t => t.levelDelay = 0);
+      if (calculated) recompute();
+      renderTaskTable(); renderGantt(); renderResources(); renderAnalytics();
+      saveLocal();
+      const el = document.getElementById('levelStatus'); if (el) { el.textContent = 'Leveling cleared — schedule reset to earliest starts.'; delete el.dataset.stuck; }
+    }
+
     // ========================= ANALYTICS =========================
     function overallProgress() {
       const active = tasks.filter(t => !t.milestone);
@@ -1092,14 +1306,16 @@
 
       // summary cards
       const p80str = mcResult ? mcResult.p80.toFixed(1) : '—';
-      const p50Date = mcResult ? fmtNice(durationToDate(mcResult.p50)) : '—';
-      const p80Date = mcResult ? fmtNice(durationToDate(mcResult.p80)) : '—';
+      const rl = resourceLoad || computeResourceLoad();
+      const overCard = `<div class="stat-card ${rl.overResourceDays ? 'critical' : 'success'}" style="cursor:pointer" onclick="switchTab('resources')" title="Open Resources tab">
+        <div class="value">${rl.overResourceDays}</div><div class="label">Over-allocated ${rl.overResourceDays === 1 ? 'resource-day' : 'resource-days'}</div></div>`;
       document.getElementById('summaryGrid').innerHTML = `
         <div class="stat-card critical"><div class="value">${projectDuration.toFixed(1)}</div><div class="label">Deterministic Duration (${u})</div></div>
         <div class="stat-card"><div class="value">${fmtNice(finishDate)}</div><div class="label">Expected Finish (P≈50)</div></div>
         <div class="stat-card warn"><div class="value">${p80str}</div><div class="label">P80 Duration (${u})</div></div>
         <div class="stat-card success"><div class="value">${prog.toFixed(0)}%</div><div class="label">Overall Complete</div></div>
         <div class="stat-card"><div class="value">${criticalTasks.length}/${tasks.filter(t=>!t.milestone).length}</div><div class="label">Critical / Total</div></div>
+        ${overCard}
       `;
 
       // target date probability
@@ -1258,6 +1474,122 @@
         </div>`;
     }
 
+    // ========================= RESOURCES RENDER =========================
+    function renderResources() {
+      const cont = document.getElementById('resourcesContainer');
+      if (!calculated) { cont.innerHTML = '<div class="empty-state"><h3>Calculate first</h3></div>'; return; }
+      computeResourceLoad();
+      const rl = resourceLoad;
+      const names = Object.keys(rl.perResource).sort((a, b) => rl.perResource[b].overDays.length - rl.perResource[a].overDays.length || a.localeCompare(b));
+      if (!names.length) {
+        cont.innerHTML = '<div class="empty-state"><h3>No resources assigned</h3><p>Add an <strong>Owner / Resource</strong> to activities (in their Edit dialog) to track workload and catch over-allocation.</p></div>';
+        return;
+      }
+      const holidays = getHolidaySet();
+      const start = projectStartDate();
+      let maxFinish = start;
+      tasks.forEach(t => { if (t.finishDate && t.finishDate > maxFinish) maxFinish = t.finishDate; });
+      const days = [];
+      const d = new Date(start); let guard = 0;
+      while (d <= maxFinish && guard < 3000) { guard++; if (isWorkingDay(d, holidays)) days.push(new Date(d)); d.setDate(d.getDate() + 1); }
+      if (!days.length) days.push(new Date(start));
+      const cellW = days.length > 80 ? 9 : days.length > 40 ? 13 : 20;
+      const trackW = days.length * cellW;
+      const u = unitLabel();
+
+      // month header
+      let monthHdr = ''; let curM = -1;
+      days.forEach((dd, i) => { if (dd.getMonth() !== curM) { curM = dd.getMonth(); monthHdr += `<div class="rl-month" style="left:${i * cellW}px">${dd.toLocaleDateString(undefined, { month: 'short', year: '2-digit' })}</div>`; } });
+
+      // rows (capacity input uses data-ri index -> bound after render to avoid name-escaping issues)
+      let rows = '';
+      names.forEach((name, ri) => {
+        const R = rl.perResource[name];
+        let cells = '';
+        days.forEach((dd, i) => {
+          const iso = fmtISO(dd);
+          const day = R.days[iso];
+          const load = day ? day.load : 0;
+          const ratio = R.capacity > 0 ? load / R.capacity : 0;
+          let bg = '#f8fafc';
+          if (load > 0) bg = ratio <= 1 ? `rgba(37,99,235,${(0.2 + 0.55 * ratio).toFixed(3)})` : '#dc2626';
+          const tnames = day ? day.tasks.map(id => { const t = tasks.find(x => x.id === id); return t ? t.name : ''; }).filter(Boolean).join(', ') : '';
+          const tip = `${name} — ${dd.toLocaleDateString()}: ${load}% of ${R.capacity}% capacity${tnames ? ' | ' + tnames : ''}`;
+          cells += `<div class="rl-cell${load > R.capacity + 1e-6 ? ' over' : ''}" style="left:${i * cellW}px;width:${cellW}px;background:${bg}" title="${escapeHtml(tip)}"></div>`;
+        });
+        const over = R.overDays.length;
+        rows += `<div class="rl-row">
+          <div class="rl-label">
+            <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
+            <div style="display:flex;align-items:center;gap:5px;margin-top:3px">
+              <span class="help-text" style="margin:0">Cap%</span>
+              <input class="mini-inp rl-cap" data-ri="${ri}" type="number" min="1" step="10" value="${R.capacity}" title="Capacity % (100 = 1 FTE)" />
+              <span class="risk-tag" style="background:${over ? '#fee2e2' : '#dcfce7'};color:${over ? '#b91c1c' : '#15803d'}">${over ? 'peak ' + R.peak + '%' : 'OK'}</span>
+            </div>
+          </div>
+          <div class="rl-track" style="width:${trackW}px">${cells}</div>
+        </div>`;
+      });
+
+      // conflict summary
+      let summary = '';
+      const overNames = names.filter(n => rl.perResource[n].overDays.length);
+      if (!overNames.length) {
+        summary = `<div class="conflict-card ok"><strong style="color:var(--success)">✓ No over-allocations.</strong> Every resource is within capacity across the whole schedule.</div>`;
+      } else {
+        summary = `<h3 style="margin:1.25rem 0 0.25rem;font-size:1rem">Over-allocation details &amp; suggestions</h3>`;
+        overNames.forEach(name => {
+          const R = rl.perResource[name];
+          const ranges = groupDateRanges(R.overDays).map(([a, b]) => a.getTime() === b.getTime() ? fmtNice(a) : `${fmtNice(a)} – ${fmtNice(b)}`).join(', ');
+          // union of contributing tasks on over-days
+          const ids = new Set(); R.overDays.forEach(iso => R.days[iso].tasks.forEach(id => ids.add(id)));
+          const contrib = [...ids].map(id => tasks.find(t => t.id === id)).filter(Boolean).sort((a, b) => a.es - b.es);
+          const movable = contrib.filter(t => !t.isCritical && t.slack > 1e-6 && t.percentComplete < 100);
+          const rowsHtml = contrib.map(t => `<tr>
+              <td>${escapeHtml(t.name)}</td>
+              <td>${t.units}%</td>
+              <td>${fmtNice(t.startDate)} → ${fmtNice(t.finishDate)}</td>
+              <td>${t.isCritical ? '<span class="badge badge-critical">critical</span>' : t.slack.toFixed(1) + ' ' + u}</td>
+            </tr>`).join('');
+          const advice = movable.length
+            ? `Move a non-critical task within its slack — e.g. delay <strong>${escapeHtml(movable[0].name)}</strong> (has ${movable[0].slack.toFixed(1)} ${u} of float). Try <em>Auto-level within slack</em> above.`
+            : `All overlapping tasks are on the critical path (no float). To resolve you must <strong>reduce Units %</strong>, <strong>raise ${escapeHtml(name)}'s capacity</strong> (add people), <strong>reassign</strong> a task, or accept a later finish.`;
+          summary += `<div class="conflict-card">
+            <div style="font-weight:700;margin-bottom:0.25rem">${escapeHtml(name)} — peak ${R.peak}% vs ${R.capacity}% capacity <span class="help-text" style="font-weight:400">(over on: ${ranges})</span></div>
+            <div class="table-wrap"><table><thead><tr><th>Overlapping task</th><th>Units</th><th>Window</th><th>Slack</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
+            <p class="help-text" style="margin-top:0.5rem">💡 ${advice}</p>
+          </div>`;
+        });
+      }
+
+      const leveledCount = tasks.filter(t => t.levelDelay > 0).length;
+      const levelBanner = leveledCount
+        ? `<div class="conflict-card" style="border-left-color:var(--primary);margin-top:0;margin-bottom:0.75rem;background:#eff6ff">
+             ⚖ <strong>Resource leveling is applied</strong> — ${leveledCount} task${leveledCount>1?'s have':' has'} a start-no-earlier-than shift (project end unchanged).
+             If you later change durations or dependencies, re-run leveling or
+             <button class="btn-sm btn-secondary" style="margin-left:6px" onclick="clearLeveling()">Clear leveling</button>.
+           </div>` : '';
+      cont.innerHTML = `
+        ${levelBanner}
+        <div class="rl-wrap">
+          <div class="rl-chart" style="min-width:${180 + trackW}px">
+            <div class="rl-headrow"><div class="rl-corner"></div><div class="rl-monthtrack" style="width:${trackW}px">${monthHdr}</div></div>
+            ${rows}
+          </div>
+        </div>
+        <div class="legend" style="margin-top:0.5rem">
+          <div class="legend-item"><div class="legend-swatch" style="background:rgba(37,99,235,0.4)"></div>Within capacity</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:rgba(37,99,235,0.75)"></div>Near capacity</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#dc2626"></div>Over capacity</div>
+        </div>
+        ${summary}`;
+
+      // bind capacity inputs by index (safe against names with quotes)
+      cont.querySelectorAll('input.rl-cap').forEach(inp => {
+        inp.addEventListener('change', () => setCapacity(names[Number(inp.dataset.ri)], inp.value));
+      });
+    }
+
     // ========================= PERT DIAGRAM =========================
     function renderPERT() {
       const svgEl = document.getElementById('pertSvg');
@@ -1391,7 +1723,7 @@
           (t.percentComplete/100).toFixed(2),
           preds,
           t.owner || '',
-          t.milestone ? 'Milestone' : ''
+          [t.milestone ? 'Milestone' : '', (!t.milestone && t.units !== 100) ? ('Allocation ' + t.units + '%') : ''].filter(Boolean).join('; ')
         ]);
       });
       download(safeName() + '-smartsheet.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
@@ -1459,6 +1791,7 @@
         <ID>${resUID[o]}</ID>
         <Name>${escapeXml(o)}</Name>
         <Type>1</Type>
+        <MaxUnits>${(getCapacity(o) / 100).toFixed(4)}</MaxUnits>
       </Resource>`).join('');
 
       let assignXml = '';
@@ -1471,7 +1804,7 @@
         <TaskUID>${t.id}</TaskUID>
         <ResourceUID>${resUID[t.owner]}</ResourceUID>
         <PercentWorkComplete>${Math.round(t.percentComplete)}</PercentWorkComplete>
-        <Units>1</Units>
+        <Units>${((Number.isFinite(+t.units) ? +t.units : 100) / 100).toFixed(4)}</Units>
       </Assignment>`;
         }
       });
@@ -1552,12 +1885,13 @@
     }
     function resetProject() {
       if (tasks.length && !confirm('Clear all activities and start fresh?')) return;
-      tasks = []; nextId = 1; calculated = false; mcResult = null;
+      tasks = []; nextId = 1; calculated = false; mcResult = null; resources = {}; resourceLoad = null;
       document.getElementById('projectName').value = 'New Engagement';
       document.getElementById('holidays').value = '';
       document.getElementById('summaryGrid').innerHTML = '';
       document.getElementById('analyticsContent').innerHTML = '<div class="empty-state"><h3>Run Calculate to see analytics</h3></div>';
       document.getElementById('ganttContainer').innerHTML = '';
+      document.getElementById('resourcesContainer').innerHTML = '';
       document.getElementById('pertSvg').innerHTML = '';
       renderTaskTable(); switchTab('tasks'); saveLocal();
     }
@@ -1615,8 +1949,12 @@
       "pessimistic": number,  // worst-case duration in ${unit}
       "milestone": false,     // true for zero-duration checkpoints (go-live, sign-off, approvals)
       "owner": "person/role or empty string",
+      "units": 100,           // % of the owner this task consumes while active (100 = full-time; use less for part-time work)
       "dependsOn": ["exact names of predecessor tasks that must finish first"]
     }
+  ],
+  "resources": [
+    { "name": "person/role/team name", "capacityPercent": 100 }   // optional; 100 = 1 person, 300 = a 3-person team
   ]
 }
 Rules:
@@ -1625,7 +1963,8 @@ Rules:
 - If the notes give only a single estimate for a task, expand it to a sensible 3-point range (optimistic ~= 0.75x, pessimistic ~= 1.6x, rounded).
 - Set realistic dependencies so the plan sequences correctly; use parallel work where the notes imply it. dependsOn must reference names that appear in this same tasks array.
 - Mark clear checkpoints (go-live, sign-off, approval, kickoff decision) as milestones with 0/0/0 durations.
-- Assign owners only when named or clearly implied.`;
+- Assign owners only when named or clearly implied. Default units to 100 unless the notes say a task is part-time or shared.
+- In "resources", list each distinct owner once. Give teams a capacityPercent > 100 (e.g. a 3-developer team = 300); individuals default to 100. Omit "resources" only if no owners are assigned.`;
     }
 
     async function callAnthropic(userContent) {
@@ -1684,8 +2023,9 @@ Rules:
       let prompt;
       if (mode === 'merge' && tasks.length) {
         const current = { projectName: document.getElementById('projectName').value, durationUnit: document.getElementById('durationUnit').value,
-          tasks: tasks.map(t => ({ name: t.name, optimistic: t.o, mostLikely: t.m, pessimistic: t.p, milestone: t.milestone, owner: t.owner,
-            dependsOn: t.predecessors.map(p => (tasks.find(x => x.id === p.id) || {}).name).filter(Boolean) })) };
+          tasks: tasks.map(t => ({ name: t.name, optimistic: t.o, mostLikely: t.m, pessimistic: t.p, milestone: t.milestone, owner: t.owner, units: t.units,
+            dependsOn: t.predecessors.map(p => (tasks.find(x => x.id === p.id) || {}).name).filter(Boolean) })),
+          resources: Object.keys(resources).map(n => ({ name: n, capacityPercent: getCapacity(n) })) };
         prompt = `You are a project planning assistant for engagement/project managers.
 Here is the CURRENT project plan as JSON:
 ${JSON.stringify(current, null, 2)}
@@ -1745,8 +2085,10 @@ ${aiSchemaHint()}`;
         }
         const id = idc++;
         nameToId[name.toLowerCase()] = id;
+        let units = Number(pt.units);
+        if (!Number.isFinite(units) || units < 0) units = 100;
         built.push(makeTask({ id, name, o, m, p, milestone: isMs || (p === 0 && m === 0 && o === 0),
-          owner: String(pt.owner || '').trim(), predecessors: [], _dependsOn: pt.dependsOn || [] }));
+          owner: String(pt.owner || '').trim(), units, predecessors: [], _dependsOn: pt.dependsOn || [] }));
       });
       // resolve dependencies by name
       built.forEach(t => {
@@ -1758,18 +2100,24 @@ ${aiSchemaHint()}`;
         delete t._dependsOn;
       });
 
-      if (mode === 'merge' && tasks.length) {
-        // merge returns full list -> just replace with the rebuilt full list
-        tasks = built;
-      } else {
-        tasks = built;
+      tasks = built; // both create and merge return the full list
+      // resource capacities from the plan (falls back to 100 via syncResources)
+      resources = {};
+      if (Array.isArray(plan.resources)) {
+        plan.resources.forEach(r => {
+          const nm = String((r && r.name) || '').trim();
+          if (!nm) return;
+          const cap = Number(r.capacityPercent != null ? r.capacityPercent : r.capacity);
+          resources[nm] = { capacity: (Number.isFinite(cap) && cap > 0) ? cap : 100 };
+        });
       }
+      syncResources();
       nextId = idc;
       calculated = false;
       renderTaskTable();
       saveLocal();
       // auto-calculate so the user immediately sees Gantt/PERT/analytics
-      if (tasks.length) { if (recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderPERT(); } }
+      if (tasks.length) { if (recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderPERT(); } }
     }
 
     // ========================= INIT =========================
