@@ -546,6 +546,30 @@
       </div>
     </div>
 
+    <!-- AI decompose modal -->
+    <div class="modal-overlay" id="decompModal">
+      <div class="modal" style="max-width:640px">
+        <div class="modal-header"><h3 id="decompTitle">⑂ AI decompose</h3><button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeDecompModal()">✕</button></div>
+        <div class="modal-body">
+          <p class="help-text" id="decompMeta" style="margin:0 0 0.75rem"></p>
+          <div class="form-group">
+            <label>Optional guidance for the AI <span class="info-icon" title="Leave blank for a sensible automatic 3–8-way split. Or tell it exactly how to break the work down — pasting a list creates one trackable sub-task per item so you can check each off as it completes.">i</span></label>
+            <textarea id="decompGuidance" rows="6" placeholder="Examples:
+• Paste the actual list — 'One sub-task per intent: billing dispute, refund status, plan change, cancel service, …'
+• 'Split by phase: workshop → drafting → definitions → conflict resolution → client sign-off'
+• 'One sub-task per integration, plus a shared test harness task'
+• 'Nothing bigger than 1 day so the burn-down is granular'"></textarea>
+            <p class="help-text" style="margin-top:0.4rem">Each sub-task lands in the WBS under this activity with its own 3-point estimate, owner, dictionary entry and check-off box — and the parent's %, TE and O/M/P roll up from them automatically.</p>
+          </div>
+          <div id="decompError" class="error" style="display:none;margin-top:0.5rem"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="closeDecompModal()">Cancel</button>
+          <button class="btn-primary" id="decompRunBtn" onclick="runAiDecompose()">⑂ Decompose</button>
+        </div>
+      </div>
+    </div>
+
     <!-- PERT VIEW -->
     <div id="view-pert" class="view">
       <div class="card">
@@ -1553,6 +1577,11 @@
         return nm + suffix;
       }).join(', ');
     }
+    // summary-row O/M/P display: rolled-up schedule spans from the extra passes
+    function rollCell(v, kind) {
+      if (!calculated || v == null) return '—';
+      return `<span class="help-text" style="cursor:help;font-style:italic" title="Rolled up automatically from the sub-tasks: elapsed span through their dependency network if every one hits its ${kind} estimate. Parallel branches overlap, so this matches how TE rolls up (span), not a simple sum of effort.">${(+v).toFixed(1)}</span>`;
+    }
     function renderTaskTable() {
       const tbody = document.getElementById('taskBody');
       const empty = document.getElementById('tasksEmpty');
@@ -1593,9 +1622,9 @@
           <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
           <td>${nameCell}</td>
           <td style="font-size:0.8rem" title="${t.overallocated ? escapeHtml((t.owner||'')+' is over-allocated during this task') : ''}">${t.overallocated ? '<span style="color:var(--critical)" title="over-allocated">⚠ </span>' : ''}${escapeHtml(t.owner || '—')}${(!t.milestone && !summary && t.units !== 100) ? ` <span class="help-text" style="font-size:0.68rem">@${t.units}%</span>` : ''}${(t.attendees && t.attendees.length) ? ` <span class="badge badge-info" title="${escapeHtml(t.attendees.map(a => a.name + ' @' + a.units + '%').join(', '))}">+${t.attendees.length}</span>` : ''}</td>
-          <td>${(t.milestone || summary) ? '—' : t.o}</td>
-          <td>${(t.milestone || summary) ? '—' : t.m}</td>
-          <td>${(t.milestone || summary) ? '—' : t.p}</td>
+          <td>${summary ? rollCell(t.oUp, 'optimistic') : t.milestone ? '—' : t.o}</td>
+          <td>${summary ? rollCell(t.mUp, 'most-likely') : t.milestone ? '—' : t.m}</td>
+          <td>${summary ? rollCell(t.pUp, 'pessimistic') : t.milestone ? '—' : t.p}</td>
           <td><strong>${teStr}</strong></td>
           <td style="font-size:0.8rem">${summary ? '—' : escapeHtml(predLabel(t))}</td>
           <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.startDate) : '—'}</td>
@@ -1606,7 +1635,7 @@
           <td style="white-space:nowrap">
             <button class="btn-sm btn-secondary" onclick="outdentTask(${t.id})" title="Outdent (promote a level)">⇤</button>
             <button class="btn-sm btn-secondary" onclick="indentTask(${t.id})" title="Indent (nest under the row above)">⇥</button>
-            <button class="btn-sm btn-secondary" onclick="aiDecompose(${t.id})" title="AI: decompose into sub-tasks">⑂</button>
+            <button class="btn-sm btn-secondary" onclick="aiDecompose(${t.id})" title="AI: decompose into sub-tasks — optionally paste a list (e.g. your intents) to get one trackable sub-task per item">⑂</button>
             <button class="btn-sm btn-secondary" onclick="openEditModal(${t.id})">Edit</button>
             <button class="btn-sm btn-danger" onclick="deleteTask(${t.id})">✕</button>
           </td>
@@ -1882,6 +1911,24 @@
         t.finishDate = new Date(Math.max(...leaves.map(x => x.finishDate.getTime())));
         const wsum = leaves.reduce((s, x) => s + (x.te || 0), 0);
         t.percentComplete = wsum > 0 ? Math.round(leaves.reduce((s, x) => s + (x.te || 0) * (x.percentComplete || 0), 0) / wsum) : 0;
+      });
+
+      // summary O/M/P roll-ups: the elapsed span through the sub-network if every
+      // leaf hit its optimistic / most-likely / pessimistic estimate. Parallel
+      // branches overlap, so these are schedule spans (consistent with summary TE
+      // = EF − ES), NOT sums of effort.
+      const spanPasses = {
+        oUp: computeSchedule(x => x.milestone ? 0 : x.o),
+        mUp: computeSchedule(x => x.milestone ? 0 : x.m),
+        pUp: computeSchedule(x => x.milestone ? 0 : x.p)
+      };
+      ordered.forEach(({ task: t }) => {
+        if (!t.isSummary) return;
+        const ids = leafDescendants(t.id).map(x => x.id);
+        ['oUp', 'mUp', 'pUp'].forEach(k => {
+          const s = spanPasses[k];
+          t[k] = (s.ok && ids.length) ? Math.max(...ids.map(i => s.ef[i])) - Math.min(...ids.map(i => s.es[i])) : null;
+        });
       });
 
       calculated = true;
@@ -5214,7 +5261,7 @@ Rules: only include tasks the notes actually mention; never lower an existing pe
     }
 
     // ---- AI: decompose one task into finer sub-tasks (deeper WBS) ----
-    async function aiDecompose(id) {
+    function aiDecompose(id) {
       const t = tasks.find(x => x.id === id);
       if (!t) return;
       if (t.milestone) { alert('Milestones are zero-duration checkpoints — decompose a work task instead.'); return; }
@@ -5228,6 +5275,22 @@ Rules: only include tasks the notes actually mention; never lower an existing pe
       if (already && !confirm(`"${t.name}" already has sub-tasks. Add another level of decomposition under it?`)) return;
       if (!already && (t.percentComplete || 0) > 0 &&
           !confirm(`"${t.name}" is ${t.percentComplete}% complete. Its progress will carry over to each new sub-task (and roll up from them afterwards). Continue?`)) return;
+      // gather optional guidance, then run — pasting a list yields one sub-task per item
+      aiDecompose._id = id;
+      document.getElementById('decompTitle').textContent = '⑂ AI decompose — ' + (t.name.length > 34 ? t.name.slice(0, 32) + '…' : t.name);
+      document.getElementById('decompMeta').textContent = `Current estimate: O=${t.o} / M=${t.m} / P=${t.p} ${unitLabel()}${t.owner ? ' • owner ' + t.owner : ''}${t.description ? ' • ' + t.description : ''}`;
+      document.getElementById('decompGuidance').value = '';
+      document.getElementById('decompError').style.display = 'none';
+      document.getElementById('decompModal').classList.add('open');
+      setTimeout(() => document.getElementById('decompGuidance').focus(), 50);
+    }
+    function closeDecompModal() { document.getElementById('decompModal').classList.remove('open'); }
+    async function runAiDecompose() {
+      const id = aiDecompose._id;
+      const t = tasks.find(x => x.id === id);
+      if (!t) { closeDecompModal(); return; }
+      const guidance = document.getElementById('decompGuidance').value.trim();
+      closeDecompModal();
       const unit = document.getElementById('durationUnit').value;
       const siblings = leafTasks().filter(x => x.id !== id).slice(0, 30)
         .map(x => `${x.name} (~${(x.te || ((x.o + 4 * x.m + x.p) / 6) || 0).toFixed(1)} ${unit}${x.owner ? ', ' + x.owner : ''})`).join('; ');
@@ -5235,12 +5298,12 @@ Rules: only include tasks the notes actually mention; never lower an existing pe
 Project: ${document.getElementById('projectName').value} (durations in ${unit}).
 TASK TO DECOMPOSE: "${t.name}" — O=${t.o}, M=${t.m}, P=${t.p} ${unit}${t.owner ? ', owner ' + t.owner : ''}${t.description ? ', scope: ' + t.description : ''}${t.deliverable ? ', deliverable: ' + t.deliverable : ''}.
 Other tasks in the plan for context: ${siblings || '(none)'}.
-${histPromptBlock()}
+${guidance ? `USER GUIDANCE — follow it exactly; it overrides the default split rules below:\n"""${guidance}"""\n` : ''}${histPromptBlock()}
 Return ONLY a JSON object (no prose, no fences):
 {"subtasks":[{"name":"...","optimistic":n,"mostLikely":n,"pessimistic":n,"owner":"","units":100,"deliverable":"","description":"","acceptance":"","dependsOn":["names among these subtasks only"]}]}
 Rules:
-- 3 to 8 concrete, trackable sub-tasks that fully cover the parent's scope.
-- The sum of mostLikely values should be close to the parent's M (${t.m} ${unit}) unless the historical data clearly says otherwise.
+- Default: 3 to 8 concrete, trackable sub-tasks that fully cover the parent's scope. BUT if the guidance lists specific items (intents, integrations, reports, regions, workshops…), create ONE sub-task per listed item — each individually check-off-able — plus any setup/review/sign-off tasks the guidance implies.
+- The sum of mostLikely values should be close to the parent's M (${t.m} ${unit}) unless the guidance or historical data clearly says otherwise.
 - optimistic <= mostLikely <= pessimistic for each.
 - Default owner to "${t.owner || ''}" unless a sub-task clearly belongs to someone else.
 - dependsOn may only reference sub-task names in this same array (sequence them realistically; parallel where sensible).
