@@ -4569,11 +4569,11 @@
       const allWarns = stories.reduce((n, s) => n + storyLint(s).length, 0);
       const acCount = stories.reduce((n, s) => n + (s.ac || []).length, 0);
       let html = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:0.75rem;margin-bottom:1rem">
-        <div class="stat-card"><div class="value">${epics.length}</div><div class="label">Epics</div></div>
-        <div class="stat-card"><div class="value">${stories.length}</div><div class="label">User stories</div></div>
-        <div class="stat-card"><div class="value">${acCount}</div><div class="label">Acceptance criteria</div></div>
-        <div class="stat-card ${uncovered.length ? 'warn' : 'success'}" style="cursor:help" title="${uncovered.length ? 'Activities without a story: ' + escapeHtml(uncovered.slice(0, 8).map(t => t.name).join(', ')) + (uncovered.length > 8 ? '…' : '') : 'Every non-milestone activity has at least one story'}"><div class="value">${leaves.length - uncovered.length}/${leaves.length}</div><div class="label">WBS coverage</div></div>
-        <div class="stat-card ${allWarns ? 'critical' : 'success'}" title="INVEST/testability lint: missing error/edge paths, unlinked stories, vague personas, untestable words"><div class="value">${allWarns}</div><div class="label">Lint warnings</div></div>
+        <div class="stat-card" style="cursor:pointer" onclick="reqScrollTo('reqEpicsAnchor')" title="Click to jump to the epic groupings below"><div class="value">${epics.length}</div><div class="label">Epics</div></div>
+        <div class="stat-card" style="cursor:pointer" onclick="reqScrollTo('reqEpicsAnchor')" title="Click to jump to the story cards — each shows its ACs, NFRs, trace and lint findings"><div class="value">${stories.length}</div><div class="label">User stories</div></div>
+        <div class="stat-card" style="cursor:pointer" onclick="reqScrollTo('traceMatrix', true)" title="Click to open the traceability matrix — one row per criterion with its test cases and status"><div class="value">${acCount}</div><div class="label">Acceptance criteria</div></div>
+        <div class="stat-card ${uncovered.length ? 'warn' : 'success'}" style="cursor:pointer" onclick="${uncovered.length ? `reqScrollTo('covBanner')` : `reqScrollTo('traceMatrix', true)`}" title="${uncovered.length ? 'Activities without a story: ' + escapeHtml(uncovered.slice(0, 8).map(t => t.name).join(', ')) + (uncovered.length > 8 ? '…' : '') + ' — click for the gap list & targeted draft button' : 'Every non-milestone activity has at least one story — click for the matrix'}"><div class="value">${leaves.length - uncovered.length}/${leaves.length}</div><div class="label">WBS coverage</div></div>
+        <div class="stat-card ${allWarns ? 'critical' : 'success'}" style="cursor:pointer" onclick="${allWarns ? `reqScrollTo('lintBanner')` : `void(0)`}" title="${allWarns ? 'Click for the lint findings and the one-click AI repair' : 'INVEST/testability lint is clean: every story has error/edge paths, real personas, measurable criteria'}"><div class="value">${allWarns}</div><div class="label">Lint warnings</div></div>
       </div>`;
       if (reqs.personas && reqs.personas.length) {
         html += `<details style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">👥 Personas glossary (${reqs.personas.length}) — copy into the SOW; “as a user” stories are unpriceable</summary>
@@ -4583,7 +4583,7 @@
       }
       if (allWarns) {
         const flaggedN = stories.filter(s => storyLint(s).length).length;
-        html += `<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
+        html += `<div id="lintBanner" style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
           <strong>⚠ ${allWarns} lint finding${allWarns === 1 ? '' : 's'} across ${flaggedN} stor${flaggedN === 1 ? 'y' : 'ies'}</strong> — as written they are untestable, unbillable, or untraceable (each card lists its findings).
           <div style="margin-top:0.4rem;display:flex;gap:0.5rem;flex-wrap:wrap">
             <button class="btn-sm btn-primary" onclick="aiFixStoryLints()" title="Sends ONLY the flagged stories with their exact findings; the AI rewrites ACs into Given/When/Then, adds missing error/edge paths, swaps vague words for measurable thresholds, names real personas, and suggests WBS links. Clean stories are untouched; you review the result.">🔧 Fix lint findings with AI</button>
@@ -4602,10 +4602,10 @@
           </div></div>`;
       }
       if (uncovered.length) {
-        html += `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
+        html += `<div id="covBanner" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
           <strong>⚠ ${uncovered.length} WBS activit${uncovered.length === 1 ? 'y has' : 'ies have'} no story:</strong>
           ${uncovered.slice(0, 12).map(t => escapeHtml(t.wbs + ' ' + t.name)).join(' • ')}${uncovered.length > 12 ? ' …' : ''}
-          <div style="margin-top:0.4rem"><button class="btn-sm btn-secondary" onclick="draftRequirements()">🤖 Draft the missing stories (keeps existing ones)</button></div></div>`;
+          <div style="margin-top:0.4rem"><button class="btn-sm btn-primary" onclick="draftMissingStories()" title="Sends ONLY these uncovered activities (in small batches with a progress tracker); every one must come back with a story, and you get an explicit report if any are still uncovered afterwards. Existing stories are never touched.">🤖 Draft the missing stories (targeted — keeps existing ones)</button></div></div>`;
       }
       const typeIcon = { happy: '✅', error: '⚠️', edge: '🧪', perf: '📏' };
       const typeTip = { happy: 'Happy path — everything works', error: 'Error path — invalid input or failure handled gracefully', edge: 'Edge case — boundaries, empty states, concurrency, timeouts', perf: 'Measured performance threshold' };
@@ -4629,11 +4629,16 @@
         </tr>`;
         if ((s.ac || []).length) s.ac.forEach(a => matrixRows.push(cells(a))); else matrixRows.push(cells(null));
       });
-      html += `<details style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">▦ Traceability matrix — ${matrixRows.length} rows: epic → story → acceptance criterion → WBS activity → status <span class="help-text" style="font-weight:400">(this is the audit view; the CSV export matches it)</span></summary>
+      html += `<details id="traceMatrix" style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">▦ Traceability matrix — ${matrixRows.length} rows: epic → story → acceptance criterion → WBS activity → status <span class="help-text" style="font-weight:400">(this is the audit view; the CSV export matches it)</span></summary>
         <div class="table-wrap" style="margin-top:0.5rem;max-height:420px;overflow:auto"><table>
           <thead><tr><th>Epic</th><th>Story</th><th title="Hover for the full As-a/I-want/So-that sentence">User story</th><th>AC</th><th title="happy / error / edge / perf path">Type</th><th>Acceptance criterion</th><th title="WBS tasks named 'TC <AC-id> — …' that verify this criterion (⑂ decompose your UAT task to test-case level to generate them)">Test cases</th><th title="Click to open the activity">WBS trace</th><th>Owner</th><th>Status</th></tr></thead>
           <tbody>${matrixRows.join('')}</tbody></table></div></details>`;
 
+      html += `<div id="reqEpicsAnchor" class="toolbar no-print" style="margin:0 0 0.5rem;align-items:center">
+        <button class="btn-sm btn-secondary" onclick="reqSetAll(true)" title="Open every story to show its acceptance criteria, NFRs and assumptions">▾ Expand all</button>
+        <button class="btn-sm btn-secondary" onclick="reqSetAll(false)" title="One line per story — ID, sentence, AC mix, trace and status">▸ Collapse all</button>
+        <span class="help-text">click a story row to expand it — stories with lint findings start expanded</span>
+      </div>`;
       const rendered = new Set();
       const epicBlock = (eid, title, need) => {
         const list = stories.filter(s => (s.epicId || '—') === eid);
@@ -4647,33 +4652,46 @@
       const leftovers = stories.filter(s => !rendered.has(s.id));
       if (leftovers.length) html += `<div style="margin-bottom:1.1rem"><h3 style="font-size:0.95rem;margin:0 0 0.5rem">Ungrouped stories</h3>${leftovers.map(s => storyCardHtml(s, idToTask, typeIcon, typeTip)).join('')}</div>`;
       cont.innerHTML = html;
-      cont.querySelectorAll('[data-story-edit]').forEach(b => b.addEventListener('click', () => openStoryModal(b.dataset.storyEdit)));
-      cont.querySelectorAll('[data-story-mk]').forEach(b => b.addEventListener('click', () => createTaskFromStory(b.dataset.storyMk)));
+      // buttons live inside <summary> — stop the click from toggling the row
+      cont.querySelectorAll('[data-story-edit]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); openStoryModal(b.dataset.storyEdit); }));
+      cont.querySelectorAll('[data-story-mk]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); createTaskFromStory(b.dataset.storyMk); }));
     }
+    // Backlog-style story rows: ONE compact line per story (ID · sentence ·
+    // AC-mix · trace · status), expandable for the Given/When/Then detail.
+    // Stories with lint findings start expanded so problems are never hidden.
     function storyCardHtml(s, idToTask, typeIcon, typeTip) {
       const t = s.wbsId != null ? idToTask[s.wbsId] : null;
       const pct = t ? (t.percentComplete || 0) : null;
       const warns = storyLint(s);
       const acHtml = (s.ac || []).map(a => {
         const bw = bannedIn(a.text);
-        return `<li style="margin-bottom:0.25rem"><span title="${escapeHtml(typeTip[a.type] || '')}" style="cursor:help">${typeIcon[a.type] || '•'}</span> <b>${escapeHtml(a.id || '')}</b> ${escapeHtml(a.text)}${bw.length ? ` <span class="risk-tag" style="background:#fee2e2;color:#b91c1c;cursor:help" title="Untestable word(s) — cannot be accepted or invoiced. Replace with a number and its measurement condition.">${escapeHtml(bw.join(', '))}</span>` : ''}</li>`;
+        const tcs = testCasesForAC(a.id);
+        return `<li style="margin-bottom:0.25rem"><span title="${escapeHtml(typeTip[a.type] || '')}" style="cursor:help">${typeIcon[a.type] || '•'}</span> <b>${escapeHtml(a.id || '')}</b> ${escapeHtml(a.text)}${tcs.length ? ` <span class="help-text" title="${escapeHtml(tcs.map(tc => tc.name + ' (' + (tc.percentComplete || 0) + '%)').join('\n'))}">🧪${tcs.length}</span>` : ''}${bw.length ? ` <span class="risk-tag" style="background:#fee2e2;color:#b91c1c;cursor:help" title="Untestable word(s) — cannot be accepted or invoiced. Replace with a number and its measurement condition.">${escapeHtml(bw.join(', '))}</span>` : ''}</li>`;
       }).join('');
-      return `<div id="story-card-${escapeHtml(s.id)}" style="background:#fff;border:1px solid var(--border);border-left:4px solid ${warns.length ? 'var(--warn)' : 'var(--success)'};border-radius:10px;padding:0.85rem 1rem;margin-bottom:0.6rem">
-        <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:flex-start;flex-wrap:wrap">
-          <div style="flex:1;min-width:240px;font-size:0.88rem"><b>${escapeHtml(s.id)}</b> — As a <b>${escapeHtml(s.persona || '?')}</b>, I want to <b>${escapeHtml(s.want || '?')}</b>, so that ${escapeHtml(s.soThat || '?')}</div>
-          <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap">
-            ${t ? `<span class="badge badge-info" style="cursor:pointer" onclick="openEditModal(${t.id}, true)" title="Traces to WBS ${escapeHtml(t.wbs)} ${escapeHtml(t.name)} — click to open the activity (dictionary inside)">↳ ${escapeHtml(t.wbs)} ${escapeHtml(t.name.length > 26 ? t.name.slice(0, 24) + '…' : t.name)}</span>
+      const nAc = k => (s.ac || []).filter(a => a.type === k).length;
+      const mix = `✅${nAc('happy')} ⚠️${nAc('error')} 🧪${nAc('edge')}${nAc('perf') ? ' 📏' + nAc('perf') : ''}`;
+      const sentence = `<b>${escapeHtml(s.id)}</b> — As a <b>${escapeHtml(s.persona || '?')}</b>, I want to ${escapeHtml(s.want || '?')}`;
+      return `<details class="story-card" id="story-card-${escapeHtml(s.id)}" ${warns.length ? 'open' : ''} style="background:#fff;border:1px solid var(--border);border-left:4px solid ${warns.length ? 'var(--warn)' : 'var(--success)'};border-radius:10px;margin-bottom:0.45rem">
+        <summary style="list-style:none;cursor:pointer;display:flex;justify-content:space-between;gap:0.6rem;align-items:center;flex-wrap:wrap;padding:0.55rem 0.9rem">
+          <span style="flex:1;min-width:240px;font-size:0.85rem">${sentence}</span>
+          <span style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap">
+            <span class="help-text" style="font-size:0.72rem;cursor:help;white-space:nowrap" title="Acceptance-criteria mix: ${nAc('happy')} happy path · ${nAc('error')} error path · ${nAc('edge')} edge case${nAc('perf') ? ' · ' + nAc('perf') + ' performance' : ''}${(s.nfrs || []).length ? ' — plus ' + s.nfrs.length + ' NFR(s)' : ''}. Click the row to expand.">${mix}</span>
+            ${warns.length ? `<span class="risk-tag" style="background:#fef3c7;color:#b45309;cursor:help" title="${escapeHtml(warns.join('\n'))}">⚠ ${warns.length}</span>` : ''}
+            ${t ? `<span class="badge badge-info" style="cursor:pointer" onclick="event.preventDefault();event.stopPropagation();openEditModal(${t.id}, true)" title="Traces to WBS ${escapeHtml(t.wbs)} ${escapeHtml(t.name)} — click to open the activity (dictionary inside)">↳ ${escapeHtml(t.wbs)} ${escapeHtml(t.name.length > 22 ? t.name.slice(0, 20) + '…' : t.name)}</span>
               <span class="badge ${pct >= 100 ? 'badge-done' : pct > 0 ? 'badge-prog' : 'badge-notstarted'}" title="Status inherited from the linked WBS activity — check work off on the Tasks tab and this follows">${pct >= 100 ? '✓ done' : pct > 0 ? pct + '%' : 'not started'}</span>`
             : `<span class="badge badge-blocked" title="No linked WBS activity — this scope is NOT in the plan or the price. Link it in the editor, or create the missing activity from the story.">unlinked</span>
-               <button class="btn-sm btn-secondary" data-story-mk="${escapeHtml(s.id)}" title="Create the missing WBS activity from this story: name from 'I want…', dictionary from the story + happy-path AC, nested under the epic's phase. It then needs an O/M/P estimate.">➕ Create WBS task</button>`}
+               <button class="btn-sm btn-secondary" data-story-mk="${escapeHtml(s.id)}" title="Create the missing WBS activity from this story: name from 'I want…', dictionary from the story + happy-path AC, nested under the epic's phase. It then needs an O/M/P estimate.">➕</button>`}
             <button class="btn-sm btn-secondary" data-story-edit="${escapeHtml(s.id)}" title="Edit this story">✎</button>
-          </div>
+          </span>
+        </summary>
+        <div style="padding:0 0.9rem 0.7rem">
+          <div class="help-text" style="font-size:0.78rem;margin-bottom:0.35rem">…so that ${escapeHtml(s.soThat || '?')}</div>
+          ${acHtml ? `<ul style="list-style:none;margin:0;padding:0;font-size:0.82rem;line-height:1.5">${acHtml}</ul>` : '<p class="help-text">No acceptance criteria yet — untestable stories cannot be accepted or invoiced.</p>'}
+          ${(s.nfrs || []).length ? `<div style="margin-top:0.4rem;display:flex;gap:0.35rem;flex-wrap:wrap">${s.nfrs.map(n => `<span class="risk-tag" style="background:#ede9fe;color:#6d28d9;cursor:help" title="Non-functional requirement — often the largest cost driver; must be Required, N/A or Excluded, never blank">NFR: ${escapeHtml(n)}</span>`).join('')}</div>` : ''}
+          ${(s.assumptions || []).length ? `<div class="help-text" style="margin-top:0.35rem;font-size:0.75rem" title="A: assumptions (with impact if false) — D: client dependencies (with slip consequence)">${s.assumptions.map(a => '• ' + escapeHtml(a)).join('<br/>')}</div>` : ''}
+          ${warns.length ? `<div style="margin-top:0.45rem;font-size:0.76rem;color:#b45309">${warns.map(w => '⚠ ' + escapeHtml(w)).join('<br/>')}</div>` : ''}
         </div>
-        ${acHtml ? `<ul style="list-style:none;margin:0.5rem 0 0;padding:0;font-size:0.82rem;line-height:1.5">${acHtml}</ul>` : ''}
-        ${(s.nfrs || []).length ? `<div style="margin-top:0.4rem;display:flex;gap:0.35rem;flex-wrap:wrap">${s.nfrs.map(n => `<span class="risk-tag" style="background:#ede9fe;color:#6d28d9;cursor:help" title="Non-functional requirement — often the largest cost driver; must be Required, N/A or Excluded, never blank">NFR: ${escapeHtml(n)}</span>`).join('')}</div>` : ''}
-        ${(s.assumptions || []).length ? `<div class="help-text" style="margin-top:0.35rem;font-size:0.75rem" title="A: assumptions (with impact if false) — D: client dependencies (with slip consequence)">${s.assumptions.map(a => '• ' + escapeHtml(a)).join('<br/>')}</div>` : ''}
-        ${warns.length ? `<div style="margin-top:0.45rem;font-size:0.76rem;color:#b45309">${warns.map(w => '⚠ ' + escapeHtml(w)).join('<br/>')}</div>` : ''}
-      </div>`;
+      </details>`;
     }
     // test-case WBS items that reference an acceptance criterion by ID — created
     // by ⑂ decompose ("TC AC-1.2 — …") or named that way by hand. Completes the
@@ -4933,6 +4951,14 @@ Return ONLY JSON (no prose, no fences):
       flashSaved('⬇ Test plan exported — ' + covered.length + '/' + allAcs.length + ' ACs covered');
     }
 
+    function reqSetAll(open) { document.querySelectorAll('#reqContainer details.story-card').forEach(d => { d.open = open; }); }
+    // headline-card drill-in: scroll to (and open) a section of the req tab
+    function reqScrollTo(id, openIt) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (openIt && el.tagName === 'DETAILS') el.open = true;
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
     // Deep link: open the Requirements tab AND land on a specific story,
     // scrolled into view with a brief highlight — used by every drill-in.
     function openReqStory(storyId) {
@@ -4940,6 +4966,7 @@ Return ONLY JSON (no prose, no fences):
       setTimeout(() => {
         const el = document.getElementById('story-card-' + storyId);
         if (!el) return;
+        if (el.tagName === 'DETAILS') el.open = true; // deep links always land expanded
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         const orig = el.style.background;
         el.style.transition = 'background 0.5s';
@@ -5070,6 +5097,52 @@ ${reqRulesBlock()}`;
         flashSaved('✓ ' + reqs.stories.length + ' stories drafted across ' + reqs.epics.length + ' epics — review the lint flags');
       } catch (e) { streamHide(false); alert('Requirements drafting failed: ' + (e.message || e)); }
     }
+    // Targeted gap-filler: draft stories ONLY for activities that have none —
+    // small batches, every listed activity must get a story, and afterwards it
+    // reports exactly what is still uncovered instead of a 3-second flash.
+    async function draftMissingStories() {
+      if (!tasks.length) { alert('Build the plan first (Tasks tab).'); return; }
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) { alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
+      if (!reqs) reqs = { personas: [], epics: [], stories: [] };
+      computeWbsCodes();
+      const coveredIds = new Set(reqs.stories.map(s => s.wbsId).filter(id => id != null));
+      const gaps = leafTasks().filter(t => !t.milestone && !coveredIds.has(t.id));
+      if (!gaps.length) { flashSaved('✓ Every activity already has a story — no gaps.'); return; }
+      const batches = [];
+      for (let i = 0; i < gaps.length; i += 15) batches.push(gaps.slice(i, i + 15));
+      try {
+        for (let bi = 0; bi < batches.length; bi++) {
+          const batch = batches[bi];
+          const ids = new Set(batch.map(t => t.id));
+          const entries = tasksInWbsOrder().filter(({ task }) => ids.has(task.id));
+          const partBar = batches.map((x, i) => i < bi ? '✓' : i === bi ? '▶' : '·').join('');
+          const prompt = `You are a senior business analyst filling COVERAGE GAPS in an existing requirements set. Draft user stories ONLY for the activities listed below — EVERY SINGLE listed activity MUST receive at least one story; skipping any one of them fails the task.
+
+PROJECT: ${projName()}
+ACTIVITIES MISSING STORIES (wbs code | name | details):
+${reqOutlineFor(entries)}
+
+KNOWN PERSONAS — reuse these exact names wherever they fit, only add genuinely new ones: ${(reqs.personas || []).map(p => p.name).join(', ') || '(none yet)'}
+EPICS ALREADY DEFINED — reuse by id when an activity belongs to one: ${(reqs.epics || []).map(e => e.id + ' ' + (e.title || '')).join('; ') || '(none)'}
+STORY IDs ALREADY TAKEN — never reuse: ${reqs.stories.map(s => s.id).join(', ') || '(none)'}
+${reqRulesBlock()}`;
+          const onDelta = streamShow('Filling story gaps [' + partBar + '] batch ' + (bi + 1) + '/' + batches.length + ' (' + batch.length + ' activities)');
+          const text = await callAnthropic(prompt, { onDelta });
+          streamHide(true);
+          const res = parseAIJsonStrict(text, 'story-gap batch ' + (bi + 1)); // complete or nothing
+          mergeReqsChunk(res, ids);
+          saveLocal(); renderReqs();
+        }
+      } catch (e) { streamHide(false); alert('Gap drafting failed: ' + (e.message || e) + '\nCompleted batches were kept — re-run to continue.'); return; }
+      const still = leafTasks().filter(t => !t.milestone && !reqs.stories.some(s => s.wbsId === t.id));
+      renderReqs();
+      if (still.length) {
+        alert('⚠ ' + still.length + ' activit' + (still.length === 1 ? 'y' : 'ies') + ' STILL have no linked story — the AI most likely retitled them, so its stories landed in the red "not linked" banner instead. Use 🔗 Auto-relink there (or the story editor), or re-run this button:\n\n• ' + still.slice(0, 12).map(t => t.name).join('\n• ') + (still.length > 12 ? '\n…' : ''));
+      } else {
+        flashSaved('✓ Coverage complete — every activity now has a story (' + reqs.stories.length + ' total)');
+      }
+    }
+
     // Phase-by-phase drafting: one guaranteed-complete call per top-level branch,
     // merged as we go — completeness by construction, no reliance on repair.
     async function draftRequirementsChunked() {
