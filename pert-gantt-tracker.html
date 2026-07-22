@@ -1948,13 +1948,41 @@
     function bulkSetParent() {
       const val = document.getElementById('bulkParent').value;
       const target = val ? Number(val) : null;
-      let n = 0, skipped = 0;
+      const moved = [];
+      const prevState = new Map(); // id → snapshot for revert
+      let skipped = 0;
       selectedTasks().forEach(t => {
         if (t.id === target || (target != null && wouldCreateCycleParent(t.id, target))) { skipped++; return; }
-        t.parentId = target; n++;
+        prevState.set(t.id, { parentId: t.parentId, preds: JSON.stringify(t.predecessors) });
+        t.parentId = target; moved.push(t);
       });
       if (target != null) collapsedIds.delete(target);
-      bulkApplyDone('📁 ' + n + ' task(s) moved' + (skipped ? ' (' + skipped + ' skipped — would nest a phase inside itself)' : ''));
+      // Dependency sanity: nesting under the new parent can loop the schedule
+      // when a moved task still waits for an activity that itself comes AFTER
+      // that parent (e.g. a test case verifying a training task moved into UAT).
+      const durOf = t => (t.te || ((t.o + 4 * t.m + t.p) / 6) || 0);
+      if (moved.length && !computeSchedule(durOf).ok) {
+        const undoMove = () => prevState.forEach((v, id) => { const t = tasks.find(x => x.id === id); if (t) { t.parentId = v.parentId; t.predecessors = JSON.parse(v.preds); } });
+        const bad = findBackEdgePreds(moved);
+        if (bad.length && confirm('This move would loop the schedule: ' + bad.length + ' predecessor link(s) on the moved tasks point at activities that come AFTER the new parent.\n\n'
+          + bad.slice(0, 8).map(b => '• "' + b.t.name + '" waits for "' + b.predName + '"').join('\n') + (bad.length > 8 ? '\n… and ' + (bad.length - 8) + ' more' : '')
+          + '\n\nOK = drop those link(s) and finish the move (the nesting still schedules them inside the parent).\nCancel = undo the move, change nothing.')) {
+          bad.forEach(b => { b.t.predecessors = b.t.predecessors.filter(p => p.id !== b.predId); });
+          if (!computeSchedule(durOf).ok) {
+            const cyc = findScheduleCycle(); // name the loop BEFORE reverting
+            undoMove();
+            renderTaskTable();
+            alert('Still circular even after dropping those links — the move was undone.' + (cyc && cyc.length ? '\nLoop: ' + cyc.join(' → ') : ''));
+            return;
+          }
+        } else {
+          undoMove();
+          renderTaskTable();
+          flashSaved('↩ Move cancelled — nothing changed');
+          return;
+        }
+      }
+      bulkApplyDone('📁 ' + moved.length + ' task(s) moved' + (skipped ? ' (' + skipped + ' skipped — would nest a phase inside itself)' : ''));
     }
     function bulkIndent() {
       let n = 0;
@@ -2124,6 +2152,62 @@
     }
 
     // ========================= CPM CORE =========================
+    // Name the actual dependency loop so "cycle detected" is actionable.
+    function findScheduleCycle() {
+      const nodes = leafTasks();
+      const leafIds = new Set(nodes.map(t => t.id));
+      const preds = {};
+      nodes.forEach(t => { preds[t.id] = effectivePreds(t).filter(p => leafIds.has(p.id)); });
+      const inDeg = {}, succ = {};
+      nodes.forEach(t => { inDeg[t.id] = preds[t.id].length; succ[t.id] = []; });
+      nodes.forEach(t => preds[t.id].forEach(p => succ[p.id].push(t.id)));
+      const q = nodes.filter(t => !inDeg[t.id]).map(t => t.id);
+      let processed = 0;
+      while (q.length) { const u = q.shift(); processed++; (succ[u] || []).forEach(v => { if (--inDeg[v] === 0) q.push(v); }); }
+      if (processed === nodes.length) return null;
+      const inCycle = new Set(nodes.filter(t => inDeg[t.id] > 0).map(t => t.id));
+      let cur = inCycle.values().next().value;
+      const seen = new Map(), path = [];
+      while (!seen.has(cur)) {
+        seen.set(cur, path.length); path.push(cur);
+        const nxt = preds[cur].find(p => inCycle.has(p.id));
+        if (!nxt) break;
+        cur = nxt.id;
+      }
+      if (!seen.has(cur)) return null;
+      const loop = path.slice(seen.get(cur));
+      const nm = id => { const t = tasks.find(x => x.id === id); return t ? t.name : '#' + id; };
+      return loop.reverse().map(nm);
+    }
+    // Back-edges after a re-parent: direct predecessor links on the moved tasks
+    // that point at activities which (transitively) depend on the moved task in
+    // the NEW structure — the links that make the schedule circular.
+    function findBackEdgePreds(moved) {
+      const nodes = leafTasks();
+      const leafIds = new Set(nodes.map(t => t.id));
+      const succ = {};
+      nodes.forEach(t => { succ[t.id] = []; });
+      nodes.forEach(t => effectivePreds(t).forEach(p => { if (leafIds.has(p.id)) succ[p.id].push(t.id); }));
+      const reaches = (startId, goalSet) => {
+        const q2 = [startId], seen = new Set([startId]);
+        while (q2.length) {
+          const u = q2.shift();
+          for (const v of (succ[u] || [])) { if (goalSet.has(v)) return true; if (!seen.has(v)) { seen.add(v); q2.push(v); } }
+        }
+        return false;
+      };
+      const out = [];
+      moved.forEach(t => {
+        if (isSummaryId(t.id)) return;
+        t.predecessors.forEach(p => {
+          const pt = tasks.find(x => x.id === p.id);
+          if (!pt) return;
+          const predLeaves = new Set((isSummaryId(p.id) ? leafDescendants(p.id) : [pt]).map(x => x.id));
+          if (reaches(t.id, predLeaves)) out.push({ t, predId: p.id, predName: pt.name });
+        });
+      });
+      return out;
+    }
     // Returns { ok, topo, idToTask, successors, projectDuration } using given duration accessor.
     // Scheduling runs over LEAF tasks only; summary tasks are rolled up afterwards.
     function computeSchedule(durOf) {
@@ -2234,7 +2318,13 @@
       }
 
       const sched = computeSchedule(t => t.te);
-      if (!sched.ok) { alert('Cycle detected in dependencies. Please fix predecessor links.'); return false; }
+      if (!sched.ok) {
+        const cyc = findScheduleCycle();
+        alert('Cycle detected in dependencies.' + (cyc && cyc.length
+          ? '\n\nEach of these waits for the next, so none can ever start:\n• ' + cyc.join('\n• ') + '\n\nRemove or redirect one of these predecessor links (Edit ▸ Predecessors).'
+          : ' Please fix predecessor links.'));
+        return false;
+      }
 
       const holidays = getHolidaySet();
       const start = projectStartDate();
