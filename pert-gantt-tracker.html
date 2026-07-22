@@ -4041,7 +4041,7 @@
         return M + gapIdx * colW + NW + GX * (lanes <= 1 ? 0.5 : (0.18 + 0.64 * lane / (lanes - 1)));
       };
       const contentTop = TITLE_H + M, contentBot = H - LEGEND_H - M;
-      let hwyCount = 0;
+      let hwyTop = 0, hwyBot = 0; // one corridor lane per detour edge, per side
       edges.forEach(e => {
         const oi = (outIdx[e.from] = (outIdx[e.from] || 0)); outIdx[e.from]++;
         const ii = (inIdx[e.to] = (inIdx[e.to] || 0)); inIdx[e.to]++;
@@ -4069,9 +4069,13 @@
           // detour: drop into a clear corridor above/below all nodes, travel to the
           // gap before the target, then come back in — never through a node box
           const x2 = chXof(level[e.to] - 1, laneKeys[k].t);
-          const useTop = (sy + ty) / 2 < (contentTop + contentBot) / 2;
-          const hy = useTop ? contentTop - 14 - (hwyCount % 3) * 8 : contentBot + 14 + (hwyCount % 3) * 8;
-          hwyCount++;
+          // balance detours across both corridors, each edge on its OWN lane so
+          // long parallel runs (and their labels) never sit on top of each other
+          let useTop = (sy + ty) / 2 < (contentTop + contentBot) / 2;
+          if (useTop && hwyTop >= 6 && hwyBot < 6) useTop = false;
+          if (!useTop && hwyBot >= 6 && hwyTop < 6) useTop = true;
+          const laneN = useTop ? (hwyTop++ % 6) : (hwyBot++ % 6);
+          const hy = useTop ? contentTop - 12 - laneN * 7 : contentBot + 12 + laneN * 7;
           d = `M${sx},${sy} L${x1},${sy} L${x1},${hy} L${x2},${hy} L${x2},${ty} L${tx - 2},${ty}`;
           lx = (x1 + x2) / 2; lyy = hy - 5;
         }
@@ -4099,13 +4103,13 @@
           const cx = P.x + NW / 2, cy = P.y + NH / 2, rx = NW / 2, ry = NH / 2 - 2;
           const mBorder = done ? '#16a34a' : crit ? '#dc2626' : '#64748b';
           const mFill = done ? '#f0fdf4' : crit ? '#fef2f2' : '#ffffff';
-          const nm = t.name.length > 20 ? t.name.slice(0, 18) + '…' : t.name;
+          const nm = t.name.length > 17 ? t.name.slice(0, 15) + '…' : t.name;
           const fmt1m = v => (Number.isFinite(v) ? (Math.abs(v) < 0.05 ? '0.0' : v.toFixed(1)) : '—');
           svg += `<g filter="url(#p-shadow)" data-popen="${t.id}" style="cursor:pointer">
             <polygon points="${cx},${cy - ry} ${cx + rx},${cy} ${cx},${cy + ry} ${cx - rx},${cy}" fill="${mFill}" stroke="${mBorder}" stroke-width="${crit || done ? 2.5 : 1.8}"/>
-            <text x="${cx}" y="${cy - 6}" font-family="${FF}" font-size="11" font-weight="700" fill="#0f172a" text-anchor="middle">◆ ${done ? '✓ ' : ''}${escapeXml(nm)}</text>
+            <text x="${cx}" y="${cy - 6}" font-family="${FF}" font-size="10.5" font-weight="700" fill="#0f172a" text-anchor="middle">◆ ${done ? '✓ ' : ''}${escapeXml(nm)}</text>
             <text x="${cx}" y="${cy + 10}" font-family="${FF}" font-size="9" fill="#64748b" text-anchor="middle">${escapeXml(fmtNice(t.startDate))}</text>
-            <text x="${cx}" y="${cy + 24}" font-family="${FF}" font-size="8" fill="#94a3b8" text-anchor="middle">milestone • slack ${fmt1m(t.slack)}</text>
+            <text x="${cx}" y="${cy + 23}" font-family="${FF}" font-size="8" fill="#94a3b8" text-anchor="middle">slack ${fmt1m(t.slack)}</text>
             <title>${escapeXml('Milestone: ' + t.name + '\n' + fmtNice(t.startDate) + ' — zero duration; ' + (effectivePreds(t).length ? 'auto-completes when every predecessor reaches 100%' : 'tracked manually') + '\nSlack ' + fmt1m(t.slack) + ' ' + unitLabel() + (crit ? ' — on the critical path' : '') + '\nClick to open / edit')}</title>
           </g>`;
           return;
@@ -4136,7 +4140,15 @@
         // name + owner + dates
         const nm = t.name.length > 24 ? t.name.slice(0, 22) + '…' : t.name;
         svg += `<text x="${P.x + NW / 2}" y="${nameY + 17}" font-family="${FF}" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle">${t.milestone ? '◆ ' : ''}${done ? '✓ ' : ''}${escapeXml(nm)}</text>`;
-        svg += `<text x="${P.x + NW / 2}" y="${nameY + 32}" font-family="${FF}" font-size="9" fill="#64748b" text-anchor="middle">${escapeXml((t.owner ? t.owner + ' • ' : '') + fmtNice(t.startDate) + ' → ' + fmtNice(t.finishDate))}</text>`;
+        // owner + dates must FIT the box — long role names get truncated (full
+        // text lives in the hover tooltip), dates always survive intact
+        const dateStr2 = fmtNice(t.startDate) + ' → ' + fmtNice(t.finishDate);
+        let ownerLbl = (t.owner || '').trim();
+        if (ownerLbl && ownerLbl.length + 3 + dateStr2.length > 36) {
+          const budget = 36 - dateStr2.length - 4;
+          ownerLbl = budget >= 4 ? ownerLbl.slice(0, budget) + '…' : '';
+        }
+        svg += `<text x="${P.x + NW / 2}" y="${nameY + 32}" font-family="${FF}" font-size="9" fill="#64748b" text-anchor="middle">${escapeXml((ownerLbl ? ownerLbl + ' • ' : '') + dateStr2)}</text>`;
         // progress strip
         svg += `<rect x="${P.x + 1}" y="${progY}" width="${NW - 2}" height="5" fill="#e2e8f0"/>`;
         svg += `<rect x="${P.x + 1}" y="${progY}" width="${(NW - 2) * Math.min(100, t.percentComplete || 0) / 100}" height="5" fill="${done ? '#16a34a' : '#2563eb'}"/>`;
