@@ -226,11 +226,15 @@
     .rl-rate { width:62px; padding:0.2rem 0.35rem; font-size:0.78rem; }
     .conflict-card { border:1px solid var(--border); border-left:4px solid var(--critical); border-radius:8px; padding:0.75rem 1rem; margin-top:0.75rem; background:#fff; }
     .conflict-card.ok { border-left-color: var(--success); }
+    .pto-chip { display:inline-flex; align-items:center; gap:2px; background:#ede9fe; color:#5b21b6; border-radius:999px; padding:0.1rem 0.3rem 0.1rem 0.5rem; font-size:0.7rem; font-weight:600; margin:1px 2px 1px 0; }
+    .pto-chip button { background:transparent; border:none; color:#7c3aed; cursor:pointer; padding:0 2px; font-size:0.75rem; }
+    .pto-chip button:hover { color:#b91c1c; }
     .wbs-twisty { background:transparent; border:none; cursor:pointer; padding:0 4px 0 0; font-size:0.85rem; color:var(--muted); width:18px; }
     .wbs-twisty:hover { color: var(--primary); }
     .wbs-twisty-spacer { display:inline-block; width:18px; }
     .chart-toolbar { display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center; }
     .chart-toolbar .sep { width:1px; height:20px; background:var(--border); margin:0 0.25rem; }
+    @keyframes blink { 50% { opacity: 0; } }
     @media print {
       header, .tabs, .header-actions, .card-header button, .no-print { display: none !important; }
       .view { display: block !important; }
@@ -327,14 +331,14 @@
 
     <!-- Tabs -->
     <div class="tabs">
-      <button class="tab active" data-tab="tasks" onclick="switchTab('tasks')">1. Tasks &amp; Estimates</button>
-      <button class="tab" data-tab="wbs" onclick="switchTab('wbs')">2. WBS &amp; Dictionary</button>
-      <button class="tab" data-tab="pert" onclick="switchTab('pert')">3. PERT Network</button>
-      <button class="tab" data-tab="gantt" onclick="switchTab('gantt')">4. Gantt &amp; Progress</button>
-      <button class="tab" data-tab="resources" onclick="switchTab('resources')">5. Resources</button>
-      <button class="tab" data-tab="baseline" onclick="switchTab('baseline')">6. Baseline &amp; Variance</button>
-      <button class="tab" data-tab="analytics" onclick="switchTab('analytics')">7. Analytics &amp; Risk</button>
-      <button class="tab" data-tab="raid" onclick="switchTab('raid')">8. RAID &amp; SOW</button>
+      <button class="tab active" data-tab="tasks" onclick="switchTab('tasks')" title="Build the plan: AI from notes, or add activities with 3-point estimates">1. Tasks &amp; Estimates</button>
+      <button class="tab" data-tab="wbs" onclick="switchTab('wbs')" title="Work Breakdown Structure with deliverables, scope and acceptance criteria per element">2. WBS &amp; Dictionary</button>
+      <button class="tab" data-tab="pert" onclick="switchTab('pert')" title="Dependency network with the critical path — ES/EF/LS/LF/slack per activity">3. PERT Network</button>
+      <button class="tab" data-tab="gantt" onclick="switchTab('gantt')" title="Schedule on real dates with progress, baseline, reserves and dependency arrows — exportable as an image">4. Gantt &amp; Progress</button>
+      <button class="tab" data-tab="resources" onclick="switchTab('resources')" title="Who does what: capacity, rates, PTO, workload heatmap, over-allocation fixes, rate cards">5. Resources</button>
+      <button class="tab" data-tab="baseline" onclick="switchTab('baseline')" title="Snapshot the committed plan and track slippage vs baseline and actuals">6. Baseline &amp; Variance</button>
+      <button class="tab" data-tab="analytics" onclick="switchTab('analytics')" title="Monte-Carlo forecast, health check, reserves, cost/EVM, criticality">7. Analytics &amp; Risk</button>
+      <button class="tab" data-tab="raid" onclick="switchTab('raid')" title="Risk log, pricing & margin, SOW and change-order drafts">8. RAID &amp; SOW</button>
     </div>
 
     <!-- TASKS VIEW -->
@@ -411,6 +415,9 @@
               <span id="aiStatus" class="help-text" style="margin:0"></span>
             </div>
             <div id="aiError" class="error" style="display:none"></div>
+            <div id="aiStreamBox" style="display:none;background:#0f172a;color:#a5f3fc;border-radius:10px;padding:0.75rem 1rem;font-family:ui-monospace,monospace;font-size:0.72rem;max-height:180px;overflow:auto;white-space:pre-wrap;line-height:1.4">
+              <div id="aiStreamHead" style="color:#f8fafc;font-weight:700;margin-bottom:0.3rem"></div><span id="aiStreamText"></span><span style="animation:blink 1s infinite">▋</span>
+            </div>
           </div>
           <p class="help-text">Tip for updates: switch to “Update existing”, then type things like “add a security review after integration testing, 2–4 days, owned by Sam” or “split Build into Config and Data Load”. The AI edits the plan and you can still fine-tune every row by hand.</p>
         </div>
@@ -429,25 +436,26 @@
             Enter Optimistic (best case), Most Likely, and Pessimistic (worst case) durations.
             <strong>TE = (O + 4M + P) / 6</strong> &nbsp;•&nbsp; <strong>Variance = ((P − O) / 6)²</strong>.
             Edit <strong>% Complete</strong> inline to track progress.
+            <br/>Status: <span class="badge badge-critical">Critical</span> = zero slack — any delay moves the finish date (shorten it, add people, or re-sequence to fix) • <span class="badge badge-ok">Float&nbsp;n</span> = can slip n days for free • hover any badge for what to do.
           </p>
           <div class="table-wrap">
             <table id="taskTable">
               <thead>
                 <tr>
-                  <th></th>
-                  <th>WBS</th>
-                  <th>Activity</th>
-                  <th>Owner</th>
-                  <th>O</th>
-                  <th>M</th>
-                  <th>P</th>
-                  <th>TE</th>
-                  <th>Predecessors</th>
-                  <th>Start</th>
-                  <th>Finish</th>
-                  <th>Slack</th>
-                  <th>% Done</th>
-                  <th>Status</th>
+                  <th title="Drag to reorder or re-nest rows">⠿</th>
+                  <th title="Work Breakdown Structure code — the outline number of this item">WBS</th>
+                  <th title="Click ▸/▾ on phases to collapse. Buttons: ⇤ outdent, ⇥ indent, ⑂ AI-decompose">Activity</th>
+                  <th title="Who does the work (⚠ = over-allocated during this task; @n% = partial allocation; +N = additional attendees)">Owner</th>
+                  <th title="Optimistic: best-case duration if everything goes right">O</th>
+                  <th title="Most likely duration — your realistic single-point estimate">M</th>
+                  <th title="Pessimistic: worst-case duration if things go wrong">P</th>
+                  <th title="Expected duration = (O + 4M + P) / 6 — the PERT weighted average used for scheduling">TE</th>
+                  <th title="What must happen first. FS=finish→start, SS=start→start, FF=finish→finish, SF=start→finish; +n = lag days">Predecessors</th>
+                  <th title="Earliest calendar start (skips weekends & holidays)">Start</th>
+                  <th title="Earliest calendar finish">Finish</th>
+                  <th title="Float: how many days this can slip WITHOUT moving the project finish. 0 = critical">Slack</th>
+                  <th title="Progress — drives earned value, rollups and the status report. Milestones track automatically">% Done</th>
+                  <th title="Hover any badge for what it means and how to act on it">Status</th>
                   <th></th>
                 </tr>
               </thead>
@@ -519,6 +527,17 @@
           </div>
         </div>
         <div class="card-body">
+          <div id="narrativePanel" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:0.85rem 1rem;margin-bottom:0.75rem">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem">
+              <strong style="font-size:0.85rem">✨ Status narrative <span class="help-text" id="narrativeMeta" style="font-weight:400"></span></strong>
+              <div class="toolbar no-print">
+                <button class="btn-sm btn-secondary" onclick="draftNarrative()">↻ Regenerate</button>
+                <button class="btn-sm btn-danger" onclick="statusNarrative=null;saveLocal();renderNarrativePanel()">Remove</button>
+              </div>
+            </div>
+            <textarea id="narrativeText" rows="5" style="font-size:0.85rem" onchange="statusNarrative={date:fmtISO(new Date()),text:this.value};saveLocal()"></textarea>
+            <p class="help-text" style="margin-top:0.3rem">Included at the top of 📄 Copy status report. Edit freely — your words, AI's first draft.</p>
+          </div>
           <div class="gantt-container" id="ganttContainer" style="background:white;border:1px solid var(--border);border-radius:8px"></div>
           <p class="help-text" style="margin-top:0.5rem">Click ▸/▾ on a phase to collapse or drill in • click any bar to edit the task • the exported image includes the title, legend and completeness so it's ready to paste into communications.</p>
         </div>
@@ -732,9 +751,11 @@
         </div>
         <div class="form-group">
           <label>WBS parent (group under…)</label>
-          <select id="mParent"><option value="">— top level —</option></select>
-          <p class="help-text">Nest this under a phase/deliverable to build the Work Breakdown Structure. Parents become summary rows that roll up their children.</p>
+          <input id="mParent" list="parentDatalist" placeholder="Type to search… (empty = top level)" autocomplete="off" />
+          <datalist id="parentDatalist"></datalist>
+          <p class="help-text">Type-ahead: start typing a phase name or WBS code (e.g. “2” or “Design”). Parents become summary rows that roll up their children.</p>
         </div>
+        <datalist id="predDatalist"></datalist>
         <details id="dictDetails" style="margin-bottom:1rem">
           <summary style="cursor:pointer;font-size:0.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">WBS dictionary &amp; actuals</summary>
           <div style="padding-top:0.75rem">
@@ -1131,7 +1152,7 @@
       document.getElementById(`view-${name}`).classList.add('active');
       if (name === 'wbs') renderWBS();
       if (name === 'pert' && calculated) renderPERT();
-      if (name === 'gantt' && calculated) renderGantt();
+      if (name === 'gantt' && calculated) { renderGantt(); renderNarrativePanel(); }
       if (name === 'resources' && calculated) renderResources();
       if (name === 'baseline' && calculated) renderBaseline();
       if (name === 'analytics' && calculated) { renderAnalytics(); renderHealth(); }
@@ -1161,7 +1182,9 @@
       document.getElementById('mActualFinish').value = '';
       document.getElementById('mActualCost').value = 0;
       populateOwnerList();
-      populateParentSelect(null, null);
+      modalRefMap = buildTaskDatalist('predDatalist', t => true);
+      buildTaskDatalist('parentDatalist', t => !t.milestone);
+      document.getElementById('mParent').value = '';
       toggleMilestoneFields();
       document.getElementById('modal').classList.add('open');
       document.getElementById('mName').focus();
@@ -1193,7 +1216,10 @@
       document.getElementById('mActualFinish').value = t.actualFinish || '';
       document.getElementById('mActualCost').value = t.actualCost || 0;
       populateOwnerList();
-      populateParentSelect(id, t.parentId);
+      modalRefMap = buildTaskDatalist('predDatalist', x => x.id !== id);
+      buildTaskDatalist('parentDatalist', x => !x.milestone && x.id !== id && !allDescendants(id).some(d => d.id === x.id));
+      const curPar = tasks.find(x => x.id === t.parentId);
+      document.getElementById('mParent').value = curPar ? ((curPar.wbs ? curPar.wbs + ' · ' : '') + curPar.name) : '';
       t.predecessors.forEach(p => addDepRow(p));
       toggleMilestoneFields();
       document.getElementById('modal').classList.add('open');
@@ -1221,10 +1247,34 @@
       const names = new Set([...tasks.map(t => (t.owner || '').trim()).filter(Boolean), ...Object.keys(resources)]);
       dl.innerHTML = [...names].map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
     }
-    function predOptionsHtml(selectedId) {
-      return tasks.filter(t => t.id !== editingId)
-        .map(t => `<option value="${t.id}" ${t.id === selectedId ? 'selected' : ''}>${escapeHtml(t.id + ': ' + t.name)}</option>`)
-        .join('');
+    // Type-ahead task references: label "WBS · Name" (indented to show hierarchy),
+    // resolvable back by label, WBS code, or plain name — case-insensitive.
+    let modalRefMap = {};
+    function taskRefLabel(t, depth) { return '\u00A0\u00A0'.repeat(depth) + (t.wbs ? t.wbs + ' · ' : '') + t.name; }
+    function buildTaskDatalist(datalistId, filterFn) {
+      computeWbsCodes();
+      const dl = document.getElementById(datalistId);
+      if (!dl) return {};
+      const map = {};
+      const opts = [];
+      tasksInWbsOrder().forEach(({ task: t, depth }) => {
+        if (filterFn && !filterFn(t)) return;
+        const label = taskRefLabel(t, depth);
+        map[label.replace(/\u00A0/g, '').trim().toLowerCase()] = t.id;
+        map[(t.wbs || '').toLowerCase()] = t.id;
+        if (map[t.name.toLowerCase()] === undefined) map[t.name.toLowerCase()] = t.id;
+        opts.push(`<option value="${escapeHtml(label)}"></option>`);
+      });
+      dl.innerHTML = opts.join('');
+      return map;
+    }
+    function resolveTaskRef(text, map) {
+      const k = String(text || '').replace(/\u00A0/g, '').trim().toLowerCase();
+      if (!k) return null;
+      if (map[k] != null) return map[k];
+      // prefix match on "wbs · name" labels
+      const hit = Object.keys(map).find(x => x.startsWith(k));
+      return hit != null ? map[hit] : null;
     }
     function addAttRow(att) {
       att = att || { name: '', units: 100 };
@@ -1232,9 +1282,8 @@
       const row = document.createElement('div');
       row.className = 'dep-row';
       row.style.gridTemplateColumns = '3fr 1fr auto';
-      const names = [...new Set([...Object.keys(resources), ...tasks.map(t => (t.owner || '').trim())])].filter(Boolean).sort();
       row.innerHTML = `
-        <select class="att-name"><option value="">— select resource —</option>${names.map(n => `<option value="${escapeHtml(n)}" ${n === att.name ? 'selected' : ''}>${escapeHtml(n)}${isClientResource(n) ? ' (client)' : ''}</option>`).join('')}</select>
+        <input class="att-name" list="ownerList" value="${escapeHtml(att.name)}" placeholder="Type resource name…" autocomplete="off" />
         <input class="att-units" type="number" min="0" step="5" value="${att.units}" title="Units % for this attendee" />
         <button type="button" class="btn-sm btn-danger" onclick="this.parentElement.remove()">✕</button>`;
       wrap.appendChild(row);
@@ -1245,8 +1294,10 @@
       const row = document.createElement('div');
       row.className = 'dep-row';
       const types = ['FS','SS','FF','SF'];
+      const existing = pred.id != null ? (tasks.find(x => x.id === pred.id) || null) : null;
+      const label = existing ? ((existing.wbs ? existing.wbs + ' · ' : '') + existing.name) : '';
       row.innerHTML = `
-        <select class="dep-id"><option value="">— select —</option>${predOptionsHtml(pred.id)}</select>
+        <input class="dep-id-input" list="predDatalist" value="${escapeHtml(label)}" placeholder="Type task name or WBS code…" autocomplete="off" title="Type-ahead: name or WBS code; phases work too (means after ALL their work)" />
         <select class="dep-type">${types.map(ty => `<option value="${ty}" ${ty===pred.type?'selected':''}>${ty}</option>`).join('')}</select>
         <input class="dep-lag" type="number" step="0.5" value="${pred.lag||0}" title="Lag (units)" />
         <button type="button" class="btn-sm btn-danger" onclick="this.parentElement.remove()">✕</button>`;
@@ -1276,8 +1327,13 @@
       let units = parseFloat(document.getElementById('mUnits').value);
       if (isNaN(units) || units < 0) units = 100;
       const fixedCost = Math.max(0, parseFloat(document.getElementById('mFixedCost').value) || 0);
-      const parentVal = document.getElementById('mParent').value;
-      const parentId = parentVal ? Number(parentVal) : null;
+      const parentText = document.getElementById('mParent').value;
+      let parentId = null;
+      if (parentText.trim()) {
+        parentId = resolveTaskRef(parentText, modalRefMap);
+        if (parentId == null) return showErr(`WBS parent "${parentText.trim()}" doesn’t match any task — pick one from the type-ahead list or leave empty for top level.`);
+        if (parentId === editingId) return showErr('A task can’t be its own parent.');
+      }
       if (editingId != null && parentId != null && wouldCreateCycleParent(editingId, parentId))
         return showErr('That WBS parent would create a loop (a task can’t sit under its own descendant).');
       const description = document.getElementById('mDesc').value.trim();
@@ -1294,11 +1350,15 @@
         attendees.push({ name: nm, units: Math.max(0, parseFloat(r.querySelector('.att-units').value) || 100) });
       });
       const preds = [];
+      let unresolved = null;
       document.querySelectorAll('#depRows .dep-row').forEach(r => {
-        const id = Number(r.querySelector('.dep-id').value);
-        if (!id) return;
+        const txt = r.querySelector('.dep-id-input').value;
+        if (!txt.trim()) return;
+        const id = resolveTaskRef(txt, modalRefMap);
+        if (id == null) { unresolved = txt.trim(); return; }
         preds.push({ id, type: r.querySelector('.dep-type').value, lag: parseFloat(r.querySelector('.dep-lag').value) || 0 });
       });
+      if (unresolved) return showErr(`Predecessor "${unresolved}" doesn’t match any task — pick from the type-ahead list (name or WBS code).`);
       // de-dupe by id (keep last), and drop any self/parent references that would form a link cycle
       const seen = {}; preds.forEach(pr => seen[pr.id] = pr);
       const finalPreds = Object.values(seen).filter(pr => pr.id !== editingId);
@@ -1406,9 +1466,21 @@
         const teStr = t.milestone ? '◆' : (calculated ? (t.te || 0).toFixed(2) : '—');
         const slackStr = calculated ? (Math.abs(t.slack) < 0.05 ? '0.0' : t.slack.toFixed(1)) : '—';
         const st = taskStatus(t);
-        const statusBadge = !calculated ? '<span class="badge badge-slack">Pending</span>'
-          : summary ? '<span class="badge badge-info">Summary</span>'
-          : (t.isCritical && !t.milestone ? '<span class="badge badge-critical">Critical</span>' : `<span class="badge ${st.cls}">${st.label}</span>`);
+        const badgeTips = {
+          Critical: 'On the critical path: zero slack — ANY delay here pushes the finish date. Fix by shortening/decomposing it, adding people (Units%/capacity), or re-sequencing so it is no longer the bottleneck.',
+          Complete: 'Done (100%).',
+          'In progress': 'Work started; % complete drives the earned-value and phase rollups.',
+          'Late start': 'Scheduled to have started before today but still at 0% — update progress or re-plan.',
+          'Not started': 'No progress recorded yet.',
+          Summary: 'Phase / summary row: rolls up its children (dates, %, cost). Edit the children, not this row.',
+          Pending: 'Press Calculate & Analyze to compute the schedule.'
+        };
+        const mkBadge = (cls, label) => `<span class="badge ${cls}" title="${escapeHtml(badgeTips[label] || '')}" style="cursor:help">${label}</span>`;
+        const statusBadge = !calculated ? mkBadge('badge-slack', 'Pending')
+          : summary ? mkBadge('badge-info', 'Summary')
+          : (t.percentComplete >= 100) ? mkBadge('badge-done', 'Complete')          // done beats critical
+          : (t.isCritical && !t.milestone) ? mkBadge('badge-critical', 'Critical')
+          : mkBadge(st.cls, st.label);
         const twisty = summary
           ? `<button class="wbs-twisty" onclick="toggleCollapse(${t.id})" title="${collapsedIds.has(t.id) ? 'Expand' : 'Collapse'}">${collapsedIds.has(t.id) ? '▸' : '▾'}</button>`
           : '<span class="wbs-twisty-spacer"></span>';
@@ -1741,16 +1813,34 @@
     }
 
     // ========================= MONTE CARLO =========================
+    // Seeded RNG (mulberry32) so the same plan always produces the same P-numbers —
+    // a quoted bid must not drift between recalculations.
+    let mcRand = Math.random;
+    function mulberry32(seed) {
+      let a = seed >>> 0;
+      return function () {
+        a |= 0; a = (a + 0x6D2B79F5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+    function planSeed() {
+      const str = JSON.stringify(tasks.map(t => [t.id, t.o, t.m, t.p, t.units, t.predecessors, t.levelDelay])) + document.getElementById('mcIterations').value;
+      let h = 2166136261;
+      for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return h >>> 0;
+    }
     // Marsaglia-Tsang gamma sampler
     function randNormal() {
       let u = 0, v = 0;
-      while (u === 0) u = Math.random();
-      while (v === 0) v = Math.random();
+      while (u === 0) u = mcRand();
+      while (v === 0) v = mcRand();
       return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
     }
     function randGamma(shape) {
       if (shape < 1) {
-        const u = Math.random();
+        const u = mcRand();
         return randGamma(1 + shape) * Math.pow(u, 1 / shape);
       }
       const d = shape - 1/3, c = 1 / Math.sqrt(9 * d);
@@ -1758,7 +1848,7 @@
         let x, v;
         do { x = randNormal(); v = 1 + c * x; } while (v <= 0);
         v = v*v*v;
-        const u = Math.random();
+        const u = mcRand();
         if (u < 1 - 0.0331 * x*x*x*x) return d * v;
         if (Math.log(u) < 0.5 * x*x + d * (1 - v + Math.log(v))) return d * v;
       }
@@ -1787,9 +1877,26 @@
       tasks.forEach(t => critCount[t.id] = 0);
 
       const predsMap = base.preds;
+      mcRand = mulberry32(planSeed()); // reproducible run
+      const costS = [], revS = [];
+      const fixedTotal = topo.reduce((sx, id) => sx + (Number(idToTask[id].fixedCost) || 0), 0);
       for (let k = 0; k < iters; k++) {
         const dur = {};
         topo.forEach(id => dur[id] = samplePert(idToTask[id]));
+        // effort-based cost & revenue for THIS iteration (true percentiles, not a
+        // duration-ratio proxy): every participant's sampled effort × their rates
+        let iterCost = fixedTotal, iterRev = fixedTotal;
+        topo.forEach(id => {
+          const t = idToTask[id];
+          if (t.milestone) return;
+          const days = unitToWorkingDays(dur[id]);
+          taskParticipants(t).forEach(pr => {
+            if (isClientResource(pr.name)) return;
+            iterCost += getRate(pr.name) * days * pr.units / 100;
+            iterRev += getBillRate(pr.name) * days * pr.units / 100;
+          });
+        });
+        costS.push(iterCost); revS.push(iterRev);
         const es = {}, ef = {};
         topo.forEach(id => {
           const t = idToTask[id];
@@ -1834,15 +1941,20 @@
         }
       }
       durations.sort((a, b) => a - b);
+      costS.sort((a, b) => a - b); revS.sort((a, b) => a - b);
       const pct = q => durations[Math.min(durations.length - 1, Math.floor(q * durations.length))];
+      const pctOf = (arr, q) => arr.length ? arr[Math.min(arr.length - 1, Math.floor(q * arr.length))] : 0;
       const mean = durations.reduce((s, v) => s + v, 0) / durations.length;
       tasks.forEach(t => t.criticality = critCount[t.id] / iters);
 
       mcResult = {
         iters, durations, mean,
         p50: pct(0.5), p80: pct(0.8), p90: pct(0.9), p95: pct(0.95),
-        min: durations[0], max: durations[durations.length - 1]
+        min: durations[0], max: durations[durations.length - 1],
+        costP50: pctOf(costS, 0.5), costP80: pctOf(costS, 0.8), costP90: pctOf(costS, 0.9),
+        revP50: pctOf(revS, 0.5), revP80: pctOf(revS, 0.8), revP90: pctOf(revS, 0.9)
       };
+      mcRand = Math.random;
     }
     // map a duration-in-units to a finish calendar date from project start
     function durationToDate(dur) {
@@ -1941,6 +2053,12 @@
           const day = R.days[iso];
           if (day.load > R.peak) R.peak = day.load;
           const capToday = R.ptoSet.has(iso) ? 0 : R.capacity; // PTO day: any assigned work is a conflict
+          // conflicts where ALL the overlapping work is finished are history, not
+          // action items — don't count them or offer mend buttons for them.
+          // (Incomplete work stays flagged even if dated in the past: it is an
+          // unresolved double-booking that still needs a decision.)
+          const allDone = day.tasks.every(id => { const tt = tasks.find(x => x.id === id); return tt && (tt.percentComplete || 0) >= 100; });
+          if (allDone) return;
           if (day.load > capToday + 1e-6) {
             R.overDays.push(iso);
             overResourceDays++;
@@ -2338,6 +2456,27 @@
       saveLocal();
       if (calculated) { recompute(); renderTaskTable(); renderResources(); renderAnalytics(); }
     }
+    function ptoParts(name) {
+      return ((resources[name] && resources[name].pto) || '').split(',').map(x => x.trim()).filter(Boolean);
+    }
+    function addPtoRange(name, from, to) {
+      if (!from) return;
+      const part = (to && to !== from) ? `${from}..${to}` : from;
+      const parts = ptoParts(name);
+      if (!parts.includes(part)) parts.push(part);
+      setPto(name, parts.join(', '));
+    }
+    function removePtoPart(name, idx) {
+      const parts = ptoParts(name);
+      parts.splice(idx, 1);
+      setPto(name, parts.join(', '));
+    }
+    function ptoChipLabel(part) {
+      const m = part.match(/^(\d{4}-\d{2}-\d{2})\s*\.\.\s*(\d{4}-\d{2}-\d{2})$/);
+      const nice = iso => { const d = new Date(iso + 'T00:00:00'); return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); };
+      if (m) return nice(m[1]) + '–' + nice(m[2]);
+      return /^\d{4}-\d{2}-\d{2}$/.test(part) ? nice(part) : part;
+    }
 
     // ---- resource kind: internal (billable) vs client/external (non-billing) ----
     function getKind(name) { const r = resources[name]; return (r && r.kind === 'client') ? 'client' : 'internal'; }
@@ -2599,11 +2738,11 @@
       const overCard = `<div class="stat-card ${rl.overResourceDays ? 'critical' : 'success'}" style="cursor:pointer" onclick="switchTab('resources')" title="Open Resources tab">
         <div class="value">${rl.overResourceDays}</div><div class="label">Over-allocated ${rl.overResourceDays === 1 ? 'resource-day' : 'resource-days'}</div></div>`;
       document.getElementById('summaryGrid').innerHTML = `
-        <div class="stat-card critical"><div class="value">${projectDuration.toFixed(1)}</div><div class="label">Deterministic Duration (${u})</div></div>
-        <div class="stat-card"><div class="value">${fmtNice(finishDate)}</div><div class="label">Expected Finish (P≈50)</div></div>
-        <div class="stat-card warn"><div class="value">${p80str}</div><div class="label">P80 Duration (${u})</div></div>
-        <div class="stat-card success"><div class="value">${prog.toFixed(0)}%</div><div class="label">Overall Complete</div></div>
-        <div class="stat-card"><div class="value">${criticalTasks.length}/${leaves.filter(t=>!t.milestone).length}</div><div class="label">Critical / Total</div></div>
+        <div class="stat-card critical" style="cursor:pointer" onclick="switchTab('gantt')" title="Critical-path length if every task takes exactly its expected (TE) duration. Click to open the Gantt."><div class="value">${projectDuration.toFixed(1)}</div><div class="label">Deterministic Duration (${u})</div></div>
+        <div class="stat-card" style="cursor:pointer" onclick="switchTab('gantt')" title="Finish date at expected durations — roughly a coin-flip. Commit to P80 instead. Click for the Gantt."><div class="value">${fmtNice(finishDate)}</div><div class="label">Expected Finish (P≈50)</div></div>
+        <div class="stat-card warn" title="80% of Monte-Carlo simulations finish within this many ${u} — the safer number for commitments."><div class="value">${p80str}</div><div class="label">P80 Duration (${u})</div></div>
+        <div class="stat-card success" style="cursor:pointer" onclick="switchTab('baseline')" title="TE-weighted progress across all work. Click for baseline & variance detail."><div class="value">${prog.toFixed(0)}%</div><div class="label">Overall Complete</div></div>
+        <div class="stat-card" style="cursor:pointer" onclick="switchTab('pert')" title="How many activities have zero slack — each one can delay the whole project. Click to see them on the network."><div class="value">${criticalTasks.length}/${leaves.filter(t=>!t.milestone).length}</div><div class="label">Critical / Total</div></div>
         ${overCard}
       `;
 
@@ -2667,7 +2806,7 @@
               <td>${escapeHtml(t.name)}</td>
               <td style="font-size:0.8rem">${escapeHtml(t.owner||'—')}</td>
               <td><div style="display:flex;align-items:center;gap:0.5rem"><div class="progress-track" style="flex:1"><div class="progress-fill" style="width:${ci}%;background:#ef4444"></div></div><span style="font-size:0.8rem;min-width:38px">${ci.toFixed(0)}%</span></div></td>
-              <td>${t.slack.toFixed(1)}</td>
+              <td>${Math.abs(t.slack) < 0.05 ? '0.0' : t.slack.toFixed(1)}</td>
               <td>${t.variance.toFixed(2)}</td>
               <td><span class="risk-tag" style="background:${risk[1]};color:${risk[2]}">${risk[0]}</span></td>
             </tr>`;
@@ -2681,6 +2820,14 @@
         <option value="units" ${sel === 'units' ? 'selected' : ''}>${u}</option>`;
       const reservesBlock = `
         <h3 style="margin:1.25rem 0 0.5rem;font-size:1rem">Reserves &amp; Buffers</h3>
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:0.7rem 0.9rem;margin-bottom:0.75rem;font-size:0.83rem">
+          Schedule buffers you add ON TOP of the estimated plan, shown as hatched bars at the end of the Gantt:
+          <ul style="margin:0.35rem 0 0.35rem 1.2rem;padding:0">
+            <li><strong>Contingency reserve</strong> covers <em>known</em> risks (the ones in your RAID log). It is part of the date you <strong>commit to the client</strong>. Enter it as days or % of the schedule — or click <strong>from P80</strong> to size it automatically so the committed date matches the 80%-confidence Monte-Carlo finish.</li>
+            <li><strong>Management reserve</strong> covers <em>unknown</em> unknowns. It sits above the commitment and is typically held by leadership, not promised to anyone.</li>
+          </ul>
+          The three cards below show the resulting dates: raw CPM finish → <strong>committed</strong> (+contingency) → total (+management). Quote the committed date; keep the rest in your pocket.
+        </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1rem">
           <div style="background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:0.9rem">
             <div style="font-size:0.8rem;font-weight:700;margin-bottom:0.4rem">Contingency reserve <span class="info-icon" title="Buffer for identified/known risks. Part of the schedule baseline you commit to.">i</span></div>
@@ -2728,28 +2875,39 @@
         </div>
         ${phaseRows ? `<div class="table-wrap" style="margin-top:0.75rem"><table><thead><tr><th>Phase</th><th style="text-align:right">Planned cost</th><th style="text-align:right">Earned</th><th style="text-align:right">%</th></tr></thead><tbody>${phaseRows}</tbody></table></div>` : ''}
         ${(() => {
-          // EVM: PV from schedule elapsed-to-today, EV from %complete, AC from actual costs
+          // EVM: PV against the BASELINE (methodologically correct — slipping the
+          // live plan must not dampen SPI); falls back to the current schedule with
+          // an explicit label when no baseline exists. EV = earned monetary value.
           const todayT = stripTime(new Date()).getTime();
-          const BAC = cost;
+          const usingBaseline = hasBaseline();
+          const BAC = usingBaseline ? leafTasks().reduce((sx, t) => sx + (Number(t.baseCost) || 0), 0) || cost : cost;
           const AC = leafTasks().reduce((sx, t) => sx + (Number(t.actualCost) || 0), 0);
           const PV = leafTasks().reduce((sx, t) => {
-            if (!t.startDate || !t.finishDate || t.milestone) return sx;
-            const s0 = stripTime(t.startDate).getTime(), f0 = stripTime(t.finishDate).getTime() + 86400000;
+            if (t.milestone) return sx;
+            const s1 = usingBaseline ? t.baseStart : t.startDate;
+            const f1 = usingBaseline ? t.baseFinish : t.finishDate;
+            const c1 = usingBaseline ? (Number(t.baseCost) || taskCost(t)) : taskCost(t);
+            if (!s1 || !f1) return sx;
+            const s0 = stripTime(s1).getTime(), f0 = stripTime(f1).getTime() + 86400000;
             const frac = todayT <= s0 ? 0 : todayT >= f0 ? 1 : (todayT - s0) / (f0 - s0);
-            return sx + taskCost(t) * frac;
+            return sx + c1 * frac;
           }, 0);
           if (BAC <= 0) return '';
+          const SV = ev - PV, CV = AC > 0 ? ev - AC : null;
           const SPI = PV > 0 ? ev / PV : null;
           const CPI = AC > 0 ? ev / AC : null;
           const EAC = CPI ? BAC / CPI : null;
           const card = (v, l, sub, bad) => `<div class="stat-card ${bad === true ? 'critical' : bad === false ? 'success' : ''}"><div class="value" style="font-size:1.05rem">${v}</div><div class="label">${l}</div><div class="help-text" style="font-size:0.65rem">${sub}</div></div>`;
-          return `<h3 style="margin:1rem 0 0.5rem;font-size:0.95rem">Earned value (enter Actual cost $ per task to unlock CPI/EAC)</h3>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.75rem">
-              ${card(fmtMoney(PV), 'Planned value (PV)', 'work scheduled by today', null)}
+          return `<h3 style="margin:1rem 0 0.5rem;font-size:0.95rem">Earned value ${usingBaseline ? `<span class="help-text">(PV/BAC measured against the baseline of ${escapeHtml(baselineDate)})</span>` : '<span class="help-text" style="color:var(--warn)">(no baseline set — PV uses the live schedule; Set Baseline for real EVM)</span>'}</h3>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:0.75rem">
+              ${card(fmtMoney(PV), 'Planned value (PV)', usingBaseline ? 'baseline work due by today' : 'scheduled work by today', null)}
+              ${card(fmtMoney(ev), 'Earned value (EV)', 'monetary value of work done', null)}
               ${card(fmtMoney(AC), 'Actual cost (AC)', 'entered on tasks', null)}
+              ${card((SV >= 0 ? '+' : '') + fmtMoney(SV).replace('$', SV < 0 ? '−$' : '$'), 'Schedule variance (SV)', 'EV − PV', SV < -BAC * 0.02)}
+              ${card(CV == null ? '—' : (CV >= 0 ? '+' : '') + fmtMoney(Math.abs(CV)).replace('$', CV < 0 ? '−$' : '$'), 'Cost variance (CV)', CV == null ? 'needs actual costs' : 'EV − AC', CV == null ? null : CV < 0)}
               ${card(SPI == null ? '—' : SPI.toFixed(2), 'SPI', SPI == null ? '' : SPI < 1 ? 'behind schedule' : 'on/ahead of schedule', SPI == null ? null : SPI < 0.95)}
               ${card(CPI == null ? '—' : CPI.toFixed(2), 'CPI', CPI == null ? 'needs actual costs' : CPI < 1 ? 'over cost' : 'under cost', CPI == null ? null : CPI < 0.95)}
-              ${card(EAC == null ? '—' : fmtMoney(EAC), 'EAC forecast', EAC == null ? '' : 'BAC ' + fmtMoney(BAC) + (EAC > BAC ? ' → +' + fmtMoney(EAC - BAC) + ' overrun' : ' → under'), EAC == null ? null : EAC > BAC * 1.02)}
+              ${card(EAC == null ? '—' : fmtMoney(EAC), 'EAC (BAC/CPI)', EAC == null ? '' : 'BAC ' + fmtMoney(BAC) + (EAC > BAC ? ' → +' + fmtMoney(EAC - BAC) + ' overrun' : ' → under'), EAC == null ? null : EAC > BAC * 1.02)}
             </div>`;
         })()}`;
 
@@ -2995,7 +3153,7 @@
       // reserve row
       if (hasReserve) {
         const y = Y0 + rows.length * ROWH;
-        svg += `<text x="${PAD + 6}" y="${y + ROWH / 2 + 4}" font-family="${FF}" font-size="11" font-weight="600" fill="#b45309">▸ Schedule reserve</text>`;
+        svg += `<g data-gres="1" style="cursor:pointer"><text x="${PAD + 6}" y="${y + ROWH / 2 + 4}" font-family="${FF}" font-size="11" font-weight="600" fill="#b45309">▸ Schedule reserve — click to adjust ⚙</text><title>Contingency & management reserve. Click to open Analytics &amp; Risk, where both are edited (as % of duration or absolute days, or set from P80).</title></g>`;
         const x1 = dateX(rv.cpmDate) + dayW, x2 = dateX(rv.committedDate) + dayW, x3 = dateX(rv.totalDate) + dayW;
         if (rv.contingencyUnits > 0) svg += `<rect x="${x1}" y="${y + 8}" width="${Math.max(3, x2 - x1)}" height="14" rx="3" fill="url(#g-hatchC)" stroke="#f59e0b"><title>Contingency reserve → committed ${escapeXml(fmtNice(rv.committedDate))}</title></rect>`;
         if (rv.managementUnits > 0) svg += `<rect x="${x2}" y="${y + 8}" width="${Math.max(3, x3 - x2)}" height="14" rx="3" fill="url(#g-hatchM)" stroke="#ef4444"><title>Management reserve → total ${escapeXml(fmtNice(rv.totalDate))}</title></rect>`;
@@ -3035,6 +3193,7 @@
       // bind collapse + open-editor clicks
       container.querySelectorAll('[data-gtoggle]').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); toggleCollapse(Number(el.dataset.gtoggle)); }));
       container.querySelectorAll('[data-gopen]').forEach(el => el.addEventListener('click', () => openEditModal(Number(el.dataset.gopen), true)));
+      container.querySelectorAll('[data-gres]').forEach(el => el.addEventListener('click', () => { switchTab('analytics'); const rb = document.querySelector('#analyticsContent h3'); if (rb) rb.scrollIntoView({ behavior: 'smooth' }); }));
     }
 
     // ========================= RESOURCES RENDER =========================
@@ -3067,7 +3226,16 @@
           <td><input class="mini-inp rl-cap" data-ri="${ri}" type="number" min="1" step="10" value="${R.capacity}" title="Capacity % — 100 = 1 full-time person, 300 = a 3-person team" /></td>
           <td>${isClient ? '<span class="help-text">n/a</span>' : `<input class="mini-inp rl-rate" data-ri="${ri}" type="number" min="0" step="50" value="${getRate(name)}" title="COST per working day at 100% (feeds the budget layer)" />`}</td>
           <td>${isClient ? '<span class="help-text">n/a</span>' : `<input class="mini-inp rl-bill" data-ri="${ri}" type="number" min="0" step="50" value="${getBillRate(name)}" title="BILL rate per day (client-facing — feeds pricing & SOW)" />`}</td>
-          <td><input class="mini-inp rl-pto" data-ri="${ri}" style="width:150px" value="${escapeHtml((resources[name] && resources[name].pto) || '')}" placeholder="2026-08-03..2026-08-07" title="PTO / unavailable dates: single dates or ranges (start..end), comma separated. Work scheduled on these days is flagged." /></td>
+          <td style="max-width:230px">
+            <span data-pto-cell="${ri}">${ptoParts(name).map((pt, pi) => `<span class="pto-chip" title="Unavailable — work scheduled on these days is flagged">${escapeHtml(ptoChipLabel(pt))}<button data-pto-del="${ri}:${pi}" title="Remove">×</button></span>`).join('')}
+            <button class="btn-sm btn-secondary" data-pto-add="${ri}" title="Add vacation / unavailable dates with a date picker">+ PTO</button></span>
+            <span data-pto-form="${ri}" style="display:none;white-space:nowrap">
+              <input type="date" class="mini-inp" data-pto-from="${ri}" style="width:118px" title="First day away" /> →
+              <input type="date" class="mini-inp" data-pto-to="${ri}" style="width:118px" title="Last day away (leave empty for a single day)" />
+              <button class="btn-sm btn-success" data-pto-save="${ri}">✓</button>
+              <button class="btn-sm btn-secondary" data-pto-cancel="${ri}">✕</button>
+            </span>
+          </td>
           <td>${assigned.length}</td>
           <td>${effort.toFixed(1)}d</td>
           <td>${Math.round(R.peak)}%</td>
@@ -3084,7 +3252,7 @@
           <button class="btn-sm btn-primary no-print" onclick="addResourcePrompt()">➕ Add resource</button>
         </div>
         <div class="table-wrap" style="margin-bottom:1rem"><table>
-          <thead><tr><th>Resource</th><th>Type</th><th>Capacity %</th><th>Cost $/d</th><th>Bill $/d</th><th>PTO / unavailable</th><th>Tasks</th><th>Planned effort</th><th>Peak load</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th title="Person, role or team">Resource</th><th title="Internal = yours (costed & billed). Client = their people: tracked for workload/PTO but never costed or billed">Type</th><th title="100 = one full-time person; 300 = a 3-person team; 50 = someone available half-time">Capacity %</th><th title="What they cost YOU per working day — drives the cost & EVM layer">Cost $/d</th><th title="What you charge the client per day — drives pricing, margin and the SOW">Bill $/d</th><th title="Vacation / unavailable dates. Scheduled work on these days is flagged as a conflict">PTO / unavailable</th><th title="Tasks they participate in (incl. as attendee)">Tasks</th><th title="Total planned working days × their allocation">Planned effort</th><th title="Busiest single day as % of capacity">Peak load</th><th title="OK = within capacity every day; over ×N = N conflict days to resolve">Status</th><th></th></tr></thead>
           <tbody>${rosterRows}</tbody>
         </table></div>`;
       const holidays = getHolidaySet();
@@ -3212,9 +3380,22 @@
       cont.querySelectorAll('input.rl-bill').forEach(inp => {
         inp.addEventListener('change', () => setBillRate(names[Number(inp.dataset.ri)], inp.value));
       });
-      cont.querySelectorAll('input.rl-pto').forEach(inp => {
-        inp.addEventListener('change', () => setPto(names[Number(inp.dataset.ri)], inp.value));
-      });
+      cont.querySelectorAll('[data-pto-add]').forEach(btn => btn.addEventListener('click', () => {
+        cont.querySelector(`[data-pto-cell="${btn.dataset.ptoAdd}"]`).style.display = 'none';
+        cont.querySelector(`[data-pto-form="${btn.dataset.ptoAdd}"]`).style.display = 'inline';
+      }));
+      cont.querySelectorAll('[data-pto-cancel]').forEach(btn => btn.addEventListener('click', () => renderResources()));
+      cont.querySelectorAll('[data-pto-save]').forEach(btn => btn.addEventListener('click', () => {
+        const ri = btn.dataset.ptoSave;
+        const from = cont.querySelector(`[data-pto-from="${ri}"]`).value;
+        const to = cont.querySelector(`[data-pto-to="${ri}"]`).value;
+        if (!from) { alert('Pick at least the first day.'); return; }
+        addPtoRange(names[Number(ri)], from, to || from);
+      }));
+      cont.querySelectorAll('[data-pto-del]').forEach(btn => btn.addEventListener('click', () => {
+        const [ri, pi] = btn.dataset.ptoDel.split(':').map(Number);
+        removePtoPart(names[ri], pi);
+      }));
       cont.querySelectorAll('select.rl-kind').forEach(sel => {
         sel.addEventListener('change', () => setKind(names[Number(sel.dataset.ri)], sel.value));
       });
@@ -3338,7 +3519,7 @@
           <div class="stat-card success"><div class="value">${overallProgress().toFixed(0)}%</div><div class="label">Complete</div></div>
         </div>
         <div class="table-wrap"><table>
-          <thead><tr><th>WBS</th><th>Task</th><th>Baseline start → finish</th><th>Current / actual start → finish</th><th>Finish var.</th><th>%</th><th>Status</th><th>Actual start / finish</th></tr></thead>
+          <thead><tr><th>WBS</th><th>Task</th><th title="The plan you committed to when the baseline was set">Baseline start → finish</th><th title="Live forecast — or the actual dates where you have entered them">Current / actual start → finish</th><th title="Calendar days later (+, red) or earlier (−, green) than the baseline finish">Finish var.</th><th>%</th><th>Status</th><th title="Record reality here — feeds variance and the estimation history archive">Actual start / finish</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
         <p class="help-text" style="margin-top:0.75rem">Baseline set ${escapeHtml(baselineDate)}. “Current” uses actual dates where entered, otherwise the live forecast. Positive variance = later than baseline (slippage).</p>`;
@@ -3373,9 +3554,22 @@
       const maxLevel = Math.max(0, ...Object.values(level));
       const levels = Array.from({ length: maxLevel + 1 }, () => []);
       nodes.forEach(t => levels[level[t.id]].push(t));
-      levels.forEach(col => col.sort((a, b) => a.es - b.es || a.name.localeCompare(b.name)));
+      // order each column by the average row of its predecessors (barycenter) —
+      // dramatically fewer crossing arrows than sorting by start date alone
+      const rowOf = {};
+      levels.forEach((col, li) => {
+        if (li === 0) col.sort((a, b) => a.es - b.es || a.name.localeCompare(b.name));
+        else col.sort((a, b) => {
+          const bary = t => {
+            const rows = predsOf[t.id].map(p => rowOf[p.id]).filter(x => x != null);
+            return rows.length ? rows.reduce((x, y) => x + y, 0) / rows.length : 999;
+          };
+          return bary(a) - bary(b) || a.es - b.es;
+        });
+        col.forEach((t, ti) => rowOf[t.id] = ti);
+      });
 
-      const NW = 190, NH = 100, GX = 95, GY = 30, M = 46, TITLE_H = 40, LEGEND_H = 30;
+      const NW = 190, NH = 100, GX = 120, GY = 42, M = 46, TITLE_H = 40, LEGEND_H = 30;
       const colW = NW + GX;
       const maxInCol = Math.max(1, ...levels.map(l => l.length));
       const W = M * 2 + (maxLevel + 1) * colW - GX;
@@ -3401,7 +3595,7 @@
         const from = pos[p.id], to = pos[t.id]; if (!from || !to) return;
         const x1 = from.x + NW, y1 = from.y + NH / 2, x2 = to.x, y2 = to.y + NH / 2, mx = (x1 + x2) / 2;
         const crit = t.isCritical && idToTask[p.id] && idToTask[p.id].isCritical;
-        svg += `<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2 - 2},${y2}" fill="none" stroke="${crit ? '#dc2626' : '#94a3b8'}" stroke-width="${crit ? 2.6 : 1.6}" opacity="${crit ? 0.95 : 0.6}" marker-end="url(#${crit ? 'p-arrC' : 'p-arr'})"/>`;
+        svg += `<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2 - 2},${y2}" fill="none" stroke="${crit ? '#dc2626' : '#94a3b8'}" stroke-width="${crit ? 2.6 : 1.6}" opacity="${crit ? 0.95 : 0.6}" marker-end="url(#${crit ? 'p-arrC' : 'p-arr'})"><title>${escapeXml((idToTask[p.id] ? idToTask[p.id].name : '?') + '  →  ' + t.name + '  (' + p.type + (p.lag ? (p.lag > 0 ? ' +' : ' ') + p.lag : '') + ')' + (crit ? '  — critical path' : ''))}</title></path>`;
       }));
 
       // nodes
@@ -3423,9 +3617,15 @@
           svg += `<line x1="${P.x + cellW * k}" y1="${topY}" x2="${P.x + cellW * k}" y2="${topY + rowH}" stroke="${border}" stroke-width="0.8" opacity="0.4"/>`;
           svg += `<line x1="${P.x + cellW * k}" y1="${botY}" x2="${P.x + cellW * k}" y2="${botY + rowH}" stroke="${border}" stroke-width="0.8" opacity="0.4"/>`;
         });
-        const cellTxt = (x, y, v, bold) => `<text x="${x + cellW / 2}" y="${y + 14.5}" font-family="${FF}" font-size="10" ${bold ? 'font-weight="700"' : ''} fill="#334155" text-anchor="middle">${escapeXml(v)}</text>`;
-        svg += cellTxt(P.x, topY, fmt1(t.es), false) + cellTxt(P.x + cellW, topY, fmt1(t.te), true) + cellTxt(P.x + cellW * 2, topY, fmt1(t.ef), false);
-        svg += cellTxt(P.x, botY, fmt1(t.ls), false) + cellTxt(P.x + cellW, botY, fmt1(t.slack), true) + cellTxt(P.x + cellW * 2, botY, fmt1(t.lf), false);
+        const cellTxt = (x, y, v, bold, lbl, tipTxt) => `<g><text x="${x + 3}" y="${y + 7.5}" font-family="${FF}" font-size="5.6" fill="#94a3b8" letter-spacing="0.4">${lbl}</text>
+          <text x="${x + cellW / 2}" y="${y + 16}" font-family="${FF}" font-size="10" ${bold ? 'font-weight="700"' : ''} fill="#334155" text-anchor="middle">${escapeXml(v)}</text>
+          <title>${escapeXml(tipTxt)}</title></g>`;
+        svg += cellTxt(P.x, topY, fmt1(t.es), false, 'ES', `Early Start: soonest this can begin (${unitLabel()} from project start) = ${fmt1(t.es)} → ${fmtNice(t.startDate)}`)
+             + cellTxt(P.x + cellW, topY, fmt1(t.te), true, 'DUR', `Expected duration (PERT: (O+4M+P)/6) = ${fmt1(t.te)} ${unitLabel()}`)
+             + cellTxt(P.x + cellW * 2, topY, fmt1(t.ef), false, 'EF', `Early Finish = ES + duration = ${fmt1(t.ef)} → ${fmtNice(t.finishDate)}`);
+        svg += cellTxt(P.x, botY, fmt1(t.ls), false, 'LS', `Late Start: latest it can begin WITHOUT delaying the project = ${fmt1(t.ls)}`)
+             + cellTxt(P.x + cellW, botY, fmt1(t.slack), true, 'SLACK', `Slack / float = LS − ES = ${fmt1(t.slack)} ${unitLabel()}. Zero = critical: any delay here delays the finish.`)
+             + cellTxt(P.x + cellW * 2, botY, fmt1(t.lf), false, 'LF', `Late Finish: latest it can end without delaying the project = ${fmt1(t.lf)}`);
         // name + owner + dates
         const nm = t.name.length > 24 ? t.name.slice(0, 22) + '…' : t.name;
         svg += `<text x="${P.x + NW / 2}" y="${nameY + 17}" font-family="${FF}" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle">${t.milestone ? '◆ ' : ''}${done ? '✓ ' : ''}${escapeXml(nm)}</text>`;
@@ -4059,6 +4259,29 @@
       return `\nHISTORICAL DELIVERY DATA (the user's own past-project benchmarks — calibrate every estimate against this. When the work matches a pattern here — e.g. "implementations of type X take Y" — prefer these numbers over generic guesses, scaled for stated differences):\n"""\n${clipped}\n"""\n`;
     }
 
+    // Live stream preview: show tokens as they arrive so long generations are
+    // never a silent wait, and failures are debuggable.
+    function streamShow(label) {
+      const box = document.getElementById('aiStreamBox');
+      const head = document.getElementById('aiStreamHead');
+      const txt = document.getElementById('aiStreamText');
+      if (!box) return () => {};
+      box.style.display = 'block';
+      head.textContent = label;
+      txt.textContent = '';
+      let n = 0;
+      return (delta, full) => {
+        n = full.length;
+        head.textContent = `${label} — ${(n / 1000).toFixed(1)}k chars`;
+        txt.textContent = full.length > 4000 ? '…' + full.slice(-4000) : full; // keep the tail visible
+        box.scrollTop = box.scrollHeight;
+      };
+    }
+    function streamHide(ok) {
+      const box = document.getElementById('aiStreamBox');
+      if (box) setTimeout(() => { box.style.display = 'none'; }, ok ? 600 : 4000);
+    }
+
     function aiSchemaHint() {
       const unit = document.getElementById('durationUnit').value;
       return `Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
@@ -4099,7 +4322,8 @@ Rules:
 - For workshops/sessions with several people at once, set one owner and put the rest in "attendees".`;
     }
 
-    async function callAnthropic(userContent) {
+    async function callAnthropic(userContent, opts) {
+      opts = opts || {};
       const key = (document.getElementById('aiKey').value.trim()) || localStorage.getItem(AI_KEY_STORE);
       if (!key) throw new Error('No API key. Click “⚙ API Key”, paste your Anthropic key, and Save.');
       const model = document.getElementById('aiModel').value || 'claude-sonnet-5';
@@ -4113,7 +4337,8 @@ Rules:
         },
         body: JSON.stringify({
           model,
-          max_tokens: 8000,
+          max_tokens: opts.maxTokens || 32000,   // big plans need room — truncation breaks JSON
+          stream: true,                           // stream so the user sees progress immediately
           messages: [{ role: 'user', content: userContent }]
         })
       });
@@ -4124,19 +4349,58 @@ Rules:
         if (res.status === 429) throw new Error('Rate limited (429). Wait a moment and try again.');
         throw new Error(`API error ${res.status}: ${detail}`);
       }
-      const data = await res.json();
-      const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+      // Parse the SSE stream, surfacing deltas as they arrive
+      let text = '';
+      let stopReason = null;
+      if (res.body && res.body.getReader) {
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          for (const line of lines) {
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(5).trim();
+            if (!payload || payload === '[DONE]') continue;
+            try {
+              const ev = JSON.parse(payload);
+              if (ev.type === 'content_block_delta' && ev.delta && ev.delta.text) {
+                text += ev.delta.text;
+                if (opts.onDelta) { try { opts.onDelta(ev.delta.text, text); } catch (e) {} }
+              }
+              if (ev.type === 'message_delta' && ev.delta && ev.delta.stop_reason) stopReason = ev.delta.stop_reason;
+              if (ev.type === 'error') throw new Error(ev.error ? ev.error.message : 'stream error');
+            } catch (e) { if (e && e.message && !String(e.message).startsWith('Unexpected')) throw e; }
+          }
+        }
+      } else { // very old browsers: fall back to non-streamed JSON
+        const data = await res.json();
+        text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+      }
+      if (stopReason === 'max_tokens') text += '\n/*TRUNCATED*/';
       return text;
     }
-
     function parseAIJson(text) {
-      let s = text.trim();
+      let s = text.replace('/*TRUNCATED*/', '').trim();
       // strip markdown fences if present
       s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-      // grab the outermost JSON object
-      const first = s.indexOf('{'), last = s.lastIndexOf('}');
-      if (first >= 0 && last > first) s = s.slice(first, last + 1);
-      return JSON.parse(s);
+      const first = s.indexOf('{');
+      if (first > 0) s = s.slice(first);
+      const last = s.lastIndexOf('}');
+      if (last > 0) { try { return JSON.parse(s.slice(0, last + 1)); } catch (e) { /* fall through to repair */ } }
+      // Repair a truncated response: cut back to the last complete object in the
+      // array and close the open brackets, so a long plan still loads.
+      for (let cut = s.lastIndexOf('},'); cut > 0; cut = s.lastIndexOf('},', cut - 1)) {
+        const base = s.slice(0, cut + 1);
+        for (const closer of [']}', ']}]}', '}]}', ']}}']) {
+          try { return JSON.parse(base + closer); } catch (e) {}
+        }
+      }
+      throw new Error('The AI response was not valid JSON (it may have been cut off). Try again — the request now streams with a much larger limit.');
     }
 
     async function generateWithAI() {
@@ -4181,13 +4445,16 @@ ${aiSchemaHint()}`;
       const orig = btn.textContent;
       btn.textContent = '⏳ Generating…';
       status.textContent = 'Contacting Claude…';
+      const onDelta = streamShow(mode === 'merge' ? 'Updating plan' : 'Generating plan');
       try {
-        const text = await callAnthropic(prompt);
+        const text = await callAnthropic(prompt, { onDelta });
         const plan = parseAIJson(text);
         applyAIPlan(plan, mode);
-        status.textContent = '✓ Plan ready — review below, then Calculate.';
+        streamHide(true);
+        status.textContent = '✓ Plan ready — review below.';
         setTimeout(() => status.textContent = '', 4000);
       } catch (e) {
+        streamHide(false);
         errEl.textContent = e.message || String(e);
         errEl.style.display = 'block';
         status.textContent = '';
@@ -4286,8 +4553,10 @@ Return ONLY JSON:
  "newRisks":[{"type":"Risk|Issue","title":"...","probability":1-5,"impact":1-5,"mitigation":"..."}]}
 Rules: only include tasks the notes actually mention; never lower an existing percentComplete unless the notes explicitly say work was redone; use actualFinish only when clearly done; extract genuinely new risks/issues only.`;
       btn.disabled = true; const orig = btn.textContent; btn.textContent = '⏳ Updating…'; status.textContent = 'Reading notes…';
+      const onDelta = streamShow('Updating progress from notes');
       try {
-        const res = parseAIJson(await callAnthropic(prompt));
+        const res = parseAIJson(await callAnthropic(prompt, { onDelta }));
+        streamHide(true);
         let changed = 0, risksAdded = 0;
         (res.updates || []).forEach(up => {
           const t = leafTasks().find(x => x.name.toLowerCase() === String(up.task || '').trim().toLowerCase());
@@ -4307,7 +4576,7 @@ Rules: only include tasks the notes actually mention; never lower an existing pe
         rollupProgress(); saveLocal(); refreshAll(); renderRaid();
         status.textContent = `✓ ${changed} task(s) updated${risksAdded ? ', ' + risksAdded + ' risk(s) logged' : ''} — review the plan.`;
         setTimeout(() => status.textContent = '', 5000);
-      } catch (e) { errEl.textContent = 'Progress update failed: ' + (e.message || e); errEl.style.display = 'block'; status.textContent = ''; }
+      } catch (e) { streamHide(false); errEl.textContent = 'Progress update failed: ' + (e.message || e); errEl.style.display = 'block'; status.textContent = ''; }
       finally { btn.disabled = false; btn.textContent = orig; }
     }
 
@@ -4344,8 +4613,10 @@ Rules:
 - dependsOn may only reference sub-task names in this same array (sequence them realistically; parallel where sensible).
 - Fill deliverable, description and acceptance for every sub-task (one line each) — they populate the WBS dictionary.`;
       flashSaved('⏳ Decomposing "' + t.name.slice(0, 24) + '"…');
+      const onDelta = streamShow('Decomposing "' + t.name.slice(0, 30) + '"');
       try {
-        const text = await callAnthropic(prompt);
+        const text = await callAnthropic(prompt, { onDelta });
+        streamHide(true);
         const res = parseAIJson(text);
         if (!res || !Array.isArray(res.subtasks) || !res.subtasks.length) throw new Error('AI returned no subtasks.');
         const nameToNew = {};
@@ -4460,7 +4731,7 @@ Rules:
         </tr>`;
       }).join('');
       cont.innerHTML = `<div class="table-wrap"><table>
-        <thead><tr><th>Type</th><th>Title</th><th>Score</th><th>Owner</th><th>Task</th><th>Mitigation / detail</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th title="Risk (might happen) · Assumption (planning on it) · Issue (happening now) · Decision · Exclusion (out of scope — feeds the SOW)">Type</th><th>Title</th><th title="Probability × Impact (1–5 each). 15+ red = act now">Score</th><th>Owner</th><th title="Linked plan task, if any">Task</th><th>Mitigation / detail</th><th title="Open → Mitigating → Closed">Status</th><th></th></tr></thead>
         <tbody>${rows}</tbody></table></div>`;
       renderPricing();
     }
@@ -4540,8 +4811,14 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       const revP50 = laborRevenue() + leafTasks().reduce((s, t) => s + (+t.fixedCost || 0), 0);
       const anyBill = laborRevenue() > 0;
       if (!anyBill) { cont.innerHTML = '<p class="help-text">No bill rates set yet — add <strong>Bill $/d</strong> per resource on the Resources tab and the pricing model appears here (T&M price, P80/P90 risk-adjusted fixed price, and margin).</p>'; return; }
-      const u50 = 1, u80 = riskUplift('p80'), u90 = riskUplift('p90');
-      const prices = { p50: revP50 * u50, p80: revP50 * u80, p90: revP50 * u90 };
+      // Prefer TRUE simulated revenue percentiles (effort-based). Fall back to the
+      // duration-ratio uplift only when no simulation is available.
+      const haveSim = mcResult && mcResult.revP50 > 0;
+      const u80 = haveSim ? (mcResult.revP80 / Math.max(1, mcResult.revP50)) : riskUplift('p80');
+      const u90 = haveSim ? (mcResult.revP90 / Math.max(1, mcResult.revP50)) : riskUplift('p90');
+      const prices = haveSim
+        ? { p50: mcResult.revP50 + (revP50 - laborRevenue()), p80: mcResult.revP80 + (revP50 - laborRevenue()), p90: mcResult.revP90 + (revP50 - laborRevenue()) }
+        : { p50: revP50, p80: revP50 * u80, p90: revP50 * u90 };
       const chosen = prices[pricing.basis] || prices.p80;
       const contract = pricing.contractPrice || 0;
       const effPrice = contract || chosen;
@@ -4569,10 +4846,11 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           ${mRow('T&M revenue (P50 effort)', prices.p50, 'bill-rates × estimated effort', false)}
           ${mRow('Fixed bid @ P80', prices.p80, '+' + Math.round((u80 - 1) * 100) + '% Monte-Carlo risk uplift', pricing.basis === 'p80')}
           ${mRow('Fixed bid @ P90', prices.p90, '+' + Math.round((u90 - 1) * 100) + '% risk uplift', pricing.basis === 'p90')}
-          <div class="stat-card ${margin < 25 ? 'critical' : 'success'}"><div class="value" style="font-size:1.1rem">${margin.toFixed(0)}%</div><div class="label">Margin at ${contract ? 'contract' : pricing.basis.toUpperCase()} price</div><div class="help-text" style="font-size:0.65rem">${fmtMoney(effPrice)} − ${fmtMoney(cost)} cost</div></div>
+          <div class="stat-card ${margin < 25 ? 'critical' : 'success'}"><div class="value" style="font-size:1.1rem">${margin.toFixed(0)}%</div><div class="label">Margin at ${contract ? 'contract' : pricing.basis.toUpperCase()} price</div><div class="help-text" style="font-size:0.65rem">${fmtMoney(effPrice)} − ${fmtMoney(cost)} P50 cost</div></div>
+          ${(mcResult && mcResult.costP80) ? (() => { const dm = effPrice > 0 ? (effPrice - mcResult.costP80) / effPrice * 100 : 0; return `<div class="stat-card ${dm < 15 ? 'critical' : 'warn'}"><div class="value" style="font-size:1.1rem">${dm.toFixed(0)}%</div><div class="label">Downside margin (cost @ P80)</div><div class="help-text" style="font-size:0.65rem">${fmtMoney(effPrice)} − ${fmtMoney(mcResult.costP80)} — defend this in the QBR</div></div>`; })() : ''}
         </div>
         <p class="help-text" style="margin-top:0.6rem">${pricing.model === 'fixed'
-          ? `Fixed-price guidance: at the P50 price there is roughly a 50% chance effort exceeds plan. The ${pricing.basis.toUpperCase()} bid covers ~${pricing.basis === 'p90' ? '90' : pricing.basis === 'p80' ? '80' : '50'}% of simulated outcomes${mcResult ? '' : ' (run Calculate for Monte-Carlo uplift)'}.`
+          ? `Fixed-price guidance: bids are the TRUE ${pricing.basis.toUpperCase()} of simulated effort × rates (every task's overrun counts, on or off the critical path)${mcResult && mcResult.revP50 ? '' : ' — run Calculate for the simulation'}. The simulation is seeded, so the same plan always quotes the same number.`
           : 'T&M: revenue tracks actual effort; quote the P50 number as the estimate and the P80 as the not-to-exceed.'}
           ${Object.keys(resources).some(isClientResource) ? ' Client-type resources are excluded from cost and billing.' : ''}</p>`;
     }
@@ -4587,9 +4865,10 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         name: projName(),
         start: fmtNice(projectStartDate()), finish: fmtNice(finish),
         committed: rv.contingencyUnits > 0 ? fmtNice(rv.committedDate) : null,
+        clientSafe: clientSafeReports,
         scope: tasksInWbsOrder().map(({ task: t, depth }) => ({ wbs: t.wbs, depth, name: t.name, summary: t.isSummary, milestone: t.milestone,
           deliverable: t.deliverable, description: t.description, acceptance: t.acceptance, owner: t.owner,
-          effort: t.milestone || t.isSummary ? null : (t.te || 0).toFixed(1) + ' ' + u })),
+          effort: (clientSafeReports || t.milestone || t.isSummary) ? null : (t.te || 0).toFixed(1) + ' ' + u })),
         milestones: tasks.filter(t => t.milestone).map(t => ({ name: t.name, date: fmtNice(t.finishDate) })),
         team: Object.keys(resources).filter(n => !isClientResource(n)).map(n => ({ role: n, capacity: getCapacity(n), billRate: getBillRate(n) })).filter(r => tasks.some(t => taskParticipants(t).some(pr => pr.name === r.role))),
         clientTeam: Object.keys(resources).filter(isClientResource).map(n => ({
@@ -4610,24 +4889,27 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       const th = td + 'background:#f1f5f9;font-weight:700;text-align:left;';
       const h = x => escapeHtml(x || '');
       const n = narrative || {};
+      const showEffort = !d.clientSafe;
+      const showRates = !d.clientSafe && d.team.some(x => x.billRate);
       const scopeRows = d.scope.map(r => `<tr style="${r.summary ? 'font-weight:700;background:#f8fafc' : ''}">
         <td style="${td}">${h(r.wbs)}</td><td style="${td};padding-left:${9 + r.depth * 14}px">${r.milestone ? '◆ ' : ''}${h(r.name)}</td>
-        <td style="${td}">${h(r.deliverable)}</td><td style="${td}">${h(r.description)}</td><td style="${td}">${h(r.acceptance)}</td><td style="${td}">${h(r.effort || '')}</td></tr>`).join('');
+        <td style="${td}">${h(r.deliverable)}</td><td style="${td}">${h(r.description)}</td><td style="${td}">${h(r.acceptance)}</td>${showEffort ? `<td style="${td}">${h(r.effort || '')}</td>` : ''}</tr>`).join('');
       return `<div style="font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;max-width:900px">
         <h1 style="margin:0 0 2px;font-size:22px">Statement of Work — ${h(d.name)}</h1>
         <p style="color:#64748b;font-size:12px;margin:0 0 14px">DRAFT generated ${new Date().toLocaleDateString()} — review all terms before sending. Timeline ${h(d.start)} → ${h(d.finish)}${d.committed ? ' (committed date incl. contingency: ' + h(d.committed) + ')' : ''}.</p>
         <h2 style="font-size:16px;margin:16px 0 6px">1. Overview &amp; Objectives</h2><p style="font-size:13px">${n.overview || '<em>[Describe the business context and objectives of this engagement.]</em>'}</p>
         <h2 style="font-size:16px;margin:16px 0 6px">2. Scope of Work &amp; Deliverables</h2>
         <p style="font-size:13px">${n.scopeNarrative || ''}</p>
-        <table style="border-collapse:collapse"><tr><th style="${th}">WBS</th><th style="${th}">Work item</th><th style="${th}">Deliverable</th><th style="${th}">Description</th><th style="${th}">Acceptance criteria</th><th style="${th}">Effort</th></tr>${scopeRows}</table>
+        <table style="border-collapse:collapse"><tr><th style="${th}">WBS</th><th style="${th}">Work item</th><th style="${th}">Deliverable</th><th style="${th}">Description</th><th style="${th}">Acceptance criteria</th>${showEffort ? `<th style="${th}">Effort</th>` : ''}</tr>${scopeRows}</table>
         <h2 style="font-size:16px;margin:16px 0 6px">3. Out of Scope</h2>
         ${d.exclusions.length ? '<ul style="font-size:13px">' + d.exclusions.map(x => '<li>' + h(x) + '</li>').join('') + '</ul>' : `<p style="font-size:13px">${n.outOfScope || '<em>[List explicit exclusions.]</em>'}</p>`}
         <h2 style="font-size:16px;margin:16px 0 6px">4. Timeline &amp; Milestones</h2>
         <table style="border-collapse:collapse"><tr><th style="${th}">Milestone</th><th style="${th}">Target date</th></tr>
         ${d.milestones.map(m => `<tr><td style="${td}">◆ ${h(m.name)}</td><td style="${td}">${h(m.date)}</td></tr>`).join('') || `<tr><td style="${td}" colspan="2"><em>No milestones defined</em></td></tr>`}</table>
         <h2 style="font-size:16px;margin:16px 0 6px">5. Team &amp; Rates</h2>
-        <table style="border-collapse:collapse"><tr><th style="${th}">Role / resource</th><th style="${th}">Allocation</th>${d.team.some(t => t.billRate) ? `<th style="${th}">Rate (per day)</th>` : ''}</tr>
-        ${d.team.map(t => `<tr><td style="${td}">${h(t.role)}</td><td style="${td}">${t.capacity}%</td>${d.team.some(x => x.billRate) ? `<td style="${td}">${t.billRate ? fmtMoney(t.billRate) : '—'}</td>` : ''}</tr>`).join('')}</table>
+        <table style="border-collapse:collapse"><tr><th style="${th}">Role / resource</th><th style="${th}">Allocation</th>${showRates ? `<th style="${th}">Rate (per day)</th>` : ''}</tr>
+        ${d.team.map(t => `<tr><td style="${td}">${h(t.role)}</td><td style="${td}">${t.capacity}%</td>${showRates ? `<td style="${td}">${t.billRate ? fmtMoney(t.billRate) : '—'}</td>` : ''}</tr>`).join('')}</table>
+        ${d.clientSafe ? `<p style="font-size:11px;color:#94a3b8">Client-safe mode: per-task effort and rate columns omitted.</p>` : ''}
         ${d.clientTeam && d.clientTeam.length ? `<h3 style="font-size:14px;margin:10px 0 4px">Client team &amp; responsibilities</h3>
         <p style="font-size:12.5px;color:#475569">The client will make the following resources available; timely participation is a dependency of the schedule and pricing above.</p>
         <table style="border-collapse:collapse"><tr><th style="${th}">Client resource</th><th style="${th}">Participates in</th></tr>
@@ -4650,6 +4932,8 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       if (hasKey) {
         flashSaved('⏳ Drafting SOW narrative…');
         try {
+          const sowBox = document.getElementById('sowContainer');
+          const sowDelta = (d, full) => { sowBox.innerHTML = '<div style="font-family:ui-monospace,monospace;font-size:0.75rem;color:#475569;white-space:pre-wrap">✨ Drafting narrative… ' + (full.length/1000).toFixed(1) + 'k chars\n\n' + escapeHtml(full.slice(-2500)) + '▋</div>'; };
           const prompt = `Draft narrative sections for a Statement of Work. Facts:
 Project: ${d.name}. Timeline ${d.start} → ${d.finish}. Milestones: ${d.milestones.map(m => m.name + ' (' + m.date + ')').join(', ') || 'none'}.
 Scope items: ${d.scope.filter(x => !x.summary).map(x => x.name + (x.deliverable ? ' → ' + x.deliverable : '')).join('; ')}.
@@ -4658,7 +4942,7 @@ ${d.price ? 'Commercials: ' + d.price.model + ' ' + d.price.amount + '.' : ''}
 ${histPromptBlock()}
 Return ONLY JSON: {"overview":"2-3 sentence engagement overview & objectives","scopeNarrative":"2-3 sentences framing the scope table","outOfScope":"1-2 sentences if exclusions are empty","paymentTerms":"one sentence proposing milestone-based payment","acceptanceProcess":"2-3 sentence acceptance clause","changeControl":"2-3 sentence change-control clause"}
 Professional, client-ready, no hype, no invented facts.`;
-          narrative = parseAIJson(await callAnthropic(prompt));
+          narrative = parseAIJson(await callAnthropic(prompt, { onDelta: sowDelta }));
           Object.keys(narrative || {}).forEach(k => { narrative[k] = escapeHtml(String(narrative[k] || '')); });
         } catch (e) { alert('AI narrative failed (' + (e.message || e) + ') — generating the structured skeleton instead.'); }
       }
@@ -4874,21 +5158,72 @@ Focus on: scope that is obviously missing for this type of work; estimates that 
       const trend = `<h3 style="font-size:0.95rem;margin:0 0 0.5rem">Forecast trend</h3>${trendChartSvg()}`;
       if (!healthFindings) { cont.innerHTML = trend + '<p class="help-text" style="margin-top:0.75rem">Run the health check to lint estimate quality and (with an API key) get an AI plan review calibrated to your historical data.</p>'; return; }
       const sevCol = { high: ['#fee2e2', '#b91c1c'], medium: ['#fef3c7', '#b45309'], low: ['#e2e8f0', '#475569'], info: ['#dbeafe', '#1e40af'] };
-      const rows = healthFindings.findings.map(fd => {
+      const rows = healthFindings.findings.map((fd, fi) => {
         const c = sevCol[fd.severity] || sevCol.info;
         return `<tr><td><span class="risk-tag" style="background:${c[0]};color:${c[1]}">${fd.severity}</span></td>
           <td style="font-size:0.8rem;white-space:nowrap">${escapeHtml(fd.area)}</td>
           <td style="font-size:0.85rem">${escapeHtml(fd.finding)}</td>
-          <td style="font-size:0.85rem;color:var(--muted)">${escapeHtml(fd.recommendation)}</td></tr>`;
+          <td style="font-size:0.85rem;color:var(--muted)">${escapeHtml(fd.recommendation)}</td>
+          <td class="no-print">${fd.recommendation && fd.severity !== 'info' ? `<button class="btn-sm btn-secondary" onclick="aiFixFindings(${fi})" title="AI applies just this recommendation">🔧 Fix</button>` : ''}</td></tr>`;
       }).join('');
+      const fixable = healthFindings.findings.filter(fd => fd.recommendation && fd.severity !== 'info');
       cont.innerHTML = trend + `<h3 style="font-size:0.95rem;margin:1rem 0 0.5rem">Health check — ${escapeHtml(healthFindings.date)} (${healthFindings.findings.length} finding${healthFindings.findings.length === 1 ? '' : 's'})</h3>
-        ${healthFindings.findings.length ? `<div class="table-wrap"><table><thead><tr><th></th><th>Area</th><th>Finding</th><th>Recommendation</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="conflict-card ok"><strong style="color:var(--success)">✓ No issues found.</strong> Estimates, structure and resourcing all look sound.</div>'}`;
+        ${healthFindings.findings.length ? `<div class="table-wrap"><table><thead><tr><th></th><th>Area</th><th>Finding</th><th>Recommendation</th><th class="no-print"></th></tr></thead><tbody>${rows}</tbody></table></div>
+        ${fixable.length ? `<div class="toolbar no-print" style="margin-top:0.6rem"><button class="btn-primary btn-sm" onclick="aiFixFindings()" title="The AI edits the plan to address every fixable finding — you review the result">🔧 Fix all with AI (${fixable.length})</button><span class="help-text">applies the recommendations as a plan update — every change stays editable</span></div>` : ''}`
+        : '<div class="conflict-card ok"><strong style="color:var(--success)">✓ No issues found.</strong> Estimates, structure and resourcing all look sound.</div>'}`;
+    }
+    // per-finding fix buttons render inside the rows
+    async function aiFixFindings(singleIndex) {
+      if (!healthFindings) return;
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) { alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
+      const list = (singleIndex != null ? [healthFindings.findings[singleIndex]] : healthFindings.findings)
+        .filter(fd => fd && fd.recommendation && fd.severity !== 'info');
+      if (!list.length) return;
+      const instructions = list.map((fd, i) => `${i + 1}. [${fd.area}] ${fd.finding} — DO THIS: ${fd.recommendation}`).join('\n');
+      const current = { projectName: document.getElementById('projectName').value, durationUnit: document.getElementById('durationUnit').value,
+        tasks: tasks.map(t => ({ name: t.name, optimistic: t.o, mostLikely: t.m, pessimistic: t.p, milestone: t.milestone, owner: t.owner, units: t.units,
+          parent: (tasks.find(x => x.id === t.parentId) || {}).name || '',
+          deliverable: t.deliverable, description: t.description, acceptance: t.acceptance,
+          dependsOn: t.predecessors.map(p => (tasks.find(x => x.id === p.id) || {}).name).filter(Boolean) })),
+        resources: Object.keys(resources).map(n => ({ name: n, capacityPercent: getCapacity(n), kind: getKind(n) })) };
+      const prompt = `You are improving a project plan based on a health-check review.
+CURRENT PLAN:\n${JSON.stringify(current, null, 2)}
+${histPromptBlock()}
+APPLY THESE FIXES (change only what each fix requires; keep everything else identical — same names, estimates, owners, structure):\n${instructions}
+${aiSchemaHint()}
+Return the COMPLETE updated task list.`;
+      const onDelta = streamShow('Applying health-check fixes');
+      flashSaved('⏳ AI is applying ' + list.length + ' fix(es)…');
+      try {
+        const plan = parseAIJson(await callAnthropic(prompt, { onDelta }));
+        applyAIPlan(plan, 'merge');
+        streamHide(true);
+        healthFindings = { date: fmtISO(new Date()), findings: lintPlan() }; // fresh deterministic lint after fixes
+        renderHealth();
+        flashSaved('✓ Fixes applied — review the plan, then re-run the full health check');
+      } catch (e) { streamHide(false); alert('AI fix failed: ' + (e.message || e)); }
     }
 
     // ========================= AI NARRATIVE + ARCHIVE =========================
+    function renderNarrativePanel() {
+      const panel = document.getElementById('narrativePanel');
+      if (!panel) return;
+      if (statusNarrative && statusNarrative.text) {
+        panel.style.display = 'block';
+        document.getElementById('narrativeText').value = statusNarrative.text;
+        document.getElementById('narrativeMeta').textContent = '(drafted ' + statusNarrative.date + ')';
+      } else panel.style.display = 'none';
+    }
     async function draftNarrative() {
       if (!calculated) { alert('Calculate first.'); return; }
       if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) { alert('Add your Anthropic API key first (⚙ on the Tasks tab).'); return; }
+      // show the panel immediately and stream into it
+      switchTab('gantt');
+      const panel = document.getElementById('narrativePanel');
+      panel.style.display = 'block';
+      const ta = document.getElementById('narrativeText');
+      ta.value = ''; document.getElementById('narrativeMeta').textContent = '(drafting…)';
+      const onDelta = (d, full) => { ta.value = full.replace(/^[^{]*\{"narrative":"?/, '').replace(/"\}?\s*$/, '').replace(/\\n/g, '\n'); ta.scrollTop = ta.scrollHeight; };
       flashSaved('⏳ Drafting narrative…');
       try {
         const leaves = leafTasks();
@@ -4900,12 +5235,14 @@ Focus on: scope that is obviously missing for this type of work; estimates that 
 Project ${projName()}: ${Math.round(overallProgress())}% complete, forecast finish ${fmtNice(durationToDate(Math.max(0, ...leaves.map(t => t.ef), 0)))}.
 Completed: ${done}. In progress: ${inProg}. Behind schedule: ${late}. Open risks: ${risks}.
 Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
-        const res = parseAIJson(await callAnthropic(prompt));
+        const res = parseAIJson(await callAnthropic(prompt, { onDelta }));
         if (!res || !res.narrative) throw new Error('empty response');
         statusNarrative = { date: fmtISO(new Date()), text: String(res.narrative) };
         saveLocal();
-        flashSaved('✓ Narrative drafted — included in the next Copy status report');
-      } catch (e) { alert('Narrative failed: ' + (e.message || e)); }
+        ta.value = statusNarrative.text;
+        renderNarrativePanel();
+        flashSaved('✓ Narrative drafted — shown above the Gantt and included in Copy status report');
+      } catch (e) { renderNarrativePanel(); alert('Narrative failed: ' + (e.message || e)); }
     }
     function archiveToHistory() {
       if (!calculated) { alert('Calculate first.'); return; }
@@ -4938,6 +5275,11 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
       renderProjectMenu();
       renderRaid();
       updateClientSafeBtn();
+      renderNarrativePanel();
+      // auto-recalculate a previously saved plan so reload never shows blank dates
+      if (tasks.length && loaded) {
+        if (recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT(); }
+      }
       loadApiKey();
       loadHistData();
       validateKeyFormat();
