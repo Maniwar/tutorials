@@ -1,0 +1,1792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Engagement PERT &amp; Gantt Tracker</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --critical: #dc2626;
+      --critical-bg: #fef2f2;
+      --success: #16a34a;
+      --warn: #d97706;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --muted: #64748b;
+      --slack: #94a3b8;
+      --header: #0f172a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+    header {
+      background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+      color: white;
+      padding: 1rem 1.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 1rem;
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    }
+    header h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.025em; }
+    header .subtitle { font-size: 0.8rem; opacity: 0.8; margin-left: 0.5rem; }
+    .header-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+    button, .btn {
+      cursor: pointer; border: none; border-radius: 8px; padding: 0.5rem 1rem;
+      font-size: 0.875rem; font-weight: 600; transition: all 0.15s ease;
+      display: inline-flex; align-items: center; gap: 0.35rem;
+    }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-secondary { background: #334155; color: white; }
+    .btn-secondary:hover { background: #475569; }
+    .btn-ghost { background: transparent; color: white; border: 1px solid rgba(255,255,255,0.3); }
+    .btn-ghost:hover { background: rgba(255,255,255,0.1); }
+    .btn-danger { background: #fee2e2; color: #b91c1c; }
+    .btn-danger:hover { background: #fecaca; }
+    .btn-success { background: #dcfce7; color: #15803d; }
+    .btn-sm { padding: 0.3rem 0.65rem; font-size: 0.8rem; }
+    main { max-width: 1500px; margin: 0 auto; padding: 1.25rem; }
+    .card {
+      background: var(--card); border-radius: 12px; border: 1px solid var(--border);
+      box-shadow: 0 1px 3px rgb(0 0 0 / 0.05); margin-bottom: 1.25rem; overflow: hidden;
+    }
+    .card-header {
+      padding: 0.9rem 1.25rem; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+      background: #f1f5f9; flex-wrap: wrap;
+    }
+    .card-header h2 { font-size: 1rem; font-weight: 600; }
+    .card-body { padding: 1.25rem; }
+    .tabs {
+      display: flex; gap: 0.25rem; background: #e2e8f0; padding: 0.25rem;
+      border-radius: 10px; margin-bottom: 1rem; flex-wrap: wrap;
+    }
+    .tab {
+      flex: 1; text-align: center; padding: 0.6rem 1rem; border-radius: 8px;
+      font-weight: 600; font-size: 0.9rem; color: var(--muted); cursor: pointer;
+      transition: all 0.15s; border: none; background: transparent; min-width: 120px;
+    }
+    .tab.active { background: white; color: var(--primary); box-shadow: 0 1px 3px rgb(0 0 0 / 0.1); }
+    .tab:hover:not(.active) { color: var(--text); }
+    .view { display: none; }
+    .view.active { display: block; }
+    label {
+      display: block; font-size: 0.75rem; font-weight: 600; color: var(--muted);
+      margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.03em;
+    }
+    input, select, textarea {
+      width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--border);
+      border-radius: 8px; font-size: 0.9rem; background: white; color: var(--text);
+    }
+    input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15); }
+    select[multiple] { min-height: 80px; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th, td { padding: 0.6rem 0.7rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th {
+      background: #f8fafc; font-weight: 600; color: var(--muted); font-size: 0.72rem;
+      text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap;
+    }
+    tr:hover td { background: #f8fafc; }
+    tr.critical td { background: var(--critical-bg); }
+    tr.late td { box-shadow: inset 3px 0 0 var(--warn); }
+    .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.7rem; font-weight: 700; }
+    .badge-critical { background: #fee2e2; color: #b91c1c; }
+    .badge-ok { background: #dcfce7; color: #15803d; }
+    .badge-slack { background: #e2e8f0; color: #475569; }
+    .badge-warn { background: #fef3c7; color: #b45309; }
+    .badge-info { background: #dbeafe; color: #1e40af; }
+    .badge-done { background: #dcfce7; color: #15803d; }
+    .badge-prog { background: #dbeafe; color: #1e40af; }
+    .badge-blocked { background: #fee2e2; color: #b91c1c; }
+    .badge-notstarted { background: #e2e8f0; color: #475569; }
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+    .stat-card { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 1rem; text-align: center; }
+    .stat-card .value { font-size: 1.5rem; font-weight: 700; color: var(--primary); }
+    .stat-card .label { font-size: 0.72rem; color: var(--muted); margin-top: 0.25rem; }
+    .stat-card.critical .value { color: var(--critical); }
+    .stat-card.success .value { color: var(--success); }
+    .stat-card.warn .value { color: var(--warn); }
+    /* progress bar */
+    .progress-track { background: #e2e8f0; border-radius: 999px; height: 8px; overflow: hidden; min-width: 60px; }
+    .progress-fill { background: var(--success); height: 100%; border-radius: 999px; transition: width .2s; }
+    .mini-inp { width: 64px; padding: 0.25rem 0.4rem; font-size: 0.8rem; }
+    /* Gantt */
+    .gantt-container { overflow-x: auto; padding-bottom: 1rem; }
+    .gantt-chart { position: relative; min-width: 100%; }
+    .gantt-header-row { display: flex; border-bottom: 2px solid var(--border); height: 44px; }
+    .gantt-corner { width: 210px; flex-shrink: 0; }
+    .gantt-timeline { position: relative; flex: 1; }
+    .gantt-month { position: absolute; top: 0; font-size: 0.7rem; font-weight: 700; color: var(--text); padding: 2px 4px; white-space: nowrap; border-left: 1px solid var(--border); }
+    .gantt-daycell { position: absolute; top: 20px; height: 24px; font-size: 0.62rem; color: var(--muted); text-align: center; border-left: 1px solid #f1f5f9; }
+    .gantt-daycell.weekend { background: #f1f5f9; }
+    .gantt-daycell.today { background: rgba(220,38,38,0.12); }
+    .gantt-row { display: flex; align-items: center; height: 34px; border-bottom: 1px solid #f8fafc; position: relative; }
+    .gantt-label {
+      width: 210px; flex-shrink: 0; font-size: 0.8rem; font-weight: 500; padding-right: 0.5rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      display: flex; align-items: center; gap: 0.35rem;
+    }
+    .gantt-bars { flex: 1; position: relative; height: 100%; }
+    .gantt-weekend-band { position: absolute; top: 0; bottom: 0; background: #f1f5f9; z-index: 0; }
+    .gantt-today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--critical); z-index: 5; }
+    .gantt-bar {
+      position: absolute; top: 7px; height: 20px; border-radius: 5px; z-index: 2;
+      display: flex; align-items: center; overflow: hidden;
+      font-size: 0.68rem; font-weight: 600; color: white; box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+    }
+    .gantt-bar .bar-progress { position: absolute; top:0; left:0; bottom:0; background: rgba(0,0,0,0.28); border-radius: 5px 0 0 5px; }
+    .gantt-bar .bar-text { position: relative; padding: 0 6px; z-index: 1; white-space: nowrap; }
+    .gantt-bar.critical { background: linear-gradient(90deg, #dc2626, #ef4444); }
+    .gantt-bar.normal { background: linear-gradient(90deg, #2563eb, #3b82f6); }
+    .gantt-milestone { position: absolute; top: 6px; width: 22px; height: 22px; transform: rotate(45deg); background: #7c3aed; z-index: 3; border-radius: 3px; box-shadow: 0 1px 2px rgb(0 0 0 /.3); }
+    .gantt-slack { position: absolute; top: 12px; height: 10px; z-index: 1;
+      background: repeating-linear-gradient(90deg,#cbd5e1,#cbd5e1 4px,transparent 4px,transparent 8px);
+      border-radius: 4px; opacity: 0.8; }
+    /* PERT SVG */
+    .pert-container { overflow: auto; background: #f8fafc; border-radius: 8px; border: 1px solid var(--border); min-height: 420px; position: relative; }
+    #pertSvg { display: block; min-width: 100%; }
+    .node-rect { fill: white; stroke: #94a3b8; stroke-width: 2; rx: 10; filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.08)); }
+    .node-rect.critical { stroke: var(--critical); fill: #fef2f2; stroke-width: 3; }
+    .node-title { font-size: 13px; font-weight: 700; fill: var(--text); }
+    .node-meta { font-size: 11px; fill: var(--muted); }
+    .edge { stroke: #64748b; stroke-width: 2; fill: none; }
+    .edge.critical { stroke: var(--critical); stroke-width: 3; }
+    .help-text { font-size: 0.8rem; color: var(--muted); margin-top: 0.5rem; }
+    .empty-state { text-align: center; padding: 3rem 1rem; color: var(--muted); }
+    .empty-state h3 { margin-bottom: 0.5rem; color: var(--text); }
+    /* Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5); display: none; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: white; border-radius: 12px; width: 100%; max-width: 540px; max-height: 92vh; overflow-y: auto; box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25); }
+    .modal-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .modal-body { padding: 1.25rem; }
+    .modal-footer { padding: 1rem 1.25rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 0.5rem; }
+    .form-group { margin-bottom: 1rem; }
+    .error { color: #dc2626; font-size: 0.8rem; margin-top: 0.5rem; }
+    .legend { display: flex; gap: 1.5rem; flex-wrap: wrap; font-size: 0.8rem; margin-top: 1rem; padding: 0.75rem; background: #f8fafc; border-radius: 8px; }
+    .legend-item { display: flex; align-items: center; gap: 0.4rem; }
+    .legend-swatch { width: 16px; height: 16px; border-radius: 4px; }
+    footer { text-align: center; padding: 1.5rem; font-size: 0.75rem; color: var(--muted); }
+    .toolbar { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+    .dep-row { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+    .dep-row select, .dep-row input { padding: 0.4rem 0.5rem; font-size: 0.85rem; }
+    .checkbox-row { display: flex; align-items: center; gap: 0.5rem; }
+    .checkbox-row input { width: auto; }
+    .checkbox-row label { margin: 0; text-transform: none; letter-spacing: 0; font-size: 0.85rem; color: var(--text); }
+    .config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 0.75rem; }
+    .hist-bar { background: linear-gradient(90deg,#2563eb,#60a5fa); border-radius: 3px; height: 14px; }
+    .saved-dot { font-size: 0.7rem; opacity: 0.75; }
+    details.export-menu { position: relative; }
+    details.export-menu > summary { list-style: none; }
+    details.export-menu > summary::-webkit-details-marker { display: none; }
+    .export-panel {
+      position: absolute; right: 0; top: 110%; background: white; border: 1px solid var(--border);
+      border-radius: 10px; box-shadow: 0 10px 25px -5px rgb(0 0 0 /.2); padding: 0.5rem; z-index: 50; min-width: 230px;
+    }
+    .export-panel button { width: 100%; justify-content: flex-start; background: transparent; color: var(--text); font-weight: 500; }
+    .export-panel button:hover { background: #f1f5f9; }
+    .export-panel .grp { font-size: 0.68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 0.4rem 0.6rem 0.15rem; font-weight: 700; }
+    .risk-tag { display:inline-block; padding: 0.1rem 0.45rem; border-radius: 6px; font-size: 0.7rem; font-weight:700; }
+    @media print {
+      header, .tabs, .header-actions, .card-header button, .no-print { display: none !important; }
+      .view { display: block !important; }
+      .card { break-inside: avoid; box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Engagement PERT &amp; Gantt Tracker</h1>
+      <span class="subtitle">3-Point Estimation • Monte Carlo • Critical Path • Progress • MS Project / Smartsheet export</span>
+    </div>
+    <div class="header-actions">
+      <span id="savedIndicator" class="saved-dot"></span>
+      <button class="btn-ghost btn-sm" onclick="loadSample()">Load Sample</button>
+      <details class="export-menu">
+        <summary class="btn-ghost btn-sm" style="list-style:none">Export ▾</summary>
+        <div class="export-panel">
+          <div class="grp">Project tools</div>
+          <button onclick="exportMSProjectXML()">📅 Microsoft Project (.xml)</button>
+          <button onclick="exportSmartsheetCSV()">📊 Smartsheet (.csv)</button>
+          <div class="grp">Data</div>
+          <button onclick="exportCSV()">Spreadsheet (.csv)</button>
+          <button onclick="exportJSON()">Backup / Reopen (.json)</button>
+          <div class="grp">Visuals</div>
+          <button onclick="exportPertSVG()">PERT diagram (.svg)</button>
+          <button onclick="window.print()">Print / Save PDF</button>
+        </div>
+      </details>
+      <label class="btn-ghost btn-sm" style="cursor:pointer;margin:0">
+        Import
+        <input type="file" accept=".json" onchange="importJSON(event)" style="display:none" />
+      </label>
+      <button class="btn-secondary btn-sm" onclick="resetProject()">New Project</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Project settings -->
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-body" style="padding:1rem 1.25rem">
+        <div class="config-grid">
+          <div>
+            <label>Project / Engagement</label>
+            <input id="projectName" type="text" value="Client Engagement – Q3 Delivery" />
+          </div>
+          <div>
+            <label>Project Start Date</label>
+            <input id="projectStart" type="date" onchange="markDirty(); if(calculated) recompute()" />
+          </div>
+          <div>
+            <label>Duration Unit</label>
+            <select id="durationUnit" onchange="markDirty(); if(calculated) recompute()">
+              <option value="days">Working Days</option>
+              <option value="weeks">Weeks</option>
+              <option value="hours">Hours</option>
+            </select>
+          </div>
+          <div>
+            <label>Holidays (comma dates, skipped)</label>
+            <input id="holidays" type="text" placeholder="2026-09-07, 2026-11-26" onchange="markDirty(); if(calculated) recompute()" />
+          </div>
+          <div style="display:flex;align-items:end">
+            <button class="btn-primary" onclick="calculate()" style="width:100%">Calculate &amp; Analyze</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" data-tab="tasks" onclick="switchTab('tasks')">1. Tasks &amp; Estimates</button>
+      <button class="tab" data-tab="pert" onclick="switchTab('pert')">2. PERT Network</button>
+      <button class="tab" data-tab="gantt" onclick="switchTab('gantt')">3. Gantt &amp; Progress</button>
+      <button class="tab" data-tab="analytics" onclick="switchTab('analytics')">4. Analytics &amp; Risk</button>
+    </div>
+
+    <!-- TASKS VIEW -->
+    <div id="view-tasks" class="view active">
+      <!-- AI ASSISTANT -->
+      <div class="card" style="border-color:#c7d2fe">
+        <div class="card-header" style="background:linear-gradient(135deg,#eef2ff,#f1f5f9)">
+          <h2>🤖 AI Plan Builder <span class="help-text" style="font-weight:400">Paste notes → get a costed plan. No manual entry.</span></h2>
+          <button class="btn-sm btn-secondary no-print" onclick="toggleAiSettings()" id="aiSettingsToggle">⚙ API Key</button>
+        </div>
+        <div class="card-body">
+          <!-- settings (collapsed) -->
+          <div id="aiSettings" style="display:none;background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:1rem">
+            <div style="display:grid;grid-template-columns:2fr 1fr auto auto;gap:0.75rem;align-items:end">
+              <div>
+                <label>Anthropic API Key</label>
+                <input id="aiKey" type="password" placeholder="sk-ant-..." autocomplete="off" />
+              </div>
+              <div>
+                <label>Model</label>
+                <select id="aiModel">
+                  <option value="claude-sonnet-5">Sonnet 5 (recommended)</option>
+                  <option value="claude-opus-4-8">Opus 4.8 (highest quality)</option>
+                  <option value="claude-haiku-4-5-20251001">Haiku 4.5 (fastest)</option>
+                </select>
+              </div>
+              <button class="btn-primary" onclick="saveApiKey()">Save Key</button>
+              <button class="btn-danger" onclick="clearApiKey()">Clear</button>
+            </div>
+            <p class="help-text">🔒 Your key is stored only in this browser (localStorage) and sent directly to Anthropic — never to any server of ours, and never included in project exports. Get a key at console.anthropic.com.</p>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr;gap:0.75rem">
+            <div>
+              <label>Meeting notes, SOW, email, or a description of the work</label>
+              <textarea id="aiNotes" rows="5" placeholder="e.g. Kicking off the CRM migration for Acme. Discovery workshop first (~1 week), then Ana leads stakeholder interviews and requirements in parallel. Solution design depends on both. Dev team builds/configures — that's the big one, maybe 2-3 weeks. Then QA integration testing, UAT with training, and a go-live milestone. Data mapping can start once interviews are done."></textarea>
+            </div>
+            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center">
+              <select id="aiMode" style="width:auto">
+                <option value="replace">Create / replace all tasks</option>
+                <option value="merge">Update existing (describe the changes)</option>
+              </select>
+              <button class="btn-primary" id="aiGenerateBtn" onclick="generateWithAI()">✨ Generate Plan</button>
+              <span id="aiStatus" class="help-text" style="margin:0"></span>
+            </div>
+            <div id="aiError" class="error" style="display:none"></div>
+          </div>
+          <p class="help-text">Tip for updates: switch to “Update existing”, then type things like “add a security review after integration testing, 2–4 days, owned by Sam” or “split Build into Config and Data Load”. The AI edits the plan and you can still fine-tune every row by hand.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Activity List — 3-Point Estimates &amp; Progress</h2>
+          <div class="toolbar">
+            <button class="btn-secondary btn-sm" onclick="openAddModal(true)">+ Milestone</button>
+            <button class="btn-primary btn-sm" onclick="openAddModal(false)">+ Add Activity</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <p class="help-text" style="margin-bottom:1rem">
+            Enter Optimistic (best case), Most Likely, and Pessimistic (worst case) durations.
+            <strong>TE = (O + 4M + P) / 6</strong> &nbsp;•&nbsp; <strong>Variance = ((P − O) / 6)²</strong>.
+            Edit <strong>% Complete</strong> inline to track progress.
+          </p>
+          <div class="table-wrap">
+            <table id="taskTable">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Activity</th>
+                  <th>Owner</th>
+                  <th>O</th>
+                  <th>M</th>
+                  <th>P</th>
+                  <th>TE</th>
+                  <th>Predecessors</th>
+                  <th>Start</th>
+                  <th>Finish</th>
+                  <th>Slack</th>
+                  <th>% Done</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="taskBody"></tbody>
+            </table>
+          </div>
+          <div id="tasksEmpty" class="empty-state" style="display:none">
+            <h3>No activities yet</h3>
+            <p>Add activities or load a sample engagement to get started.</p>
+            <button class="btn-primary" style="margin-top:1rem" onclick="loadSample()">Load Sample Engagement</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PERT VIEW -->
+    <div id="view-pert" class="view">
+      <div class="card">
+        <div class="card-header">
+          <h2>PERT Network Diagram (Activity-on-Node)</h2>
+          <span class="help-text">Critical path highlighted in red</span>
+        </div>
+        <div class="card-body">
+          <div class="pert-container" id="pertContainer"><svg id="pertSvg"></svg></div>
+          <div class="legend">
+            <div class="legend-item"><div class="legend-swatch" style="background:#fef2f2;border:2px solid #dc2626"></div>Critical activity (zero slack)</div>
+            <div class="legend-item"><div class="legend-swatch" style="background:white;border:2px solid #94a3b8"></div>Non-critical</div>
+            <div class="legend-item"><span style="font-weight:600">TE</span> = Expected duration &nbsp;|&nbsp; <span style="font-weight:600">ES–EF</span> = Early Start – Early Finish</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GANTT VIEW -->
+    <div id="view-gantt" class="view">
+      <div class="card">
+        <div class="card-header">
+          <h2>Gantt Chart — Schedule &amp; Progress</h2>
+          <span class="help-text">Real calendar dates • dark fill = % complete • diamond = milestone • red line = today</span>
+        </div>
+        <div class="card-body">
+          <div class="gantt-container" id="ganttContainer"></div>
+          <div class="legend">
+            <div class="legend-item"><div class="legend-swatch" style="background:linear-gradient(90deg,#dc2626,#ef4444)"></div>Critical path</div>
+            <div class="legend-item"><div class="legend-swatch" style="background:linear-gradient(90deg,#2563eb,#3b82f6)"></div>Non-critical</div>
+            <div class="legend-item"><div class="legend-swatch" style="background:#7c3aed;transform:rotate(45deg);width:12px;height:12px"></div>Milestone</div>
+            <div class="legend-item"><div style="width:24px;height:10px;background:repeating-linear-gradient(90deg,#cbd5e1,#cbd5e1 3px,transparent 3px,transparent 6px)"></div>Slack (float)</div>
+            <div class="legend-item"><div class="legend-swatch" style="background:rgba(0,0,0,.28)"></div>% complete</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ANALYTICS VIEW -->
+    <div id="view-analytics" class="view">
+      <div class="summary-grid" id="summaryGrid"></div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Monte Carlo Forecast &amp; Target Date</h2>
+          <div class="toolbar no-print">
+            <label style="margin:0;text-transform:none;letter-spacing:0">Target date</label>
+            <input id="targetDate" type="date" style="width:auto" onchange="renderAnalytics()" />
+            <label style="margin:0;text-transform:none;letter-spacing:0">Iterations</label>
+            <select id="mcIterations" style="width:auto" onchange="runMonteCarlo(); renderAnalytics()">
+              <option value="1000">1,000</option>
+              <option value="5000" selected>5,000</option>
+              <option value="10000">10,000</option>
+            </select>
+            <button class="btn-primary btn-sm" onclick="runMonteCarlo(); renderAnalytics()">Re-run Simulation</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="analyticsContent">
+            <div class="empty-state">
+              <h3>Run Calculate to see analytics</h3>
+              <p>Project duration, probabilistic finish dates, critical path and risk will appear here.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    Built for Engagement Managers • PERT + Monte Carlo + Gantt • Exports to MS Project &amp; Smartsheet • All data stays in your browser
+  </footer>
+
+  <!-- Add / Edit Modal -->
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">Add Activity</h3>
+        <button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Activity Name *</label>
+          <input id="mName" type="text" placeholder="e.g. Requirements Workshop" />
+        </div>
+        <div class="checkbox-row" style="margin-bottom:1rem">
+          <input id="mMilestone" type="checkbox" onchange="toggleMilestoneFields()" />
+          <label for="mMilestone">This is a milestone (zero duration marker)</label>
+        </div>
+        <div id="estFields" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
+          <div class="form-group">
+            <label>Optimistic (O) *</label>
+            <input id="mO" type="number" min="0" step="0.1" placeholder="Best case" />
+          </div>
+          <div class="form-group">
+            <label>Most Likely (M) *</label>
+            <input id="mM" type="number" min="0" step="0.1" placeholder="Expected" />
+          </div>
+          <div class="form-group">
+            <label>Pessimistic (P) *</label>
+            <input id="mP" type="number" min="0" step="0.1" placeholder="Worst case" />
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+          <div class="form-group">
+            <label>Owner / Resource</label>
+            <input id="mOwner" type="text" placeholder="e.g. A. Rivera" />
+          </div>
+          <div class="form-group">
+            <label>% Complete</label>
+            <input id="mPct" type="number" min="0" max="100" step="1" value="0" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Dependencies (predecessors)</label>
+          <div id="depRows"></div>
+          <button class="btn-sm btn-secondary" type="button" onclick="addDepRow()">+ Add dependency</button>
+          <p class="help-text">FS = Finish→Start (default), SS = Start→Start, FF = Finish→Finish, SF = Start→Finish. Lag in duration units (negative = lead).</p>
+        </div>
+        <div id="modalError" class="error" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn-primary" id="modalSaveBtn" onclick="saveActivity()">Save Activity</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ========================= STATE =========================
+    const STORAGE_KEY = 'pertGanttTracker.v2';
+    let tasks = [];
+    let nextId = 1;
+    let editingId = null;
+    let calculated = false;
+    let mcResult = null; // Monte Carlo output
+
+    // ========================= UTIL =========================
+    function escapeHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function unitLabel() {
+      const u = document.getElementById('durationUnit').value;
+      return u === 'weeks' ? 'wks' : u === 'hours' ? 'hrs' : 'days';
+    }
+    // convert a duration in the chosen unit to whole calendar working-day span for date math
+    function unitToWorkingDays(v) {
+      const u = document.getElementById('durationUnit').value;
+      if (u === 'weeks') return v * 5;
+      if (u === 'hours') return v / 8;
+      return v;
+    }
+    function normalizePred(p) {
+      if (typeof p === 'number') return { id: p, type: 'FS', lag: 0 };
+      return { id: p.id, type: p.type || 'FS', lag: Number(p.lag) || 0 };
+    }
+    function makeTask(o) {
+      return Object.assign({
+        id: 0, name: '', o: 0, m: 0, p: 0, milestone: false,
+        owner: '', percentComplete: 0, predecessors: [],
+        te: 0, variance: 0, es: 0, ef: 0, ls: 0, lf: 0, slack: 0,
+        isCritical: false, criticality: 0, startDate: null, finishDate: null
+      }, o);
+    }
+
+    // ========================= PERSISTENCE =========================
+    function markDirty() { saveLocal(); }
+    function saveLocal() {
+      try {
+        const data = serialize();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        const el = document.getElementById('savedIndicator');
+        el.textContent = '✓ Saved';
+        clearTimeout(saveLocal._t);
+        saveLocal._t = setTimeout(() => { el.textContent = ''; }, 1500);
+      } catch (e) { /* storage may be unavailable */ }
+    }
+    function serialize() {
+      return {
+        projectName: document.getElementById('projectName').value,
+        projectStart: document.getElementById('projectStart').value,
+        durationUnit: document.getElementById('durationUnit').value,
+        holidays: document.getElementById('holidays').value,
+        nextId,
+        tasks: tasks.map(t => ({
+          id: t.id, name: t.name, o: t.o, m: t.m, p: t.p, milestone: t.milestone,
+          owner: t.owner, percentComplete: t.percentComplete, predecessors: t.predecessors
+        }))
+      };
+    }
+    function hydrate(data) {
+      document.getElementById('projectName').value = data.projectName || 'New Engagement';
+      if (data.projectStart) document.getElementById('projectStart').value = data.projectStart;
+      if (data.durationUnit) document.getElementById('durationUnit').value = data.durationUnit;
+      document.getElementById('holidays').value = data.holidays || '';
+      tasks = (data.tasks || []).map(t => makeTask({
+        id: t.id, name: t.name, o: +t.o, m: +t.m, p: +t.p,
+        milestone: !!t.milestone, owner: t.owner || '',
+        percentComplete: Number(t.percentComplete) || 0,
+        predecessors: (t.predecessors || []).map(normalizePred)
+      }));
+      nextId = data.nextId || (Math.max(0, ...tasks.map(t => t.id)) + 1);
+      calculated = false;
+    }
+    function loadLocal() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return false;
+        hydrate(JSON.parse(raw));
+        return true;
+      } catch (e) { return false; }
+    }
+
+    // ========================= CALENDAR =========================
+    function getHolidaySet() {
+      const raw = document.getElementById('holidays').value || '';
+      const set = new Set();
+      raw.split(',').map(s => s.trim()).filter(Boolean).forEach(s => set.add(s));
+      return set;
+    }
+    function fmtISO(d) {
+      const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+      return `${y}-${m}-${day}`;
+    }
+    function isWorkingDay(d, holidays) {
+      const day = d.getDay();
+      if (day === 0 || day === 6) return false;
+      if (holidays.has(fmtISO(d))) return false;
+      return true;
+    }
+    function projectStartDate() {
+      const v = document.getElementById('projectStart').value;
+      let d = v ? new Date(v + 'T00:00:00') : new Date();
+      d.setHours(0,0,0,0);
+      return d;
+    }
+    // add n working days to a date; result is a working day
+    function addWorkingDays(start, n, holidays) {
+      let d = new Date(start);
+      // snap to a working day first
+      while (!isWorkingDay(d, holidays)) d.setDate(d.getDate() + 1);
+      let added = 0;
+      const target = Math.max(0, Math.round(n));
+      while (added < target) {
+        d.setDate(d.getDate() + 1);
+        if (isWorkingDay(d, holidays)) added++;
+      }
+      return d;
+    }
+    function calDaysBetween(a, b) {
+      return Math.round((stripTime(b) - stripTime(a)) / 86400000);
+    }
+    function stripTime(d) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
+    function fmtNice(d) {
+      if (!d) return '—';
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' });
+    }
+
+    // ========================= TAB SWITCHING =========================
+    function switchTab(name) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.querySelector(`.tab[data-tab="${name}"]`).classList.add('active');
+      document.getElementById(`view-${name}`).classList.add('active');
+      if (name === 'pert' && calculated) renderPERT();
+      if (name === 'gantt' && calculated) renderGantt();
+      if (name === 'analytics' && calculated) renderAnalytics();
+    }
+
+    // ========================= MODAL =========================
+    function openAddModal(isMilestone) {
+      editingId = null;
+      document.getElementById('modalTitle').textContent = isMilestone ? 'Add Milestone' : 'Add Activity';
+      document.getElementById('mName').value = '';
+      document.getElementById('mO').value = '';
+      document.getElementById('mM').value = '';
+      document.getElementById('mP').value = '';
+      document.getElementById('mOwner').value = '';
+      document.getElementById('mPct').value = 0;
+      document.getElementById('mMilestone').checked = !!isMilestone;
+      document.getElementById('modalError').style.display = 'none';
+      document.getElementById('depRows').innerHTML = '';
+      toggleMilestoneFields();
+      document.getElementById('modal').classList.add('open');
+      document.getElementById('mName').focus();
+    }
+    function openEditModal(id) {
+      const t = tasks.find(x => x.id === id);
+      if (!t) return;
+      editingId = id;
+      document.getElementById('modalTitle').textContent = t.milestone ? 'Edit Milestone' : 'Edit Activity';
+      document.getElementById('mName').value = t.name;
+      document.getElementById('mO').value = t.o;
+      document.getElementById('mM').value = t.m;
+      document.getElementById('mP').value = t.p;
+      document.getElementById('mOwner').value = t.owner || '';
+      document.getElementById('mPct').value = t.percentComplete || 0;
+      document.getElementById('mMilestone').checked = !!t.milestone;
+      document.getElementById('modalError').style.display = 'none';
+      document.getElementById('depRows').innerHTML = '';
+      t.predecessors.forEach(p => addDepRow(p));
+      toggleMilestoneFields();
+      document.getElementById('modal').classList.add('open');
+    }
+    function closeModal() { document.getElementById('modal').classList.remove('open'); }
+    function toggleMilestoneFields() {
+      const ms = document.getElementById('mMilestone').checked;
+      document.getElementById('estFields').style.display = ms ? 'none' : 'grid';
+    }
+    function predOptionsHtml(selectedId) {
+      return tasks.filter(t => t.id !== editingId)
+        .map(t => `<option value="${t.id}" ${t.id === selectedId ? 'selected' : ''}>${escapeHtml(t.id + ': ' + t.name)}</option>`)
+        .join('');
+    }
+    function addDepRow(pred) {
+      pred = pred || { id: null, type: 'FS', lag: 0 };
+      const wrap = document.getElementById('depRows');
+      const row = document.createElement('div');
+      row.className = 'dep-row';
+      const types = ['FS','SS','FF','SF'];
+      row.innerHTML = `
+        <select class="dep-id"><option value="">— select —</option>${predOptionsHtml(pred.id)}</select>
+        <select class="dep-type">${types.map(ty => `<option value="${ty}" ${ty===pred.type?'selected':''}>${ty}</option>`).join('')}</select>
+        <input class="dep-lag" type="number" step="0.5" value="${pred.lag||0}" title="Lag (units)" />
+        <button type="button" class="btn-sm btn-danger" onclick="this.parentElement.remove()">✕</button>`;
+      wrap.appendChild(row);
+    }
+    function saveActivity() {
+      const name = document.getElementById('mName').value.trim();
+      const isMs = document.getElementById('mMilestone').checked;
+      let o, m, p;
+      const errEl = document.getElementById('modalError');
+      const showErr = (msg) => { errEl.textContent = msg; errEl.style.display = 'block'; };
+
+      if (!name) return showErr('Activity name is required.');
+
+      if (isMs) { o = m = p = 0; }
+      else {
+        o = parseFloat(document.getElementById('mO').value);
+        m = parseFloat(document.getElementById('mM').value);
+        p = parseFloat(document.getElementById('mP').value);
+        if ([o,m,p].some(v => isNaN(v) || v < 0)) return showErr('All three estimates must be non-negative numbers.');
+        if (o > m || m > p) return showErr('Must satisfy Optimistic ≤ Most Likely ≤ Pessimistic.');
+        if (p === 0) return showErr('Pessimistic must be greater than 0 for a real activity (or mark it a milestone).');
+      }
+
+      const pct = Math.min(100, Math.max(0, parseFloat(document.getElementById('mPct').value) || 0));
+      const owner = document.getElementById('mOwner').value.trim();
+
+      const preds = [];
+      document.querySelectorAll('#depRows .dep-row').forEach(r => {
+        const id = Number(r.querySelector('.dep-id').value);
+        if (!id) return;
+        preds.push({ id, type: r.querySelector('.dep-type').value, lag: parseFloat(r.querySelector('.dep-lag').value) || 0 });
+      });
+      // de-dupe by id (keep last)
+      const seen = {}; preds.forEach(pr => seen[pr.id] = pr);
+      const finalPreds = Object.values(seen);
+
+      if (editingId === null) {
+        tasks.push(makeTask({ id: nextId++, name, o, m, p, milestone: isMs, owner, percentComplete: pct, predecessors: finalPreds }));
+      } else {
+        const t = tasks.find(x => x.id === editingId);
+        Object.assign(t, { name, o, m, p, milestone: isMs, owner, percentComplete: pct, predecessors: finalPreds });
+      }
+      calculated = false;
+      closeModal();
+      renderTaskTable();
+      saveLocal();
+    }
+    function deleteTask(id) {
+      if (!confirm('Delete this activity? Any dependents will lose the link.')) return;
+      tasks = tasks.filter(t => t.id !== id);
+      tasks.forEach(t => { t.predecessors = t.predecessors.filter(p => p.id !== id); });
+      calculated = false;
+      renderTaskTable();
+      saveLocal();
+    }
+    function updatePct(id, val) {
+      const t = tasks.find(x => x.id === id);
+      if (!t) return;
+      t.percentComplete = Math.min(100, Math.max(0, parseFloat(val) || 0));
+      saveLocal();
+      // live-update progress cells / gantt if visible
+      if (calculated && document.getElementById('view-gantt').classList.contains('active')) renderGantt();
+      if (calculated && document.getElementById('view-analytics').classList.contains('active')) renderAnalytics();
+    }
+
+    // ========================= STATUS HELPERS =========================
+    function taskStatus(t) {
+      if (t.percentComplete >= 100) return { key: 'done', label: 'Complete', cls: 'badge-done' };
+      const today = stripTime(new Date());
+      if (calculated && t.startDate && stripTime(t.startDate) <= today && t.percentComplete === 0)
+        return { key: 'late', label: 'Late start', cls: 'badge-blocked' };
+      if (t.percentComplete > 0) return { key: 'prog', label: 'In progress', cls: 'badge-prog' };
+      return { key: 'notstarted', label: 'Not started', cls: 'badge-notstarted' };
+    }
+    function isLate(t) {
+      if (!calculated) return false;
+      const today = stripTime(new Date());
+      if (t.percentComplete >= 100) return false;
+      if (t.finishDate && stripTime(t.finishDate) < today) return true; // should be done
+      if (t.startDate && stripTime(t.startDate) < today && t.percentComplete === 0) return true; // should have started
+      return false;
+    }
+
+    // ========================= RENDER TABLE =========================
+    function predLabel(t) {
+      if (!t.predecessors.length) return '—';
+      return t.predecessors.map(p => {
+        const pt = tasks.find(x => x.id === p.id);
+        const nm = pt ? pt.id : p.id;
+        const suffix = (p.type === 'FS' && !p.lag) ? '' : ` ${p.type}${p.lag ? (p.lag > 0 ? '+' + p.lag : p.lag) : ''}`;
+        return nm + suffix;
+      }).join(', ');
+    }
+    function renderTaskTable() {
+      const tbody = document.getElementById('taskBody');
+      const empty = document.getElementById('tasksEmpty');
+      if (tasks.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
+      empty.style.display = 'none';
+      tbody.innerHTML = tasks.map(t => {
+        const teStr = t.milestone ? '◆' : (calculated ? t.te.toFixed(2) : '—');
+        const slackStr = calculated ? t.slack.toFixed(1) : '—';
+        const st = taskStatus(t);
+        const statusBadge = calculated
+          ? (t.isCritical && !t.milestone ? '<span class="badge badge-critical">Critical</span>' : `<span class="badge ${st.cls}">${st.label}</span>`)
+          : '<span class="badge badge-slack">Pending</span>';
+        return `<tr class="${t.isCritical && !t.milestone ? 'critical' : ''} ${isLate(t) ? 'late' : ''}">
+          <td><strong>${t.id}</strong></td>
+          <td>${t.milestone ? '◆ ' : ''}${escapeHtml(t.name)}</td>
+          <td style="font-size:0.8rem">${escapeHtml(t.owner || '—')}</td>
+          <td>${t.milestone ? '—' : t.o}</td>
+          <td>${t.milestone ? '—' : t.m}</td>
+          <td>${t.milestone ? '—' : t.p}</td>
+          <td><strong>${teStr}</strong></td>
+          <td style="font-size:0.8rem">${escapeHtml(predLabel(t))}</td>
+          <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.startDate) : '—'}</td>
+          <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.finishDate) : '—'}</td>
+          <td>${slackStr}</td>
+          <td><input class="mini-inp" type="number" min="0" max="100" value="${t.percentComplete}" onchange="updatePct(${t.id}, this.value)" onclick="event.stopPropagation()" /></td>
+          <td>${statusBadge}</td>
+          <td style="white-space:nowrap">
+            <button class="btn-sm btn-secondary" onclick="openEditModal(${t.id})">Edit</button>
+            <button class="btn-sm btn-danger" onclick="deleteTask(${t.id})">✕</button>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    // ========================= CPM CORE =========================
+    // Returns { ok, topo, idToTask, successors, projectDuration } using given duration accessor
+    function computeSchedule(durOf) {
+      const idToTask = {};
+      tasks.forEach(t => idToTask[t.id] = t);
+      const successors = {};
+      tasks.forEach(t => successors[t.id] = []);
+      tasks.forEach(t => t.predecessors.forEach(p => { if (successors[p.id]) successors[p.id].push({ id: t.id, type: p.type, lag: p.lag }); }));
+
+      // topological order (Kahn)
+      const inDeg = {};
+      tasks.forEach(t => inDeg[t.id] = t.predecessors.filter(p => idToTask[p.id]).length);
+      const queue = tasks.filter(t => inDeg[t.id] === 0).map(t => t.id);
+      const topo = [];
+      while (queue.length) {
+        const u = queue.shift(); topo.push(u);
+        (successors[u] || []).forEach(s => { if (--inDeg[s.id] === 0) queue.push(s.id); });
+      }
+      if (topo.length !== tasks.length) return { ok: false };
+
+      // forward pass
+      const es = {}, ef = {};
+      topo.forEach(id => {
+        const t = idToTask[id];
+        const dur = durOf(t);
+        let start = 0;
+        t.predecessors.forEach(p => {
+          const pt = idToTask[p.id]; if (!pt) return;
+          let s;
+          const L = p.lag;
+          switch (p.type) {
+            case 'SS': s = es[p.id] + L; break;
+            case 'FF': s = ef[p.id] + L - dur; break;
+            case 'SF': s = es[p.id] + L - dur; break;
+            default: s = ef[p.id] + L; // FS
+          }
+          if (s > start) start = s;
+        });
+        if (start < 0) start = 0;
+        es[id] = start; ef[id] = start + dur;
+      });
+      const projectDuration = Math.max(0, ...topo.map(id => ef[id]));
+
+      // backward pass
+      const lf = {}, ls = {};
+      for (let i = topo.length - 1; i >= 0; i--) {
+        const id = topo[i];
+        const t = idToTask[id];
+        const dur = durOf(t);
+        const succs = successors[id] || [];
+        let lateFinish = Infinity;
+        succs.forEach(s => {
+          const L = s.lag;
+          const sDur = durOf(idToTask[s.id]);
+          let cand;
+          switch (s.type) {
+            case 'SS': cand = ls[s.id] - L + dur; break;
+            case 'FF': cand = lf[s.id] - L; break;
+            case 'SF': cand = lf[s.id] - L + dur; break;
+            default: cand = ls[s.id] - L; // FS
+          }
+          if (cand < lateFinish) lateFinish = cand;
+        });
+        if (lateFinish === Infinity) lateFinish = projectDuration;
+        lf[id] = lateFinish; ls[id] = lateFinish - dur;
+      }
+
+      return { ok: true, topo, idToTask, successors, projectDuration, es, ef, ls, lf };
+    }
+
+    function recompute() {
+      // TE + variance
+      tasks.forEach(t => {
+        if (t.milestone) { t.te = 0; t.variance = 0; }
+        else {
+          t.te = (t.o + 4 * t.m + t.p) / 6;
+          t.variance = Math.pow((t.p - t.o) / 6, 2);
+        }
+      });
+      const sched = computeSchedule(t => t.te);
+      if (!sched.ok) { alert('Cycle detected in dependencies. Please fix predecessor links.'); return false; }
+
+      tasks.forEach(t => {
+        t.es = sched.es[t.id]; t.ef = sched.ef[t.id];
+        t.ls = sched.ls[t.id]; t.lf = sched.lf[t.id];
+        t.slack = t.ls - t.es;
+        t.isCritical = Math.abs(t.slack) < 0.01;
+      });
+
+      // map to calendar dates (whole working-day indices from project start).
+      // Finish is the inclusive last working day; using round(EF)-1 keeps a
+      // predecessor's finish day and an FS-successor's start day from colliding.
+      const holidays = getHolidaySet();
+      const start = projectStartDate();
+      tasks.forEach(t => {
+        const esD = unitToWorkingDays(t.es);
+        const efD = unitToWorkingDays(t.ef);
+        const startIdx = Math.max(0, Math.round(esD));
+        t.startDate = addWorkingDays(start, startIdx, holidays);
+        if (t.milestone || efD - esD <= 0) {
+          t.finishDate = new Date(t.startDate);
+        } else {
+          const finishIdx = Math.max(startIdx, Math.round(efD) - 1);
+          t.finishDate = addWorkingDays(start, finishIdx, holidays);
+        }
+      });
+      calculated = true;
+      runMonteCarlo();
+      return true;
+    }
+
+    function calculate() {
+      if (tasks.length === 0) { alert('Add at least one activity first.'); return; }
+      if (!recompute()) return;
+      renderTaskTable();
+      renderAnalytics();
+      renderGantt();
+      renderPERT();
+      saveLocal();
+      const btn = document.querySelector('button[onclick="calculate()"]');
+      const orig = btn.textContent;
+      btn.textContent = '✓ Calculated'; btn.style.background = '#16a34a';
+      setTimeout(() => { btn.textContent = orig; btn.style.background = ''; }, 1400);
+    }
+
+    // ========================= MONTE CARLO =========================
+    // Marsaglia-Tsang gamma sampler
+    function randNormal() {
+      let u = 0, v = 0;
+      while (u === 0) u = Math.random();
+      while (v === 0) v = Math.random();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    }
+    function randGamma(shape) {
+      if (shape < 1) {
+        const u = Math.random();
+        return randGamma(1 + shape) * Math.pow(u, 1 / shape);
+      }
+      const d = shape - 1/3, c = 1 / Math.sqrt(9 * d);
+      while (true) {
+        let x, v;
+        do { x = randNormal(); v = 1 + c * x; } while (v <= 0);
+        v = v*v*v;
+        const u = Math.random();
+        if (u < 1 - 0.0331 * x*x*x*x) return d * v;
+        if (Math.log(u) < 0.5 * x*x + d * (1 - v + Math.log(v))) return d * v;
+      }
+    }
+    function randBeta(a, b) {
+      const x = randGamma(a), y = randGamma(b);
+      return x / (x + y);
+    }
+    // sample a Beta-PERT duration for a task
+    function samplePert(t) {
+      if (t.milestone || t.p <= t.o) return t.te;
+      const range = t.p - t.o;
+      const alpha = 1 + 4 * (t.m - t.o) / range;
+      const beta = 1 + 4 * (t.p - t.m) / range;
+      return t.o + randBeta(alpha, beta) * range;
+    }
+    function runMonteCarlo() {
+      if (!calculated) return;
+      const iters = parseInt(document.getElementById('mcIterations').value, 10) || 5000;
+      // precompute topo once (dependencies fixed)
+      const base = computeSchedule(t => t.te);
+      if (!base.ok) return;
+      const topo = base.topo, idToTask = base.idToTask;
+      const durations = [];
+      const critCount = {};
+      tasks.forEach(t => critCount[t.id] = 0);
+
+      for (let k = 0; k < iters; k++) {
+        const dur = {};
+        tasks.forEach(t => dur[t.id] = samplePert(t));
+        const es = {}, ef = {};
+        topo.forEach(id => {
+          const t = idToTask[id];
+          let start = 0;
+          t.predecessors.forEach(p => {
+            const L = p.lag, d = dur[id];
+            let s;
+            switch (p.type) {
+              case 'SS': s = es[p.id] + L; break;
+              case 'FF': s = ef[p.id] + L - d; break;
+              case 'SF': s = es[p.id] + L - d; break;
+              default: s = ef[p.id] + L;
+            }
+            if (s > start) start = s;
+          });
+          if (start < 0) start = 0;
+          es[id] = start; ef[id] = start + dur[id];
+        });
+        const proj = Math.max(0, ...topo.map(id => ef[id]));
+        durations.push(proj);
+
+        // backward pass to find critical activities this iteration
+        const lf = {}, ls = {};
+        for (let i = topo.length - 1; i >= 0; i--) {
+          const id = topo[i]; const t = idToTask[id]; const d = dur[id];
+          const succs = base.successors[id] || [];
+          let lateFinish = Infinity;
+          succs.forEach(s => {
+            const L = s.lag;
+            let cand;
+            switch (s.type) {
+              case 'SS': cand = ls[s.id] - L + d; break;
+              case 'FF': cand = lf[s.id] - L; break;
+              case 'SF': cand = lf[s.id] - L + d; break;
+              default: cand = ls[s.id] - L;
+            }
+            if (cand < lateFinish) lateFinish = cand;
+          });
+          if (lateFinish === Infinity) lateFinish = proj;
+          lf[id] = lateFinish; ls[id] = lateFinish - d;
+          if (Math.abs((ls[id] - es[id])) < 1e-6) critCount[id]++;
+        }
+      }
+      durations.sort((a, b) => a - b);
+      const pct = q => durations[Math.min(durations.length - 1, Math.floor(q * durations.length))];
+      const mean = durations.reduce((s, v) => s + v, 0) / durations.length;
+      tasks.forEach(t => t.criticality = critCount[t.id] / iters);
+
+      mcResult = {
+        iters, durations, mean,
+        p50: pct(0.5), p80: pct(0.8), p90: pct(0.9), p95: pct(0.95),
+        min: durations[0], max: durations[durations.length - 1]
+      };
+    }
+    // map a duration-in-units to a finish calendar date from project start
+    function durationToDate(dur) {
+      const holidays = getHolidaySet();
+      const start = projectStartDate();
+      const wd = unitToWorkingDays(dur);
+      // finish date = start + (round(wd)-1) working days inclusive
+      return addWorkingDays(start, Math.max(0, Math.round(wd) - 1), holidays);
+    }
+    function probabilityByDate(dateStr) {
+      if (!mcResult || !dateStr) return null;
+      const target = new Date(dateStr + 'T23:59:59');
+      const holidays = getHolidaySet();
+      const start = projectStartDate();
+      // count sims whose finish date <= target
+      let hits = 0;
+      for (const dur of mcResult.durations) {
+        const fin = durationToDate(dur);
+        if (stripTime(fin) <= stripTime(target)) hits++;
+      }
+      return hits / mcResult.durations.length;
+    }
+
+    // ========================= ANALYTICS =========================
+    function overallProgress() {
+      const active = tasks.filter(t => !t.milestone);
+      const totalTE = active.reduce((s, t) => s + t.te, 0);
+      if (totalTE === 0) return 0;
+      const done = active.reduce((s, t) => s + t.te * (t.percentComplete / 100), 0);
+      return done / totalTE * 100;
+    }
+    function renderAnalytics() {
+      if (!calculated) return;
+      const projectDuration = Math.max(0, ...tasks.map(t => t.ef));
+      const criticalTasks = tasks.filter(t => t.isCritical && !t.milestone);
+      const totalVar = criticalTasks.reduce((s, t) => s + t.variance, 0);
+      const stdDev = Math.sqrt(totalVar);
+      const pathNames = criticalTasks.slice().sort((a, b) => a.es - b.es).map(t => t.name).join(' → ');
+      const u = unitLabel();
+      const prog = overallProgress();
+      const finishDate = durationToDate(projectDuration);
+
+      // summary cards
+      const p80str = mcResult ? mcResult.p80.toFixed(1) : '—';
+      const p50Date = mcResult ? fmtNice(durationToDate(mcResult.p50)) : '—';
+      const p80Date = mcResult ? fmtNice(durationToDate(mcResult.p80)) : '—';
+      document.getElementById('summaryGrid').innerHTML = `
+        <div class="stat-card critical"><div class="value">${projectDuration.toFixed(1)}</div><div class="label">Deterministic Duration (${u})</div></div>
+        <div class="stat-card"><div class="value">${fmtNice(finishDate)}</div><div class="label">Expected Finish (P≈50)</div></div>
+        <div class="stat-card warn"><div class="value">${p80str}</div><div class="label">P80 Duration (${u})</div></div>
+        <div class="stat-card success"><div class="value">${prog.toFixed(0)}%</div><div class="label">Overall Complete</div></div>
+        <div class="stat-card"><div class="value">${criticalTasks.length}/${tasks.filter(t=>!t.milestone).length}</div><div class="label">Critical / Total</div></div>
+      `;
+
+      // target date probability
+      const tgt = document.getElementById('targetDate').value;
+      let targetBlock = '';
+      if (tgt) {
+        const prob = probabilityByDate(tgt);
+        const pctv = (prob * 100);
+        const color = pctv >= 80 ? 'var(--success)' : pctv >= 50 ? 'var(--warn)' : 'var(--critical)';
+        targetBlock = `<div style="background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:1rem 1.25rem;margin-bottom:1.25rem">
+          <div style="font-size:0.85rem;color:var(--muted)">Probability of finishing by <strong>${fmtNice(new Date(tgt+'T00:00:00'))}</strong></div>
+          <div style="font-size:2rem;font-weight:800;color:${color}">${pctv.toFixed(0)}%</div>
+          <div class="help-text">${pctv >= 80 ? 'On track — comfortable buffer.' : pctv >= 50 ? 'At risk — even odds. Add buffer or compress the critical path.' : 'Unlikely — target date is aggressive vs. the estimate distribution.'}</div>
+        </div>`;
+      }
+
+      // Monte Carlo histogram
+      let histBlock = '';
+      if (mcResult) {
+        const bins = 24;
+        const min = mcResult.min, max = mcResult.max, span = (max - min) || 1;
+        const counts = new Array(bins).fill(0);
+        mcResult.durations.forEach(d => {
+          let bi = Math.floor((d - min) / span * bins);
+          if (bi >= bins) bi = bins - 1;
+          counts[bi]++;
+        });
+        const maxCount = Math.max(...counts);
+        histBlock = `
+          <h3 style="margin:1.25rem 0 0.5rem;font-size:1rem">Completion Distribution (${mcResult.iters.toLocaleString()} simulations, Beta-PERT)</h3>
+          <div style="display:flex;align-items:flex-end;gap:2px;height:120px;padding:0.5rem;background:#f8fafc;border-radius:8px;border:1px solid var(--border)">
+            ${counts.map((c,i) => {
+              const dLow = (min + i/bins*span);
+              return `<div title="${dLow.toFixed(1)} ${u}: ${c}" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%">
+                <div style="background:linear-gradient(180deg,#3b82f6,#2563eb);border-radius:2px 2px 0 0;height:${maxCount?(c/maxCount*100):0}%"></div></div>`;
+            }).join('')}
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:var(--muted);margin-top:0.25rem">
+            <span>${min.toFixed(1)} ${u}</span><span>P50 ${mcResult.p50.toFixed(1)}</span><span>P80 ${mcResult.p80.toFixed(1)}</span><span>P90 ${mcResult.p90.toFixed(1)}</span><span>${max.toFixed(1)} ${u}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:0.75rem;margin-top:1rem">
+            <div class="stat-card"><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p50))}</div><div class="label">P50 (${mcResult.p50.toFixed(1)} ${u})</div></div>
+            <div class="stat-card warn"><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p80))}</div><div class="label">P80 (${mcResult.p80.toFixed(1)} ${u})</div></div>
+            <div class="stat-card warn"><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p90))}</div><div class="label">P90 (${mcResult.p90.toFixed(1)} ${u})</div></div>
+            <div class="stat-card critical"><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p95))}</div><div class="label">P95 (${mcResult.p95.toFixed(1)} ${u})</div></div>
+          </div>`;
+      }
+
+      // criticality index table (near-critical risk)
+      const risky = tasks.filter(t => !t.milestone).slice().sort((a, b) => b.criticality - a.criticality).slice(0, 8);
+      const critTable = mcResult ? `
+        <h3 style="margin:1.5rem 0 0.5rem;font-size:1rem">Schedule Risk — Criticality Index
+          <span class="help-text">(% of simulations where the task lands on the critical path)</span></h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Activity</th><th>Owner</th><th>Criticality</th><th>Slack (${u})</th><th>Variance</th><th>Risk</th></tr></thead>
+          <tbody>${risky.map(t => {
+            const ci = t.criticality * 100;
+            const risk = ci >= 80 ? ['High','#fee2e2','#b91c1c'] : ci >= 30 ? ['Medium','#fef3c7','#b45309'] : ['Low','#dcfce7','#15803d'];
+            return `<tr>
+              <td>${escapeHtml(t.name)}</td>
+              <td style="font-size:0.8rem">${escapeHtml(t.owner||'—')}</td>
+              <td><div style="display:flex;align-items:center;gap:0.5rem"><div class="progress-track" style="flex:1"><div class="progress-fill" style="width:${ci}%;background:#ef4444"></div></div><span style="font-size:0.8rem;min-width:38px">${ci.toFixed(0)}%</span></div></td>
+              <td>${t.slack.toFixed(1)}</td>
+              <td>${t.variance.toFixed(2)}</td>
+              <td><span class="risk-tag" style="background:${risk[1]};color:${risk[2]}">${risk[0]}</span></td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table></div>` : '';
+
+      document.getElementById('analyticsContent').innerHTML = `
+        ${targetBlock}
+        <h3 style="margin-bottom:0.5rem;font-size:1rem">Critical Path</h3>
+        <p style="background:#fef2f2;padding:0.75rem 1rem;border-radius:8px;border-left:4px solid #dc2626;margin-bottom:0.5rem;font-size:0.9rem">${escapeHtml(pathNames) || 'None identified'}</p>
+        <ul style="padding-left:1.25rem;font-size:0.9rem;margin-bottom:0.5rem">
+          <li><strong>Deterministic (CPM) duration:</strong> ${projectDuration.toFixed(1)} ${u} → finish ${fmtNice(finishDate)}</li>
+          <li><strong>Critical-path σ:</strong> ${stdDev.toFixed(2)} ${u} &nbsp;•&nbsp; variance ${totalVar.toFixed(2)}</li>
+          <li><strong>Overall progress:</strong> ${prog.toFixed(1)}% complete (TE-weighted)</li>
+        </ul>
+        ${histBlock}
+        ${critTable}
+        <p class="help-text" style="margin-top:1rem">Monte Carlo samples each activity from a Beta-PERT distribution and re-runs the critical-path calculation ${mcResult ? mcResult.iters.toLocaleString() : ''} times — more robust than the normal approximation, especially for skewed estimates. Use P80/P90 dates for commitments, not the deterministic mean.</p>
+      `;
+    }
+
+    // ========================= GANTT =========================
+    function renderGantt() {
+      const container = document.getElementById('ganttContainer');
+      if (!calculated || tasks.length === 0) { container.innerHTML = '<div class="empty-state"><h3>Calculate first</h3></div>'; return; }
+      const holidays = getHolidaySet();
+      const start = projectStartDate();
+      const sorted = [...tasks].sort((a, b) => a.es - b.es || a.name.localeCompare(b.name));
+      // timeline span
+      let maxFinish = start;
+      tasks.forEach(t => { if (t.finishDate && t.finishDate > maxFinish) maxFinish = t.finishDate; });
+      // account for slack tails
+      tasks.forEach(t => {
+        const slackDays = unitToWorkingDays(t.slack);
+        if (slackDays > 0 && t.finishDate) {
+          const lf = addWorkingDays(t.finishDate, Math.ceil(slackDays), holidays);
+          if (lf > maxFinish) maxFinish = lf;
+        }
+      });
+      const totalDays = Math.max(1, calDaysBetween(start, maxFinish) + 3);
+      const dayW = totalDays > 90 ? 10 : totalDays > 45 ? 16 : 26;
+      const timelineW = totalDays * dayW;
+      const today = stripTime(new Date());
+      const todayOffset = calDaysBetween(start, today);
+
+      // header: month labels + day cells
+      let months = '', dayCells = '', weekendBands = '';
+      let curMonth = -1;
+      for (let i = 0; i < totalDays; i++) {
+        const d = new Date(start); d.setDate(d.getDate() + i);
+        const left = i * dayW;
+        if (d.getMonth() !== curMonth) {
+          curMonth = d.getMonth();
+          months += `<div class="gantt-month" style="left:${left}px">${d.toLocaleDateString(undefined,{month:'short',year:'2-digit'})}</div>`;
+        }
+        const weekend = (d.getDay() === 0 || d.getDay() === 6) || holidays.has(fmtISO(d));
+        const isToday = calDaysBetween(start, d) === todayOffset;
+        dayCells += `<div class="gantt-daycell ${weekend?'weekend':''} ${isToday?'today':''}" style="left:${left}px;width:${dayW}px">${dayW >= 16 ? d.getDate() : ''}</div>`;
+        if (weekend) weekendBands += `<div class="gantt-weekend-band" style="left:${left}px;width:${dayW}px"></div>`;
+      }
+
+      const rows = sorted.map(t => {
+        const barLeft = calDaysBetween(start, t.startDate) * dayW;
+        const isMs = t.milestone;
+        const spanDays = t.finishDate ? (calDaysBetween(t.startDate, t.finishDate) + 1) : 1;
+        const barW = Math.max(dayW, spanDays * dayW);
+        const slackDays = unitToWorkingDays(t.slack);
+        const slackW = slackDays > 0 ? slackDays * dayW : 0;
+        const cls = t.isCritical ? 'critical' : 'normal';
+        const label = isMs ? '' : t.te.toFixed(1);
+        const tip = `${t.name} | ${fmtNice(t.startDate)} → ${fmtNice(t.finishDate)} | ${t.percentComplete}% done | slack ${t.slack.toFixed(1)}`;
+        const bar = isMs
+          ? `<div class="gantt-milestone" style="left:${barLeft}px" title="${escapeHtml(tip)}"></div>`
+          : `<div class="gantt-bar ${cls}" style="left:${barLeft}px;width:${barW}px" title="${escapeHtml(tip)}">
+               <div class="bar-progress" style="width:${t.percentComplete}%"></div>
+               <span class="bar-text">${label}${t.percentComplete>0?' · '+t.percentComplete+'%':''}</span>
+             </div>
+             ${slackW > 1 ? `<div class="gantt-slack" style="left:${barLeft+barW}px;width:${slackW}px" title="Slack"></div>` : ''}`;
+        const lateMark = isLate(t) ? '<span title="Behind schedule" style="color:var(--warn)">⚠</span>' : '';
+        return `<div class="gantt-row">
+          <div class="gantt-label" title="${escapeHtml(t.name)}">${lateMark}${isMs?'◆ ':''}${escapeHtml(t.name)}</div>
+          <div class="gantt-bars" style="width:${timelineW}px">${weekendBands}${(todayOffset>=0&&todayOffset<=totalDays)?`<div class="gantt-today-line" style="left:${todayOffset*dayW}px"></div>`:''}${bar}</div>
+        </div>`;
+      }).join('');
+
+      container.innerHTML = `
+        <div class="gantt-chart" style="min-width:${210 + timelineW}px">
+          <div class="gantt-header-row">
+            <div class="gantt-corner"></div>
+            <div class="gantt-timeline" style="width:${timelineW}px">${months}${dayCells}</div>
+          </div>
+          ${rows}
+        </div>`;
+    }
+
+    // ========================= PERT DIAGRAM =========================
+    function renderPERT() {
+      const svgEl = document.getElementById('pertSvg');
+      if (!calculated || tasks.length === 0) { svgEl.innerHTML = ''; return; }
+      const idToTask = {}; tasks.forEach(t => idToTask[t.id] = t);
+      const level = {}; tasks.forEach(t => level[t.id] = 0);
+      let changed = true, guard = 0;
+      while (changed && guard < 200) {
+        changed = false; guard++;
+        tasks.forEach(t => {
+          let maxPred = 0;
+          t.predecessors.forEach(p => { if ((level[p.id]||0)+1 > maxPred) maxPred = (level[p.id]||0)+1; });
+          if (maxPred > level[t.id]) { level[t.id] = maxPred; changed = true; }
+        });
+      }
+      const maxLevel = Math.max(0, ...Object.values(level));
+      const levels = Array.from({ length: maxLevel + 1 }, () => []);
+      tasks.forEach(t => levels[level[t.id]].push(t));
+
+      const nodeW = 150, nodeH = 74, gapX = 80, gapY = 26, margin = 40;
+      const colWidth = nodeW + gapX;
+      const maxInCol = Math.max(1, ...levels.map(l => l.length));
+      const svgW = margin * 2 + (maxLevel + 1) * colWidth;
+      const svgH = margin * 2 + maxInCol * (nodeH + gapY);
+      const pos = {};
+      levels.forEach((col, li) => {
+        const totalH = col.length * (nodeH + gapY) - gapY;
+        const startY = margin + (svgH - 2 * margin - totalH) / 2;
+        col.forEach((t, ti) => { pos[t.id] = { x: margin + li * colWidth, y: startY + ti * (nodeH + gapY) }; });
+      });
+
+      let svg = `<defs>
+        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/></marker>
+        <marker id="arrowhead-crit" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/></marker>
+      </defs>`;
+      tasks.forEach(t => t.predecessors.forEach(p => {
+        const from = pos[p.id], to = pos[t.id]; if (!from || !to) return;
+        const x1 = from.x + nodeW, y1 = from.y + nodeH/2, x2 = to.x, y2 = to.y + nodeH/2, mx = (x1+x2)/2;
+        const isCrit = t.isCritical && idToTask[p.id] && idToTask[p.id].isCritical;
+        svg += `<path class="edge ${isCrit?'critical':''}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" marker-end="url(#${isCrit?'arrowhead-crit':'arrowhead'})"/>`;
+      }));
+      tasks.forEach(t => {
+        const p = pos[t.id];
+        const cls = t.isCritical ? 'node-rect critical' : 'node-rect';
+        const nm = t.name.length > 18 ? t.name.slice(0,16)+'…' : t.name;
+        svg += `<g transform="translate(${p.x},${p.y})">
+          <rect class="${cls}" width="${nodeW}" height="${nodeH}"/>
+          <text class="node-title" x="10" y="20">${t.milestone?'◆ ':''}${escapeHtml(nm)}</text>
+          <text class="node-meta" x="10" y="38">TE ${t.te.toFixed(1)} | Slack ${t.slack.toFixed(1)} | ${t.percentComplete}%</text>
+          <text class="node-meta" x="10" y="54">ES ${t.es.toFixed(1)} → EF ${t.ef.toFixed(1)}</text>
+          <text class="node-meta" x="10" y="68">${fmtNice(t.startDate)} → ${fmtNice(t.finishDate)}</text>
+        </g>`;
+      });
+      svgEl.setAttribute('width', svgW); svgEl.setAttribute('height', svgH);
+      svgEl.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`);
+      svgEl.innerHTML = svg;
+    }
+
+    // ========================= EXPORTS =========================
+    function download(filename, content, mime) {
+      const blob = new Blob([content], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    }
+    function projName() { return document.getElementById('projectName').value || 'engagement'; }
+    function safeName() { return projName().replace(/[^\w\-]+/g, '-'); }
+
+    function exportJSON() {
+      const data = serialize();
+      data.exportedAt = new Date().toISOString();
+      download(safeName() + '.json', JSON.stringify(data, null, 2), 'application/json');
+    }
+    function importJSON(ev) {
+      const file = ev.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const data = JSON.parse(e.target.result);
+          if (!data.tasks || !Array.isArray(data.tasks)) throw new Error('Invalid format');
+          hydrate(data);
+          renderTaskTable(); switchTab('tasks'); saveLocal();
+          alert('Project imported. Click Calculate to analyze.');
+        } catch (err) { alert('Could not import: ' + err.message); }
+      };
+      reader.readAsText(file); ev.target.value = '';
+    }
+
+    function csvCell(v) {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }
+    function ensureCalc() {
+      if (!calculated) { if (!recompute()) return false; renderTaskTable(); }
+      return true;
+    }
+    function exportCSV() {
+      if (!ensureCalc()) return;
+      const u = unitLabel();
+      const rows = [['ID','Activity','Owner','Milestone','O','M','P','TE ('+u+')','Variance','Predecessors','Start','Finish','ES','EF','Slack','% Complete','Critical','Criticality %','Status']];
+      tasks.forEach(t => rows.push([
+        t.id, t.name, t.owner, t.milestone ? 'Yes' : '', t.o, t.m, t.p, t.te.toFixed(2), t.variance.toFixed(3),
+        predLabel(t), fmtISO(t.startDate), fmtISO(t.finishDate), t.es.toFixed(2), t.ef.toFixed(2),
+        t.slack.toFixed(2), t.percentComplete, t.isCritical ? 'Yes' : '', (t.criticality*100).toFixed(0), taskStatus(t).label
+      ]));
+      download(safeName() + '.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
+    }
+
+    // ---- Smartsheet CSV: row-based predecessors like "3FS+2d" ----
+    function exportSmartsheetCSV() {
+      if (!ensureCalc()) return;
+      // Smartsheet references predecessors by ROW number (1-based order in sheet)
+      const order = tasks.slice(); // keep entry order
+      const rowOf = {}; order.forEach((t, i) => rowOf[t.id] = i + 1);
+      const u = document.getElementById('durationUnit').value;
+      const durSuffix = u === 'weeks' ? 'w' : u === 'hours' ? 'h' : 'd';
+      const dateStr = d => `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}/${d.getFullYear()}`;
+      const rows = [['Task Name','Duration','Start','Finish','% Complete','Predecessors','Assigned To','Notes']];
+      order.forEach(t => {
+        const preds = t.predecessors.map(p => {
+          const r = rowOf[p.id]; if (!r) return '';
+          const lag = p.lag ? (p.lag > 0 ? '+' + p.lag + durSuffix : p.lag + durSuffix) : '';
+          return r + p.type + lag;
+        }).filter(Boolean).join(',');
+        rows.push([
+          t.name,
+          t.milestone ? '0' : (t.te.toFixed(2) + durSuffix),
+          dateStr(t.startDate),
+          dateStr(t.finishDate),
+          (t.percentComplete/100).toFixed(2),
+          preds,
+          t.owner || '',
+          t.milestone ? 'Milestone' : ''
+        ]);
+      });
+      download(safeName() + '-smartsheet.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
+    }
+
+    // ---- Microsoft Project XML (MSPDI) ----
+    function msDate(d, hour) {
+      const dd = new Date(d); dd.setHours(hour || 8, 0, 0, 0);
+      const p = n => String(n).padStart(2, '0');
+      return `${dd.getFullYear()}-${p(dd.getMonth()+1)}-${p(dd.getDate())}T${p(dd.getHours())}:${p(dd.getMinutes())}:00`;
+    }
+    function msDuration(teUnits) {
+      // convert to whole H/M/S over an 8h working day (MSPDI wants integer components)
+      let secs = Math.round(Math.max(0, unitToWorkingDays(teUnits) * 8) * 3600);
+      const H = Math.floor(secs / 3600); secs -= H * 3600;
+      const M = Math.floor(secs / 60); const S = secs - M * 60;
+      return `PT${H}H${M}M${S}S`;
+    }
+    function exportMSProjectXML() {
+      if (!ensureCalc()) return;
+      const start = projectStartDate();
+      const projEnd = tasks.reduce((mx, t) => (t.finishDate && t.finishDate > mx) ? t.finishDate : mx, start);
+      const typeCode = { FF: 0, FS: 1, SF: 2, SS: 3 };
+      const lagMinutes = lag => Math.round(unitToWorkingDays(lag) * 8 * 60 * 10); // tenths of a minute
+
+      // resources from unique owners
+      const owners = [...new Set(tasks.map(t => t.owner).filter(Boolean))];
+      const resUID = {}; owners.forEach((o, i) => resUID[o] = i + 1);
+
+      let taskXml = '';
+      tasks.forEach((t, i) => {
+        const uid = t.id;
+        const preds = t.predecessors.map(p => `
+        <PredecessorLink>
+          <PredecessorUID>${p.id}</PredecessorUID>
+          <Type>${typeCode[p.type] != null ? typeCode[p.type] : 1}</Type>
+          <CrossProject>0</CrossProject>
+          <LinkLag>${lagMinutes(p.lag)}</LinkLag>
+          <LagFormat>7</LagFormat>
+        </PredecessorLink>`).join('');
+        taskXml += `
+      <Task>
+        <UID>${uid}</UID>
+        <ID>${i + 1}</ID>
+        <Name>${escapeXml(t.name)}</Name>
+        <Active>1</Active>
+        <Manual>0</Manual>
+        <Type>0</Type>
+        <OutlineLevel>1</OutlineLevel>
+        <Priority>500</Priority>
+        <Start>${msDate(t.startDate, 8)}</Start>
+        <Finish>${msDate(t.finishDate, 17)}</Finish>
+        <Duration>${t.milestone ? 'PT0H0M0S' : msDuration(t.te)}</Duration>
+        <DurationFormat>7</DurationFormat>
+        <Work>${t.milestone ? 'PT0H0M0S' : msDuration(t.te)}</Work>
+        <Milestone>${t.milestone ? 1 : 0}</Milestone>
+        <PercentComplete>${Math.round(t.percentComplete)}</PercentComplete>
+        <PercentWorkComplete>${Math.round(t.percentComplete)}</PercentWorkComplete>${preds}
+      </Task>`;
+      });
+
+      let resXml = owners.map(o => `
+      <Resource>
+        <UID>${resUID[o]}</UID>
+        <ID>${resUID[o]}</ID>
+        <Name>${escapeXml(o)}</Name>
+        <Type>1</Type>
+      </Resource>`).join('');
+
+      let assignXml = '';
+      let auid = 1;
+      tasks.forEach(t => {
+        if (t.owner && resUID[t.owner]) {
+          assignXml += `
+      <Assignment>
+        <UID>${auid++}</UID>
+        <TaskUID>${t.id}</TaskUID>
+        <ResourceUID>${resUID[t.owner]}</ResourceUID>
+        <PercentWorkComplete>${Math.round(t.percentComplete)}</PercentWorkComplete>
+        <Units>1</Units>
+      </Assignment>`;
+        }
+      });
+
+      const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Project xmlns="http://schemas.microsoft.com/project">
+  <Name>${escapeXml(projName())}</Name>
+  <Title>${escapeXml(projName())}</Title>
+  <ScheduleFromStart>1</ScheduleFromStart>
+  <StartDate>${msDate(start, 8)}</StartDate>
+  <FinishDate>${msDate(projEnd, 17)}</FinishDate>
+  <CurrentDate>${msDate(new Date(), 8)}</CurrentDate>
+  <CalendarUID>1</CalendarUID>
+  <DefaultStartTime>08:00:00</DefaultStartTime>
+  <DefaultFinishTime>17:00:00</DefaultFinishTime>
+  <MinutesPerDay>480</MinutesPerDay>
+  <MinutesPerWeek>2400</MinutesPerWeek>
+  <DaysPerMonth>20</DaysPerMonth>
+  <DurationFormat>7</DurationFormat>
+  <Calendars>
+    <Calendar>
+      <UID>1</UID>
+      <Name>Standard</Name>
+      <IsBaseCalendar>1</IsBaseCalendar>
+      <WeekDays>
+        <WeekDay><DayType>1</DayType><DayWorking>0</DayWorking></WeekDay>
+        <WeekDay><DayType>2</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>08:00:00</FromTime><ToTime>12:00:00</ToTime></WorkingTime><WorkingTime><FromTime>13:00:00</FromTime><ToTime>17:00:00</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>3</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>08:00:00</FromTime><ToTime>12:00:00</ToTime></WorkingTime><WorkingTime><FromTime>13:00:00</FromTime><ToTime>17:00:00</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>4</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>08:00:00</FromTime><ToTime>12:00:00</ToTime></WorkingTime><WorkingTime><FromTime>13:00:00</FromTime><ToTime>17:00:00</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>5</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>08:00:00</FromTime><ToTime>12:00:00</ToTime></WorkingTime><WorkingTime><FromTime>13:00:00</FromTime><ToTime>17:00:00</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>6</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>08:00:00</FromTime><ToTime>12:00:00</ToTime></WorkingTime><WorkingTime><FromTime>13:00:00</FromTime><ToTime>17:00:00</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>7</DayType><DayWorking>0</DayWorking></WeekDay>
+      </WeekDays>
+    </Calendar>
+  </Calendars>
+  <Tasks>${taskXml}
+  </Tasks>
+  <Resources>${resXml}
+  </Resources>
+  <Assignments>${assignXml}
+  </Assignments>
+</Project>`;
+      download(safeName() + '.xml', xml, 'application/xml');
+    }
+    function escapeXml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+    }
+
+    function exportPertSVG() {
+      if (!ensureCalc()) return;
+      renderPERT();
+      const svg = document.getElementById('pertSvg').outerHTML;
+      const full = '<?xml version="1.0" encoding="UTF-8"?>\n' + svg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+      download(safeName() + '-pert.svg', full, 'image/svg+xml');
+    }
+
+    // ========================= SAMPLE / RESET =========================
+    function loadSample() {
+      if (tasks.length && !confirm('Replace current activities with sample engagement?')) return;
+      const mk = (id, name, o, m, p, preds, owner) => makeTask({ id, name, o, m, p, owner, predecessors: preds.map(normalizePred) });
+      tasks = [
+        mk(1, 'Kick-off & Discovery', 2, 3, 5, [], 'PMO'),
+        mk(2, 'Stakeholder Interviews', 3, 5, 8, [1], 'A. Rivera'),
+        mk(3, 'Requirements Workshop', 2, 3, 4, [1], 'A. Rivera'),
+        mk(4, 'Solution Design', 4, 6, 10, [2, 3], 'L. Chen'),
+        mk(5, 'Data Mapping', 3, 4, 7, [2], 'L. Chen'),
+        mk(6, 'Build / Configure', 8, 12, 18, [4, 5], 'Dev Team'),
+        mk(7, 'Integration Testing', 3, 5, 8, [6], 'QA'),
+        mk(8, 'UAT & Training', 4, 6, 9, [7], 'A. Rivera'),
+        mk(9, 'Go-Live & Hypercare', 2, 3, 5, [8], 'PMO'),
+        makeTask({ id: 10, name: 'Project Closed', milestone: true, o:0,m:0,p:0, predecessors: [normalizePred(9)], owner: 'PMO' })
+      ];
+      nextId = 11;
+      calculated = false;
+      document.getElementById('projectName').value = 'Sample Client Engagement – CRM Rollout';
+      if (!document.getElementById('projectStart').value) document.getElementById('projectStart').value = fmtISO(new Date());
+      renderTaskTable(); switchTab('tasks'); saveLocal();
+    }
+    function resetProject() {
+      if (tasks.length && !confirm('Clear all activities and start fresh?')) return;
+      tasks = []; nextId = 1; calculated = false; mcResult = null;
+      document.getElementById('projectName').value = 'New Engagement';
+      document.getElementById('holidays').value = '';
+      document.getElementById('summaryGrid').innerHTML = '';
+      document.getElementById('analyticsContent').innerHTML = '<div class="empty-state"><h3>Run Calculate to see analytics</h3></div>';
+      document.getElementById('ganttContainer').innerHTML = '';
+      document.getElementById('pertSvg').innerHTML = '';
+      renderTaskTable(); switchTab('tasks'); saveLocal();
+    }
+
+    // ========================= AI PLAN BUILDER =========================
+    const AI_KEY_STORE = 'pertGantt.anthropicKey';
+    const AI_MODEL_STORE = 'pertGantt.aiModel';
+    function toggleAiSettings() {
+      const el = document.getElementById('aiSettings');
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+    function loadApiKey() {
+      try {
+        const k = localStorage.getItem(AI_KEY_STORE);
+        if (k) document.getElementById('aiKey').value = k;
+        const m = localStorage.getItem(AI_MODEL_STORE);
+        if (m) document.getElementById('aiModel').value = m;
+        updateKeyBadge();
+      } catch (e) {}
+    }
+    function updateKeyBadge() {
+      const has = !!(localStorage.getItem(AI_KEY_STORE));
+      const btn = document.getElementById('aiSettingsToggle');
+      if (btn) btn.innerHTML = has ? '⚙ API Key ✓' : '⚙ API Key';
+    }
+    function saveApiKey() {
+      const k = document.getElementById('aiKey').value.trim();
+      const m = document.getElementById('aiModel').value;
+      try {
+        if (k) localStorage.setItem(AI_KEY_STORE, k); else localStorage.removeItem(AI_KEY_STORE);
+        localStorage.setItem(AI_MODEL_STORE, m);
+      } catch (e) {}
+      updateKeyBadge();
+      const s = document.getElementById('aiStatus');
+      s.textContent = k ? 'API key saved in this browser.' : 'Key cleared.';
+      setTimeout(() => s.textContent = '', 2500);
+    }
+    function clearApiKey() {
+      document.getElementById('aiKey').value = '';
+      try { localStorage.removeItem(AI_KEY_STORE); } catch (e) {}
+      updateKeyBadge();
+    }
+
+    function aiSchemaHint() {
+      const unit = document.getElementById('durationUnit').value;
+      return `Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
+{
+  "projectName": "short project/engagement name",
+  "durationUnit": "${unit}",
+  "tasks": [
+    {
+      "name": "activity name",
+      "optimistic": number,   // best-case duration in ${unit}
+      "mostLikely": number,   // most-likely duration in ${unit}
+      "pessimistic": number,  // worst-case duration in ${unit}
+      "milestone": false,     // true for zero-duration checkpoints (go-live, sign-off, approvals)
+      "owner": "person/role or empty string",
+      "dependsOn": ["exact names of predecessor tasks that must finish first"]
+    }
+  ]
+}
+Rules:
+- Break the work into concrete, trackable activities (aim for 5–20 unless the input clearly implies more).
+- Every duration must satisfy optimistic <= mostLikely <= pessimistic, all >= 0.
+- If the notes give only a single estimate for a task, expand it to a sensible 3-point range (optimistic ~= 0.75x, pessimistic ~= 1.6x, rounded).
+- Set realistic dependencies so the plan sequences correctly; use parallel work where the notes imply it. dependsOn must reference names that appear in this same tasks array.
+- Mark clear checkpoints (go-live, sign-off, approval, kickoff decision) as milestones with 0/0/0 durations.
+- Assign owners only when named or clearly implied.`;
+    }
+
+    async function callAnthropic(userContent) {
+      const key = (document.getElementById('aiKey').value.trim()) || localStorage.getItem(AI_KEY_STORE);
+      if (!key) throw new Error('No API key. Click “⚙ API Key”, paste your Anthropic key, and Save.');
+      const model = document.getElementById('aiModel').value || 'claude-sonnet-5';
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 8000,
+          messages: [{ role: 'user', content: userContent }]
+        })
+      });
+      if (!res.ok) {
+        let detail = '';
+        try { const j = await res.json(); detail = j.error ? j.error.message : JSON.stringify(j); } catch (e) { detail = res.statusText; }
+        if (res.status === 401) throw new Error('Invalid API key (401). Check the key in ⚙ API Key.');
+        if (res.status === 429) throw new Error('Rate limited (429). Wait a moment and try again.');
+        throw new Error(`API error ${res.status}: ${detail}`);
+      }
+      const data = await res.json();
+      const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+      return text;
+    }
+
+    function parseAIJson(text) {
+      let s = text.trim();
+      // strip markdown fences if present
+      s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+      // grab the outermost JSON object
+      const first = s.indexOf('{'), last = s.lastIndexOf('}');
+      if (first >= 0 && last > first) s = s.slice(first, last + 1);
+      return JSON.parse(s);
+    }
+
+    async function generateWithAI() {
+      const btn = document.getElementById('aiGenerateBtn');
+      const status = document.getElementById('aiStatus');
+      const errEl = document.getElementById('aiError');
+      errEl.style.display = 'none';
+      const notes = document.getElementById('aiNotes').value.trim();
+      const mode = document.getElementById('aiMode').value;
+      if (!notes) { errEl.textContent = 'Paste some notes or a description first.'; errEl.style.display = 'block'; return; }
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) {
+        document.getElementById('aiSettings').style.display = 'block';
+        errEl.textContent = 'Add your Anthropic API key first (⚙ API Key).'; errEl.style.display = 'block'; return;
+      }
+
+      let prompt;
+      if (mode === 'merge' && tasks.length) {
+        const current = { projectName: document.getElementById('projectName').value, durationUnit: document.getElementById('durationUnit').value,
+          tasks: tasks.map(t => ({ name: t.name, optimistic: t.o, mostLikely: t.m, pessimistic: t.p, milestone: t.milestone, owner: t.owner,
+            dependsOn: t.predecessors.map(p => (tasks.find(x => x.id === p.id) || {}).name).filter(Boolean) })) };
+        prompt = `You are a project planning assistant for engagement/project managers.
+Here is the CURRENT project plan as JSON:
+${JSON.stringify(current, null, 2)}
+
+Apply the following change request, keeping everything else intact and preserving existing tasks/estimates unless the request changes them:
+"""${notes}"""
+
+${aiSchemaHint()}
+Return the COMPLETE updated task list (not just the changes).`;
+      } else {
+        prompt = `You are a project planning assistant for engagement/project managers.
+Read the following notes/description and turn it into a structured, estimated project plan.
+"""${notes}"""
+
+${aiSchemaHint()}`;
+      }
+
+      btn.disabled = true;
+      const orig = btn.textContent;
+      btn.textContent = '⏳ Generating…';
+      status.textContent = 'Contacting Claude…';
+      try {
+        const text = await callAnthropic(prompt);
+        const plan = parseAIJson(text);
+        applyAIPlan(plan, mode);
+        status.textContent = '✓ Plan ready — review below, then Calculate.';
+        setTimeout(() => status.textContent = '', 4000);
+      } catch (e) {
+        errEl.textContent = e.message || String(e);
+        errEl.style.display = 'block';
+        status.textContent = '';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
+    }
+
+    function applyAIPlan(plan, mode) {
+      if (!plan || !Array.isArray(plan.tasks)) throw new Error('AI response did not contain a tasks array.');
+      if (plan.projectName) document.getElementById('projectName').value = plan.projectName;
+      if (plan.durationUnit && ['days','weeks','hours'].includes(plan.durationUnit))
+        document.getElementById('durationUnit').value = plan.durationUnit;
+
+      // Build fresh task objects; assign ids by order, then resolve dependsOn names.
+      const built = [];
+      let idc = 1;
+      const nameToId = {};
+      plan.tasks.forEach(pt => {
+        const name = String(pt.name || '').trim();
+        if (!name) return;
+        let o = Number(pt.optimistic) || 0, m = Number(pt.mostLikely) || 0, p = Number(pt.pessimistic) || 0;
+        const isMs = !!pt.milestone || (o === 0 && m === 0 && p === 0);
+        if (!isMs) {
+          // sanitize ordering
+          const arr = [o, m, p].sort((a, b) => a - b); o = arr[0]; m = arr[1]; p = arr[2];
+          if (p <= 0) { o = m = p = 0; } // fall back to milestone if no real duration
+        }
+        const id = idc++;
+        nameToId[name.toLowerCase()] = id;
+        built.push(makeTask({ id, name, o, m, p, milestone: isMs || (p === 0 && m === 0 && o === 0),
+          owner: String(pt.owner || '').trim(), predecessors: [], _dependsOn: pt.dependsOn || [] }));
+      });
+      // resolve dependencies by name
+      built.forEach(t => {
+        (t._dependsOn || []).forEach(dn => {
+          const key = String(dn || '').trim().toLowerCase();
+          const pid = nameToId[key];
+          if (pid && pid !== t.id) t.predecessors.push({ id: pid, type: 'FS', lag: 0 });
+        });
+        delete t._dependsOn;
+      });
+
+      if (mode === 'merge' && tasks.length) {
+        // merge returns full list -> just replace with the rebuilt full list
+        tasks = built;
+      } else {
+        tasks = built;
+      }
+      nextId = idc;
+      calculated = false;
+      renderTaskTable();
+      saveLocal();
+      // auto-calculate so the user immediately sees Gantt/PERT/analytics
+      if (tasks.length) { if (recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderPERT(); } }
+    }
+
+    // ========================= INIT =========================
+    (function init() {
+      // default start date = today
+      const startInput = document.getElementById('projectStart');
+      const loaded = loadLocal();
+      if (!startInput.value) startInput.value = fmtISO(new Date());
+      renderTaskTable();
+      loadApiKey();
+      document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+      // save project name on change
+      document.getElementById('projectName').addEventListener('input', () => saveLocal());
+      // persist model choice when changed
+      const modelSel = document.getElementById('aiModel');
+      if (modelSel) modelSel.addEventListener('change', () => { try { localStorage.setItem(AI_MODEL_STORE, modelSel.value); } catch (e) {} });
+    })();
+  </script>
+</body>
+</html>
