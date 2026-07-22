@@ -932,6 +932,7 @@
         </div>
         <datalist id="predDatalist"></datalist>
         <div id="mStoriesPanel"></div>
+        <div id="mImpactPanel"></div>
         <details id="dictDetails" style="margin-bottom:1rem">
           <summary style="cursor:pointer;font-size:0.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">WBS dictionary &amp; actuals</summary>
           <div style="padding-top:0.75rem">
@@ -1458,6 +1459,7 @@
       editingId = null;
       document.getElementById('modalTitle').textContent = isMilestone ? 'Add Milestone' : 'Add Activity';
       const spClr = document.getElementById('mStoriesPanel'); if (spClr) spClr.innerHTML = '';
+      const ipClr = document.getElementById('mImpactPanel'); if (ipClr) ipClr.innerHTML = '';
       document.getElementById('mName').value = '';
       document.getElementById('mO').value = '';
       document.getElementById('mM').value = '';
@@ -1550,7 +1552,52 @@
           : (reqs && Array.isArray(reqs.stories) && reqs.stories.length && !isSummaryId(id) && !t.milestone && !isTestCaseTask(t)
             ? `<p class="help-text" style="margin-bottom:0.75rem">No user story traces to this activity yet — Requirements tab ▸ 🤖 Draft from WBS fills the gaps.</p>` : ''));
       }
+      renderImpactPanel(id);
       document.getElementById('modal').classList.add('open');
+    }
+    // 🕸 Everything that pulls on this task or waits for it — with actions, so
+    // an entangled task (e.g. a test case stuck in a phase-level loop) can be
+    // untangled right here instead of hunting through the whole plan.
+    function renderImpactPanel(id) {
+      const ip = document.getElementById('mImpactPanel');
+      if (!ip) return;
+      renderImpactPanel._id = id;
+      const t = tasks.find(x => x.id === id);
+      if (!t) { ip.innerHTML = ''; return; }
+      computeWbsCodes();
+      const nm = x => escapeHtml((x.wbs ? x.wbs + ' ' : '') + x.name);
+      const row = (inner, btns) => `<div style="display:flex;gap:.5rem;align-items:flex-start;justify-content:space-between;padding:.3rem 0;border-bottom:1px dashed var(--border);font-size:.78rem"><div style="flex:1;line-height:1.4">${inner}</div><div style="display:flex;gap:.3rem;flex-shrink:0">${btns}</div></div>`;
+      const dependents = tasks.filter(x => x.predecessors.some(p => p.id === id));
+      const anc = []; let cur = t.parentId;
+      while (cur != null) { const p2 = tasks.find(x => x.id === cur); if (!p2) break; anc.push(p2); cur = p2.parentId; }
+      const inherited = [];
+      anc.forEach(a => a.predecessors.forEach(p => { const pt = tasks.find(x => x.id === p.id); if (pt) inherited.push({ a, pt }); }));
+      const phaseDependents = [];
+      anc.forEach(a => tasks.forEach(x => { if (x.predecessors.some(p => p.id === a.id)) phaseDependents.push({ x, a }); }));
+      const total = dependents.length + inherited.length + phaseDependents.length;
+      if (!total) { ip.innerHTML = ''; return; }
+      ip.innerHTML = `<details style="margin-bottom:1rem;background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:.5rem .75rem">
+        <summary style="cursor:pointer;font-size:.8rem;font-weight:600;color:#7e22ce">🕸 Dependency impact (${total}) — everything that waits on this task or pulls on it</summary>
+        ${dependents.length ? `<div style="font-weight:600;font-size:.75rem;margin:.5rem 0 .15rem">⬅ Waiting on THIS task (${dependents.length}) — unlink here, or open to re-point:</div>` + dependents.slice(0, 15).map(x => {
+          const pd = x.predecessors.find(p => p.id === id);
+          return row(`<b>${nm(x)}</b> <span class="help-text">(${pd.type}${pd.lag ? (pd.lag > 0 ? '+' : '') + pd.lag : ''})</span>`,
+            `<button class="btn-sm btn-danger" onclick="impactUnlink(${x.id}, ${id})" title="Remove that task's dependency on this one — it then schedules from its remaining links (↶ Undo restores)">🗑</button>
+             <button class="btn-sm btn-secondary" onclick="closeModal();openEditModal(${x.id}, true)" title="Open it to re-point the link at a different predecessor">✎</button>`);
+        }).join('') + (dependents.length > 15 ? '<div class="help-text">… and ' + (dependents.length - 15) + ' more</div>' : '') : ''}
+        ${inherited.length ? `<div style="font-weight:600;font-size:.75rem;margin:.5rem 0 .15rem">⬇ Inherited from its phases (${inherited.length}) — this task cannot start before:</div>` + inherited.slice(0, 10).map(({ a, pt }) => row(`“${nm(pt)}” <span class="help-text">via phase “${escapeHtml(a.name)}”</span>`, `<button class="btn-sm btn-secondary" onclick="closeModal();openEditModal(${a.id}, true)" title="Phase-level links are edited on the phase itself">✎ phase</button>`)).join('') : ''}
+        ${phaseDependents.length ? `<div style="font-weight:600;font-size:.75rem;margin:.5rem 0 .15rem">⬅ Waiting on a phase that CONTAINS this task (${phaseDependents.length}):</div>` + phaseDependents.slice(0, 10).map(({ x, a }) => row(`<b>${nm(x)}</b> <span class="help-text">waits for all of “${escapeHtml(a.name)}” — including this task</span>`, `<button class="btn-sm btn-secondary" onclick="closeModal();openEditModal(${x.id}, true)">✎</button>`)).join('') : ''}
+        <div class="help-text" style="margin-top:.4rem">💡 Changing the WBS parent above changes which phase-level links pull on this task — that is how a test case escapes a dependency loop.</div>
+      </details>`;
+    }
+    function impactUnlink(fromId, predId) {
+      const x = tasks.find(z => z.id === fromId);
+      if (!x) return;
+      x.predecessors = x.predecessors.filter(p => p.id !== predId);
+      saveLocal();
+      if (calculated) recompute();
+      renderTaskTable();
+      renderImpactPanel(renderImpactPanel._id);
+      flashSaved('🗑 Link removed — ↶ Undo restores it');
     }
     function closeModal() { document.getElementById('modal').classList.remove('open'); }
     function populateParentSelect(excludeId, selectedParent) {
@@ -2250,7 +2297,10 @@
             <span style="color:var(--muted)">waits for</span> <b>${escapeHtml(nm(nxt))}</b>
             ${link ? `<div class="help-text" style="margin-top:2px">stored link: “${escapeHtml(link.holder.name)}” ← “${escapeHtml((tasks.find(x => x.id === link.pred.id) || { name: '?' }).name)}”${onPhase ? ' — ⚠ sits on the PHASE, removing it affects every task inside' : ''}</div>` : '<div class="help-text" style="margin-top:2px">inherited link — open the task to inspect</div>'}
           </div>
-          <div style="display:flex;gap:0.35rem;flex-shrink:0">
+          <div style="display:flex;gap:0.35rem;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
+            ${(() => { if (!link) return ''; const predT = tasks.find(x => x.id === link.pred.id);
+              return (isTestCaseTask(link.holder) && !isSummaryId(link.holder.id) && predT && !isTestCaseTask(predT) && !wouldCreateCycleParent(link.holder.id, predT.id))
+                ? `<button class="btn-sm btn-primary" onclick="depFixNestTC(${link.holder.id}, ${link.pred.id})" title="The usual RIGHT fix for a test case: move it under the activity it verifies (WBS decomposition) — the link becomes unnecessary, nothing is cut, and all other sequencing stays.">⑂ Nest under it</button>` : ''; })()}
             ${link ? `<button class="btn-sm btn-danger" onclick="depFixRemove(${link.holder.id}, ${link.pred.id})" title="Delete this predecessor link. Cutting ONE link breaks the loop — usually the one pointing backwards (waiting for something that happens later in the plan).">🗑 Remove link</button>` : ''}
             <button class="btn-sm btn-secondary" onclick="closeDepFixWizard();openEditModal(${id}, true)" title="Open this task to edit its predecessors by hand">✎ Open</button>
           </div></div>`;
@@ -2259,6 +2309,22 @@
       document.getElementById('depFixModal').classList.add('open');
     }
     function closeDepFixWizard() { const m = document.getElementById('depFixModal'); if (m) m.classList.remove('open'); }
+    // The usual RIGHT fix for a looping test case: nest it under the activity
+    // it verifies (its predecessor). The link becomes redundant (nesting scopes
+    // it), no other link is touched, and phase-level dependencies stop dragging
+    // the TC into circles it doesn't belong to.
+    function depFixNestTC(holderId, predId) {
+      const h = tasks.find(x => x.id === holderId), pr = tasks.find(x => x.id === predId);
+      if (!h || !pr || wouldCreateCycleParent(h.id, pr.id)) return;
+      h.parentId = pr.id;
+      h.predecessors = h.predecessors.filter(p => p.id !== predId);
+      collapsedIds.delete(pr.id);
+      saveLocal();
+      if (findScheduleCycleIds()) { openDepFixWizard(); flashSaved('⑂ Nested — another loop remains, see the wizard'); return; }
+      closeDepFixWizard();
+      if (recompute()) refreshAll();
+      flashSaved('⑂ "' + h.name.slice(0, 40) + '" now decomposes "' + pr.name.slice(0, 40) + '" — loop resolved, nothing cut. ↶ Undo reverses.');
+    }
     function depFixRemove(holderId, predId) {
       const h = tasks.find(x => x.id === holderId);
       if (!h) return;
@@ -2278,7 +2344,7 @@
       computeWbsCodes();
       const order = {}; tasksInWbsOrder().forEach(({ task }, i) => { order[task.id] = i; });
       const cutTasks = new Set();
-      let cutN = 0, guard = 0;
+      let cutN = 0, movedN = 0, guard = 0;
       while (guard++ < 25) {
         const loop = findScheduleCycleIds();
         if (!loop) break;
@@ -2290,9 +2356,19 @@
           if (!best || score > best.score) best = { link, score };
         });
         if (!best) break;
-        best.link.holder.predecessors = best.link.holder.predecessors.filter(p => p !== best.link.pred);
+        const holder = best.link.holder, predT = tasks.find(x => x.id === best.link.pred.id);
+        // preferred FIX: a looping test case gets re-homed under the activity it
+        // verifies (its predecessor) — nothing cut, all other sequencing kept
+        if (isTestCaseTask(holder) && !isSummaryId(holder.id) && predT && !isTestCaseTask(predT) && !wouldCreateCycleParent(holder.id, predT.id)) {
+          holder.parentId = predT.id;
+          holder.predecessors = holder.predecessors.filter(p => p !== best.link.pred);
+          collapsedIds.delete(predT.id);
+          movedN++;
+          continue;
+        }
+        holder.predecessors = holder.predecessors.filter(p => p !== best.link.pred);
         cutN++;
-        if (!isSummaryId(best.link.holder.id)) cutTasks.add(best.link.holder.id);
+        if (!isSummaryId(holder.id)) cutTasks.add(holder.id);
       }
       if (findScheduleCycleIds()) { openDepFixWizard(); flashSaved('⚠ One loop resisted the automatic fix — remove the highlighted link by hand'); return; }
       closeDepFixWizard();
