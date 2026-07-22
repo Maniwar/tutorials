@@ -4643,10 +4643,15 @@
       const matrixRows = [];
       stories.forEach(s => {
         const t = s.wbsId != null ? idToTask[s.wbsId] : null;
-        const cells = a => `<tr>
-          <td style="font-size:0.75rem;white-space:nowrap">${escapeHtml(s.epicId || '—')}</td>
-          <td style="font-size:0.75rem;white-space:nowrap"><b>${escapeHtml(s.id)}</b></td>
-          <td style="font-size:0.78rem;min-width:200px;max-width:320px" title="${escapeHtml('As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?'))}">${escapeHtml(s.want || '?')}</td>
+        const acsList = (s.ac || []).length ? s.ac : [null];
+        const span = acsList.length;
+        // the FULL story sentence, once per story (rowspan across its AC rows) —
+        // never just the "I want" fragment
+        const sentence = `As a <b>${escapeHtml(s.persona || '?')}</b>, I want to ${escapeHtml(s.want || '?')}, <span style="color:var(--muted)">so that ${escapeHtml(s.soThat || '?')}</span>`;
+        const cells = (a, first) => `<tr>
+          ${first ? `<td rowspan="${span}" style="font-size:0.75rem;white-space:nowrap;vertical-align:top">${escapeHtml(s.epicId || '—')}</td>
+          <td rowspan="${span}" style="font-size:0.75rem;white-space:nowrap;vertical-align:top"><b>${escapeHtml(s.id)}</b></td>
+          <td rowspan="${span}" style="font-size:0.78rem;min-width:220px;max-width:360px;vertical-align:top">${sentence}</td>` : ''}
           <td style="font-size:0.75rem;white-space:nowrap">${a ? escapeHtml(a.id) : '—'}</td>
           <td style="font-size:0.75rem">${a ? escapeHtml(a.type) : ''}</td>
           <td style="font-size:0.78rem;min-width:260px">${a ? escapeHtml(a.text) : '<i>no acceptance criteria</i>'}</td>
@@ -4657,11 +4662,11 @@
           <td style="font-size:0.75rem">${t ? escapeHtml(t.owner || '—') : ''}</td>
           <td style="font-size:0.75rem;white-space:nowrap">${t ? (t.percentComplete || 0) + '% · ' + taskStatus(t).label : ''}</td>
         </tr>`;
-        if ((s.ac || []).length) s.ac.forEach(a => matrixRows.push(cells(a))); else matrixRows.push(cells(null));
+        acsList.forEach((a, i) => matrixRows.push(cells(a, i === 0)));
       });
       html += `<details id="traceMatrix" style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">▦ Traceability matrix — ${matrixRows.length} rows: epic → story → acceptance criterion → WBS activity → status <span class="help-text" style="font-weight:400">(this is the audit view; the CSV export matches it)</span></summary>
         <div class="table-wrap" style="margin-top:0.5rem;max-height:420px;overflow:auto"><table>
-          <thead><tr><th>Epic</th><th>Story</th><th title="Hover for the full As-a/I-want/So-that sentence">User story</th><th>AC</th><th title="happy / error / edge / perf path">Type</th><th>Acceptance criterion</th><th title="WBS tasks named 'TC <AC-id> — …' that verify this criterion (⑂ decompose your UAT task to test-case level to generate them)">Test cases</th><th title="Click to open the activity">WBS trace</th><th>Owner</th><th>Status</th></tr></thead>
+          <thead><tr><th>Epic</th><th>Story</th><th>User story</th><th>AC</th><th title="happy / error / edge / perf path">Type</th><th>Acceptance criterion</th><th title="WBS tasks named 'TC <AC-id> — …' that verify this criterion (⑂ decompose your UAT task to test-case level to generate them)">Test cases</th><th title="Click to open the activity">WBS trace</th><th>Owner</th><th>Status</th></tr></thead>
           <tbody>${matrixRows.join('')}</tbody></table></div></details>`;
 
       html += `<div id="reqEpicsAnchor" class="toolbar no-print" style="margin:0 0 0.5rem;align-items:center">
