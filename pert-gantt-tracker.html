@@ -277,6 +277,7 @@
           <div class="grp">Data</div>
           <button onclick="exportCSV()">Spreadsheet (.csv)</button>
           <button onclick="exportWBSDictionaryCSV()">WBS dictionary (.csv)</button>
+          <button onclick="exportResourcesCSV()">Resources &amp; PTO (.csv)</button>
           <button onclick="exportJSON()">Backup / Reopen (.json)</button>
           <div class="grp">Visuals</div>
           <button onclick="downloadChartSVG('gantt')">Gantt (.svg)</button>
@@ -3591,6 +3592,18 @@
       ]));
       download(safeName() + '.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
     }
+    function exportResourcesCSV() {
+      if (!Object.keys(resources).length && !tasks.some(t => t.owner)) { alert('No resources yet.'); return; }
+      syncResources();
+      const rows = [['Resource','Role (rate card)','Capacity %','Cost $/day','Bill $/day','PTO / unavailable dates','Assigned tasks','Planned effort (days)']];
+      Object.keys(resources).forEach(n => {
+        const assigned = tasks.filter(t => (t.owner || '').trim() === n && !t.isSummary && !t.milestone);
+        const effort = assigned.reduce((sx, t) => sx + unitToWorkingDays(t.te || 0) * ((+t.units || 100) / 100), 0);
+        rows.push([n, (resources[n] && resources[n].role) || '', getCapacity(n), getRate(n), getBillRate(n),
+          (resources[n] && resources[n].pto) || '', assigned.map(t => t.name).join('; '), effort.toFixed(1)]);
+      });
+      download(safeName() + '-resources.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
+    }
     function exportWBSDictionaryCSV() {
       if (!ensureCalc()) return;
       const rows = [['WBS','Level','Element','Type','Owner','Start','Finish','Duration','% Complete','Deliverable','Description / scope','Acceptance criteria']];
@@ -3647,6 +3660,35 @@
       const M = Math.floor(secs / 60); const S = secs - M * 60;
       return `PT${H}H${M}M${S}S`;
     }
+    function isoRanges(isoList) { // consecutive calendar dates -> [[fromISO,toISO],...]
+      const sorted = [...isoList].sort();
+      const out = [];
+      let start = null, prev = null;
+      sorted.forEach(iso => {
+        if (prev) {
+          const nxt = new Date(prev + 'T00:00:00'); nxt.setDate(nxt.getDate() + 1);
+          if (fmtISO(nxt) !== iso) { out.push([start, prev]); start = iso; }
+        } else start = iso;
+        prev = iso;
+      });
+      if (start) out.push([start, prev]);
+      return out;
+    }
+    function msCalendarExceptions(isoSet, label) {
+      const ranges = isoRanges([...isoSet]);
+      if (!ranges.length) return '';
+      return `
+      <Exceptions>${ranges.map(([a, b], i) => `
+        <Exception>
+          <EnteredByOccurrences>0</EnteredByOccurrences>
+          <TimePeriod><FromDate>${a}T00:00:00</FromDate><ToDate>${b}T23:59:59</ToDate></TimePeriod>
+          <Occurrences>1</Occurrences>
+          <Name>${escapeXml(label)} ${i + 1}</Name>
+          <Type>1</Type>
+          <DayWorking>0</DayWorking>
+        </Exception>`).join('')}
+      </Exceptions>`;
+    }
     function exportMSProjectXML() {
       if (!ensureCalc()) return;
       const start = projectStartDate();
@@ -3697,13 +3739,14 @@
       </Task>`;
       });
 
-      let resXml = owners.map(o => `
+      let resXml = owners.map((o, i) => `
       <Resource>
         <UID>${resUID[o]}</UID>
         <ID>${resUID[o]}</ID>
         <Name>${escapeXml(o)}</Name>
         <Type>1</Type>
-        <MaxUnits>${(getCapacity(o) / 100).toFixed(4)}</MaxUnits>
+        <MaxUnits>${(getCapacity(o) / 100).toFixed(4)}</MaxUnits>${parsePtoSet(o).size ? `
+        <CalendarUID>${100 + i}</CalendarUID>` : ''}
       </Resource>`).join('');
 
       let assignXml = '';
@@ -3749,8 +3792,18 @@
         <WeekDay><DayType>5</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>08:00:00</FromTime><ToTime>12:00:00</ToTime></WorkingTime><WorkingTime><FromTime>13:00:00</FromTime><ToTime>17:00:00</ToTime></WorkingTime></WorkingTimes></WeekDay>
         <WeekDay><DayType>6</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>08:00:00</FromTime><ToTime>12:00:00</ToTime></WorkingTime><WorkingTime><FromTime>13:00:00</FromTime><ToTime>17:00:00</ToTime></WorkingTime></WorkingTimes></WeekDay>
         <WeekDay><DayType>7</DayType><DayWorking>0</DayWorking></WeekDay>
-      </WeekDays>
-    </Calendar>
+      </WeekDays>${msCalendarExceptions(getHolidaySet(), 'Holiday')}
+    </Calendar>${owners.map((o, i) => {
+      const pto = parsePtoSet(o);
+      if (!pto.size) return '';
+      return `
+    <Calendar>
+      <UID>${100 + i}</UID>
+      <Name>${escapeXml(o)}</Name>
+      <IsBaseCalendar>0</IsBaseCalendar>
+      <BaseCalendarUID>1</BaseCalendarUID>${msCalendarExceptions(pto, 'PTO')}
+    </Calendar>`;
+    }).join('')}
   </Calendars>
   <Tasks>${taskXml}
   </Tasks>
