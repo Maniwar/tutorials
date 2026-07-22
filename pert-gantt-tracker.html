@@ -4871,7 +4871,7 @@ ${batch.map(({ s, a }) => `- ${a.id} [${a.type}] (from ${s.id}: As a ${s.persona
 Rules:
 - One test case per criterion minimum; add a second only when the criterion genuinely bundles two scenarios.
 - name MUST start with "TC <AC-id> — " (e.g. "TC AC-3.2 — error path: export without admin role") — the tool links TCs to criteria by that prefix.
-- steps: MINIMUM 3 numbered steps a client UAT tester can execute without asking questions — setup/preconditions (name the exact test data or account), the action(s), and the observation to make. "1. Log in as billing admin (test user uat_billing01). 2. Open Analytics ▸ Export and select Jan–Mar 2026. 3. Click Export CSV and time the download." — that level of concreteness.
+- steps: MINIMUM 3 numbered steps derived from the Given/When/Then (Given → setup, When → action, Then → observation), executable by a client UAT tester without asking questions — name the exact test data or account in the setup. "1. Log in as billing admin (test user uat_billing01). 2. Open Analytics ▸ Export and select Jan–Mar 2026. 3. Click Export CSV and time the download." — that level of concreteness.
 - pass: the EXPECTED RESULT — the observable behaviour that means PASS, copied faithfully from the criterion's Then (keep every number and its measurement condition). Never restate the steps here.
 - Durations in ${document.getElementById('durationUnit').value}: small and realistic for executing one test (typically 0.1–0.5 days) — data setup or environment work belongs in its own test case only if a criterion demands it.
 Return ONLY JSON (no prose, no fences):
