@@ -519,6 +519,7 @@
             <button class="btn-sm btn-secondary" onclick="ganttZoom(1)" title="Zoom in">+</button>
             <button class="btn-sm btn-secondary" onclick="ganttZoom(0)" title="Fit width">Fit</button>
             <div class="sep"></div>
+            <button class="btn-sm" style="background:#fef3c7;color:#b45309" onclick="toggleReservePanel()" title="Add schedule buffers: contingency (committed to client) and management reserve (held back)">⏱ Reserves</button>
             <button class="btn-sm btn-primary" onclick="copyChartImage('gantt')" title="Copy chart as image for email/slides">📋 Copy image</button>
             <button class="btn-sm btn-secondary" onclick="downloadChartPNG('gantt')">PNG</button>
             <button class="btn-sm btn-secondary" onclick="downloadChartSVG('gantt')">SVG</button>
@@ -527,6 +528,11 @@
           </div>
         </div>
         <div class="card-body">
+          <div id="reservePanel" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:0.85rem 1rem;margin-bottom:0.75rem">
+            <strong style="font-size:0.85rem">⏱ Schedule reserves</strong>
+            <p class="help-text" style="margin:0.25rem 0 0.5rem">Buffers added AFTER the estimated work, drawn as hatched bars at the end of the Gantt. <b>Contingency</b> = buffer for the known risks in your RAID log — it's inside the date you commit to the client (easiest: click <b>from P80</b> and the committed date = the 80%-confidence Monte-Carlo finish). <b>Management reserve</b> = extra held by leadership for surprises, never promised. Quote the committed date externally.</p>
+            <div id="reserveInline" style="display:flex;gap:1.25rem;flex-wrap:wrap;align-items:end"></div>
+          </div>
           <div id="narrativePanel" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:0.85rem 1rem;margin-bottom:0.75rem">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem">
               <strong style="font-size:0.85rem">✨ Status narrative <span class="help-text" id="narrativeMeta" style="font-weight:400"></span></strong>
@@ -2674,6 +2680,35 @@
       saveLocal();
       if (calculated) { renderAnalytics(); renderGantt(); }
     }
+
+    function toggleReservePanel() {
+      const p = document.getElementById('reservePanel');
+      if (!p) return;
+      p.style.display = p.style.display === 'none' ? 'block' : 'none';
+      if (p.style.display === 'block') renderReserveInline();
+    }
+    function renderReserveInline() {
+      const el = document.getElementById('reserveInline');
+      if (!el) return;
+      const rv = computeReserves();
+      const u = unitLabel();
+      const unitOpts = sel => `<option value="percent" ${sel === 'percent' ? 'selected' : ''}>% of duration</option><option value="units" ${sel === 'units' ? 'selected' : ''}>${u}</option>`;
+      el.innerHTML = `
+        <div><label>Contingency (known risks)</label>
+          <div style="display:flex;gap:0.35rem;align-items:center">
+            <input type="number" min="0" step="0.5" class="mini-inp" style="width:70px" value="${reserves.contingency.value}" onchange="setReserve('contingency','value',this.value);renderReserveInline()" />
+            <select class="mini-inp" style="width:auto" onchange="setReserve('contingency','unit',this.value);renderReserveInline()">${unitOpts(reserves.contingency.unit)}</select>
+            ${mcResult ? `<button class="btn-sm btn-secondary" title="Size it so the committed date = the P80 Monte-Carlo finish" onclick="setContingencyFromP80();renderReserveInline()">from P80</button>` : ''}
+          </div></div>
+        <div><label>Management (unknowns)</label>
+          <div style="display:flex;gap:0.35rem;align-items:center">
+            <input type="number" min="0" step="0.5" class="mini-inp" style="width:70px" value="${reserves.management.value}" onchange="setReserve('management','value',this.value);renderReserveInline()" />
+            <select class="mini-inp" style="width:auto" onchange="setReserve('management','unit',this.value);renderReserveInline()">${unitOpts(reserves.management.unit)}</select>
+          </div></div>
+        <div style="font-size:0.8rem;line-height:1.7">
+          CPM finish <b>${fmtNice(rv.cpmDate)}</b> → commit <b style="color:#b45309">${fmtNice(rv.committedDate)}</b> → incl. mgmt <b style="color:#b91c1c">${fmtNice(rv.totalDate)}</b>
+        </div>`;
+    }
     function setContingencyFromP80() {
       if (!mcResult) return;
       const cpmUnits = Math.max(0, ...leafTasks().map(t => t.ef), 0);
@@ -2912,6 +2947,16 @@
         })()}`;
 
       document.getElementById('analyticsContent').innerHTML = `
+        <details style="margin-bottom:1rem" ${renderAnalytics._guideOpen ? 'open' : ''} ontoggle="renderAnalytics._guideOpen=this.open">
+          <summary style="cursor:pointer;font-weight:700;font-size:0.9rem;color:var(--primary)">📖 How this tab works — 60-second guide</summary>
+          <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:0.8rem 1rem;margin-top:0.5rem;font-size:0.85rem;line-height:1.65">
+            <b>1. The simulation.</b> Every activity is sampled ${mcResult ? mcResult.iters.toLocaleString() : '5,000'} times from its O/M/P range and the whole schedule is recomputed each time. That turns your estimates into <em>probabilities</em>: the histogram below is the distribution of possible finish dates.<br/>
+            <b>2. Reading P-numbers.</b> P50 = a coin flip. <b>P80 is the number to commit to</b> — 80% of simulated outcomes finish by then. The gap between P50 and P80 is exactly how much buffer your plan needs.<br/>
+            <b>3. Set your reserves.</b> In <b>Reserves &amp; Buffers</b> below (or the ⏱ Reserves button on the Gantt): click <b>from P80</b> to size contingency so your committed date carries 80% confidence; add a management reserve on top for unknowns. They appear as hatched bars at the end of the Gantt — quote the <em>committed</em> date to the client.<br/>
+            <b>4. Fix what drives risk.</b> The health check and the criticality table tell you which estimates to tighten and what the plan is missing — use the 🔧 buttons to have the AI apply fixes.<br/>
+            <b>5. Track the money.</b> Cost &amp; Budget shows planned cost, earned value and (once you enter actual costs) CPI and the at-completion forecast against your baseline.
+          </div>
+        </details>
         ${targetBlock}
         <h3 style="margin-bottom:0.5rem;font-size:1rem">Critical Path</h3>
         <p style="background:#fef2f2;padding:0.75rem 1rem;border-radius:8px;border-left:4px solid #dc2626;margin-bottom:0.5rem;font-size:0.9rem">${escapeHtml(pathNames) || 'None identified'}</p>
@@ -3193,7 +3238,7 @@
       // bind collapse + open-editor clicks
       container.querySelectorAll('[data-gtoggle]').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); toggleCollapse(Number(el.dataset.gtoggle)); }));
       container.querySelectorAll('[data-gopen]').forEach(el => el.addEventListener('click', () => openEditModal(Number(el.dataset.gopen), true)));
-      container.querySelectorAll('[data-gres]').forEach(el => el.addEventListener('click', () => { switchTab('analytics'); const rb = document.querySelector('#analyticsContent h3'); if (rb) rb.scrollIntoView({ behavior: 'smooth' }); }));
+      container.querySelectorAll('[data-gres]').forEach(el => el.addEventListener('click', () => { const rp = document.getElementById('reservePanel'); if (rp) { rp.style.display = 'block'; renderReserveInline(); rp.scrollIntoView({ behavior: 'smooth', block: 'center' }); } }));
     }
 
     // ========================= RESOURCES RENDER =========================
