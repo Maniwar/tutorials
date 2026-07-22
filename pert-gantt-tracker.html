@@ -252,6 +252,8 @@
     </div>
     <div class="header-actions">
       <span id="savedIndicator" class="saved-dot"></span>
+      <button id="undoBtn" class="btn-ghost btn-sm" onclick="doUndo()" disabled title="Undo the last change (Ctrl/Cmd+Z outside a text box). Covers every plan edit: tasks, estimates, %s, resources, stories, reserves…">↶ Undo</button>
+      <button id="redoBtn" class="btn-ghost btn-sm" onclick="doRedo()" disabled title="Redo (Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z)">↷</button>
       <details class="export-menu">
         <summary class="btn-ghost btn-sm" style="list-style:none">📂 Projects ▾</summary>
         <div class="export-panel">
@@ -748,6 +750,7 @@
           <h2>Statement of Work (SOW) Draft</h2>
           <div class="toolbar no-print">
             <button class="btn-primary btn-sm" onclick="generateSOW()">✨ Generate SOW draft</button>
+            <button class="btn-secondary btn-sm" id="sowEditBtn" onclick="toggleSowEdit()" title="Edit the draft right here — tweak wording, delete a row, add a clause — then Save. Regenerating replaces manual edits (you'll be asked first).">✎ Edit</button>
             <button class="btn-secondary btn-sm" onclick="copySOW()">📋 Copy (rich text)</button>
             <button class="btn-secondary btn-sm" onclick="downloadSOW()">Download (.html)</button>
             <button class="btn-sm" style="background:#fef3c7;color:#b45309" onclick="draftChangeOrder()" title="Diff the current plan against the SOW baseline and draft a change order">Δ Change order</button>
@@ -875,6 +878,7 @@
           <p class="help-text">Type-ahead: start typing a phase name or WBS code (e.g. “2” or “Design”). Parents become summary rows that roll up their children.</p>
         </div>
         <datalist id="predDatalist"></datalist>
+        <div id="mStoriesPanel"></div>
         <details id="dictDetails" style="margin-bottom:1rem">
           <summary style="cursor:pointer;font-size:0.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">WBS dictionary &amp; actuals</summary>
           <div style="padding-top:0.75rem">
@@ -1020,6 +1024,7 @@
       const raw = localStorage.getItem(PROJ_PREFIX + id);
       if (!raw) { alert('Could not load that project.'); return; }
       localStorage.setItem(PROJ_ACTIVE_KEY, id);
+      resetUndo(); // undo must never cross a project boundary
       try { hydrate(JSON.parse(raw)); } catch (e) { alert('Project data is corrupted: ' + e.message); return; }
       calculated = false; mcResult = null; resourceLoad = null; healthFindings = null;
       renderTaskTable(); renderWBS(); renderRaid();
@@ -1032,6 +1037,7 @@
       saveLocal();
       const id = 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
       localStorage.setItem(PROJ_ACTIVE_KEY, id);
+      resetUndo();
       if (!fromCurrent) {
         tasks = []; nextId = 1; resources = {}; raid = []; nextRaidId = 1; statusHistory = [];
         sowDraft = ''; statusNarrative = null; healthFindings = null; projectBudget = 0;
@@ -1070,6 +1076,7 @@
     }
     function switchProjectForce(id) {
       localStorage.setItem(PROJ_ACTIVE_KEY, id);
+      resetUndo();
       const raw = localStorage.getItem(PROJ_PREFIX + id);
       if (raw) { try { hydrate(JSON.parse(raw)); } catch (e) {} }
       calculated = false;
@@ -1123,9 +1130,59 @@
 
     // ========================= PERSISTENCE =========================
     function markDirty() { saveLocal(); }
+    // ---- undo / redo: every saveLocal() marks a mutation; we keep the PREVIOUS
+    // snapshot so undo restores the state before the change. In-memory only
+    // (per session), 60 levels deep, deduped.
+    let undoStack = [], redoStack = [], lastSnapshot = null, undoGuard = false;
+    function updateUndoButtons() {
+      const ub = document.getElementById('undoBtn'), rb = document.getElementById('redoBtn');
+      if (ub) ub.disabled = !undoStack.length;
+      if (rb) rb.disabled = !redoStack.length;
+    }
+    function resetUndo() { undoStack = []; redoStack = []; lastSnapshot = null; updateUndoButtons(); }
+    function trackUndo(currentStr) {
+      if (undoGuard) { lastSnapshot = currentStr; return; }
+      if (lastSnapshot != null && lastSnapshot !== currentStr) {
+        undoStack.push(lastSnapshot);
+        if (undoStack.length > 60) undoStack.shift();
+        redoStack = [];
+      }
+      lastSnapshot = currentStr;
+      updateUndoButtons();
+    }
+    function restoreSnapshot(str) {
+      undoGuard = true;
+      try {
+        hydrate(JSON.parse(str));
+        if (tasks.length) recompute();
+        renderTaskTable(); renderProjectMenu(); renderRaid(); renderHolidayChips();
+        if (calculated) { renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT(); renderHealth(); }
+        if (document.getElementById('view-req').classList.contains('active')) renderReqs();
+        if (document.getElementById('view-wbs').classList.contains('active')) renderWBS();
+        saveLocal();
+      } finally { undoGuard = false; lastSnapshot = JSON.stringify(serialize()); updateUndoButtons(); }
+    }
+    function doUndo() {
+      if (!undoStack.length) return;
+      redoStack.push(JSON.stringify(serialize()));
+      restoreSnapshot(undoStack.pop());
+      flashSaved('↶ Undone' + (undoStack.length ? ' — ' + undoStack.length + ' more step(s) available' : ''));
+    }
+    function doRedo() {
+      if (!redoStack.length) return;
+      undoStack.push(JSON.stringify(serialize()));
+      const snap = redoStack.pop();
+      const keepRedo = redoStack;
+      restoreSnapshot(snap);
+      redoStack = keepRedo; // restoreSnapshot's save must not clear pending redos
+      updateUndoButtons();
+      flashSaved('↷ Redone');
+    }
+
     function saveLocal() {
       try {
         const data = serialize();
+        trackUndo(JSON.stringify(data));
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         const id = activeProjectId();
         localStorage.setItem(PROJ_PREFIX + id, JSON.stringify(data));
@@ -1154,7 +1211,7 @@
         nextId,
         resources, reserves, baselineDate, levelMode, projectBudget,
         raid, nextRaidId, statusHistory, sowDraft, statusNarrative, pricing,
-        clientSafeReports, sowBaseline, reqs, coLog,
+        clientSafeReports, sowBaseline, reqs, sowUserEdited, coLog,
         collapsedIds: [...collapsedIds],
         tasks: tasks.map(t => ({
           id: t.id, name: t.name, o: t.o, m: t.m, p: t.p, milestone: t.milestone,
@@ -1210,6 +1267,7 @@
       pricing = Object.assign({ model: 'fixed', basis: 'p80', contractPrice: 0 }, data.pricing || {});
       clientSafeReports = !!data.clientSafeReports;
       sowBaseline = (data.sowBaseline && Array.isArray(data.sowBaseline.tasks)) ? data.sowBaseline : null;
+      sowUserEdited = !!data.sowUserEdited;
       reqs = (data.reqs && Array.isArray(data.reqs.stories)) ? {
         personas: Array.isArray(data.reqs.personas) ? data.reqs.personas : [],
         epics: Array.isArray(data.reqs.epics) ? data.reqs.epics : [],
@@ -1325,6 +1383,7 @@
     function openAddModal(isMilestone) {
       editingId = null;
       document.getElementById('modalTitle').textContent = isMilestone ? 'Add Milestone' : 'Add Activity';
+      const spClr = document.getElementById('mStoriesPanel'); if (spClr) spClr.innerHTML = '';
       document.getElementById('mName').value = '';
       document.getElementById('mO').value = '';
       document.getElementById('mM').value = '';
@@ -1384,6 +1443,23 @@
       document.getElementById('mParent').value = curPar ? ((curPar.wbs ? curPar.wbs + ' · ' : '') + curPar.name) : '';
       t.predecessors.forEach(p => addDepRow(p));
       toggleMilestoneFields();
+      // linked user stories — read-only trace so the drill-in shows requirements too
+      const sp = document.getElementById('mStoriesPanel');
+      if (sp) {
+        const st = storiesForTask(id);
+        const typeIcon = { happy: '✅', error: '⚠️', edge: '🧪', perf: '📏' };
+        sp.innerHTML = st.length
+          ? `<details open style="margin-bottom:1rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:0.5rem 0.75rem">
+              <summary style="cursor:pointer;font-size:0.8rem;font-weight:600;color:#0369a1">📖 User stories traced to this activity (${st.length}) — the acceptance criteria that define “done” for billing</summary>
+              ${st.map(s => `<div style="margin:0.5rem 0;font-size:0.8rem;line-height:1.45">
+                <b>${escapeHtml(s.id)}</b> — As a <b>${escapeHtml(s.persona || '?')}</b>, I want to ${escapeHtml(s.want || '?')}, so that ${escapeHtml(s.soThat || '?')}
+                ${(s.ac || []).length ? `<ul style="list-style:none;margin:0.25rem 0 0;padding-left:0.5rem">${s.ac.map(a => `<li>${typeIcon[a.type] || '•'} <span style="color:#475569">${escapeHtml(a.id)}</span> ${escapeHtml(a.text)}</li>`).join('')}</ul>` : ''}
+              </div>`).join('')}
+              <button class="btn-sm btn-secondary no-print" onclick="closeModal();switchTab('req')" title="Edit these stories, run the lint, or see the traceability matrix">Open Requirements tab →</button>
+            </details>`
+          : (reqs && Array.isArray(reqs.stories) && reqs.stories.length && !isSummaryId(id) && !t.milestone
+            ? `<p class="help-text" style="margin-bottom:0.75rem">No user story traces to this activity yet — Requirements tab ▸ 🤖 Draft from WBS fills the gaps.</p>` : '');
+      }
       document.getElementById('modal').classList.add('open');
     }
     function closeModal() { document.getElementById('modal').classList.remove('open'); }
@@ -3175,6 +3251,50 @@
               ${card(CPI == null ? '—' : CPI.toFixed(2), 'CPI', CPI == null ? 'needs actual costs' : CPI < 1 ? 'over cost' : 'under cost', CPI == null ? null : CPI < 0.95)}
               ${card(EAC == null ? '—' : fmtMoney(EAC), 'EAC (BAC/CPI)', EAC == null ? '' : 'BAC ' + fmtMoney(BAC) + (EAC > BAC ? ' → +' + fmtMoney(EAC - BAC) + ' overrun' : ' → under'), EAC == null ? null : EAC > BAC * 1.02)}
             </div>`;
+        })()}
+        ${(() => {
+          // Re-forecast from actuals: observed pace on started tasks re-projects
+          // the remaining work. Report-only — the plan's estimates are untouched.
+          const today = stripTime(new Date());
+          const holidays = getHolidaySet();
+          const wdPerUnit = unitToWorkingDays(1) || 1;
+          const countWd = (a, b) => { let n = 0; const d = new Date(a); let g = 0; while (d <= b && g++ < 4000) { if (isWorkingDay(d, holidays)) n++; d.setDate(d.getDate() + 1); } return n; };
+          const paced = [];
+          leafTasks().forEach(t => {
+            if (t.milestone) return;
+            const pct = t.percentComplete || 0;
+            if (!t.actualStart || pct <= 0 || pct >= 100 || !(t.te > 0)) return;
+            const sd = new Date(t.actualStart + 'T00:00:00');
+            if (isNaN(sd) || sd > today) return;
+            const elapsedU = countWd(sd, today) / wdPerUnit;
+            if (elapsedU <= 0) return;
+            const implied = elapsedU / (pct / 100);
+            paced.push({ t, elapsedU, implied, ratio: implied / t.te });
+          });
+          const clampR = r => Math.min(2.5, Math.max(0.6, r));
+          const avgRatio = paced.length ? clampR(paced.reduce((sx, r) => sx + r.ratio, 0) / paced.length) : 1;
+          const ratioOf = {}; paced.forEach(r => ratioOf[r.t.id] = clampR(r.ratio));
+          if (!paced.length) return `<h3 style="margin:1rem 0 0.5rem;font-size:0.95rem">Re-forecast from actuals</h3>
+            <p class="help-text">No pace signal yet — record an actual start date and a % on in-progress tasks (easiest: send a 📮 update request and paste the replies back) and this panel re-projects the finish from how the team is <em>actually</em> running, not how the estimates hoped.</p>`;
+          const savedLd = tasks.map(t => t.levelDelay); tasks.forEach(t => t.levelDelay = 0);
+          const rf = computeSchedule(t => t.milestone ? 0 : Math.max(0, t.te || 0) * (1 - (t.percentComplete || 0) / 100) * (ratioOf[t.id] || avgRatio));
+          tasks.forEach((t, i) => t.levelDelay = savedLd[i]);
+          if (!rf.ok) return '';
+          const fcFinish = addWorkingDays(today, Math.max(0, Math.round(unitToWorkingDays(rf.projectDuration)) - 1), holidays);
+          const planFinish = durationToDate(Math.max(0, ...leafTasks().map(t => t.ef), 0));
+          const slipCal = calDaysBetween(planFinish, fcFinish);
+          const outliers = paced.filter(r => r.ratio > 1.15).sort((a, b) => b.ratio - a.ratio).slice(0, 5);
+          return `<h3 style="margin:1rem 0 0.5rem;font-size:0.95rem">Re-forecast from actuals <span class="help-text">(observed pace re-projects the remaining work — report-only, your estimates are untouched)</span></h3>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.75rem">
+              <div class="stat-card" style="cursor:help" title="What the plan's estimates say (CPM finish)."><div class="value" style="font-size:1.05rem">${fmtNice(planFinish)}</div><div class="label">Plan finish (estimates)</div></div>
+              <div class="stat-card ${slipCal > 2 ? 'critical' : slipCal < -2 ? 'success' : 'warn'}" style="cursor:help" title="Critical path through the REMAINING work only, starting today: each started task scaled by its own observed pace, unstarted tasks by the team average (${avgRatio.toFixed(2)}×, clamped 0.6–2.5×)."><div class="value" style="font-size:1.05rem">${fmtNice(fcFinish)}</div><div class="label">Re-forecast finish ${slipCal ? '(' + (slipCal > 0 ? '+' : '') + slipCal + ' cal days)' : '(on plan)'}</div></div>
+              <div class="stat-card ${avgRatio > 1.15 ? 'warn' : ''}" style="cursor:help" title="Actual elapsed time ÷ estimated, averaged over every started-but-unfinished task. 1.30× = work is taking 30% longer than estimated."><div class="value">${avgRatio.toFixed(2)}×</div><div class="label">Observed pace factor</div><div class="help-text" style="font-size:0.65rem">from ${paced.length} in-progress task(s)</div></div>
+            </div>
+            ${outliers.length ? `<div class="table-wrap" style="margin-top:0.6rem"><table>
+              <thead><tr><th>Running slower than estimated</th><th>% done</th><th title="Working time since its actual start">Elapsed (${u})</th><th title="elapsed ÷ %done — the total this task is on track to take">Implied total vs TE</th><th class="no-print"></th></tr></thead>
+              <tbody>${outliers.map(r => `<tr><td>${escapeHtml(r.t.name)}</td><td>${r.t.percentComplete}%</td><td>${r.elapsedU.toFixed(1)}</td><td><b>${r.implied.toFixed(1)}</b> vs ${r.t.te.toFixed(1)} (${r.ratio.toFixed(1)}×)</td><td class="no-print"><button class="btn-sm btn-secondary" onclick="openEditModal(${r.t.id})" title="Re-estimate or record more progress">✎</button></td></tr>`).join('')}</tbody>
+            </table></div>
+            <p class="help-text" style="margin-top:0.4rem">If the re-forecast slips, either the % updates are stale (send a 📮 update request) or the estimates were light — re-estimate the outliers above and re-baseline honestly rather than absorbing it silently.</p>` : ''}`;
         })()}`;
 
       document.getElementById('analyticsContent').innerHTML = `
@@ -3409,7 +3529,9 @@
         if (t.deliverable) tipParts.push('Deliverable: ' + t.deliverable);
         if (t.description) tipParts.push('Scope: ' + (t.description.length > 90 ? t.description.slice(0, 88) + '…' : t.description));
         if (t.acceptance) tipParts.push('Done when: ' + (t.acceptance.length > 90 ? t.acceptance.slice(0, 88) + '…' : t.acceptance));
-        tipParts.push('Click to open / edit (WBS dictionary inside)');
+        const tipStories = storiesForTask(t.id);
+        if (tipStories.length) tipParts.push('Stories: ' + tipStories.map(s => s.id + ' (' + (s.ac || []).length + ' ACs)').join(', '));
+        tipParts.push('Click to open / edit (WBS dictionary & stories inside)');
         const tip = tipParts.join('\n');
         if (t.isSummary) {
           svg += `<g data-gopen="${t.id}" style="cursor:pointer"><rect x="${bx}" y="${y + 10}" width="${bw}" height="7" rx="2" fill="#1e293b"/>` +
@@ -3734,6 +3856,9 @@
           <td style="font-size:0.8rem">${escapeHtml(t.deliverable || '—')}</td>
           <td style="font-size:0.8rem;max-width:280px">${escapeHtml(t.description || '')}</td>
           <td style="font-size:0.8rem">${escapeHtml(t.acceptance || '')}</td>
+          <td style="font-size:0.75rem;white-space:nowrap">${(() => { const st = storiesForTask(t.id); return st.length
+            ? st.map(s => `<span class="badge badge-info" style="cursor:pointer" onclick="event.stopPropagation();switchTab('req')" title="${escapeHtml('As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?') + ' — ' + (s.ac || []).length + ' acceptance criteria. Click to open the Requirements tab.')}">${escapeHtml(s.id)}</span>`).join(' ')
+            : '<span class="help-text">—</span>'; })()}</td>
         </tr>`;
       }).join('');
       cont.innerHTML = `
@@ -3743,7 +3868,7 @@
           <button class="btn-sm btn-secondary" onclick="setCollapseLevel(Infinity)">Expand all</button>
         </div>
         <div class="table-wrap"><table>
-          <thead><tr><th>WBS</th><th>Element</th><th>Owner</th><th>Dur (${u})</th><th>Start</th><th>Finish</th><th>%</th>${anyCost ? '<th style="text-align:right">Cost</th>' : ''}<th>Deliverable</th><th>Description / scope</th><th>Acceptance</th></tr></thead>
+          <thead><tr><th>WBS</th><th>Element</th><th>Owner</th><th>Dur (${u})</th><th>Start</th><th>Finish</th><th>%</th>${anyCost ? '<th style="text-align:right">Cost</th>' : ''}<th>Deliverable</th><th>Description / scope</th><th>Acceptance</th><th title="User stories traced to this element — hover a chip for the story, click for the Requirements tab">Stories</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
         <p class="help-text" style="margin-top:0.75rem">Bold rows are summary/phase elements (they roll up children). Use ▸/▾ to drill in, the ⑂ button on the Tasks tab to have AI decompose a task further, and Edit to fill deliverable / scope / acceptance for the dictionary.</p>`;
@@ -4104,6 +4229,28 @@
       }
       const typeIcon = { happy: '✅', error: '⚠️', edge: '🧪', perf: '📏' };
       const typeTip = { happy: 'Happy path — everything works', error: 'Error path — invalid input or failure handled gracefully', edge: 'Edge case — boundaries, empty states, concurrency, timeouts', perf: 'Measured performance threshold' };
+      // on-screen traceability matrix — the audit view (CSV export matches it)
+      const matrixRows = [];
+      stories.forEach(s => {
+        const t = s.wbsId != null ? idToTask[s.wbsId] : null;
+        const cells = a => `<tr>
+          <td style="font-size:0.75rem;white-space:nowrap">${escapeHtml(s.epicId || '—')}</td>
+          <td style="font-size:0.75rem;white-space:nowrap"><b>${escapeHtml(s.id)}</b></td>
+          <td style="font-size:0.78rem;min-width:200px" title="${escapeHtml('As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?'))}">${escapeHtml((s.want || '?').length > 46 ? (s.want || '').slice(0, 44) + '…' : (s.want || '?'))}</td>
+          <td style="font-size:0.75rem;white-space:nowrap">${a ? escapeHtml(a.id) : '—'}</td>
+          <td style="font-size:0.75rem">${a ? escapeHtml(a.type) : ''}</td>
+          <td style="font-size:0.78rem;min-width:260px">${a ? escapeHtml(a.text) : '<i>no acceptance criteria</i>'}</td>
+          <td style="font-size:0.75rem;white-space:nowrap;${t ? 'cursor:pointer;color:var(--primary)' : ''}" ${t ? `onclick="openEditModal(${t.id}, true)" title="Open ${escapeHtml(t.wbs + ' ' + t.name)}"` : ''}>${t ? escapeHtml(t.wbs + ' ' + (t.name.length > 24 ? t.name.slice(0, 22) + '…' : t.name)) : '⚠ unlinked'}</td>
+          <td style="font-size:0.75rem">${t ? escapeHtml(t.owner || '—') : ''}</td>
+          <td style="font-size:0.75rem;white-space:nowrap">${t ? (t.percentComplete || 0) + '% · ' + taskStatus(t).label : ''}</td>
+        </tr>`;
+        if ((s.ac || []).length) s.ac.forEach(a => matrixRows.push(cells(a))); else matrixRows.push(cells(null));
+      });
+      html += `<details style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">▦ Traceability matrix — ${matrixRows.length} rows: epic → story → acceptance criterion → WBS activity → status <span class="help-text" style="font-weight:400">(this is the audit view; the CSV export matches it)</span></summary>
+        <div class="table-wrap" style="margin-top:0.5rem;max-height:420px;overflow:auto"><table>
+          <thead><tr><th>Epic</th><th>Story</th><th title="Hover for the full As-a/I-want/So-that sentence">User story</th><th>AC</th><th title="happy / error / edge / perf path">Type</th><th>Acceptance criterion</th><th title="Click to open the activity">WBS trace</th><th>Owner</th><th>Status</th></tr></thead>
+          <tbody>${matrixRows.join('')}</tbody></table></div></details>`;
+
       const rendered = new Set();
       const epicBlock = (eid, title, need) => {
         const list = stories.filter(s => (s.epicId || '—') === eid);
@@ -4576,6 +4723,7 @@ Return ONLY JSON (no prose, no fences):
         try {
           const data = JSON.parse(e.target.result);
           if (!data.tasks || !Array.isArray(data.tasks)) throw new Error('Invalid format');
+          resetUndo();
           hydrate(data);
           renderTaskTable(); switchTab('tasks'); saveLocal();
           alert('Project imported. Click Calculate to analyze.');
@@ -5771,6 +5919,9 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
     }
     async function generateSOW() {
       if (!tasks.length) { alert('Build the plan first.'); return; }
+      if (sowUserEdited && sowDraft && !confirm('Regenerating rebuilds the SOW from the live plan and REPLACES your manual edits. Continue?')) return;
+      if (sowEditing) toggleSowEdit(); // close edit mode cleanly first
+      sowUserEdited = false;
       if (!ensureCalc()) return;
       const d = sowSkeletonData();
       d.storiesAppendix = sowStoriesAppendix();
@@ -5806,6 +5957,31 @@ Professional, client-ready, no hype, no invented facts.`;
       document.getElementById('sowContainer').innerHTML = sowDraft;
       flashSaved('✓ SOW draft ready — review, then Copy or Download (baseline captured for change orders)');
     }
+    // In-place SOW editing: toggle contentEditable on the preview, save back to
+    // sowDraft so Copy/Download carry the edits and they persist with the project.
+    let sowEditing = false;
+    function toggleSowEdit() {
+      const cont = document.getElementById('sowContainer');
+      const btn = document.getElementById('sowEditBtn');
+      if (!sowDraft) { alert('Generate the SOW draft first — then edit it here.'); return; }
+      sowEditing = !sowEditing;
+      cont.contentEditable = sowEditing ? 'true' : 'false';
+      cont.style.outline = sowEditing ? '2px solid var(--primary)' : '';
+      if (sowEditing) {
+        btn.textContent = '💾 Save edits';
+        btn.classList.remove('btn-secondary'); btn.classList.add('btn-primary');
+        flashSaved('✎ Editing the SOW — click anywhere in the document and type; 💾 Save edits when done');
+        cont.focus();
+      } else {
+        btn.textContent = '✎ Edit';
+        btn.classList.remove('btn-primary'); btn.classList.add('btn-secondary');
+        sowDraft = cont.innerHTML;
+        sowUserEdited = true;
+        saveLocal();
+        flashSaved('💾 SOW edits saved — Copy / Download now carry them');
+      }
+    }
+    let sowUserEdited = false;
     async function copySOW() {
       if (!sowDraft) { alert('Generate the SOW draft first.'); return; }
       const plain = sowDraft.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#?\w{2,8};/g, ' ').replace(/\s+/g, ' ').trim();
@@ -5877,6 +6053,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`));
         <h1 style="margin:0 0 2px;font-size:20px">Change Order ${coNo} — ${escapeHtml(projName())}</h1>
         <p style="color:#64748b;font-size:12px;margin:0 0 12px">DRAFT ${new Date().toLocaleDateString()} • diffs against the contract baseline of ${escapeHtml(sowBaseline.date)}${escapeHtml(amendedNote)}</p>
         ${rationale ? `<p style="font-size:13px">${rationale}</p>` : '<p style="font-size:13px"><em>[Describe why this change is needed.]</em></p>'}
+        ${(added.length && Math.abs(priceDelta) < 1) ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 12px;margin:10px 0;font-size:12.5px;color:#b91c1c"><b>⚠ Unpriced scope:</b> ${added.length} added item(s) totalling ${added.reduce((sx, t) => sx + (t.te || 0), 0).toFixed(1)} ${u} of effort carry <b>no price impact</b> in this change order. If that is intentional goodwill, say so explicitly below and cap it; otherwise set rates for the people doing the work (Resources tab) or a contract price (Pricing) and re-draft — silent free scope is how margins die.</div>` : ''}
         <h2 style="font-size:15px;margin:12px 0 6px">Scope changes</h2>
         <table style="border-collapse:collapse"><tr><th style="${th}">Change</th><th style="${th}">Item</th><th style="${th}">Effort</th></tr>
           ${added.map(t => `<tr><td style="${td};color:#15803d">Added</td><td style="${td}">${escapeHtml(t.name)}</td><td style="${td}">${(t.te || 0).toFixed(1)} ${u}</td></tr>`).join('')}
@@ -6263,7 +6440,16 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
       loadApiKey();
       loadHistData();
       validateKeyFormat();
-      document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+      document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') closeModal();
+        if (!(e.ctrlKey || e.metaKey)) return;
+        // leave native undo alone inside text fields / editable regions
+        const tag = ((e.target && e.target.tagName) || '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target && e.target.isContentEditable)) return;
+        const k = (e.key || '').toLowerCase();
+        if (k === 'z' && !e.shiftKey) { e.preventDefault(); doUndo(); }
+        else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); doRedo(); }
+      });
       // save project name on change
       document.getElementById('projectName').addEventListener('input', () => saveLocal());
       // persist model choice when changed
