@@ -3198,7 +3198,7 @@
       // reserve row
       if (hasReserve) {
         const y = Y0 + rows.length * ROWH;
-        svg += `<g data-gres="1" style="cursor:pointer"><text x="${PAD + 6}" y="${y + ROWH / 2 + 4}" font-family="${FF}" font-size="11" font-weight="600" fill="#b45309">▸ Schedule reserve — click to adjust ⚙</text><title>Contingency & management reserve. Click to open Analytics &amp; Risk, where both are edited (as % of duration or absolute days, or set from P80).</title></g>`;
+        svg += `<g data-gres="1" style="cursor:pointer"><text x="${PAD + 6}" y="${y + ROWH / 2 + 4}" font-family="${FF}" font-size="11" font-weight="600" fill="#b45309">▸ Schedule reserve — click to adjust ⚙</text><title>Contingency &amp; management reserve. Click to open Analytics &amp; Risk, where both are edited (as % of duration or absolute days, or set from P80).</title></g>`;
         const x1 = dateX(rv.cpmDate) + dayW, x2 = dateX(rv.committedDate) + dayW, x3 = dateX(rv.totalDate) + dayW;
         if (rv.contingencyUnits > 0) svg += `<rect x="${x1}" y="${y + 8}" width="${Math.max(3, x2 - x1)}" height="14" rx="3" fill="url(#g-hatchC)" stroke="#f59e0b"><title>Contingency reserve → committed ${escapeXml(fmtNice(rv.committedDate))}</title></rect>`;
         if (rv.managementUnits > 0) svg += `<rect x="${x2}" y="${y + 8}" width="${Math.max(3, x3 - x2)}" height="14" rx="3" fill="url(#g-hatchM)" stroke="#ef4444"><title>Management reserve → total ${escapeXml(fmtNice(rv.totalDate))}</title></rect>`;
@@ -4949,6 +4949,7 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         <h2 style="font-size:16px;margin:16px 0 6px">3. Out of Scope</h2>
         ${d.exclusions.length ? '<ul style="font-size:13px">' + d.exclusions.map(x => '<li>' + h(x) + '</li>').join('') + '</ul>' : `<p style="font-size:13px">${n.outOfScope || '<em>[List explicit exclusions.]</em>'}</p>`}
         <h2 style="font-size:16px;margin:16px 0 6px">4. Timeline &amp; Milestones</h2>
+        ${d.ganttImg ? `<img src="${d.ganttImg}" alt="Project schedule Gantt chart" style="max-width:100%;border:1px solid #e2e8f0;border-radius:6px;margin:4px 0 10px"/>` : ''}
         <table style="border-collapse:collapse"><tr><th style="${th}">Milestone</th><th style="${th}">Target date</th></tr>
         ${d.milestones.map(m => `<tr><td style="${td}">◆ ${h(m.name)}</td><td style="${td}">${h(m.date)}</td></tr>`).join('') || `<tr><td style="${td}" colspan="2"><em>No milestones defined</em></td></tr>`}</table>
         <h2 style="font-size:16px;margin:16px 0 6px">5. Team &amp; Rates</h2>
@@ -4968,10 +4969,27 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         ${d.risks.length ? `<h2 style="font-size:16px;margin:16px 0 6px">Appendix — Key Delivery Risks</h2><ul style="font-size:13px">${d.risks.map(x => '<li>' + h(x) + '</li>').join('')}</ul>` : ''}
       </div>`;
     }
+    async function svgMarkupToPngDataUrl(markup, scale) {
+      scale = scale || 1.5;
+      const img = new Image();
+      const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup);
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+      const m = markup.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/);
+      const w = m ? parseFloat(m[1]) : img.width, h = m ? parseFloat(m[2]) : img.height;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(w * scale); canvas.height = Math.round(h * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'white'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0);
+      return canvas.toDataURL('image/png');
+    }
     async function generateSOW() {
       if (!tasks.length) { alert('Build the plan first.'); return; }
       if (!ensureCalc()) return;
       const d = sowSkeletonData();
+      // embed the actual Gantt (with milestones, phases, reserves) into the SOW
+      try { d.ganttImg = await svgMarkupToPngDataUrl(buildGanttSvg().markup, 1.5); } catch (e) { d.ganttImg = null; }
       const hasKey = !!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE));
       let narrative = null;
       if (hasKey) {
