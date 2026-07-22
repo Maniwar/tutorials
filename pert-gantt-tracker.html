@@ -321,8 +321,15 @@
             </select>
           </div>
           <div>
-            <label>Holidays (comma dates, skipped)</label>
-            <input id="holidays" type="text" placeholder="2026-09-07, 2026-11-26" onchange="markDirty(); refreshAll()" />
+            <label>Holidays / non-working days <span class="info-icon" title="Company holidays and shutdown days — scheduling skips them exactly like weekends. Pick a date (or a from→to range for a shutdown week) and Add; ✕ on a chip removes it.">i</span></label>
+            <input id="holidays" type="hidden" onchange="markDirty(); refreshAll()" />
+            <div id="holidayChips" style="margin:2px 0 4px;line-height:1.9"></div>
+            <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+              <input id="holFrom" type="date" class="mini-inp" style="width:122px" title="Holiday — or the first day of a shutdown range" />
+              <span class="help-text" style="margin:0">→</span>
+              <input id="holTo" type="date" class="mini-inp" style="width:122px" title="Last day of the range — leave empty for a single day" />
+              <button class="btn-sm btn-secondary" onclick="addHolidayRange()" title="Add to the non-working calendar">+ Add</button>
+            </div>
           </div>
           <div style="display:flex;align-items:end">
             <button class="btn-primary" onclick="calculate()" style="width:100%">Calculate &amp; Analyze</button>
@@ -1033,6 +1040,7 @@
         reqs = null; sowBaseline = null; coDraft = ''; coLog = [];
         document.getElementById('projectName').value = 'New Engagement';
         document.getElementById('holidays').value = '';
+        renderHolidayChips();
       } else {
         document.getElementById('projectName').value = (document.getElementById('projectName').value || 'Project') + ' (copy)';
       }
@@ -1165,6 +1173,7 @@
       if (data.projectStart) document.getElementById('projectStart').value = data.projectStart;
       if (data.durationUnit) document.getElementById('durationUnit').value = data.durationUnit;
       document.getElementById('holidays').value = data.holidays || '';
+      renderHolidayChips();
       tasks = (data.tasks || []).map(t => makeTask({
         id: t.id, name: t.name, o: +t.o, m: +t.m, p: +t.p,
         milestone: !!t.milestone, owner: t.owner || '',
@@ -1226,6 +1235,36 @@
       const set = new Set();
       raw.split(',').map(s => s.trim()).filter(Boolean).forEach(s => set.add(s));
       return set;
+    }
+    // ---- holiday picker UI (chips + date-range inputs over the same stored list) ----
+    function holidayList() {
+      return [...new Set((document.getElementById('holidays').value || '').split(',').map(s => s.trim()).filter(s => /^\d{4}-\d{2}-\d{2}$/.test(s)))].sort();
+    }
+    function setHolidays(arr) {
+      document.getElementById('holidays').value = [...new Set(arr)].sort().join(', ');
+      renderHolidayChips();
+      markDirty(); refreshAll();
+    }
+    function addHolidayRange() {
+      let from = document.getElementById('holFrom').value;
+      let to = document.getElementById('holTo').value || from;
+      if (!from) { alert('Pick a date first (left box). Add a range by filling both boxes.'); return; }
+      if (to < from) { const sw = to; to = from; from = sw; }
+      const out = holidayList();
+      const d = new Date(from + 'T00:00:00'), end = new Date(to + 'T00:00:00');
+      let guard = 0;
+      while (d <= end && guard++ < 400) { out.push(fmtISO(d)); d.setDate(d.getDate() + 1); }
+      setHolidays(out);
+      document.getElementById('holFrom').value = ''; document.getElementById('holTo').value = '';
+    }
+    function removeHolidayRange(a, b) { setHolidays(holidayList().filter(x => x < a || x > b)); }
+    function renderHolidayChips() {
+      const el = document.getElementById('holidayChips');
+      if (!el) return;
+      const list = holidayList();
+      el.innerHTML = list.length
+        ? isoRanges(list).map(([a, b]) => `<span class="pto-chip" style="background:#fee2e2;color:#b91c1c" title="Non-working: scheduling skips ${a === b ? 'this day' : 'these days'} like a weekend">${escapeHtml(a === b ? fmtNice(new Date(a + 'T00:00:00')) : fmtNice(new Date(a + 'T00:00:00')) + ' – ' + fmtNice(new Date(b + 'T00:00:00')))}<button onclick="removeHolidayRange('${a}','${b}')" title="Remove" style="color:#b91c1c">×</button></span>`).join('')
+        : '<span class="help-text" style="font-size:0.7rem">none yet — weekends are always skipped automatically</span>';
     }
     function fmtISO(d) {
       const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
@@ -4001,7 +4040,7 @@
     // ========================= REQUIREMENTS & USER STORIES =========================
     // Epics → INVEST user stories → Given/When/Then acceptance criteria, each
     // story traced to a WBS activity so status/cost roll up from the plan.
-    const BANNED_AC_WORDS = ['fast', 'quick', 'responsive', 'seamless', 'smooth', 'intuitive', 'user-friendly', 'easy', 'robust', 'reliable', 'scalable', 'real-time', 'secure', 'best practices', 'industry standard'];
+    const BANNED_AC_WORDS = ['fast', 'quick', 'responsive', 'seamless', 'smooth', 'intuitive', 'user-friendly', 'easy', 'robust', 'reliable', 'scalable', 'real-time', 'secure', 'best practices', 'industry standard', 'handle', 'handles', 'handled', 'etc', 'and so on', 'including but not limited to'];
     function bannedIn(text) {
       const s = String(text || '');
       return BANNED_AC_WORDS.filter(w => new RegExp('\\b' + w.replace(/[- ]/g, '[- ]') + '\\b', 'i').test(s));
@@ -4019,6 +4058,8 @@
       const banned = new Set();
       (s.ac || []).forEach(a => bannedIn(a.text).forEach(w => banned.add(w)));
       if (banned.size) warns.push('Untestable words in ACs (' + [...banned].join(', ') + ') — replace with measurable thresholds, e.g. “p95 ≤ 800 ms at 200 concurrent users”.');
+      const nonGwt = (s.ac || []).filter(a => !/given[\s\S]*when[\s\S]*then/i.test(String(a.text || ''))).length;
+      if (nonGwt) warns.push(nonGwt + ' AC(s) not in Given/When/Then form — state the initial context, the trigger, and the observable outcome so it translates directly into a test case.');
       return warns;
     }
     function renderReqs() {
@@ -4853,6 +4894,7 @@ Return ONLY JSON (no prose, no fences):
       collapsedIds = new Set(); levelMode = 'none'; projectBudget = 0; unleveledDuration = null;
       document.getElementById('projectName').value = 'New Engagement';
       document.getElementById('holidays').value = '';
+      renderHolidayChips();
       document.getElementById('summaryGrid').innerHTML = '';
       document.getElementById('analyticsContent').innerHTML = '<div class="empty-state"><h3>Run Calculate to see analytics</h3></div>';
       document.getElementById('ganttContainer').innerHTML = '';
@@ -6147,6 +6189,7 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
       const startInput = document.getElementById('projectStart');
       const loaded = loadLocal();
       if (!startInput.value) startInput.value = fmtISO(new Date());
+      renderHolidayChips();
       renderTaskTable();
       renderProjectMenu();
       renderRaid();
