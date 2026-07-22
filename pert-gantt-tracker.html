@@ -1418,6 +1418,10 @@
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
       document.querySelector(`.tab[data-tab="${name}"]`).classList.add('active');
       document.getElementById(`view-${name}`).classList.add('active');
+      // an in-flight AI stream follows you: inline on the Tasks tab, floating
+      // bottom-right on every other tab
+      const sbox = document.getElementById('aiStreamBox');
+      if (sbox && sbox.style.display !== 'none') sbox.classList.toggle('stream-float', name !== 'tasks');
       if (name === 'wbs') renderWBS();
       if (name === 'req') renderReqs();
       if (name === 'pert' && calculated) renderPERT();
@@ -6141,10 +6145,19 @@ ${reqRulesBlock()}`;
       const tasksActive = document.getElementById('view-tasks').classList.contains('active');
       box.classList.toggle('stream-float', !tasksActive);
       box.style.display = 'block';
-      head.textContent = label;
+      head.textContent = label + ' — connecting…';
       txt.textContent = '';
-      let n = 0;
+      // heartbeat: before the first token the model is "thinking" (big prompts
+      // take up to a minute) — show elapsed time so silence never looks stuck
+      let n = 0, started = Date.now(), lastBeat = 0;
+      clearInterval(streamShow._tick);
+      streamShow._tick = setInterval(() => {
+        const secs = Math.round((Date.now() - started) / 1000);
+        if (!lastBeat) head.textContent = `${label} — ⏳ ${secs}s — model is thinking (long prompts can take a minute before text appears; ⏹ Stop to abort)`;
+        else if (Date.now() - lastBeat > 5000) head.textContent = `${label} — ${(n / 1000).toFixed(1)}k chars · ${secs}s — ⏳ no data for ${Math.round((Date.now() - lastBeat) / 1000)}s`;
+      }, 1000);
       return (delta, full) => {
+        lastBeat = Date.now();
         n = full.length;
         head.textContent = `${label} — ${(n / 1000).toFixed(1)}k chars`;
         txt.textContent = full.length > 4000 ? '…' + full.slice(-4000) : full; // keep the tail visible
@@ -6152,6 +6165,7 @@ ${reqRulesBlock()}`;
       };
     }
     function streamHide(ok) {
+      clearInterval(streamShow._tick);
       const box = document.getElementById('aiStreamBox');
       if (box) setTimeout(() => { box.style.display = 'none'; box.classList.remove('stream-float'); }, ok ? 600 : 4000);
     }
@@ -6211,6 +6225,13 @@ Rules:
       const maxTok = opts.maxTokens || (model.indexOf('haiku') >= 0 ? 64000 : 128000);
       const ctrl = new AbortController();
       aiAbortCtrl = ctrl;
+      // Stall watchdog: if the connection goes silent for 3 minutes (no first
+      // token, no mid-stream data), abort with a clear error instead of
+      // blinking forever. Normal "model is thinking" pauses are well under this.
+      let lastData = Date.now(), stalled = false;
+      const watchdog = setInterval(() => {
+        if (Date.now() - lastData > 180000) { stalled = true; try { ctrl.abort(); } catch (e) {} }
+      }, 5000);
 
       const once = async (messages, baseText) => {
         const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -6229,6 +6250,7 @@ Rules:
             messages
           })
         });
+        lastData = Date.now(); // headers received
         if (!res.ok) {
           let detail = '';
           try { const j = await res.json(); detail = j.error ? j.error.message : JSON.stringify(j); } catch (e) { detail = res.statusText; }
@@ -6245,6 +6267,7 @@ Rules:
           let buf = '';
           while (true) {
             const { done, value } = await reader.read();
+            lastData = Date.now();
             if (done) break;
             buf += dec.decode(value, { stream: true });
             const lines = buf.split('\n');
@@ -6288,10 +6311,13 @@ Rules:
         }
         return full + '\n/*TRUNCATED*/';
       } catch (e) {
+        if (stalled)
+          throw new Error('The connection went silent for 3 minutes and was aborted. NOTHING was changed — retry (smaller batches respond faster).');
         if (ctrl.signal.aborted || (e && e.name === 'AbortError'))
           throw new Error('⏹ Stopped — the stream was cancelled (the model stops generating, so remaining tokens are not billed). NOTHING was changed.');
         throw e;
       } finally {
+        clearInterval(watchdog);
         if (aiAbortCtrl === ctrl) aiAbortCtrl = null;
       }
     }
