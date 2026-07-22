@@ -634,6 +634,19 @@
           </div>
         </div>
         <div class="card-body">
+          <div class="no-print" style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.6rem">
+            <span style="font-size:0.8rem;font-weight:600">Detail:</span>
+            <select id="pertLevelSel" class="mini-inp" style="width:auto" onchange="pertSetLevel(this.value)" title="Aggregate the network to a WBS level. PM best practice: read a network diagram at phase/deliverable level — one box per summary, rolled-up dates and slack — and keep task-level detail in the Gantt and WBS.">
+              <option value="auto">Auto (phase level when large)</option>
+              <option value="1">Level 1 — top phases</option>
+              <option value="2">Level 2</option>
+              <option value="3">Level 3</option>
+              <option value="all">All activities</option>
+            </select>
+            <label style="font-size:0.8rem;display:inline-flex;gap:4px;align-items:center;cursor:pointer" title="Test cases collapse into the UAT activity they decompose — dozens of 0.3-day TC boxes clutter a network diagram; they belong in the Gantt and the execution sheet"><input type="checkbox" id="pertRollTcCb" onchange="pertSetRollTc(this.checked)" style="width:14px;height:14px" /> roll 🧪 test cases up</label>
+            <label style="font-size:0.8rem;display:inline-flex;gap:4px;align-items:center;cursor:pointer" title="Show only zero-slack work — the chain that sets the finish date"><input type="checkbox" id="pertCritCb" onchange="pertSetCritOnly(this.checked)" style="width:14px;height:14px" /> critical path only</label>
+            <span id="pertAggNote" class="help-text" style="flex:1;min-width:220px"></span>
+          </div>
           <details style="margin-bottom:0.75rem">
             <summary style="cursor:pointer;font-size:0.85rem;font-weight:600;color:var(--primary)">📖 How to read this diagram (ES, EF, LS, LF, slack — every term defined)</summary>
             <div style="display:flex;gap:1.25rem;flex-wrap:wrap;align-items:flex-start;background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:0.9rem 1rem;margin-top:0.5rem">
@@ -882,15 +895,15 @@
         </div>
         <div id="estFields" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
           <div class="form-group">
-            <label>Optimistic (O) *</label>
+            <label>Optimistic (O) * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label>
             <input id="mO" type="number" min="0" step="0.1" placeholder="Best case" />
           </div>
           <div class="form-group">
-            <label>Most Likely (M) *</label>
+            <label>Most Likely (M) * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label>
             <input id="mM" type="number" min="0" step="0.1" placeholder="Expected" />
           </div>
           <div class="form-group">
-            <label>Pessimistic (P) *</label>
+            <label>Pessimistic (P) * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label>
             <input id="mP" type="number" min="0" step="0.1" placeholder="Worst case" />
           </div>
         </div>
@@ -922,7 +935,7 @@
           <label>Dependencies (predecessors)</label>
           <div id="depRows"></div>
           <button class="btn-sm btn-secondary" type="button" onclick="addDepRow()">+ Add dependency</button>
-          <p class="help-text">FS = Finish→Start (default), SS = Start→Start, FF = Finish→Finish, SF = Start→Finish. Lag in duration units (negative = lead).</p>
+          <p class="help-text" id="mLagHint">FS = Finish→Start (default), SS = Start→Start, FF = Finish→Finish, SF = Start→Finish. Lag in duration units (negative = lead).</p>
         </div>
         <div class="form-group">
           <label>WBS parent (group under…)</label>
@@ -1553,6 +1566,11 @@
             ? `<p class="help-text" style="margin-bottom:0.75rem">No user story traces to this activity yet — Requirements tab ▸ 🤖 Draft from WBS fills the gaps.</p>` : ''));
       }
       renderImpactPanel(id);
+      // say which unit O/M/P are in — it's set on the main page (working days /
+      // hours / weeks) and easy to forget mid-edit
+      document.querySelectorAll('#modal .m-unit-hint').forEach(el => { el.textContent = 'in ' + unitLabel(); });
+      const lagHint = document.getElementById('mLagHint');
+      if (lagHint) lagHint.textContent = 'FS = Finish→Start (default), SS = Start→Start, FF = Finish→Finish, SF = Start→Finish. Lag in ' + unitLabel() + ' (negative = lead).';
       document.getElementById('modal').classList.add('open');
     }
     // 🕸 Everything that pulls on this task or waits for it — with actions, so
@@ -4626,12 +4644,80 @@
     // ========================= PERT DIAGRAM (SVG) =========================
     // PMI-style activity-on-node cards:  ES | Dur | EF  /  name+owner  /  LS | Slack | LF
     // All presentation attributes are inline so the SVG exports faithfully.
+    // ——— PERT detail control: network diagrams read best at SUMMARY level ———
+    // (MS Project / Primavera practice: the network shows phases & milestones;
+    // task-level detail lives in the Gantt/WBS.) Aggregates leaves up to a WBS
+    // level; each aggregate box carries rolled-up ES/EF/LS/LF/slack.
+    let pertLevel = localStorage.getItem('pertGantt.pertLevel') || 'auto';
+    let pertRollTc = localStorage.getItem('pertGantt.pertRollTc') !== '0'; // default ON
+    let pertCritOnly = localStorage.getItem('pertGantt.pertCritOnly') === '1';
+    function pertSetLevel(v) { pertLevel = v; localStorage.setItem('pertGantt.pertLevel', v); renderPERT(); }
+    function pertSetRollTc(on) { pertRollTc = !!on; localStorage.setItem('pertGantt.pertRollTc', on ? '1' : '0'); renderPERT(); }
+    function pertSetCritOnly(on) { pertCritOnly = !!on; localStorage.setItem('pertGantt.pertCritOnly', on ? '1' : '0'); renderPERT(); }
+    function pertAggregate() {
+      const leaves = leafTasks();
+      const autoDepth = leaves.length > 60 ? 2 : 99;
+      const depthN = pertLevel === 'all' ? 99 : pertLevel === 'auto' ? autoDepth : (parseInt(pertLevel, 10) || 99);
+      const chainOf = t => { const out = [t]; let c = t.parentId; while (c != null) { const p = tasks.find(x => x.id === c); if (!p) break; out.unshift(p); c = p.parentId; } return out; };
+      const repOf = {};
+      leaves.forEach(L => {
+        let rep = L;
+        if (pertRollTc && isTestCaseTask(L)) { const p = L.parentId != null ? tasks.find(x => x.id === L.parentId) : null; if (p) rep = p; }
+        const ch = chainOf(rep);
+        if (ch.length > depthN) rep = ch[depthN - 1];
+        repOf[L.id] = rep.id;
+      });
+      const groups = {};
+      leaves.forEach(L => { (groups[repOf[L.id]] = groups[repOf[L.id]] || []).push(L); });
+      let nodes = Object.keys(groups).map(ridS => {
+        const rid = +ridS, members = groups[ridS];
+        if (members.length === 1 && members[0].id === rid) return members[0]; // real task, untouched
+        const rt = tasks.find(x => x.id === rid) || members[0];
+        const es = Math.min(...members.map(m => m.es || 0)), ef = Math.max(...members.map(m => m.ef || 0));
+        return Object.assign({}, rt, {
+          es, ef, te: ef - es,
+          ls: Math.min(...members.map(m => Number.isFinite(m.ls) ? m.ls : Infinity)),
+          lf: Math.max(...members.map(m => Number.isFinite(m.lf) ? m.lf : -Infinity)),
+          slack: Math.min(...members.map(m => Number.isFinite(m.slack) ? m.slack : Infinity)),
+          isCritical: members.some(m => m.isCritical), milestone: false,
+          startDate: members.reduce((a, m) => (!a || (m.startDate && m.startDate < a)) ? m.startDate : a, null),
+          finishDate: members.reduce((a, m) => (!a || (m.finishDate && m.finishDate > a)) ? m.finishDate : a, null),
+          name: rt.name + ' ⊞' + members.length
+        });
+      });
+      const eMap = new Map();
+      leaves.forEach(L => effectivePreds(L).forEach(p => {
+        const f = repOf[p.id], t2 = repOf[L.id];
+        if (f == null || t2 == null || f === t2) return; // internal edge — absorbed
+        const pt = tasks.find(x => x.id === p.id);
+        const crit = L.isCritical && pt && pt.isCritical;
+        const key = f + '>' + t2;
+        const ex = eMap.get(key);
+        if (!ex) eMap.set(key, { id: f, to: t2, type: p.type, lag: p.lag, _crit: !!crit });
+        else { if (crit) ex._crit = true; if (ex.type !== p.type || ex.lag !== p.lag) { ex.type = 'FS'; ex.lag = 0; } }
+      }));
+      let edges = [...eMap.values()];
+      if (pertCritOnly) {
+        nodes = nodes.filter(n => n.isCritical);
+        const okIds = new Set(nodes.map(n => n.id));
+        edges = edges.filter(e => okIds.has(e.id) && okIds.has(e.to) && e._crit);
+      }
+      const lvlName = pertLevel === 'auto' ? (depthN === 99 ? 'all activities' : 'phase level (auto — ' + leaves.length + ' activities is too many boxes to read)') : pertLevel === 'all' ? 'all activities' : 'WBS level ' + depthN;
+      const note = 'Showing <b>' + nodes.length + '</b> node(s) at <b>' + lvlName + '</b> from ' + leaves.length + ' scheduled activities' + (pertRollTc ? ' · 🧪 test cases rolled into their UAT activity' : '') + (pertCritOnly ? ' · critical path only' : '') + '. ⊞n = aggregated group — click it to open. Zoom in via the Gantt & WBS tabs.';
+      return { nodes, edges, note };
+    }
     function renderPERT() {
       const svgEl = document.getElementById('pertSvg');
       if (!calculated || tasks.length === 0) { svgEl.innerHTML = ''; return; }
-      const nodes = leafTasks();
+      const agg = pertAggregate();
+      const sel = document.getElementById('pertLevelSel'); if (sel) sel.value = pertLevel;
+      const cbT = document.getElementById('pertRollTcCb'); if (cbT) cbT.checked = pertRollTc;
+      const cbC = document.getElementById('pertCritCb'); if (cbC) cbC.checked = pertCritOnly;
+      const noteEl = document.getElementById('pertAggNote'); if (noteEl) noteEl.innerHTML = agg.note;
+      const nodes = agg.nodes;
       const idToTask = {}; tasks.forEach(t => idToTask[t.id] = t);
-      const predsOf = {}; nodes.forEach(t => predsOf[t.id] = effectivePreds(t));
+      const predsOf = {}; nodes.forEach(t => { predsOf[t.id] = []; });
+      agg.edges.forEach(e => { if (predsOf[e.to]) predsOf[e.to].push(e); });
       const level = {}; nodes.forEach(t => level[t.id] = 0);
       let changed = true, guard = 0;
       while (changed && guard < 400) {
@@ -4686,8 +4772,7 @@
       // onto one point, and per-gap vertical lanes so parallel edges don't overlap.
       const edges = [];
       nodes.forEach(t => predsOf[t.id].forEach(p => {
-        if (pos[p.id] && pos[t.id]) edges.push({ from: p.id, to: t.id, type: p.type, lag: p.lag,
-          crit: t.isCritical && idToTask[p.id] && idToTask[p.id].isCritical });
+        if (pos[p.id] && pos[t.id]) edges.push({ from: p.id, to: t.id, type: p.type, lag: p.lag, crit: !!p._crit });
       }));
       const outCnt = {}, inCnt = {};
       edges.forEach(e => { outCnt[e.from] = (outCnt[e.from] || 0) + 1; inCnt[e.to] = (inCnt[e.to] || 0) + 1; });
