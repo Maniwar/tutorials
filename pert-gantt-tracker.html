@@ -1813,7 +1813,7 @@
             ? `<span class="badge ${t.percentComplete >= 100 ? 'badge-done' : 'badge-notstarted'}" title="Tracked automatically — complete when every predecessor reaches 100%">${t.percentComplete >= 100 ? '✓ auto' : 'auto'}</span>`
             : `<span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap"><input type="checkbox" ${t.percentComplete >= 100 ? 'checked' : ''} onclick="event.stopPropagation()" onchange="updatePct(${t.id}, this.checked ? 100 : 0)" title="Check off = 100% done (uncheck = 0%). Phase and project %s recompute instantly, TE-weighted." style="width:15px;height:15px;cursor:pointer;accent-color:var(--success)" /><input class="mini-inp" type="number" min="0" max="100" value="${t.percentComplete}" onchange="updatePct(${t.id}, this.value)" onclick="event.stopPropagation()" title="Or type a partial %" /></span>`;
         return `<tr draggable="true" data-task-id="${t.id}" class="${t.isCritical && !t.milestone && !summary ? 'critical' : ''} ${isLate(t) ? 'late' : ''}" style="${summary ? 'font-weight:600;background:#f8fafc' : ''}${selectedTaskIds.has(t.id) ? ';outline:2px solid #a5b4fc;outline-offset:-2px' : ''}">
-          <td class="no-print"><input type="checkbox" ${selectedTaskIds.has(t.id) ? 'checked' : ''} onclick="event.stopPropagation()" onchange="toggleSelectTask(${t.id}, this.checked)" title="Select for bulk edit${summary ? ' — includes every sub-task' : ''}" style="width:14px;height:14px;cursor:pointer" /></td>
+          <td class="no-print"><input type="checkbox" data-selid="${t.id}" ${selectedTaskIds.has(t.id) ? 'checked' : ''} onclick="taskRowCheckClick(event, ${t.id}, this)" title="Select for bulk edit${summary ? ' — includes every sub-task' : ''}. Shift-click selects the whole range from the last box you clicked." style="width:14px;height:14px;cursor:pointer" /></td>
           <td style="cursor:grab;color:var(--muted)" title="Drag to reorder / re-nest">⠿</td>
           <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
           <td>${nameCell}</td>
@@ -1848,6 +1848,29 @@
       apply(id);
       if (isSummaryId(id)) allDescendants(id).forEach(d => apply(d.id)); // phase = its subtree
       renderTaskTable();
+    }
+    // shift-click = select/deselect the whole visible range since the last click
+    let lastSelAnchorId = null;
+    function taskRowCheckClick(ev, id, el) {
+      ev.stopPropagation();
+      const on = el.checked;
+      if (ev.shiftKey && lastSelAnchorId != null && lastSelAnchorId !== id) {
+        const ids = [...document.querySelectorAll('input[data-selid]')].map(x => parseInt(x.dataset.selid, 10));
+        const a = ids.indexOf(lastSelAnchorId), b = ids.indexOf(id);
+        if (a >= 0 && b >= 0) {
+          const [lo, hi] = a < b ? [a, b] : [b, a];
+          const apply = tid => { if (on) selectedTaskIds.add(tid); else selectedTaskIds.delete(tid); };
+          for (let i = lo; i <= hi; i++) {
+            apply(ids[i]);
+            if (isSummaryId(ids[i])) allDescendants(ids[i]).forEach(d => apply(d.id));
+          }
+          lastSelAnchorId = id;
+          renderTaskTable();
+          return;
+        }
+      }
+      lastSelAnchorId = id;
+      toggleSelectTask(id, on);
     }
     function toggleSelectAll(on) {
       selectedTaskIds = new Set(on ? visibleWbsOrder().map(o => o.task.id) : []);
@@ -4854,15 +4877,61 @@ Return ONLY JSON:
       const work = [];
       reqs.stories.forEach(s => (s.ac || []).forEach(a => { if (!testCasesForAC(a.id).length) work.push({ s, a }); }));
       if (!work.length) { flashSaved('✓ Every acceptance criterion already has a test case — nothing to generate.'); return; }
-      // parent: an existing UAT/testing activity, else a new Test Execution phase
+      // Hosts: test cases are a WBS DECOMPOSITION of the plan's own UAT/testing
+      // activities — each TC becomes a sub-task of the matching UAT task (same
+      // WBS branch preferred, so per-workstream UAT tasks each get their own
+      // TCs). A new "Test Execution (UAT)" phase is only a last resort when the
+      // plan has no testing activity at all.
       computeWbsCodes();
-      let parent = tasks.find(t => /\buat\b|test execution|test case/i.test(t.name) && !t.milestone)
-        || tasks.find(t => /\btest(ing)?\b/i.test(t.name) && !t.milestone);
-      if (!parent) {
-        parent = makeTask({ id: nextId++, name: 'Test Execution (UAT)', o: 0, m: 0, p: 0, milestone: false, owner: '', parentId: null, predecessors: [],
-          description: 'Execution of the acceptance-criteria test cases below; entry/exit gates per the test plan.', deliverable: 'UAT sign-off with zero open S1 and no unaccepted S2 defects' });
-        tasks.push(parent);
-      } else if (!confirm(`Create the test cases under "${parent.name}"? (Cancel to abort — rename that activity if it's the wrong home.)`)) return;
+      const uatRe = /\buat\b|user acceptance|acceptance test|test execution/i;
+      let candidates = tasks.filter(t => !t.milestone && !isTestCaseTask(t) && uatRe.test(t.name));
+      if (!candidates.length) candidates = tasks.filter(t => !t.milestone && !isTestCaseTask(t) && /\btest(ing)?\b/i.test(t.name));
+      const wbsOrder = {}; tasksInWbsOrder().forEach(({ task }, i) => wbsOrder[task.id] = i);
+      candidates.sort((a, b) => (wbsOrder[a.id] || 0) - (wbsOrder[b.id] || 0));
+      const parentChain = id => { const out = []; let t = tasks.find(x => x.id === id); while (t && t.parentId != null) { out.push(t.parentId); t = tasks.find(x => x.id === t.parentId); } return out; };
+      const rootOf = id => { const ch = parentChain(id); return ch.length ? ch[ch.length - 1] : id; };
+      // Best host in a list: (1) one that already contains test cases, (2) the
+      // most specific execution-type activity — "UAT with Client" beats both the
+      // whole "Phase 4: QA & UAT" (too broad; TCs would land as 5.6, 5.7 …
+      // siblings) and kickoff/sign-off/defect-buffer tasks (wrong kind of work).
+      const prepRe = /kick[\s-]?off|prep|sign[\s-]?off|feedback|defect|remediation|triage|buffer/i;
+      const pickHost = list => {
+        if (!list.length) return null;
+        const depth = t => parentChain(t.id).length;
+        const byDepth = (a, b) => depth(b) - depth(a) || (wbsOrder[a.id] || 0) - (wbsOrder[b.id] || 0);
+        const withTCs = list.filter(c => tasks.some(t => t.parentId === c.id && isTestCaseTask(t))).sort(byDepth);
+        if (withTCs.length) return withTCs[0];
+        const execish = list.filter(c => !prepRe.test(c.name)).sort(byDepth);
+        return execish[0] || list.slice().sort(byDepth)[0];
+      };
+      const globalHost = pickHost(candidates);
+      const hostFor = story => {
+        if (!candidates.length) return null; // → new Test Execution phase
+        const act = story.wbsId != null ? tasks.find(t => t.id === story.wbsId) : null;
+        if (act) { // prefer a UAT task in the same branch as the story's activity
+          const r = rootOf(act.id);
+          const inBranch = pickHost(candidates.filter(c => rootOf(c.id) === r));
+          if (inBranch) return inBranch;
+        }
+        return globalHost;
+      };
+      const hostOf = {}; // story.id → host task (null = new phase needed)
+      work.forEach(({ s }) => { if (!(s.id in hostOf)) hostOf[s.id] = hostFor(s); });
+      if (candidates.length) {
+        const counts = new Map();
+        work.forEach(({ s }) => { const h = hostOf[s.id]; const k = h ? h.name : 'NEW: Test Execution (UAT)'; counts.set(k, (counts.get(k) || 0) + 1); });
+        if (!confirm('Create ' + work.length + ' test case(s) as sub-tasks (WBS decomposition) of:\n' + [...counts].map(([k, n]) => '• ' + k + ' — ' + n + ' TC(s)').join('\n') + '\n\nCancel to abort — the match is by activity name ("UAT", "acceptance test"…); rename the right activity if a wrong home was picked.')) return;
+      }
+      let fallbackPhase = null;
+      const ensureFallback = () => {
+        if (!fallbackPhase) {
+          fallbackPhase = makeTask({ id: nextId++, name: 'Test Execution (UAT)', o: 0, m: 0, p: 0, milestone: false, owner: '', parentId: null, predecessors: [],
+            description: 'Execution of the acceptance-criteria test cases below; entry/exit gates per the test plan.', deliverable: 'UAT sign-off with zero open S1 and no unaccepted S2 defects' });
+          tasks.push(fallbackPhase);
+        }
+        return fallbackPhase;
+      };
+      const usedHosts = new Set();
       const qaOwner = Object.keys(resources).find(n => /qa|test|uat/i.test(n)) || '';
       const roster = Object.keys(resources).join(', ') || '(none)';
       const batches = [];
@@ -4896,15 +4965,19 @@ Return ONLY JSON (no prose, no fences):
           let o = Number(tc.optimistic), m = Number(tc.mostLikely), pv = Number(tc.pessimistic);
           if (!(pv > 0)) { o = 0.1; m = 0.25; pv = 0.5; }
           const arr = [o, m, pv].sort((x, y) => x - y);
+          const host = (wa ? hostOf[wa.s.id] : null) || globalHost || ensureFallback();
+          // no self-dependency: skip the FS pred when the verified activity IS
+          // the host (or one of its ancestors) — the WBS nesting already scopes it
+          const hostAnc = new Set(parentChain(host.id)); hostAnc.add(host.id);
           const nt = makeTask({ id: nextId++, name: nm, o: arr[0], m: arr[1], p: arr[2], milestone: false,
-            owner: String(tc.owner || '').trim() || qaOwner, units: 100, parentId: parent.id,
-            predecessors: (wa && wa.s.wbsId != null && tasks.some(t => t.id === wa.s.wbsId)) ? [{ id: wa.s.wbsId, type: 'FS', lag: 0 }] : [],
+            owner: String(tc.owner || '').trim() || qaOwner, units: 100, parentId: host.id,
+            predecessors: (wa && wa.s.wbsId != null && tasks.some(t => t.id === wa.s.wbsId) && !hostAnc.has(wa.s.wbsId)) ? [{ id: wa.s.wbsId, type: 'FS', lag: 0 }] : [],
             description: String(tc.steps || '').trim(),
             deliverable: 'Test evidence: pass/fail + defects logged (S1–S4)',
             acceptance: String(tc.pass || '').trim() });
           tasks.push(nt); made++;
+          usedHosts.add(host.name); collapsedIds.delete(host.id);
         });
-        collapsedIds.delete(parent.id);
         syncResources(); saveLocal();
         flashSaved('🧪 Batch ' + (bi + 1) + '/' + batches.length + ' done — ' + made + ' test case(s) so far');
       }
@@ -4912,7 +4985,7 @@ Return ONLY JSON (no prose, no fences):
       renderReqs();
       const uncovered = [];
       reqs.stories.forEach(s => (s.ac || []).forEach(a => { if (!testCasesForAC(a.id).length) uncovered.push(a.id); }));
-      flashSaved('🧪 ' + made + ' test case(s) created under "' + parent.name + '"' + (uncovered.length ? ' — ⚠ still uncovered: ' + uncovered.slice(0, 6).join(', ') + ' (re-run to fill)' : ' — every AC covered. Export ⬇ Test plan (.md)'));
+      flashSaved('🧪 ' + made + ' test case(s) nested as sub-tasks of ' + ([...usedHosts].map(n => '"' + n + '"').join(', ') || 'the plan') + (uncovered.length ? ' — ⚠ still uncovered: ' + uncovered.slice(0, 6).join(', ') + ' (re-run to fill)' : ' — every AC covered. Export ⬇ Test plan (.md)'));
     }
     // Test plan document: strategy + gates from the estimation guide + AC→TC traceability
     function exportTestPlanMarkdown() {
