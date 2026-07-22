@@ -4616,7 +4616,7 @@
         const cells = a => `<tr>
           <td style="font-size:0.75rem;white-space:nowrap">${escapeHtml(s.epicId || '—')}</td>
           <td style="font-size:0.75rem;white-space:nowrap"><b>${escapeHtml(s.id)}</b></td>
-          <td style="font-size:0.78rem;min-width:200px" title="${escapeHtml('As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?'))}">${escapeHtml((s.want || '?').length > 46 ? (s.want || '').slice(0, 44) + '…' : (s.want || '?'))}</td>
+          <td style="font-size:0.78rem;min-width:200px;max-width:320px" title="${escapeHtml('As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?'))}">${escapeHtml(s.want || '?')}</td>
           <td style="font-size:0.75rem;white-space:nowrap">${a ? escapeHtml(a.id) : '—'}</td>
           <td style="font-size:0.75rem">${a ? escapeHtml(a.type) : ''}</td>
           <td style="font-size:0.78rem;min-width:260px">${a ? escapeHtml(a.text) : '<i>no acceptance criteria</i>'}</td>
