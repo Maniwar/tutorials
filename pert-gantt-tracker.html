@@ -455,10 +455,26 @@
             Edit <strong>% Complete</strong> inline to track progress.
             <br/>Status: <span class="badge badge-critical">Critical</span> = zero slack — any delay moves the finish date (shorten it, add people, or re-sequence to fix) • <span class="badge badge-ok">Float&nbsp;n</span> = can slip n days for free • hover any badge for what to do.
           </p>
+          <div id="bulkBar" class="no-print" style="display:none;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:0.6rem 0.9rem;margin-bottom:0.6rem">
+            <div style="display:flex;gap:0.8rem;flex-wrap:wrap;align-items:center;font-size:0.8rem">
+              <strong id="bulkCount" style="white-space:nowrap"></strong>
+              <span style="display:inline-flex;gap:4px;align-items:center" title="Assign one owner to every selected task">Owner <select id="bulkOwner" class="mini-inp" style="width:auto;max-width:150px"></select><button class="btn-sm btn-secondary" onclick="bulkSetOwner()">Set</button></span>
+              <span style="display:inline-flex;gap:4px;align-items:center" title="Allocation % for every selected task (100 = full-time)">Units <input id="bulkUnits" type="number" min="1" max="400" value="100" class="mini-inp" style="width:60px" /><button class="btn-sm btn-secondary" onclick="bulkSetUnits()">Set</button></span>
+              <span style="display:inline-flex;gap:4px;align-items:center" title="Progress % for every selected task — rollups recompute">% done <input id="bulkPct" type="number" min="0" max="100" value="100" class="mini-inp" style="width:60px" /><button class="btn-sm btn-secondary" onclick="bulkSetPct()">Set</button></span>
+              <span style="display:inline-flex;gap:4px;align-items:center" title="Multiply O, M and P of every selected task — 1.2 adds 20% across the board, 0.8 tightens by 20%">Estimates × <input id="bulkScale" type="number" step="0.05" min="0.1" value="1.2" class="mini-inp" style="width:64px" /><button class="btn-sm btn-secondary" onclick="bulkScaleEst()">Apply</button></span>
+              <span style="display:inline-flex;gap:4px;align-items:center" title="Re-nest every selected task under one parent (or top level)">Move under <select id="bulkParent" class="mini-inp" style="width:auto;max-width:170px"></select><button class="btn-sm btn-secondary" onclick="bulkSetParent()">Move</button></span>
+              <button class="btn-sm btn-secondary" onclick="bulkIndent()" title="Indent each selected row under the row above it">⇥</button>
+              <button class="btn-sm btn-secondary" onclick="bulkOutdent()" title="Outdent each selected row one level">⇤</button>
+              <span style="display:inline-flex;gap:4px;align-items:center;flex:1;min-width:260px" title="Describe a change in plain English — it becomes a reviewable AI request scoped to ONLY the selected tasks">🤖 <input id="bulkAiText" type="text" class="mini-inp" style="flex:1" placeholder='AI edit selected… e.g. "add a 1-day client review after each" or "prefix names with Wave 2:"' /><button class="btn-sm btn-secondary" onclick="bulkAiEdit()">Prep AI edit</button></span>
+              <button class="btn-sm btn-danger" onclick="bulkDelete()" title="Delete every selected task (and their sub-tasks) in one confirmed step — undoable with ↶">🗑 Delete</button>
+              <button class="btn-sm btn-secondary" onclick="clearSelection()">✕ Clear</button>
+            </div>
+          </div>
           <div class="table-wrap">
             <table id="taskTable">
               <thead>
                 <tr>
+                  <th class="no-print" title="Select rows for bulk editing — the header box selects everything visible; ticking a phase selects its whole subtree"><input type="checkbox" id="selAllTasks" onchange="toggleSelectAll(this.checked)" style="width:14px;height:14px;cursor:pointer" /></th>
                   <th title="Drag to reorder or re-nest rows">⠿</th>
                   <th title="Work Breakdown Structure code — the outline number of this item">WBS</th>
                   <th title="Click ▸/▾ on phases to collapse. Buttons: ⇤ outdent, ⇥ indent, ⑂ AI-decompose">Activity</th>
@@ -960,6 +976,7 @@
     let coLog = [];               // approved change orders: {no, date, scope, finishDelta, priceDelta, newFinish, newPrice}
     let reqs = null;              // requirements layer: { personas, epics, stories } traced to WBS task ids
     let editingStoryId = null;    // story being edited in the story modal (null = adding)
+    let selectedTaskIds = new Set(); // activity-list rows selected for bulk editing (not persisted)
 
     // ========================= UTIL =========================
     function escapeHtml(s) {
@@ -1736,7 +1753,8 @@
           : (t.milestone && effectivePreds(t).length)
             ? `<span class="badge ${t.percentComplete >= 100 ? 'badge-done' : 'badge-notstarted'}" title="Tracked automatically — complete when every predecessor reaches 100%">${t.percentComplete >= 100 ? '✓ auto' : 'auto'}</span>`
             : `<span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap"><input type="checkbox" ${t.percentComplete >= 100 ? 'checked' : ''} onclick="event.stopPropagation()" onchange="updatePct(${t.id}, this.checked ? 100 : 0)" title="Check off = 100% done (uncheck = 0%). Phase and project %s recompute instantly, TE-weighted." style="width:15px;height:15px;cursor:pointer;accent-color:var(--success)" /><input class="mini-inp" type="number" min="0" max="100" value="${t.percentComplete}" onchange="updatePct(${t.id}, this.value)" onclick="event.stopPropagation()" title="Or type a partial %" /></span>`;
-        return `<tr draggable="true" data-task-id="${t.id}" class="${t.isCritical && !t.milestone && !summary ? 'critical' : ''} ${isLate(t) ? 'late' : ''}" style="${summary ? 'font-weight:600;background:#f8fafc' : ''}">
+        return `<tr draggable="true" data-task-id="${t.id}" class="${t.isCritical && !t.milestone && !summary ? 'critical' : ''} ${isLate(t) ? 'late' : ''}" style="${summary ? 'font-weight:600;background:#f8fafc' : ''}${selectedTaskIds.has(t.id) ? ';outline:2px solid #a5b4fc;outline-offset:-2px' : ''}">
+          <td class="no-print"><input type="checkbox" ${selectedTaskIds.has(t.id) ? 'checked' : ''} onclick="event.stopPropagation()" onchange="toggleSelectTask(${t.id}, this.checked)" title="Select for bulk edit${summary ? ' — includes every sub-task' : ''}" style="width:14px;height:14px;cursor:pointer" /></td>
           <td style="cursor:grab;color:var(--muted)" title="Drag to reorder / re-nest">⠿</td>
           <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
           <td>${nameCell}</td>
@@ -1761,6 +1779,144 @@
         </tr>`;
       }).join('');
       bindRowDragHandlers();
+      renderBulkBar();
+    }
+
+    // ========================= BULK EDIT =========================
+    function selectedTasks() { return tasks.filter(t => selectedTaskIds.has(t.id)); }
+    function toggleSelectTask(id, on) {
+      const apply = tid => { if (on) selectedTaskIds.add(tid); else selectedTaskIds.delete(tid); };
+      apply(id);
+      if (isSummaryId(id)) allDescendants(id).forEach(d => apply(d.id)); // phase = its subtree
+      renderTaskTable();
+    }
+    function toggleSelectAll(on) {
+      selectedTaskIds = new Set(on ? visibleWbsOrder().map(o => o.task.id) : []);
+      renderTaskTable();
+    }
+    function clearSelection() { selectedTaskIds = new Set(); renderTaskTable(); }
+    function renderBulkBar() {
+      const bar = document.getElementById('bulkBar');
+      if (!bar) return;
+      // drop selections whose tasks no longer exist
+      selectedTaskIds = new Set([...selectedTaskIds].filter(id => tasks.some(t => t.id === id)));
+      const n = selectedTaskIds.size;
+      bar.style.display = n ? 'block' : 'none';
+      const all = document.getElementById('selAllTasks');
+      if (all) all.checked = n > 0 && visibleWbsOrder().every(o => selectedTaskIds.has(o.task.id));
+      if (!n) return;
+      document.getElementById('bulkCount').textContent = n + ' selected';
+      const ownerSel = document.getElementById('bulkOwner');
+      const keepO = ownerSel.value;
+      ownerSel.innerHTML = '<option value="">(clear owner)</option>' + Object.keys(resources).sort().map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('');
+      if ([...ownerSel.options].some(o => o.value === keepO)) ownerSel.value = keepO;
+      const parSel = document.getElementById('bulkParent');
+      const keepP = parSel.value;
+      computeWbsCodes();
+      parSel.innerHTML = '<option value="">— top level —</option>' + tasksInWbsOrder()
+        .filter(({ task }) => !task.milestone && !selectedTaskIds.has(task.id))
+        .map(({ task, depth }) => `<option value="${task.id}">${' '.repeat(depth * 2)}${escapeHtml((task.wbs ? task.wbs + ' ' : '') + task.name)}</option>`).join('');
+      if ([...parSel.options].some(o => o.value === keepP)) parSel.value = keepP;
+    }
+    function bulkApplyDone(msg) {
+      saveLocal();
+      if (calculated) recompute();
+      refreshAll();
+      flashSaved(msg + ' — ↶ Undo reverses the whole batch');
+    }
+    function bulkSetOwner() {
+      const v = document.getElementById('bulkOwner').value;
+      let n = 0;
+      selectedTasks().forEach(t => { if (!t.isSummary) { t.owner = v; n++; } });
+      if (v) syncResources();
+      bulkApplyDone('👤 Owner ' + (v ? 'set to ' + v : 'cleared') + ' on ' + n + ' task(s)');
+    }
+    function bulkSetUnits() {
+      const v = Math.max(1, Math.min(400, parseFloat(document.getElementById('bulkUnits').value) || 100));
+      let n = 0;
+      selectedTasks().forEach(t => { if (!t.isSummary && !t.milestone) { t.units = v; n++; } });
+      bulkApplyDone('⚙ Units set to ' + v + '% on ' + n + ' task(s)');
+    }
+    function bulkSetPct() {
+      const v = Math.max(0, Math.min(100, parseFloat(document.getElementById('bulkPct').value) || 0));
+      let n = 0;
+      selectedTasks().forEach(t => {
+        if (t.isSummary) return; // rolls up
+        if (t.milestone && effectivePreds(t).length) return; // auto-tracked
+        t.percentComplete = v; n++;
+      });
+      rollupProgress();
+      bulkApplyDone('✓ ' + n + ' task(s) set to ' + v + '%');
+    }
+    function bulkScaleEst() {
+      const f = parseFloat(document.getElementById('bulkScale').value);
+      if (!Number.isFinite(f) || f <= 0) { alert('Enter a positive factor — e.g. 1.2 for +20%.'); return; }
+      let n = 0;
+      selectedTasks().forEach(t => {
+        if (t.isSummary || t.milestone) return;
+        t.o = +(t.o * f).toFixed(2); t.m = +(t.m * f).toFixed(2); t.p = +(t.p * f).toFixed(2); n++;
+      });
+      bulkApplyDone('📐 Estimates ×' + f + ' on ' + n + ' task(s)');
+    }
+    function bulkSetParent() {
+      const val = document.getElementById('bulkParent').value;
+      const target = val ? Number(val) : null;
+      let n = 0, skipped = 0;
+      selectedTasks().forEach(t => {
+        if (t.id === target || (target != null && wouldCreateCycleParent(t.id, target))) { skipped++; return; }
+        t.parentId = target; n++;
+      });
+      if (target != null) collapsedIds.delete(target);
+      bulkApplyDone('📁 ' + n + ' task(s) moved' + (skipped ? ' (' + skipped + ' skipped — would nest a phase inside itself)' : ''));
+    }
+    function bulkIndent() {
+      let n = 0;
+      visibleWbsOrder().forEach(({ task: t }) => {
+        if (!selectedTaskIds.has(t.id)) return;
+        const siblings = tasks.filter(x => x.parentId === t.parentId);
+        const idx = siblings.indexOf(t);
+        if (idx <= 0) return;
+        const np = siblings[idx - 1];
+        if (np.milestone || wouldCreateCycleParent(t.id, np.id)) return;
+        t.parentId = np.id; collapsedIds.delete(np.id); n++;
+      });
+      bulkApplyDone('⇥ ' + n + ' task(s) indented');
+    }
+    function bulkOutdent() {
+      let n = 0;
+      visibleWbsOrder().forEach(({ task: t }) => {
+        if (!selectedTaskIds.has(t.id) || t.parentId == null) return;
+        const parent = tasks.find(x => x.id === t.parentId);
+        t.parentId = parent ? parent.parentId : null;
+        if (parent) { const fi = tasks.indexOf(t); tasks.splice(fi, 1); tasks.splice(tasks.indexOf(parent) + 1, 0, t); }
+        n++;
+      });
+      bulkApplyDone('⇤ ' + n + ' task(s) outdented');
+    }
+    function bulkDelete() {
+      const sel = selectedTasks();
+      if (!sel.length) return;
+      const ids = new Set();
+      sel.forEach(t => { ids.add(t.id); allDescendants(t.id).forEach(d => ids.add(d.id)); });
+      if (!confirm('Delete ' + ids.size + ' task(s) (selected rows plus their sub-tasks)? ↶ Undo can bring them back this session.')) return;
+      tasks = tasks.filter(t => !ids.has(t.id));
+      tasks.forEach(t => {
+        t.predecessors = t.predecessors.filter(p => !ids.has(p.id));
+        if (t.parentId != null && ids.has(t.parentId)) t.parentId = null;
+      });
+      if (reqs && Array.isArray(reqs.stories)) reqs.stories.forEach(s => { if (s.wbsId != null && ids.has(s.wbsId)) s.wbsId = null; }); // wbsName kept for relink
+      selectedTaskIds = new Set();
+      bulkApplyDone('🗑 ' + ids.size + ' task(s) deleted');
+    }
+    function bulkAiEdit() {
+      const instr = document.getElementById('bulkAiText').value.trim();
+      if (!instr) { alert('Describe the change first — e.g. "add a 1-day client review after each of these".'); return; }
+      const names = selectedTasks().map(t => '"' + t.name + '"');
+      document.getElementById('aiMode').value = 'merge';
+      document.getElementById('aiNotes').value = 'Apply this change to ONLY the following tasks; keep every other task, estimate, owner and dependency exactly as it is:\n'
+        + names.join(', ') + '\n\nCHANGE: ' + instr;
+      document.getElementById('aiNotes').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      flashSaved('✍ Scoped AI request pre-filled for ' + names.length + ' task(s) — review it, then press ✨ Generate Plan');
     }
 
     // ========================= WBS / HIERARCHY =========================
@@ -3137,13 +3293,28 @@
           </div>`;
       }
 
-      // criticality index table (near-critical risk)
+      // criticality index table (near-critical risk) — every High explains ITSELF:
+      // wide estimate on the chain → decompose/tighten; tight estimate but chained
+      // by design → parallelize/add people; and each row carries its fix buttons.
       const risky = leaves.filter(t => !t.milestone).slice().sort((a, b) => b.criticality - a.criticality).slice(0, 8);
+      const anyHighCrit = risky.some(t => (t.criticality || 0) >= 0.8);
+      const critWhy = t => {
+        const ci = (t.criticality || 0) * 100, wide = (t.variance || 0) >= 0.5;
+        if (ci >= 80) return wide
+          ? `On the critical path in ${ci.toFixed(0)}% of simulations AND its estimate range is wide (variance ${t.variance.toFixed(2)}) — this task personally moves your finish date. FIX: decompose it (⑂) into smaller pieces with tighter O–P ranges, or re-estimate with better information.`
+          : `On the critical path in ${ci.toFixed(0)}% of simulations, but its estimate is already tight (variance ${t.variance.toFixed(2)}) — the risk is the CHAIN DESIGN, not the estimate. FIX: re-sequence so it overlaps other work, split it so parts run in parallel, or add a resource; tightening the estimate further won't help.`;
+        if (ci >= 30) return `Lands on the critical path in ${ci.toFixed(0)}% of simulations — a bad roll here delays the project even though today's plan shows slack. Keep its estimate honest and don't stack more work on ${t.owner || 'its owner'}.`;
+        return `Rarely critical (${ci.toFixed(0)}% of simulations) — normal monitoring is enough.`;
+      };
       const critTable = mcResult ? `
         <h3 style="margin:1.5rem 0 0.5rem;font-size:1rem">Schedule Risk — Criticality Index
-          <span class="help-text">(% of simulations where the task lands on the critical path)</span></h3>
+          <span class="help-text">(% of simulations where the task lands on the critical path — hover any High/Medium chip for why and the fix)</span></h3>
         <div class="table-wrap"><table>
-          <thead><tr><th>Activity</th><th>Owner</th><th>Criticality</th><th>Slack (${u})</th><th>Variance</th><th>Risk</th></tr></thead>
+          <thead><tr><th>Activity</th><th>Owner</th>
+            <th title="How often this task sat on the critical path across all simulated outcomes">Criticality</th>
+            <th title="Float in today's deterministic plan — a task can show slack here and still be high-criticality, because bad rolls elsewhere pull it onto the critical path">Slack (${u})</th>
+            <th title="((P−O)/6)² — how wide/uncertain the task's own estimate is. High criticality + high variance = decompose; high criticality + low variance = re-sequence/parallelize">Variance</th>
+            <th title="What drives your finish date. Hover each chip for the specific reason and remedy">Risk</th><th class="no-print"></th></tr></thead>
           <tbody>${risky.map(t => {
             const ci = t.criticality * 100;
             const risk = ci >= 80 ? ['High','#fee2e2','#b91c1c'] : ci >= 30 ? ['Medium','#fef3c7','#b45309'] : ['Low','#dcfce7','#15803d'];
@@ -3153,10 +3324,16 @@
               <td><div style="display:flex;align-items:center;gap:0.5rem"><div class="progress-track" style="flex:1"><div class="progress-fill" style="width:${ci}%;background:#ef4444"></div></div><span style="font-size:0.8rem;min-width:38px">${ci.toFixed(0)}%</span></div></td>
               <td>${Math.abs(t.slack) < 0.05 ? '0.0' : t.slack.toFixed(1)}</td>
               <td>${t.variance.toFixed(2)}</td>
-              <td><span class="risk-tag" style="background:${risk[1]};color:${risk[2]}">${risk[0]}</span></td>
+              <td><span class="risk-tag" style="background:${risk[1]};color:${risk[2]};cursor:help" title="${escapeHtml(critWhy(t))}">${risk[0]}</span></td>
+              <td class="no-print" style="white-space:nowrap">${ci >= 30 ? `<button class="btn-sm btn-secondary" onclick="aiDecompose(${t.id})" title="AI splits it into smaller, tighter sub-tasks — best when the variance is high">⑂</button>
+                <button class="btn-sm btn-secondary" onclick="openEditModal(${t.id})" title="Re-estimate, reassign or re-sequence by hand">✎</button>` : ''}</td>
             </tr>`;
           }).join('')}</tbody>
-        </table></div>` : '';
+        </table></div>
+        ${anyHighCrit ? `<div class="toolbar no-print" style="margin-top:0.5rem">
+          <button class="btn-sm btn-primary" onclick="critFixWithAI()" title="Builds a reviewable AI change request with a TAILORED treatment per high-risk activity — decompose the wide ones, parallelize/re-sequence the chained ones. Nothing runs until you press Generate.">🤖 AI: propose fixes for the high-risk activities</button>
+          <span class="help-text">wide estimates get decomposed, tight-but-chained ones get re-sequenced for parallelism — you review before it runs</span>
+        </div>` : ''}` : '';
 
       // Reserves & buffers
       const rv = computeReserves();
@@ -4275,6 +4452,9 @@
           <td style="font-size:0.75rem;white-space:nowrap">${a ? escapeHtml(a.id) : '—'}</td>
           <td style="font-size:0.75rem">${a ? escapeHtml(a.type) : ''}</td>
           <td style="font-size:0.78rem;min-width:260px">${a ? escapeHtml(a.text) : '<i>no acceptance criteria</i>'}</td>
+          <td style="font-size:0.72rem;white-space:nowrap">${a ? (() => { const tcs = testCasesForAC(a.id); return tcs.length
+            ? tcs.map(tc => `<span class="badge ${tc.percentComplete >= 100 ? 'badge-done' : tc.percentComplete > 0 ? 'badge-prog' : 'badge-notstarted'}" style="cursor:pointer" onclick="openEditModal(${tc.id})" title="${escapeHtml(tc.name + ' — ' + (tc.percentComplete || 0) + '% complete. Click to open the test-case task.')}">${escapeHtml((tc.wbs || 'TC'))}</span>`).join(' ')
+            : '<span class="help-text" title="No test-case task references this criterion yet — ⑂ decompose the UAT activity with guidance like “decompose to test-case level” and they are generated named TC ' + escapeHtml(a.id) + ' — …">—</span>'; })() : ''}</td>
           <td style="font-size:0.75rem;white-space:nowrap;${t ? 'cursor:pointer;color:var(--primary)' : ''}" ${t ? `onclick="openEditModal(${t.id}, true)" title="Open ${escapeHtml(t.wbs + ' ' + t.name)}"` : ''}>${t ? escapeHtml(t.wbs + ' ' + (t.name.length > 24 ? t.name.slice(0, 22) + '…' : t.name)) : '⚠ unlinked'}</td>
           <td style="font-size:0.75rem">${t ? escapeHtml(t.owner || '—') : ''}</td>
           <td style="font-size:0.75rem;white-space:nowrap">${t ? (t.percentComplete || 0) + '% · ' + taskStatus(t).label : ''}</td>
@@ -4283,7 +4463,7 @@
       });
       html += `<details style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">▦ Traceability matrix — ${matrixRows.length} rows: epic → story → acceptance criterion → WBS activity → status <span class="help-text" style="font-weight:400">(this is the audit view; the CSV export matches it)</span></summary>
         <div class="table-wrap" style="margin-top:0.5rem;max-height:420px;overflow:auto"><table>
-          <thead><tr><th>Epic</th><th>Story</th><th title="Hover for the full As-a/I-want/So-that sentence">User story</th><th>AC</th><th title="happy / error / edge / perf path">Type</th><th>Acceptance criterion</th><th title="Click to open the activity">WBS trace</th><th>Owner</th><th>Status</th></tr></thead>
+          <thead><tr><th>Epic</th><th>Story</th><th title="Hover for the full As-a/I-want/So-that sentence">User story</th><th>AC</th><th title="happy / error / edge / perf path">Type</th><th>Acceptance criterion</th><th title="WBS tasks named 'TC <AC-id> — …' that verify this criterion (⑂ decompose your UAT task to test-case level to generate them)">Test cases</th><th title="Click to open the activity">WBS trace</th><th>Owner</th><th>Status</th></tr></thead>
           <tbody>${matrixRows.join('')}</tbody></table></div></details>`;
 
       const rendered = new Set();
@@ -4326,6 +4506,18 @@
         ${(s.assumptions || []).length ? `<div class="help-text" style="margin-top:0.35rem;font-size:0.75rem" title="A: assumptions (with impact if false) — D: client dependencies (with slip consequence)">${s.assumptions.map(a => '• ' + escapeHtml(a)).join('<br/>')}</div>` : ''}
         ${warns.length ? `<div style="margin-top:0.45rem;font-size:0.76rem;color:#b45309">${warns.map(w => '⚠ ' + escapeHtml(w)).join('<br/>')}</div>` : ''}
       </div>`;
+    }
+    // test-case WBS items that reference an acceptance criterion by ID — created
+    // by ⑂ decompose ("TC AC-1.2 — …") or named that way by hand. Completes the
+    // guide's chain: story → AC → test case → status.
+    function testCasesForAC(acId) {
+      if (!acId) return [];
+      const needle = String(acId).trim().toLowerCase();
+      if (!needle) return [];
+      return tasks.filter(t => {
+        const n = t.name.trim().toLowerCase();
+        return n.startsWith('tc ') && n.indexOf(needle) >= 0;
+      });
     }
     // stories traced to a given WBS task — used by every export for traceability
     function storiesForTask(taskId) {
@@ -4636,13 +4828,14 @@ Return ONLY JSON (no prose, no fences):
       computeWbsCodes();
       const idToTask = {}; tasks.forEach(t => idToTask[t.id] = t);
       const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-      const rows = [['Epic', 'Story ID', 'User story', 'Persona', 'AC ID', 'AC type', 'Acceptance criterion', 'WBS', 'Activity', 'Owner', '% complete', 'Status']];
+      const rows = [['Epic', 'Story ID', 'User story', 'Persona', 'AC ID', 'AC type', 'Acceptance criterion', 'Test cases', 'WBS', 'Activity', 'Owner', '% complete', 'Status']];
       reqs.stories.forEach(s => {
         const t = s.wbsId != null ? idToTask[s.wbsId] : null;
         const base = [s.epicId || '', s.id, 'As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?'), s.persona || ''];
         const tail = t ? [t.wbs, t.name, t.owner || '', (t.percentComplete || 0) + '%', taskStatus(t).label] : ['', '', '', '', 'unlinked'];
-        if (!(s.ac || []).length) rows.push([...base, '', '', '', ...tail]);
-        (s.ac || []).forEach(a => rows.push([...base, a.id, a.type, a.text, ...tail]));
+        if (!(s.ac || []).length) rows.push([...base, '', '', '', '', ...tail]);
+        (s.ac || []).forEach(a => rows.push([...base, a.id, a.type, a.text,
+          testCasesForAC(a.id).map(tc => tc.name + ' (' + (tc.percentComplete || 0) + '%)').join(' | '), ...tail]));
       });
       download(safeName() + '-traceability.csv', rows.map(r => r.map(esc).join(',')).join('\n'), 'text/csv');
     }
@@ -5717,15 +5910,21 @@ Rules: only include tasks the notes actually mention or whose table row has a fi
       const unit = document.getElementById('durationUnit').value;
       const siblings = leafTasks().filter(x => x.id !== id).slice(0, 30)
         .map(x => `${x.name} (~${(x.te || ((x.o + 4 * x.m + x.p) / 6) || 0).toFixed(1)} ${unit}${x.owner ? ', ' + x.owner : ''})`).join('; ');
+      // full requirements context: for UAT/test-case decomposition the sub-tasks
+      // should trace back to acceptance criteria (AC → TC per the estimation guide)
+      const reqBlock = (reqs && Array.isArray(reqs.stories) && reqs.stories.length)
+        ? `\nPROJECT USER STORIES & ACCEPTANCE CRITERIA (when decomposing testing/UAT/validation work, derive test-case sub-tasks from these and reference their IDs):\n${reqs.stories.map(s => `${s.id}${s.wbsName ? ' [' + s.wbsName + ']' : ''}: As a ${s.persona || '?'}, I want to ${s.want || '?'}. ` + (s.ac || []).map(a => a.id + ' (' + a.type + '): ' + a.text).join(' | ')).join('\n')}\n`
+        : '';
       const prompt = `You are helping an engagement manager decompose one task of a project plan into a finer work breakdown.
 Project: ${document.getElementById('projectName').value} (durations in ${unit}).
 TASK TO DECOMPOSE: "${t.name}" — O=${t.o}, M=${t.m}, P=${t.p} ${unit}${t.owner ? ', owner ' + t.owner : ''}${t.description ? ', scope: ' + t.description : ''}${t.deliverable ? ', deliverable: ' + t.deliverable : ''}.
 Other tasks in the plan for context: ${siblings || '(none)'}.
-${guidance ? `USER GUIDANCE — follow it exactly; it overrides the default split rules below:\n"""${guidance}"""\n` : ''}${histPromptBlock()}
+${reqBlock}${guidance ? `USER GUIDANCE — follow it exactly; it overrides the default split rules below:\n"""${guidance}"""\n` : ''}${histPromptBlock()}
 Return ONLY a JSON object (no prose, no fences):
 {"subtasks":[{"name":"...","optimistic":n,"mostLikely":n,"pessimistic":n,"owner":"","units":100,"deliverable":"","description":"","acceptance":"","dependsOn":["names among these subtasks only"]}]}
 Rules:
 - Default: 3 to 8 concrete, trackable sub-tasks that fully cover the parent's scope. BUT if the guidance lists specific items (intents, integrations, reports, regions, workshops…), create ONE sub-task per listed item — each individually check-off-able — plus any setup/review/sign-off tasks the guidance implies.
+- If the guidance asks for TEST CASES or UAT-level decomposition, derive one sub-task per test scenario from the acceptance criteria above — name them "TC <AC-id> — <scenario>" (e.g. "TC AC-3.2 — error path: export without admin role"), cover happy, error AND edge paths, put the pass condition in each sub-task's "acceptance", and add test-data preparation and defect-triage sub-tasks where the criteria imply them.
 - The sum of mostLikely values should be close to the parent's M (${t.m} ${unit}) unless the guidance or historical data clearly says otherwise.
 - optimistic <= mostLikely <= pessimistic for each.
 - Default owner to "${t.owner || ''}" unless a sub-task clearly belongs to someone else.
@@ -6483,6 +6682,24 @@ Focus on: scope that is obviously missing for this type of work; estimates that 
       renderHealth();
       flashSaved(`🔗 ${fixed} stor${fixed === 1 ? 'y' : 'ies'} relinked${still ? ' — ' + still + ' still unlinked: open each in the story editor and pick its activity' : ''}`);
       return { fixed, still };
+    }
+
+    // From the criticality table: tailored treatment per high-criticality task —
+    // wide estimates get decomposed, tight-but-chained ones get re-sequenced.
+    function critFixWithAI() {
+      const rows = leafTasks().filter(t => !t.milestone && (t.criticality || 0) >= 0.8);
+      if (!rows.length) { flashSaved('No high-criticality activities right now.'); return; }
+      const lines = rows.map(t => {
+        const wide = (t.variance || 0) >= 0.5;
+        return `- "${t.name}" (criticality ${((t.criticality || 0) * 100).toFixed(0)}%, O/M/P ${t.o}/${t.m}/${t.p}): ` + (wide
+          ? 'DECOMPOSE into 2-4 smaller sub-tasks with tighter O/M/P ranges (same total expected effort).'
+          : 'PARALLELIZE: re-sequence or split it so parts overlap with other work, or assign an additional resource — its estimate is already tight, the problem is the single-file chain.');
+      }).join('\n');
+      document.getElementById('aiMode').value = 'merge';
+      document.getElementById('aiNotes').value = 'Reduce schedule risk on the critical chain. Apply the stated treatment to each activity below and keep every other task, estimate, owner and dependency exactly as it is:\n' + lines;
+      switchTab('tasks');
+      document.getElementById('aiNotes').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      flashSaved('✍ Risk-fix request pre-filled for ' + rows.length + ' activit' + (rows.length === 1 ? 'y' : 'ies') + ' — review it, then press ✨ Generate Plan');
     }
 
     // From the Monte-Carlo risk read-out: pre-fill an AI change request that
