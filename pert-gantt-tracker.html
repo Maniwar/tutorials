@@ -427,6 +427,8 @@
                 <option value="progress">Update progress (paste notes or status replies)</option>
               </select>
               <button class="btn-primary" id="aiGenerateBtn" onclick="generateWithAI()">✨ Generate Plan</button>
+              <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.78rem;cursor:pointer;margin:0" title="After the plan is built, automatically draft the requirements layer too: personas, epics, and INVEST user stories with Given/When/Then acceptance criteria traced to every WBS activity (phase-by-phase on big plans, so nothing truncates). Uncheck to draft later from the Requirements tab.">
+                <input type="checkbox" id="aiAlsoStories" checked style="width:14px;height:14px;cursor:pointer" /> + user stories &amp; ACs</label>
               <span id="aiStatus" class="help-text" style="margin:0"></span>
             </div>
             <div id="aiError" class="error" style="display:none"></div>
@@ -1043,9 +1045,14 @@
       const idx = projIndex();
       const act = activeProjectId();
       const items = Object.entries(idx).sort((a, b) => (b[1].updatedAt || '').localeCompare(a[1].updatedAt || ''));
-      el.innerHTML = items.map(([id, meta]) =>
-        `<div style="display:flex;align-items:center"><button data-proj="${id}" style="flex:1;${id === act ? 'font-weight:700;color:var(--primary)' : ''}">${id === act ? '● ' : ''}${escapeHtml(meta.name || 'Untitled')} <span class="help-text" style="font-size:0.65rem">${escapeHtml((meta.updatedAt || '').slice(0, 10))}</span></button>${id !== act ? `<button data-cmp="${id}" title="Compare with current (what-if)" style="width:auto;padding:0.2rem 0.4rem">⚖</button>` : ''}</div>`
-      ).join('') || '<div class="grp">No saved projects yet</div>';
+      el.innerHTML = items.map(([id, meta]) => {
+        const m = meta.metrics;
+        const metaLine = m
+          ? `<span class="help-text" style="font-size:0.65rem">${m.pct || 0}% done · ${m.tasks || 0} tasks · finish ${escapeHtml(m.finish || '—')}${m.over ? ` · <span style="color:var(--critical)">⚠ ${m.over} over-alloc</span>` : ''}${m.cost ? ' · $' + Number(m.cost).toLocaleString() : ''}</span>`
+          : `<span class="help-text" style="font-size:0.65rem">${escapeHtml((meta.updatedAt || '').slice(0, 10))} — open &amp; Calculate to see progress</span>`;
+        const bar = m ? `<div class="progress-track" style="height:4px;margin-top:3px"><div class="progress-fill" style="width:${Math.min(100, m.pct || 0)}%;background:${(m.pct || 0) >= 100 ? 'var(--success)' : 'var(--primary)'}"></div></div>` : '';
+        return `<div style="display:flex;align-items:center;gap:2px"><button data-proj="${id}" style="flex:1;text-align:left;${id === act ? 'font-weight:700;color:var(--primary)' : ''}" title="${escapeHtml((meta.name || 'Untitled') + ' — last saved ' + (meta.updatedAt || '').slice(0, 16).replace('T', ' '))}">${id === act ? '● ' : ''}${escapeHtml(meta.name || 'Untitled')}<br/>${metaLine}${bar}</button>${id !== act ? `<button data-cmp="${id}" title="Compare with current (what-if)" style="width:auto;padding:0.2rem 0.4rem">⚖</button>` : ''}</div>`;
+      }).join('') || '<div class="grp">No saved projects yet</div>';
       el.querySelectorAll('[data-proj]').forEach(btn => btn.addEventListener('click', () => switchProject(btn.dataset.proj)));
       el.querySelectorAll('[data-cmp]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); compareProject(btn.dataset.cmp); }));
     }
@@ -4830,7 +4837,8 @@ STORY IDs ALREADY TAKEN — never reuse: ${reqs.stories.map(s => s.id).join(', '
 EPICS ALREADY DEFINED — reuse by id when this branch belongs to one: ${(reqs.epics || []).map(e => e.id + ' ' + (e.title || '')).join('; ') || '(none)'}
 ${existingBatch.length ? 'EXISTING STORIES FOR THIS BRANCH — keep their IDs, improve weak spots, add what is missing:\n' + JSON.stringify(existingBatch.map(s => ({ id: s.id, epicId: s.epicId, wbsName: s.wbsName, persona: s.persona, want: s.want, soThat: s.soThat, ac: s.ac, nfrs: s.nfrs, assumptions: s.assumptions }))) + '\n' : ''}
 ${reqRulesBlock()}`;
-        const onDelta = streamShow('Drafting requirements — part ' + done + '/' + batches.length + ': ' + b.name.slice(0, 34));
+        const partBar = batches.map((x, i) => i < done - 1 ? '✓' : i === done - 1 ? '▶' : '·').join('');
+        const onDelta = streamShow('Drafting requirements [' + partBar + '] part ' + done + '/' + batches.length + ': ' + b.name.slice(0, 30));
         const text = await callAnthropic(prompt, { onDelta });
         streamHide(true);
         const res = parseAIJsonStrict(text, 'requirements part ' + done + ' (' + b.name + ')'); // a branch is small; if even this truncates, stop loudly
@@ -5869,6 +5877,16 @@ ${aiSchemaHint()}`;
         streamHide(true);
         status.textContent = '✓ Plan ready — review below.';
         setTimeout(() => status.textContent = '', 4000);
+        // one continuous flow: notes → plan → requirements (unless opted out).
+        // On merges we only draft when stories don't exist yet — an update to the
+        // plan shouldn't silently rewrite an existing requirements layer.
+        const alsoStories = document.getElementById('aiAlsoStories');
+        if (alsoStories && alsoStories.checked && (mode === 'replace' || !reqs || !Array.isArray(reqs.stories) || !reqs.stories.length)) {
+          status.textContent = '✓ Plan ready — drafting user stories & acceptance criteria…';
+          if (mode === 'replace') reqs = null; // fresh plan = fresh requirements
+          await draftRequirements();
+          status.textContent = '';
+        }
       } catch (e) {
         streamHide(false);
         errEl.textContent = e.message || String(e);
