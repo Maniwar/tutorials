@@ -1455,7 +1455,7 @@
                 <b>${escapeHtml(s.id)}</b> — As a <b>${escapeHtml(s.persona || '?')}</b>, I want to ${escapeHtml(s.want || '?')}, so that ${escapeHtml(s.soThat || '?')}
                 ${(s.ac || []).length ? `<ul style="list-style:none;margin:0.25rem 0 0;padding-left:0.5rem">${s.ac.map(a => `<li>${typeIcon[a.type] || '•'} <span style="color:#475569">${escapeHtml(a.id)}</span> ${escapeHtml(a.text)}</li>`).join('')}</ul>` : ''}
               </div>`).join('')}
-              <button class="btn-sm btn-secondary no-print" onclick="closeModal();switchTab('req')" title="Edit these stories, run the lint, or see the traceability matrix">Open Requirements tab →</button>
+              <button class="btn-sm btn-secondary no-print" onclick="closeModal();openReqStory('${escapeHtml(st[0].id)}')" title="Jump straight to ${escapeHtml(st[0].id)} on the Requirements tab — edit, lint, traceability matrix">Open in Requirements →</button>
             </details>`
           : (reqs && Array.isArray(reqs.stories) && reqs.stories.length && !isSummaryId(id) && !t.milestone
             ? `<p class="help-text" style="margin-bottom:0.75rem">No user story traces to this activity yet — Requirements tab ▸ 🤖 Draft from WBS fills the gaps.</p>` : '');
@@ -3857,7 +3857,7 @@
           <td style="font-size:0.8rem;max-width:280px">${escapeHtml(t.description || '')}</td>
           <td style="font-size:0.8rem">${escapeHtml(t.acceptance || '')}</td>
           <td style="font-size:0.75rem;white-space:nowrap">${(() => { const st = storiesForTask(t.id); return st.length
-            ? st.map(s => `<span class="badge badge-info" style="cursor:pointer" onclick="event.stopPropagation();switchTab('req')" title="${escapeHtml('As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?') + ' — ' + (s.ac || []).length + ' acceptance criteria. Click to open the Requirements tab.')}">${escapeHtml(s.id)}</span>`).join(' ')
+            ? st.map(s => `<span class="badge badge-info" style="cursor:pointer" onclick="event.stopPropagation();openReqStory('${escapeHtml(s.id)}')" title="${escapeHtml('As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?') + ' — ' + (s.ac || []).length + ' acceptance criteria. Click to jump to this story.')}">${escapeHtml(s.id)}</span>`).join(' ')
             : '<span class="help-text">—</span>'; })()}</td>
         </tr>`;
       }).join('');
@@ -4307,7 +4307,7 @@
         const bw = bannedIn(a.text);
         return `<li style="margin-bottom:0.25rem"><span title="${escapeHtml(typeTip[a.type] || '')}" style="cursor:help">${typeIcon[a.type] || '•'}</span> <b>${escapeHtml(a.id || '')}</b> ${escapeHtml(a.text)}${bw.length ? ` <span class="risk-tag" style="background:#fee2e2;color:#b91c1c;cursor:help" title="Untestable word(s) — cannot be accepted or invoiced. Replace with a number and its measurement condition.">${escapeHtml(bw.join(', '))}</span>` : ''}</li>`;
       }).join('');
-      return `<div style="background:#fff;border:1px solid var(--border);border-left:4px solid ${warns.length ? 'var(--warn)' : 'var(--success)'};border-radius:10px;padding:0.85rem 1rem;margin-bottom:0.6rem">
+      return `<div id="story-card-${escapeHtml(s.id)}" style="background:#fff;border:1px solid var(--border);border-left:4px solid ${warns.length ? 'var(--warn)' : 'var(--success)'};border-radius:10px;padding:0.85rem 1rem;margin-bottom:0.6rem">
         <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:flex-start;flex-wrap:wrap">
           <div style="flex:1;min-width:240px;font-size:0.88rem"><b>${escapeHtml(s.id)}</b> — As a <b>${escapeHtml(s.persona || '?')}</b>, I want to <b>${escapeHtml(s.want || '?')}</b>, so that ${escapeHtml(s.soThat || '?')}</div>
           <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap">
@@ -4450,6 +4450,20 @@ Return ONLY JSON:
       const ids = new Set(((reqs && reqs.stories) || []).map(s => s.id));
       let n = 1; while (ids.has('US-' + n)) n++;
       return 'US-' + n;
+    }
+    // Deep link: open the Requirements tab AND land on a specific story,
+    // scrolled into view with a brief highlight — used by every drill-in.
+    function openReqStory(storyId) {
+      switchTab('req');
+      setTimeout(() => {
+        const el = document.getElementById('story-card-' + storyId);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const orig = el.style.background;
+        el.style.transition = 'background 0.5s';
+        el.style.background = '#fef9c3';
+        setTimeout(() => { el.style.background = orig || '#fff'; }, 1800);
+      }, 60);
     }
     function openStoryModal(storyId) {
       if (!reqs) reqs = { personas: [], epics: [], stories: [] };
@@ -5857,8 +5871,10 @@ ${histPromptBlock()}
 Return ONLY JSON: {"entries":[{"type":"Risk|Assumption|Issue|Decision|Exclusion","title":"...","probability":1-5,"impact":1-5,"owner":"","mitigation":"one-line response/detail","task":"exact task name or empty"}]}
 Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, integration unknowns, resourcing), key assumptions the estimates rely on, and scope exclusions worth stating in a SOW. Concrete, not generic boilerplate.`;
       flashSaved('⏳ Drafting RAID…');
+      const onDelta = streamShow('Drafting RAID entries (risks, assumptions, exclusions)');
       try {
-        const res = parseAIJson(await callAnthropic(prompt));
+        const res = parseAIJson(await callAnthropic(prompt, { onDelta }));
+        streamHide(true);
         if (!res || !Array.isArray(res.entries)) throw new Error('No entries returned.');
         let added = 0;
         res.entries.forEach(e => {
@@ -5873,7 +5889,7 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         });
         saveLocal(); renderRaid();
         flashSaved(`✓ ${added} RAID entries drafted — review & edit`);
-      } catch (e) { alert('RAID draft failed: ' + (e.message || e)); }
+      } catch (e) { streamHide(false); alert('RAID draft failed: ' + (e.message || e)); }
     }
 
     // ========================= PRICING & MARGIN =========================
@@ -6192,13 +6208,15 @@ Professional, client-ready, no hype, no invented facts.`;
       }
       let rationale = '';
       if (document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE)) {
+        const onDelta = streamShow('Drafting change-order rationale');
         try {
           flashSaved('⏳ Drafting change-order rationale…');
           const res = parseAIJson(await callAnthropic(`Write a 2-3 sentence professional rationale paragraph for a project change order.
 Changes: added tasks: ${added.map(t => t.name).join(', ') || 'none'}; removed: ${removed.map(t => t.name).join(', ') || 'none'}; effort changes: ${changed.map(c => c.t.name + ' ' + c.from + '→' + c.to).join(', ') || 'none'}. Schedule impact ${finishDelta >= 0 ? '+' : ''}${finishDelta} days. Price impact ${priceDelta >= 0 ? '+' : ''}$${Math.abs(priceDelta).toLocaleString()}.
-Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`));
+Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelta }));
           rationale = escapeHtml(String((res && res.rationale) || ''));
-        } catch (e) { /* skeleton without narrative */ }
+          streamHide(true);
+        } catch (e) { streamHide(false); /* skeleton without narrative */ }
       }
       const td = 'padding:5px 9px;border:1px solid #d7dde5;font-size:12.5px;';
       const th = td + 'background:#f1f5f9;font-weight:700;text-align:left;';
