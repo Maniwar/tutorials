@@ -4221,6 +4221,15 @@
           ${reqs.personas.map(p => `<tr><td style="white-space:nowrap"><b>${escapeHtml(p.name)}</b></td><td style="font-size:0.85rem">${escapeHtml(p.definition || '')}</td></tr>`).join('')}
           </tbody></table></div></details>`;
       }
+      if (allWarns) {
+        const flaggedN = stories.filter(s => storyLint(s).length).length;
+        html += `<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
+          <strong>⚠ ${allWarns} lint finding${allWarns === 1 ? '' : 's'} across ${flaggedN} stor${flaggedN === 1 ? 'y' : 'ies'}</strong> — as written they are untestable, unbillable, or untraceable (each card lists its findings).
+          <div style="margin-top:0.4rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+            <button class="btn-sm btn-primary" onclick="aiFixStoryLints()" title="Sends ONLY the flagged stories with their exact findings; the AI rewrites ACs into Given/When/Then, adds missing error/edge paths, swaps vague words for measurable thresholds, names real personas, and suggests WBS links. Clean stories are untouched; you review the result.">🔧 Fix lint findings with AI</button>
+            <span class="help-text" style="align-self:center">or click ✎ on a flagged card to fix by hand — thresholds the AI invents are proposals to review, not facts</span>
+          </div></div>`;
+      }
       const unlinkedList = stories.filter(s => s.wbsId == null || !idToTask[s.wbsId]);
       if (unlinkedList.length) {
         html += `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
@@ -4357,6 +4366,73 @@
           + '\nKeep every other task exactly as it is.';
         flashSaved('➕ ' + made.length + ' WBS activit' + (made.length === 1 ? 'y' : 'ies') + ' created — an AI estimate request is pre-filled on the Tasks tab (review & press ✨ Generate Plan)');
       }
+    }
+    // Targeted lint repair: send ONLY the flagged stories with their specific
+    // findings; the AI fixes just those per the estimation guide and we merge
+    // the corrected stories back by ID. Clean stories are never touched.
+    async function aiFixStoryLints() {
+      if (!reqs || !Array.isArray(reqs.stories) || !reqs.stories.length) return;
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) { alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
+      const flagged = reqs.stories.map(s => ({ s, warns: storyLint(s) })).filter(x => x.warns.length);
+      if (!flagged.length) { flashSaved('✓ No lint findings — every story is testable and traced.'); return; }
+      computeWbsCodes();
+      const wbsNames = leafTasks().filter(t => !t.milestone).map(t => t.name);
+      const payload = flagged.map(x => ({
+        story: { id: x.s.id, epicId: x.s.epicId, wbsName: x.s.wbsName || '', persona: x.s.persona, want: x.s.want, soThat: x.s.soThat, ac: x.s.ac, nfrs: x.s.nfrs, assumptions: x.s.assumptions },
+        problems: x.warns
+      }));
+      const prompt = `You are repairing user stories that failed a quality lint based on our estimation guide. Fix ONLY the listed problems on each story; keep everything already good exactly as it is (same IDs, same intent, same links).
+
+AVAILABLE WBS ACTIVITY NAMES (for unlinked stories pick the best fit, copied character-for-character, or "" if genuinely none fits):
+${wbsNames.map(n => '- ' + n).join('\n')}
+
+KNOWN PERSONAS: ${(reqs.personas || []).map(p => p.name).join(', ') || '(none yet)'}
+
+STORIES WITH THEIR LINT FINDINGS:
+${JSON.stringify(payload, null, 1)}
+
+Repair rules (from the guide):
+- Rewrite non-conforming criteria into one-line "Given [context] When [trigger] Then [observable outcome]" form; one criterion per line, multiple And clauses allowed, a second When means split into two criteria.
+- Add the missing ERROR-path and/or EDGE-case criteria where flagged (invalid input, dependency failure, boundaries, empty states, timeouts, capacity).
+- Replace untestable words (fast, seamless, robust, secure, handle, etc.…) with a specific number AND its measurement condition (e.g. "p95 ≤ 800 ms at 200 concurrent users"). When you must invent a threshold, pick an industry-reasonable value — the PM reviews every change.
+- Replace vague personas ("user") with a specific named role; define any NEW persona you introduce.
+- Keep AC IDs stable where the criterion survives; number added ones sequentially after the existing ones.
+Return ONLY JSON:
+{"personas":[{"name":"…","definition":"…"}],   // ONLY personas that are new or redefined
+ "stories":[ corrected stories, SAME ids, full corrected "ac" arrays, wbsName filled where you linked one ]}`;
+      const onDelta = streamShow('Fixing ' + flagged.length + ' flagged stor' + (flagged.length === 1 ? 'y' : 'ies'));
+      flashSaved('⏳ AI repairing lint findings…');
+      try {
+        const res = parseAIJson(await callAnthropic(prompt, { onDelta }));
+        streamHide(true);
+        if (!res || !Array.isArray(res.stories)) throw new Error('no corrected stories returned');
+        const clean = v => String(v == null ? '' : v).trim();
+        let merged = 0;
+        res.stories.forEach(cs => {
+          const idx = reqs.stories.findIndex(s => s.id === clean(cs.id));
+          if (idx < 0) return;
+          const old = reqs.stories[idx];
+          const t = old.wbsId != null && tasks.some(x => x.id === old.wbsId) ? tasks.find(x => x.id === old.wbsId) : taskByLooseName(clean(cs.wbsName));
+          reqs.stories[idx] = {
+            id: old.id, epicId: clean(cs.epicId) || old.epicId,
+            wbsId: t ? t.id : null, wbsName: t ? t.name : (clean(cs.wbsName) || old.wbsName || ''),
+            persona: clean(cs.persona) || old.persona, want: clean(cs.want) || old.want, soThat: clean(cs.soThat) || old.soThat,
+            ac: Array.isArray(cs.ac) ? cs.ac.map((a, j) => ({ id: clean(a.id) || (old.id.replace(/^US/i, 'AC') + '.' + (j + 1)), type: ['happy', 'error', 'edge', 'perf'].includes(clean(a.type)) ? clean(a.type) : 'happy', text: clean(a.text) })).filter(a => a.text) : old.ac,
+            nfrs: Array.isArray(cs.nfrs) ? cs.nfrs.map(clean).filter(Boolean) : old.nfrs,
+            assumptions: Array.isArray(cs.assumptions) ? cs.assumptions.map(clean).filter(Boolean) : old.assumptions
+          };
+          merged++;
+        });
+        (Array.isArray(res.personas) ? res.personas : []).forEach(np => {
+          const name = clean(np.name); if (!name) return;
+          const ex = reqs.personas.find(x => x.name.toLowerCase() === name.toLowerCase());
+          if (ex) ex.definition = clean(np.definition) || ex.definition;
+          else reqs.personas.push({ name, definition: clean(np.definition) });
+        });
+        saveLocal(); renderReqs();
+        const remaining = reqs.stories.reduce((n, s) => n + storyLint(s).length, 0);
+        flashSaved(`🔧 ${merged} stor${merged === 1 ? 'y' : 'ies'} repaired — ${remaining ? remaining + ' finding(s) still open (see the cards)' : 'lint is clean'}. Review any thresholds the AI proposed.`);
+      } catch (e) { streamHide(false); alert('Lint repair failed: ' + (e.message || e)); }
     }
     function nextStoryId() {
       const ids = new Set(((reqs && reqs.stories) || []).map(s => s.id));
