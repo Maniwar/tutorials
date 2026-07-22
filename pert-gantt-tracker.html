@@ -430,7 +430,7 @@
         <div class="card-header">
           <h2>Activity List — 3-Point Estimates &amp; Progress</h2>
           <div class="toolbar">
-            <button class="btn-secondary btn-sm" onclick="copyUpdateRequest()" title="Copy an email-ready checklist of all open work grouped by owner. Send it out; paste the replies into the AI box above (mode: Update progress) and the plan updates itself.">📮 Copy update request</button>
+            <button class="btn-secondary btn-sm" onclick="copyUpdateRequest()" title="Copy an email-ready TABLE of all open work (one per owner, yellow fill-in cells for %, done-date and blockers). Send it; paste the filled reply into the AI box above (mode: Update progress) — %s, actual dates and rollups update, blockers land in RAID.">📮 Copy update request</button>
             <button class="btn-secondary btn-sm" onclick="openAddModal(true)">+ Milestone</button>
             <button class="btn-primary btn-sm" onclick="openAddModal(false)">+ Add Activity</button>
           </div>
@@ -598,7 +598,7 @@
                 <li><b>SLACK (float):</b> LS − ES — how much it can slip for free. <b>0 = critical path</b> (red): any delay here moves the end date.</li>
                 <li><b>LF — Late Finish:</b> the latest it can end without delaying the project.</li>
                 <li><b>Arrows</b> run left→right from predecessor to successor. Plain arrows are finish→start; labelled ones (<b>SS</b> start→start, <b>FF</b> finish→finish, <b>SF</b> start→finish, <b>+n/−n</b> lag or lead) mark non-standard links. Red arrows trace the critical path.</li>
-                <li>Bottom strip of each box = <b>% complete</b>; ◆ = milestone; ✓ green = done. Hover any cell for its live values; click a box to edit the task.</li>
+                <li><b>Milestones are ◆ diamonds</b> — zero-duration checkpoints (standard activity-on-node notation); they auto-complete when every predecessor reaches 100%. Bottom strip of each task box = <b>% complete</b>; ✓ green = done. Hover any cell for its live values; click any shape to edit.</li>
               </ul>
             </div>
           </details>
@@ -627,7 +627,7 @@
             <button class="btn-sm btn-secondary" onclick="downloadChartPNG('gantt')">PNG</button>
             <button class="btn-sm btn-secondary" onclick="downloadChartSVG('gantt')">SVG</button>
             <button class="btn-sm btn-success" onclick="copyStatusReport()" title="Copy a formatted status summary (tables + completeness) for pasting into email">📄 Copy status report</button>
-            <button class="btn-sm btn-secondary" onclick="copyUpdateRequest()" title="Copy an email-ready checklist of open work grouped by owner — send it, then paste the replies into Tasks ▸ AI ▸ Update progress">📮 Update request</button>
+            <button class="btn-sm btn-secondary" onclick="copyUpdateRequest()" title="Copy an email-ready TABLE of open work per owner with fill-in cells — send it, then paste the filled reply into Tasks ▸ AI ▸ Update progress (blockers auto-log to RAID)">📮 Update request</button>
             <button class="btn-sm btn-secondary no-print" onclick="draftNarrative()" title="AI writes the Progress / Risks / Next-steps narrative included at the top of the report">✨ Narrative</button>
           </div>
         </div>
@@ -3859,6 +3859,8 @@
       edges.sort((a, b) => (pos[a.to].y - pos[b.to].y) || (pos[a.from].y - pos[b.from].y));
       const outIdx = {}, inIdx = {};
       const portY = (nodeY, idx, cnt) => nodeY + NH * (cnt <= 1 ? 0.5 : (0.26 + 0.48 * idx / (cnt - 1)));
+      // milestone diamonds only meet arrows at their left/right TIPS (mid-height)
+      const portYFor = (task, nodeY, idx, cnt) => (task && task.milestone) ? nodeY + NH / 2 : portY(nodeY, idx, cnt);
       // Vertical-lane bookkeeping per COLUMN GAP: every edge takes a lane in its
       // source gap; edges that detour around intermediate columns also take a
       // lane in the gap just before their target, so parallel runs never overlap.
@@ -3878,8 +3880,8 @@
       edges.forEach(e => {
         const oi = (outIdx[e.from] = (outIdx[e.from] || 0)); outIdx[e.from]++;
         const ii = (inIdx[e.to] = (inIdx[e.to] || 0)); inIdx[e.to]++;
-        const sx = pos[e.from].x + NW, sy = portY(pos[e.from].y, oi, outCnt[e.from]);
-        const tx = pos[e.to].x, ty = portY(pos[e.to].y, ii, inCnt[e.to]);
+        const sx = pos[e.from].x + NW, sy = portYFor(idToTask[e.from], pos[e.from].y, oi, outCnt[e.from]);
+        const tx = pos[e.to].x, ty = portYFor(idToTask[e.to], pos[e.to].y, ii, inCnt[e.to]);
         const k = e.from + '>' + e.to;
         const x1 = Math.min(tx - 12, chXof(level[e.from], laneKeys[k].s));
         const stroke = e.crit ? '#dc2626' : '#94a3b8';
@@ -3927,6 +3929,22 @@
         const P = pos[t.id];
         const done = t.percentComplete >= 100;
         const crit = t.isCritical;
+        if (t.milestone) {
+          // classic AON convention: milestones are zero-duration DIAMONDS, not task boxes
+          const cx = P.x + NW / 2, cy = P.y + NH / 2, rx = NW / 2, ry = NH / 2 - 2;
+          const mBorder = done ? '#16a34a' : crit ? '#dc2626' : '#64748b';
+          const mFill = done ? '#f0fdf4' : crit ? '#fef2f2' : '#ffffff';
+          const nm = t.name.length > 20 ? t.name.slice(0, 18) + '…' : t.name;
+          const fmt1m = v => (Number.isFinite(v) ? (Math.abs(v) < 0.05 ? '0.0' : v.toFixed(1)) : '—');
+          svg += `<g filter="url(#p-shadow)" data-popen="${t.id}" style="cursor:pointer">
+            <polygon points="${cx},${cy - ry} ${cx + rx},${cy} ${cx},${cy + ry} ${cx - rx},${cy}" fill="${mFill}" stroke="${mBorder}" stroke-width="${crit || done ? 2.5 : 1.8}"/>
+            <text x="${cx}" y="${cy - 6}" font-family="${FF}" font-size="11" font-weight="700" fill="#0f172a" text-anchor="middle">◆ ${done ? '✓ ' : ''}${escapeXml(nm)}</text>
+            <text x="${cx}" y="${cy + 10}" font-family="${FF}" font-size="9" fill="#64748b" text-anchor="middle">${escapeXml(fmtNice(t.startDate))}</text>
+            <text x="${cx}" y="${cy + 24}" font-family="${FF}" font-size="8" fill="#94a3b8" text-anchor="middle">milestone • slack ${fmt1m(t.slack)}</text>
+            <title>${escapeXml('Milestone: ' + t.name + '\n' + fmtNice(t.startDate) + ' — zero duration; ' + (effectivePreds(t).length ? 'auto-completes when every predecessor reaches 100%' : 'tracked manually') + '\nSlack ' + fmt1m(t.slack) + ' ' + unitLabel() + (crit ? ' — on the critical path' : '') + '\nClick to open / edit')}</title>
+          </g>`;
+          return;
+        }
         const border = done ? '#16a34a' : crit ? '#dc2626' : '#94a3b8';
         const fill = done ? '#f0fdf4' : crit ? '#fef2f2' : '#ffffff';
         const cellW = NW / 3;
@@ -3969,7 +3987,8 @@
       svg += `<rect x="${M}" y="${ly - 10}" width="14" height="10" rx="2" fill="#fef2f2" stroke="#dc2626" stroke-width="2"/><text x="${M + 19}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">Critical (zero slack)</text>`;
       svg += `<rect x="${M + 140}" y="${ly - 10}" width="14" height="10" rx="2" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/><text x="${M + 159}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">Complete</text>`;
       svg += `<rect x="${M + 240}" y="${ly - 10}" width="14" height="10" rx="2" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/><text x="${M + 259}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">Non-critical</text>`;
-      svg += `<text x="${M + 350}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">→ arrows read left to right: predecessor → successor (labels like SS+2 mark non-standard links)</text>`;
+      svg += `<polygon points="${M + 357},${ly - 11} ${M + 364},${ly - 5} ${M + 357},${ly + 1} ${M + 350},${ly - 5}" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/><text x="${M + 369}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">Milestone (zero duration)</text>`;
+      svg += `<text x="${M + 510}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">→ arrows read left to right: predecessor → successor (labels like SS+2 mark non-standard links)</text>`;
       svg += `<text x="${M}" y="${H - 10}" font-family="${FF}" font-size="9.5" fill="#64748b">ES = Early Start   •   DUR = expected duration (O+4M+P)/6   •   EF = Early Finish   •   LS = Late Start   •   SLACK = LS − ES (0 ⇒ critical)   •   LF = Late Finish   —   all in ${escapeXml(unitLabel())} from project start</text>`;
 
       svgEl.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
@@ -4338,10 +4357,12 @@ Return ONLY JSON (no prose, no fences):
     }
 
     // ---- Status-update round trip ----
-    // 1) copyUpdateRequest() → email/Slack-ready checklist of open work, grouped
-    //    by owner, with blanks to fill in.
-    // 2) People reply inline. 3) Paste the replies into Tasks ▸ AI mode
-    //    "Update progress" → %s, actual dates and TE-weighted rollups update.
+    // 1) copyUpdateRequest() → rich-text TABLE (one per owner, highlighted
+    //    fill-in cells) that pastes into Outlook/Gmail as a real table, plus a
+    //    plain-text fallback for Slack/terminals.
+    // 2) People type into the yellow cells and reply. 3) Paste the filled table
+    //    into Tasks ▸ AI mode "Update progress" → %s, actual dates and
+    //    TE-weighted rollups update; noted blockers are logged into RAID.
     async function copyUpdateRequest() {
       if (!tasks.length) { alert('No activities yet.'); return; }
       if (!calculated) ensureCalc();
@@ -4350,13 +4371,39 @@ Return ONLY JSON (no prose, no fences):
       if (!open.length) { alert('Everything is already at 100% — nothing to chase. 🎉'); return; }
       const byOwner = {};
       open.forEach(t => { const o = (t.owner || '').trim() || 'Unassigned'; (byOwner[o] = byOwner[o] || []).push(t); });
+      const owners = Object.keys(byOwner).sort((a, b) => a === 'Unassigned' ? 1 : b === 'Unassigned' ? -1 : a.localeCompare(b));
+
+      // rich-text version: a real table per owner, yellow cells = type here
+      const td = 'padding:5px 8px;border:1px solid #cbd5e1;font-size:12.5px;vertical-align:top;';
+      const th = td + 'background:#f1f5f9;font-weight:700;text-align:left;white-space:nowrap;';
+      const fillTh = td + 'background:#fef08a;font-weight:700;text-align:left;white-space:nowrap;';
+      const fill = td + 'background:#fefce8;min-width:90px;';
+      let html = `<div style="font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;max-width:1000px">
+        <h2 style="margin:0 0 2px;font-size:16px">Status update request — ${escapeHtml(projName())}</h2>
+        <p style="margin:0 0 10px;font-size:12.5px;color:#475569">${escapeHtml(fmtNice(new Date()))} • Please fill in the <b>yellow cells</b> on your rows — a %, or “done” plus the finish date, and any blockers — then reply with the table. The reply gets pasted straight back into the plan; blockers you note are logged into the project risk register.</p>`;
+      owners.forEach(o => {
+        html += `<h3 style="margin:12px 0 4px;font-size:13.5px">${escapeHtml(o)} — ${byOwner[o].length} open item${byOwner[o].length === 1 ? '' : 's'}</h3>
+        <table style="border-collapse:collapse;width:100%">
+          <tr><th style="${th}">WBS</th><th style="${th}">Task</th><th style="${th}">Planned window</th><th style="${th}">% today</th><th style="${fillTh}">Now at %</th><th style="${fillTh}">Done? (finish date)</th><th style="${fillTh}">Blockers / notes</th></tr>
+          ${byOwner[o].map(t => `<tr>
+            <td style="${td};white-space:nowrap">${escapeHtml(t.wbs)}</td>
+            <td style="${td}">${t.milestone ? '◆ ' : ''}${escapeHtml(t.name)}${isLate(t) ? ' <span style="color:#b91c1c;font-weight:700">⚠ behind</span>' : ''}</td>
+            <td style="${td};white-space:nowrap">${calculated && t.startDate ? escapeHtml(fmtNice(t.startDate) + ' → ' + fmtNice(t.finishDate)) : ''}</td>
+            <td style="${td};text-align:right">${t.percentComplete || 0}%</td>
+            <td style="${fill}">&nbsp;</td><td style="${fill}">&nbsp;</td><td style="${fill};min-width:200px">&nbsp;</td>
+          </tr>`).join('')}
+        </table>`;
+      });
+      html += `<p style="margin:10px 0 0;font-size:11.5px;color:#94a3b8">Generated from the ${escapeHtml(projName())} plan • PM: paste the filled reply into Tasks ▸ AI ▸ “Update progress” — %s, actual dates, phase roll-ups and the RAID log update automatically.</p></div>`;
+
+      // plain-text fallback for Slack / plain-text mail clients
       const L = [];
       L.push('STATUS UPDATE REQUEST — ' + projName() + ' — ' + fmtNice(new Date()));
       L.push('');
       L.push('Please update your items below: replace ____ with today\'s % complete (or "done"),');
       L.push('add the actual finish date for anything completed, and flag blockers.');
       L.push('Reply with the whole list — it gets pasted straight back into the plan.');
-      Object.keys(byOwner).sort((a, b) => a === 'Unassigned' ? 1 : b === 'Unassigned' ? -1 : a.localeCompare(b)).forEach(o => {
+      owners.forEach(o => {
         L.push('');
         L.push('== ' + o + ' ==');
         byOwner[o].forEach(t => {
@@ -4366,14 +4413,22 @@ Return ONLY JSON (no prose, no fences):
         });
       });
       L.push('');
-      L.push('— generated by ' + projName() + ' plan. PM: paste the replies into Tasks ▸ AI ▸ "Update progress" and every %, actual date and phase rollup updates automatically.');
+      L.push('— generated by ' + projName() + ' plan. PM: paste the replies into Tasks ▸ AI ▸ "Update progress" and every %, actual date and phase rollup updates automatically; blockers are logged to RAID.');
       const text = L.join('\n');
       try {
-        await navigator.clipboard.writeText(text);
-        flashSaved('✓ Update request copied — paste into email/Slack; paste replies back via AI ▸ Update progress');
+        await navigator.clipboard.write([new ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([text], { type: 'text/plain' })
+        })]);
+        flashSaved('✓ Update-request table copied — paste into email; paste the filled reply back via AI ▸ Update progress');
       } catch (e) {
-        download(safeName() + '-update-request.txt', text, 'text/plain');
-        alert('Clipboard unavailable here — downloaded the request as a .txt instead.');
+        try {
+          await navigator.clipboard.writeText(text);
+          flashSaved('✓ Update request copied (plain text) — paste into email/Slack');
+        } catch (e2) {
+          download(safeName() + '-update-request.txt', text, 'text/plain');
+          alert('Clipboard unavailable here — downloaded the request as a .txt instead.');
+        }
       }
     }
 
@@ -5225,13 +5280,13 @@ ${aiSchemaHint()}`;
     async function updateProgressFromNotes(notes, btn, status, errEl) {
       if (!tasks.length) { errEl.textContent = 'No tasks to update yet.'; errEl.style.display = 'block'; return; }
       const taskList = leafTasks().map(t => `"${t.name}" (${t.percentComplete || 0}% now${t.actualStart ? ', started ' + t.actualStart : ''})`).join('; ');
-      const prompt = `You are updating project tracking data from meeting/standup notes.
+      const prompt = `You are updating project tracking data from meeting/standup notes or replies to a status-update request.
 Today is ${fmtISO(new Date())}. Current tasks: ${taskList}.
-NOTES:\n"""${notes}"""
+NOTES (may be free text, or a filled-in status table pasted from email — columns like WBS | Task | Planned window | % today | Now at % | Done? (finish date) | Blockers / notes, possibly tab- or space-separated):\n"""${notes}"""
 Return ONLY JSON:
 {"updates":[{"task":"exact task name","percentComplete":0-100,"actualStart":"YYYY-MM-DD or empty","actualFinish":"YYYY-MM-DD or empty"}],
  "newRisks":[{"type":"Risk|Issue","title":"...","probability":1-5,"impact":1-5,"mitigation":"..."}]}
-Rules: only include tasks the notes actually mention; never lower an existing percentComplete unless the notes explicitly say work was redone; use actualFinish only when clearly done; extract genuinely new risks/issues only.`;
+Rules: only include tasks the notes actually mention or whose table row has a filled-in "Now at %" / "Done?" / blocker cell; in table replies "Now at %" (the filled cell) is the new percentComplete — "% today" is the OLD value, never use it; "done"/"yes" in the Done column means percentComplete 100 with its date as actualFinish; never lower an existing percentComplete unless the notes explicitly say work was redone; use actualFinish only when clearly done; anything in a Blockers/notes cell that describes a real impediment becomes a newRisks entry (type Issue if it is blocking now, Risk if it might); extract genuinely new risks/issues only.`;
       btn.disabled = true; const orig = btn.textContent; btn.textContent = '⏳ Updating…'; status.textContent = 'Reading notes…';
       const onDelta = streamShow('Updating progress from notes');
       try {
