@@ -2704,7 +2704,7 @@
           <td style="cursor:grab;color:var(--muted)" title="Drag to reorder / re-nest">⠿</td>
           <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
           <td data-name-id="${t.id}">${nameCell}</td>
-          <td data-owner-id="${t.id}" style="font-size:0.8rem${summary ? '' : ';cursor:text'}" title="${t.overallocated ? escapeHtml((t.owner||'')+' is over-allocated during this task. ') : ''}${summary ? '' : 'Click to reassign right here (type-ahead from the roster). Comma-separate for several people — first = owner, the rest join as attendees; @N sets allocation % (e.g. QA Tester@50).'}"${summary ? '' : ` onclick="beginOwnerEdit(${t.id}, this)"`}>${t.overallocated ? '<span style="color:var(--critical)" title="over-allocated">⚠ </span>' : ''}${summary ? summaryOwnerCell(t) : escapeHtml(t.owner || '—')}${(!t.milestone && !summary && t.units !== 100) ? ` <span class="help-text" style="font-size:0.68rem">@${t.units}%</span>` : ''}${(t.attendees && t.attendees.length) ? ` <span class="badge badge-info" title="${escapeHtml(t.attendees.map(a => a.name + ' @' + a.units + '%').join(', '))}">+${t.attendees.length}</span>` : ''}</td>
+          <td data-owner-id="${t.id}" style="font-size:0.8rem${summary ? '' : ';cursor:text'}" title="${(resources[(t.owner || '').trim()] || {}).role ? escapeHtml((t.owner || '').trim() + ' — ' + resources[(t.owner || '').trim()].role) + '. ' : ''}${t.overallocated ? escapeHtml((t.owner||'')+' is over-allocated during this task. ') : ''}${summary ? '' : 'Click to reassign right here (type-ahead from the roster). Comma-separate for several people — first = owner, the rest join as attendees; @N sets allocation % (e.g. QA Tester@50).'}"${summary ? '' : ` onclick="beginOwnerEdit(${t.id}, this)"`}>${t.overallocated ? '<span style="color:var(--critical)" title="over-allocated">⚠ </span>' : ''}${summary ? summaryOwnerCell(t) : escapeHtml(t.owner || '—')}${(!t.milestone && !summary && t.units !== 100) ? ` <span class="help-text" style="font-size:0.68rem">@${t.units}%</span>` : ''}${(t.attendees && t.attendees.length) ? ` <span class="badge badge-info" title="${escapeHtml(t.attendees.map(a => a.name + ' @' + a.units + '%').join(', '))}">+${t.attendees.length}</span>` : ''}</td>
           ${(() => { const noEst = !summary && !t.milestone && !(t.p > 0);
             const a = noEst ? ' style="background:#fee2e2;color:#b91c1c;font-weight:700" title="NO ESTIMATE — this work package contributes nothing to the schedule, the critical path or the price. Click the cell and type the estimate right here."' : '';
             const ed = f => (!summary && !t.milestone) ? ` data-omp="${f}" onclick="beginOmpEdit(this, ${t.id}, '${f}')"${noEst ? '' : ' style="cursor:text"'}` : '';
@@ -3847,13 +3847,26 @@
     function renameResource(oldName) {
       const name = (prompt(`Rename "${oldName}" to:`, oldName) || '').trim();
       if (!name || name === oldName) return;
-      if (resources[name]) { alert('A resource with that name already exists.'); return; }
-      resources[name] = resources[oldName] || { capacity: 100 };
+      const exKey = Object.keys(resources).find(k => k !== oldName && k.toLowerCase() === name.toLowerCase());
+      if (exKey && !confirm(`"${exKey}" already exists.\n\nMERGE "${oldName}" into "${exKey}"? All of ${oldName}'s task assignments move over; ${exKey}'s rates, capacity, role and PTO are kept.`)) return;
+      const target = exKey || name;
+      if (!exKey) resources[target] = resources[oldName] || { capacity: 100 };
       delete resources[oldName];
-      tasks.forEach(t => { if ((t.owner || '').trim() === oldName) t.owner = name; });
+      // EVERY reference must follow — owner AND attendees. (Missing attendees
+      // was how a rename used to resurrect the old name as a roster duplicate
+      // on the next sync.)
+      tasks.forEach(t => {
+        if ((t.owner || '').trim() === oldName) t.owner = target;
+        (t.attendees || []).forEach(a => { if ((a.name || '').trim() === oldName) a.name = target; });
+        if (t.attendees && t.attendees.length) {
+          const seen = new Set([(t.owner || '').trim()]);
+          t.attendees = t.attendees.filter(a => !seen.has(a.name) && (seen.add(a.name), true));
+        }
+      });
       saveLocal();
       if (calculated) recompute();
       renderTaskTable(); renderResources(); renderAnalytics(); renderGantt();
+      flashSaved(exKey ? '👥 "' + oldName + '" merged into "' + exKey + '" — every assignment followed' : '👥 Renamed — every task assignment (owner + attendee) followed');
     }
     function removeResource(name) {
       const assigned = tasks.filter(t => (t.owner || '').trim() === name);
@@ -5476,6 +5489,7 @@
           <td><select class="mini-inp rl-kind" data-ri="${ri}" style="width:auto" title="Client/external people carry no cost or billing — but their workload and PTO are still tracked">
             <option value="internal" ${!isClient ? 'selected' : ''}>Internal</option>
             <option value="client" ${isClient ? 'selected' : ''}>Client</option></select></td>
+          <td><input class="mini-inp rl-role" data-ri="${ri}" type="text" value="${escapeHtml((resources[name] || {}).role || '')}" placeholder="e.g. Platform Developer" title="What they do on this engagement — the AI captures it from your notes ('Marcus Webb — CRM Platform Developer'); applying a rate card also fills it. Shows on owner hovers so a roster of names still tells you who does what." style="width:150px" /></td>
           <td><input class="mini-inp rl-cap" data-ri="${ri}" type="number" min="1" step="10" value="${R.capacity}" title="Capacity % — 100 = 1 full-time person, 300 = a 3-person team" /></td>
           <td>${isClient ? '<span class="help-text">n/a</span>' : `<input class="mini-inp rl-rate" data-ri="${ri}" type="number" min="0" step="50" value="${getRate(name)}" title="COST per working day at 100% (feeds the budget layer)" />`}</td>
           <td>${isClient ? '<span class="help-text">n/a</span>' : `<input class="mini-inp rl-bill" data-ri="${ri}" type="number" min="0" step="50" value="${getBillRate(name)}" title="BILL rate per day (client-facing — feeds pricing & SOW)" />`}</td>
@@ -5512,7 +5526,7 @@
           <button class="btn-sm btn-primary no-print" onclick="addResourcePrompt()">➕ Add resource</button></span>
         </div>
         <div class="table-wrap" style="margin-bottom:1rem"><table>
-          <thead><tr><th title="Person, role or team">Resource</th><th title="Internal = yours (costed & billed). Client = their people: tracked for workload/PTO but never costed or billed">Type</th><th title="100 = one full-time person; 300 = a 3-person team; 50 = someone available half-time">Capacity %</th><th title="What they cost YOU per working day — drives the cost & EVM layer">Cost $/d</th><th title="What you charge the client per day — drives pricing, margin and the SOW">Bill $/d</th><th title="Vacation / unavailable dates. Scheduled work on these days is flagged as a conflict">PTO / unavailable</th><th title="Tasks they participate in (incl. as attendee)">Tasks</th><th title="Total planned working days × their allocation">Planned effort</th><th title="Busiest single day as % of capacity">Peak load</th><th title="OK = within capacity every day; over ×N = N conflict days to resolve">Status</th><th></th></tr></thead>
+          <thead><tr><th title="Person, role or team">Resource</th><th title="Internal = yours (costed & billed). Client = their people: tracked for workload/PTO but never costed or billed">Type</th><th title="Job on the engagement — filled by the AI from your notes, editable, also set when a rate card is applied">Role</th><th title="100 = one full-time person; 300 = a 3-person team; 50 = someone available half-time">Capacity %</th><th title="What they cost YOU per working day — drives the cost & EVM layer">Cost $/d</th><th title="What you charge the client per day — drives pricing, margin and the SOW">Bill $/d</th><th title="Vacation / unavailable dates. Scheduled work on these days is flagged as a conflict">PTO / unavailable</th><th title="Tasks they participate in (incl. as attendee)">Tasks</th><th title="Total planned working days × their allocation">Planned effort</th><th title="Busiest single day as % of capacity">Peak load</th><th title="OK = within capacity every day; over ×N = N conflict days to resolve">Status</th><th></th></tr></thead>
           <tbody>${rosterRows}</tbody>
         </table></div>`;
       const holidays = getHolidaySet();
@@ -5691,6 +5705,14 @@
       // bind inputs/buttons by index (safe against names with quotes)
       cont.querySelectorAll('input.rl-cap').forEach(inp => {
         inp.addEventListener('change', () => setCapacity(names[Number(inp.dataset.ri)], inp.value));
+      });
+      cont.querySelectorAll('input.rl-role').forEach(inp => {
+        inp.addEventListener('change', () => {
+          const n = names[Number(inp.dataset.ri)];
+          if (!resources[n]) resources[n] = { capacity: 100 };
+          resources[n].role = inp.value.trim();
+          saveLocal(); renderTaskTable();
+        });
       });
       cont.querySelectorAll('input.rl-rate').forEach(inp => {
         inp.addEventListener('change', () => setRate(names[Number(inp.dataset.ri)], inp.value));
@@ -7457,7 +7479,18 @@ ${existing}`;
         saveLocal(); renderReqs();
         if (!document.getElementById('view-req').classList.contains('active')) switchTab('req');
         flashSaved('✓ ' + reqs.stories.length + ' stories drafted across ' + reqs.epics.length + ' epics — review the lint flags');
-      } catch (e) { streamHide(false); alert('Requirements drafting failed: ' + (e.message || e)); }
+      } catch (e) {
+        streamHide(false);
+        // the single big call stalled or died — the phase-by-phase path (several
+        // SMALL calls, each with its own watchdog) completes far more reliably,
+        // and every finished phase is kept even if a later one fails
+        flashSaved('⚠ Single-shot drafting failed — switching to phase-by-phase so nothing is lost…');
+        try { await draftRequirementsChunked(); }
+        catch (e2) {
+          streamHide(false);
+          alert('Requirements drafting failed twice (' + (e2.message || e2) + ').\n\nThe PLAN is safe and untouched. Any completed phases were kept — go to Requirements ▸ 🤖 Draft from WBS to retry; it fills only what is still missing.');
+        }
+      }
     }
     // Targeted gap-filler: draft stories ONLY for activities that have none —
     // small batches, every listed activity must get a story, and afterwards it
@@ -8673,7 +8706,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     }
   ],
   "resources": [
-    { "name": "person/role/team name", "capacityPercent": 100, "kind": "internal" }  // kind "client" for CLIENT-side people (they do work but are never billed/costed)
+    { "name": "person/role/team name", "capacityPercent": 100, "kind": "internal", "role": "their job on the engagement, e.g. Solution Consultant / Platform Developer / Data Analyst / Client Program Lead" }  // kind "client" for CLIENT-side people (they do work but are never billed/costed)
   ]
 }
 Rules:
@@ -8689,7 +8722,7 @@ ${uatStylePref() === 'bigbang'
 - Mark clear checkpoints (go-live, sign-off, approval, kickoff decision) as milestones with 0/0/0 durations.
 - Assign owners only when named or clearly implied. Default units to 100 unless the notes say a task is part-time or shared.
 - Draft the FULL WBS dictionary: every task (including phases and milestones) gets a concise deliverable, description, and acceptance — never leave them blank.
-- In "resources", list each distinct owner once. Give teams a capacityPercent > 100 (e.g. a 3-developer team = 300); individuals default to 100. Mark client-side participants (SMEs, approvers, data stewards) with kind "client". Omit "resources" only if no owners are assigned.
+- In "resources", list each distinct owner once. Give teams a capacityPercent > 100 (e.g. a 3-developer team = 300); individuals default to 100. Mark client-side participants (SMEs, approvers, data stewards) with kind "client". ALWAYS carry each person's role/title from the notes into "role" ("Marcus Webb — CRM Platform Developer" → role "CRM Platform Developer") — the roster shows bare names, and the role is how anyone reading the plan later knows who does what job. Omit "resources" only if no owners are assigned.
 - For workshops/sessions with several people at once, set one owner and put the rest in "attendees".`;
     }
 
@@ -8714,13 +8747,13 @@ ${uatStylePref() === 'bigbang'
       "was": "current name ONLY when renaming this task" }
   ],
   "removeTasks": ["exact names of tasks to delete"],
-  "resources": [ { "name": "person/role/team", "capacityPercent": 100, "kind": "internal" } ]
+  "resources": [ { "name": "person/role/team", "capacityPercent": 100, "kind": "internal", "role": "their job, e.g. Platform Developer" } ]
 }
 Rules:
 - changedTasks holds ONLY new tasks and tasks where a field genuinely changes. Fill every field for each task you include (its stored planning fields are overwritten; % complete, actual dates and story/test-case links are preserved automatically).
 - "parent" and "dependsOn" reference exact task names — current ones or new ones introduced in this same response. dependsOn lists only DIRECT predecessors — never restate a link already implied through the chain (if C waits on B and B waits on A, C lists ONLY B).
 - Use "was" to rename without losing tracking history.
-- "resources" lists ONLY new or changed people (capacityPercent > 100 for teams; kind "client" for client-side people — they are never billed). Rates and PTO are managed in the app and never change here.
+- "resources" lists ONLY new or changed people (capacityPercent > 100 for teams; kind "client" for client-side people — they are never billed; include "role" — their job/title — whenever the notes state or imply it). Rates and PTO are managed in the app and never change here.
 - removeTasks and resources may be empty arrays. Every array may be empty if the request needs no change of that kind.
 - NEVER include test-case tasks (names starting "TC ") in changedTasks unless the request explicitly asks to change them — their steps and expected results are managed by the test-plan generator, not by plan updates.`;
     }
@@ -8964,7 +8997,9 @@ ${aiSchemaHint()}`];
           status.textContent = '✓ Plan ready — drafting user stories & acceptance criteria…';
           if (mode === 'replace') reqs = null; // fresh plan = fresh requirements
           await draftRequirements();
-          status.textContent = '';
+          // never end this flow silently story-less: say exactly where things stand
+          status.textContent = (reqs && Array.isArray(reqs.stories) && reqs.stories.length)
+            ? '' : '⚠ Plan is ready, but stories did not draft — retry from Requirements ▸ 🤖 Draft from WBS (the plan is safe).';
         }
       } catch (e) {
         streamHide(false);
@@ -9091,7 +9126,8 @@ ${aiSchemaHint()}`];
           const cap = Number(r.capacityPercent != null ? r.capacityPercent : r.capacity);
           resources[nm] = Object.assign({}, old, {
             capacity: (Number.isFinite(cap) && cap > 0) ? cap : ((+old.capacity > 0) ? +old.capacity : 100),
-            kind: r.kind === 'client' ? 'client' : (old.kind || 'internal')
+            kind: r.kind === 'client' ? 'client' : (old.kind || 'internal'),
+            role: String(r.role || '').trim() || old.role || ''
           });
         });
         if (brandNew.size) {
@@ -9184,7 +9220,8 @@ ${aiSchemaHint()}`];
           const old = resources[nm] || prevByLower[nm.toLowerCase()] || {};
           resources[nm] = Object.assign({}, old, {
             capacity: (Number.isFinite(cap) && cap > 0) ? cap : ((+old.capacity > 0) ? +old.capacity : 100),
-            kind: r.kind === 'client' ? 'client' : (old.kind || 'internal') // AI can flag client, never silently demote one
+            kind: r.kind === 'client' ? 'client' : (old.kind || 'internal'), // AI can flag client, never silently demote one
+            role: String(r.role || '').trim() || old.role || ''
           });
         });
       }
