@@ -3971,7 +3971,21 @@
             <div class="stat-card warn" style="cursor:help" title="80% of simulated runs finished by this date — the standard commit level for client dates. Only 1-in-5 chance of overrunning."><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p80))}</div><div class="label">P80 (${mcResult.p80.toFixed(1)} ${u})</div></div>
             <div class="stat-card warn" style="cursor:help" title="90% confidence — use for hard external deadlines (regulatory, events) where missing is very expensive."><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p90))}</div><div class="label">P90 (${mcResult.p90.toFixed(1)} ${u})</div></div>
             <div class="stat-card critical" style="cursor:help" title="95% confidence — the near-worst-case planning envelope."><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p95))}</div><div class="label">P95 (${mcResult.p95.toFixed(1)} ${u})</div></div>
-          </div>`;
+          </div>
+          <details style="margin-top:0.75rem;background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:0.6rem 0.9rem">
+            <summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">📖 How to read this chart — what P50 / P80 / P95 actually mean (plain English)</summary>
+            <div style="font-size:0.83rem;line-height:1.55;margin-top:0.5rem">
+              <p style="margin:0 0 0.5rem"><b>The tool ran your project ${mcResult.iters.toLocaleString()} times in simulation.</b> In every run, each task randomly lands somewhere between its Optimistic and Pessimistic estimate (usually near Most Likely), and the finish date is recalculated. <b>Each bar counts how many of those simulated futures finished in that time bucket</b> — hover a bar and “17.1 ${u}: 153” means 153 of the ${mcResult.iters.toLocaleString()} futures finished in about 17.1 ${u}. Tall bars in the middle = the most likely outcomes; the thin tails = lucky and unlucky extremes.</p>
+              <p style="margin:0 0 0.35rem">A “P-number” is simply <b>the percentage of those futures that finished by a date</b> — your confidence level:</p>
+              <ul style="margin:0 0 0.5rem 1.1rem;padding:0">
+                <li><b>P50 (${fmtNice(durationToDate(mcResult.p50))})</b> — half the futures finish by here. <b>A coin flip.</b> Manage the team to it internally, but promise it externally and you will be late on every other engagement.</li>
+                <li><b>P80 (${fmtNice(durationToDate(mcResult.p80))})</b> — 4 out of 5 futures finish by here. <b>The industry-standard commitment level</b> for client dates: only a 1-in-5 chance of overrunning, without padding so much that you lose the deal.</li>
+                <li><b>P90 / P95</b> — 9-in-10 / 19-in-20 confidence. For hard deadlines with real penalties (regulatory dates, events) where being late is far more expensive than reserving extra time.</li>
+              </ul>
+              <p style="margin:0 0 0.5rem"><b>Why can two P-levels show the same calendar date?</b> ${mcResult.p50.toFixed(1)} and ${mcResult.p80.toFixed(1)} ${u} are different amounts of work, but dates land on working days only (weekends &amp; holidays are skipped), so both can round onto the same day. The day-counts in the small print are the precise values.</p>
+              <p style="margin:0"><b>What to do with it:</b> ① commit externally at <b>P80</b> — the “P80 — click to commit” chip on the project-total row (Tasks tab) holds the P50→P80 gap as a visible contingency buffer instead of inflating estimates; ② manage the team to the expected dates on the Gantt; ③ to move the whole curve LEFT, fix the uncertainty drivers listed below — decompose the wide estimates, parallelize the chained ones. The spread of this chart <i>is</i> your schedule risk.</p>
+            </div>
+          </details>`;
 
         // ---- Why is risk what it is, and what to do about it ----
         const spreadAbs = mcResult.p90 - mcResult.p50;
