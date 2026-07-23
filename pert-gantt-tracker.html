@@ -2207,7 +2207,10 @@
           <td style="font-size:0.8rem;white-space:nowrap">${fmtNice(finish)}</td>
           <td>—</td>
           <td>${Math.round(overallProgress())}% <span class="help-text" style="font-size:0.65rem">auto</span></td>
-          <td>${mcResult ? `<span class="badge badge-info" style="cursor:pointer" onclick="switchTab('analytics')" title="P80 finish ${escapeHtml(fmtNice(durationToDate(mcResult.p80)))} — the commit-safe date. Click for the full simulation.">P80 ${escapeHtml(fmtNice(durationToDate(mcResult.p80)))}</span>` : ''}</td>
+          <td>${mcResult ? (() => { const rv = computeReserves(); const committed = rv.contingencyUnits > 0;
+            return committed
+              ? `<span class="badge badge-done" style="cursor:pointer" onclick="switchTab('analytics')" title="Committed date ${escapeHtml(fmtNice(rv.committedDate))} = CPM finish + contingency buffer (sized from P80). The Finish column stays the honest expected date; the buffer is the hatched bar on the Gantt. Click for the simulation.">✅ commit ${escapeHtml(fmtNice(rv.committedDate))}</span>`
+              : `<span class="badge badge-info" style="cursor:pointer" onclick="commitToP80()" title="P80 finish ${escapeHtml(fmtNice(durationToDate(mcResult.p80)))} — the commit-safe date (80% of simulations finish by then; the Finish column is only ~P50). CLICK to size the contingency reserve so your committed date = P80: task estimates stay honest, the buffer becomes a visible hatched bar on the Gantt and flows into the SOW committed date.">P80 ${escapeHtml(fmtNice(durationToDate(mcResult.p80)))} — click to commit</span>`; })() : ''}</td>
           <td></td>
         </tr>`;
       }
@@ -7991,14 +7994,49 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           const sel = document.getElementById('sowDepth');
           const depthSetting = (sel && sel.value) || pricing.sowDepth || 'all';
           const maxD = depthSetting === 'all' ? Infinity : Number(depthSetting);
+          const partyOf = names => {
+            const uniq = [...new Set(names.filter(Boolean))];
+            const cl = uniq.filter(isClientResource), dl = uniq.filter(pn => !isClientResource(pn));
+            const short = a => a.slice(0, 2).join(', ') + (a.length > 2 ? ' +' + (a.length - 2) : '');
+            if (cl.length && dl.length) return 'Joint — ' + short(dl) + ' / CLIENT: ' + short(cl);
+            if (cl.length) return 'CLIENT — ' + short(cl);
+            if (dl.length) return short(dl);
+            return '—';
+          };
           return tasksInWbsOrder().filter(({ task: t, depth }) => t.milestone || depth < maxD).map(({ task: t, depth }) => ({
             wbs: t.wbs, depth, name: t.name, summary: t.isSummary, milestone: t.milestone,
             deliverable: t.deliverable, description: t.description, acceptance: t.acceptance, owner: t.owner,
+            resp: partyOf(t.isSummary
+              ? leafDescendants(t.id).flatMap(x => taskParticipants(x).map(pr => pr.name))
+              : taskParticipants(t).map(pr => pr.name)),
+            // summaries ALWAYS show the rolled-up total of their leaves — a
+            // blank duration on a phase row reads like an omission
             effort: (clientSafeReports || t.milestone) ? null
               : t.isSummary
-                ? ((depth === maxD - 1) ? leafDescendants(t.id).reduce((sx, x) => sx + (x.te || 0), 0).toFixed(1) + ' ' + u + ' (rolled up)' : null)
+                ? leafDescendants(t.id).reduce((sx, x) => sx + (x.te || 0), 0).toFixed(1) + ' ' + u + ' (rolled up)'
                 : (t.te || 0).toFixed(1) + ' ' + u
           }));
+        })(),
+        // aggregated non-functional requirements across all stories (deduped, with story refs)
+        nfrs: (() => {
+          const map = new Map();
+          ((reqs && reqs.stories) || []).forEach(s => (s.nfrs || []).forEach(nf => {
+            const k = String(nf).trim(); if (!k) return;
+            const e = map.get(k) || []; e.push(s.id); map.set(k, e);
+          }));
+          return [...map.entries()].map(([text, refs]) => ({ text, refs: refs.slice(0, 6).join(', ') + (refs.length > 6 ? '…' : '') }));
+        })(),
+        // client dependencies (story "D:") — each with its slip consequence baked in
+        clientDeps: (() => {
+          const out = [];
+          ((reqs && reqs.stories) || []).forEach(s => (s.assumptions || []).forEach(x => { if (/^D:/i.test(x)) out.push({ text: String(x).replace(/^D:\s*/i, ''), ref: s.id }); }));
+          return out;
+        })(),
+        // story-level assumptions ("A:") with impact-if-false — merged into §Assumptions
+        storyAssumps: (() => {
+          const out = [];
+          ((reqs && reqs.stories) || []).forEach(s => (s.assumptions || []).forEach(x => { if (/^A:/i.test(x)) out.push(String(x).replace(/^A:\s*/i, '') + ' (' + s.id + ')'); }));
+          return out;
         })(),
         milestones: tasks.filter(t => t.milestone).map(t => ({ name: t.name, date: fmtNice(t.finishDate) })),
         team: Object.keys(resources).filter(n => !isClientResource(n)).map(n => ({ role: n, capacity: getCapacity(n), billRate: getBillRate(n) })).filter(r => tasks.some(t => taskParticipants(t).some(pr => pr.name === r.role))),
@@ -8024,14 +8062,16 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       const showRates = !d.clientSafe && d.team.some(x => x.billRate);
       const scopeRows = d.scope.map(r => `<tr style="${r.summary ? 'font-weight:700;background:#f8fafc' : ''}">
         <td style="${td}">${h(r.wbs)}</td><td style="${td};padding-left:${9 + r.depth * 14}px">${r.milestone ? '◆ ' : ''}${h(r.name)}</td>
-        <td style="${td}">${h(r.deliverable)}</td><td style="${td}">${h(r.description)}</td><td style="${td}">${h(r.acceptance)}</td>${showEffort ? `<td style="${td}">${h(r.effort || '')}</td>` : ''}</tr>`).join('');
+        <td style="${td}">${h(r.deliverable)}</td><td style="${td}">${h(r.description)}</td><td style="${td}">${h(r.acceptance)}</td>
+        <td style="${td}${String(r.resp || '').indexOf('CLIENT') === 0 ? 'background:#fffbeb;' : ''}">${h(r.resp || '—')}</td>${showEffort ? `<td style="${td}">${h(r.effort || '')}</td>` : ''}</tr>`).join('');
       return `<div style="font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;max-width:900px">
         <h1 style="margin:0 0 2px;font-size:22px">Statement of Work — ${h(d.name)}</h1>
         <p style="color:#64748b;font-size:12px;margin:0 0 14px">DRAFT generated ${new Date().toLocaleDateString()} — review all terms before sending. Timeline ${h(d.start)} → ${h(d.finish)}${d.committed ? ' (committed date incl. contingency: ' + h(d.committed) + ')' : ''}.</p>
         <h2 style="font-size:16px;margin:16px 0 6px">1. Overview &amp; Objectives</h2><p style="font-size:13px">${n.overview || '<em>[Describe the business context and objectives of this engagement.]</em>'}</p>
         <h2 style="font-size:16px;margin:16px 0 6px">2. Scope of Work &amp; Deliverables</h2>
         <p style="font-size:13px">${n.scopeNarrative || ''}</p>
-        <table style="border-collapse:collapse"><tr><th style="${th}">WBS</th><th style="${th}">Work item</th><th style="${th}">Deliverable</th><th style="${th}">Description</th><th style="${th}">Acceptance criteria</th>${showEffort ? `<th style="${th}">Effort</th>` : ''}</tr>${scopeRows}</table>
+        <table style="border-collapse:collapse"><tr><th style="${th}">WBS</th><th style="${th}">Work item</th><th style="${th}">Deliverable</th><th style="${th}">Description</th><th style="${th}">Acceptance criteria</th><th style="${th}" title="Who performs the work — CLIENT rows are the client's obligations and are highlighted">Responsible</th>${showEffort ? `<th style="${th}">Effort</th>` : ''}</tr>${scopeRows}</table>
+        <p style="font-size:11.5px;color:#64748b;margin:4px 0 0">Effort is in working ${h((typeof unitLabel === 'function' ? unitLabel() : 'days'))}; phase rows show the rolled-up total of their contained work. Rows marked <b>CLIENT</b> (highlighted) are client responsibilities — their timely completion is a schedule dependency.</p>
         <h2 style="font-size:16px;margin:16px 0 6px">3. Out of Scope</h2>
         ${d.exclusions.length ? '<ul style="font-size:13px">' + d.exclusions.map(x => '<li>' + h(x) + '</li>').join('') + '</ul>' : `<p style="font-size:13px">${n.outOfScope || '<em>[List explicit exclusions.]</em>'}</p>`}
         <h2 style="font-size:16px;margin:16px 0 6px">4. Timeline &amp; Milestones</h2>
@@ -8046,12 +8086,28 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         <p style="font-size:12.5px;color:#475569">The client will make the following resources available; timely participation is a dependency of the schedule and pricing above.</p>
         <table style="border-collapse:collapse"><tr><th style="${th}">Client resource</th><th style="${th}">Participates in</th></tr>
         ${d.clientTeam.map(c => `<tr><td style="${td}">${h(c.role)}</td><td style="${td}">${c.duties.map(h).join('; ')}</td></tr>`).join('')}</table>` : ''}
-        ${d.price ? `<h2 style="font-size:16px;margin:16px 0 6px">6. Commercial Terms</h2>
+        ${d.nfrs && d.nfrs.length ? `<h2 style="font-size:16px;margin:16px 0 6px">6. Non-Functional Requirements</h2>
+        <p style="font-size:12.5px;color:#475569">Quality attributes the delivered solution must meet in addition to the functional acceptance criteria — each traces to the stories listed.</p>
+        <table style="border-collapse:collapse;width:100%"><tr><th style="${th}">Requirement</th><th style="${th};width:140px">Applies to</th></tr>
+        ${d.nfrs.map(x => `<tr><td style="${td}">${h(x.text)}</td><td style="${td}">${h(x.refs)}</td></tr>`).join('')}</table>` : ''}
+        ${d.clientDeps && d.clientDeps.length ? `<h2 style="font-size:16px;margin:16px 0 6px">7. Client Responsibilities &amp; Dependencies</h2>
+        <p style="font-size:12.5px;color:#475569">The schedule and price assume the client meets each item below by the time the dependent work starts; each entry states the consequence of a slip. CLIENT-marked rows in §2 apply in addition.</p>
+        <table style="border-collapse:collapse;width:100%"><tr><th style="${th}">Dependency (with slip consequence)</th><th style="${th};width:80px">Story</th></tr>
+        ${d.clientDeps.map(x => `<tr><td style="${td}">${h(x.text)}</td><td style="${td}">${h(x.ref)}</td></tr>`).join('')}</table>` : ''}
+        ${d.price ? `<h2 style="font-size:16px;margin:16px 0 6px">8. Commercial Terms</h2>
         <p style="font-size:13px"><b>${d.price.model}:</b> ${d.price.amount}${d.price.model === 'Fixed price' ? ' (risk-adjusted at ' + d.price.basis + ' effort basis)' : ''}. ${n.paymentTerms || '<em>[Payment schedule — e.g. per milestone above.]</em>'}</p>` : ''}
-        <h2 style="font-size:16px;margin:16px 0 6px">${d.price ? '7' : '6'}. Assumptions</h2>
-        ${d.assumptions.length ? '<ul style="font-size:13px">' + d.assumptions.map(x => '<li>' + h(x) + '</li>').join('') + '</ul>' : '<p style="font-size:13px"><em>[Add assumptions to the RAID log and regenerate.]</em></p>'}
-        <h2 style="font-size:16px;margin:16px 0 6px">${d.price ? '8' : '7'}. Acceptance Process</h2><p style="font-size:13px">${n.acceptanceProcess || 'Deliverables are accepted against the acceptance criteria in §2. The client has five (5) business days to review each deliverable; absent written feedback within that window the deliverable is deemed accepted.'}</p>
-        <h2 style="font-size:16px;margin:16px 0 6px">${d.price ? '9' : '8'}. Change Control</h2><p style="font-size:13px">${n.changeControl || 'Changes to scope, schedule, or price require a written change order describing the impact, approved by both parties before work proceeds.'}</p>
+        <h2 style="font-size:16px;margin:16px 0 6px">9. Assumptions</h2>
+        ${(d.assumptions.length || (d.storyAssumps && d.storyAssumps.length))
+          ? '<ul style="font-size:13px">' + d.assumptions.map(x => '<li>' + h(x) + '</li>').join('') + (d.storyAssumps || []).map(x => '<li>' + h(x) + '</li>').join('') + '</ul>'
+          : '<p style="font-size:13px"><em>[Add assumptions to the RAID log or to stories ("A:") and regenerate.]</em></p>'}
+        <h2 style="font-size:16px;margin:16px 0 6px">10. Acceptance Process &amp; Defect Severity</h2>
+        <p style="font-size:13px">${n.acceptanceProcess || 'Deliverables are accepted against the acceptance criteria in §2 and the story-level criteria in the appendix. The client has five (5) business days to review each deliverable; absent written feedback within that window the deliverable is deemed accepted.'}</p>
+        <table style="border-collapse:collapse;width:100%"><tr><th style="${th};width:90px">Severity</th><th style="${th}">Definition</th><th style="${th}">Acceptance gate</th></tr>
+          <tr><td style="${td}"><b>S1 — Critical</b></td><td style="${td}">Blocks a primary flow or corrupts data; no workaround.</td><td style="${td}">Zero open S1 at acceptance.</td></tr>
+          <tr><td style="${td}"><b>S2 — Major</b></td><td style="${td}">A committed criterion fails; workaround exists but is unreasonable for daily use.</td><td style="${td}">Accepted only with a written remediation date.</td></tr>
+          <tr><td style="${td}"><b>S3 — Minor</b></td><td style="${td}">Cosmetic-plus: wrong text, layout, non-blocking validation gaps.</td><td style="${td}">Logged; scheduled into support/hypercare.</td></tr>
+          <tr><td style="${td}"><b>S4 — Cosmetic</b></td><td style="${td}">Trivial visual polish with no functional impact.</td><td style="${td}">Does not affect acceptance.</td></tr></table>
+        <h2 style="font-size:16px;margin:16px 0 6px">11. Change Control</h2><p style="font-size:13px">${n.changeControl || 'Changes to scope, schedule, or price require a written change order describing the impact, approved by both parties before work proceeds.'}</p>
         ${d.risks.length ? `<h2 style="font-size:16px;margin:16px 0 6px">Appendix — Key Delivery Risks</h2><ul style="font-size:13px">${d.risks.map(x => '<li>' + h(x) + '</li>').join('')}</ul>` : ''}
         ${d.storiesAppendix ? d.storiesAppendix : ''}
       </div>`;
@@ -8095,6 +8151,11 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       let body = '';
       (reqs.epics || []).forEach(ep => { body += block(ep.id + ' — ' + (ep.title || ''), reqs.stories.filter(s => (s.epicId || '—') === ep.id)); });
       body += block('Other stories', reqs.stories.filter(s => !rendered.has(s.id)));
+      // completeness receipt: stories are grouped by EPIC, so one added later
+      // (e.g. US-17 into EP-3) appears mid-document — this line proves nothing
+      // was cut off even when the last table doesn't end on the highest ID
+      const ids = reqs.stories.map(s => s.id);
+      body += `<p style="font-size:11.5px;color:#64748b;margin:8px 0 0">This appendix lists all <b>${reqs.stories.length}</b> user stories (${escapeHtml(ids[0] || '')} … ${escapeHtml(ids[ids.length - 1] || '')}), grouped by epic — stories added later appear under their epic, not in ID order.</p>`;
       return body ? out + body : '';
     }
     async function svgMarkupToPngDataUrl(markup, scale) {
@@ -8124,9 +8185,20 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       if (smSel && smSel.value) pricing.sowStoriesMode = smSel.value;
       const d = sowSkeletonData();
       d.storiesAppendix = sowStoriesAppendix();
-      // embed the Gantt ONCE (it used to be embedded twice — two separately
-      // rendered PNGs — doubling document size and localStorage pressure)
-      try { d.ganttImg = await svgMarkupToPngDataUrl(buildGanttSvg().markup, 1.5); } catch (e) { d.ganttImg = null; }
+      // embed the Gantt ONCE, at the SAME detail level as the §2 scope table —
+      // an L2 SOW gets an L2 chart, not every leaf task
+      try {
+        const depthSetting = (sdSel && sdSel.value) || pricing.sowDepth || 'all';
+        const maxD = depthSetting === 'all' ? Infinity : Number(depthSetting);
+        const savedCollapse = new Set(collapsedIds);
+        if (Number.isFinite(maxD)) {
+          computeWbsCodes();
+          collapsedIds = new Set();
+          tasksInWbsOrder().forEach(({ task, depth }) => { if (isSummaryId(task.id) && depth >= maxD - 1) collapsedIds.add(task.id); });
+        }
+        try { d.ganttImg = await svgMarkupToPngDataUrl(buildGanttSvg().markup, 1.5); }
+        finally { collapsedIds = savedCollapse; }
+      } catch (e) { d.ganttImg = null; }
       d.ganttDataUrl = null;
       const hasKey = !!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE));
       let narrative = null;
@@ -8508,6 +8580,17 @@ Focus on: scope that is obviously missing for this type of work; estimates that 
 
     // From the criticality table: tailored treatment per high-criticality task —
     // wide estimates get decomposed, tight-but-chained ones get re-sequenced.
+    // One click on the P80 chip: size the contingency reserve so the COMMITTED
+    // date = the P80 Monte-Carlo finish. Task estimates stay honest (TE) — the
+    // buffer is explicit, visible on the Gantt, and flows into the SOW.
+    function commitToP80() {
+      if (!mcResult) { switchTab('analytics'); flashSaved('Run Monte Carlo first (Analytics) — then the P80 chip can size the buffer.'); return; }
+      setContingencyFromP80();
+      if (calculated) recompute();
+      refreshAll();
+      const rv = computeReserves();
+      flashSaved('✅ Committed date is now ' + fmtNice(rv.committedDate) + ' (= P80): contingency ' + rv.contingencyUnits.toFixed(1) + ' ' + unitLabel() + ' added as a visible buffer — task dates stay honest, the SOW quotes the committed date.');
+    }
     function critFixWithAI() {
       const rows = leafTasks().filter(t => !t.milestone && (t.criticality || 0) >= 0.8);
       if (!rows.length) { flashSaved('No high-criticality activities right now.'); return; }
@@ -8518,7 +8601,7 @@ Focus on: scope that is obviously missing for this type of work; estimates that 
           : 'PARALLELIZE: re-sequence or split it so parts overlap with other work, or assign an additional resource — its estimate is already tight, the problem is the single-file chain.');
       }).join('\n');
       document.getElementById('aiMode').value = 'merge';
-      document.getElementById('aiNotes').value = 'Reduce schedule risk on the critical chain. Apply the stated treatment to each activity below and keep every other task, estimate, owner and dependency exactly as it is:\n' + lines;
+      document.getElementById('aiNotes').value = 'Reduce schedule risk on the critical chain. Apply the stated treatment to each activity below and keep every other task, estimate, owner and dependency exactly as it is.\nHARD RULES: NEVER add duplicate or "(Parallel Track)" copy tasks — that inflates total effort and price. Parallelize ONLY by (a) splitting an existing task into parts whose O/M/P SUM to the original, with dependencies letting the parts overlap, or (b) re-sequencing dependencies, or (c) assigning an additional existing resource to the same task. Total estimated effort must stay the same; if you believe genuinely new scope is needed, list it separately as "PROPOSED ADDITIONAL SCOPE" instead of silently adding tasks.\n' + lines;
       switchTab('tasks');
       document.getElementById('aiNotes').scrollIntoView({ behavior: 'smooth', block: 'center' });
       flashSaved('✍ Risk-fix request pre-filled for ' + rows.length + ' activit' + (rows.length === 1 ? 'y' : 'ies') + ' — review it, then press ✨ Generate Plan');
