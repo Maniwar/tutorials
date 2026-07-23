@@ -8560,6 +8560,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       const findings = [];
       const leaves = leafTasks().filter(t => !t.milestone);
       leaves.forEach(t => {
+        if (!(t.p > 0)) findings.push({ severity: 'high', area: 'Missing estimate', finding: `"${t.name}" is a work package with NO O/M/P estimate — it is invisible to the schedule, the critical path and the price`, recommendation: 'Open it (✎) and enter a 3-point estimate — or make it a milestone if it is genuinely a zero-duration checkpoint.' });
         if (t.p > 0 && (t.p - t.o) < 0.35 * t.m) findings.push({ severity: 'medium', area: 'Estimate range', finding: `"${t.name}" range ${t.o}–${t.p} is very narrow vs likely ${t.m}`, recommendation: 'Widen O–P (classic overconfidence); ranges usually span ≥ ±30% of M.' });
         if ((t.te || 0) > (document.getElementById('durationUnit').value === 'hours' ? 80 : 10)) findings.push({ severity: 'medium', area: 'Granularity', finding: `"${t.name}" is ${(t.te || 0).toFixed(1)} ${u} — too big to estimate or track reliably`, recommendation: 'Decompose (⑂) into 2–8 ' + u + ' work packages (8/80 rule).' });
         if (!t.owner) findings.push({ severity: 'low', area: 'Ownership', finding: `"${t.name}" has no owner`, recommendation: 'Assign a resource so workload and accountability are tracked.' });
