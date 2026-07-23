@@ -746,9 +746,9 @@
         <div class="card-header">
           <h2>Resource Workload &amp; Over-allocation</h2>
           <div class="toolbar no-print">
-            <button class="btn-primary btn-sm" onclick="autoLevel()" title="Delay non-critical tasks within their slack — finish date stays fixed">⚖ Level within slack</button>
-            <button class="btn-sm" style="background:#fef3c7;color:#b45309" onclick="autoLevelExtend()" title="Resolve every conflict even if the finish date must move out — use when you can't add people">📅 Level &amp; extend timeline</button>
-            <button class="btn-secondary btn-sm" onclick="clearLeveling()">↺ Clear leveling</button>
+            <button id="levelSlackBtn" class="btn-primary btn-sm" onclick="autoLevel()" title="Delay non-critical tasks within their slack — finish date stays fixed">⚖ Level within slack</button>
+            <button id="levelExtendBtn" class="btn-sm" style="background:#fef3c7;color:#b45309" onclick="autoLevelExtend()" title="Resolve every conflict even if the finish date must move out — use when you can't add people">📅 Level &amp; extend timeline</button>
+            <button id="clearLevelBtn" class="btn-secondary btn-sm" onclick="clearLeveling()">↺ Clear leveling</button>
           </div>
         </div>
         <div class="card-body">
@@ -4955,8 +4955,8 @@
           ? `<span style="color:var(--warn);font-weight:700"> Finish extended by ${ext.toFixed(1)} ${u} vs the un-leveled plan</span> — if the client accepts the new dates, <button class="btn-sm btn-secondary" onclick="setBaseline()">re-baseline</button>.`
           : ' (project end unchanged).';
         levelBanner = `<div class="conflict-card" style="border-left-color:${levelMode === 'extend' ? 'var(--warn)' : 'var(--primary)'};margin-top:0;margin-bottom:0.75rem;background:${levelMode === 'extend' ? '#fffbeb' : '#eff6ff'}">
-             ⚖ <strong>Resource leveling is applied (${levelMode === 'extend' ? 'timeline may extend' : 'within slack'})</strong> — ${leveledCount} task${leveledCount>1?'s have':' has'} a start-no-earlier-than shift${extNote}
-             <button class="btn-sm btn-secondary" style="margin-left:6px" onclick="clearLeveling()">Clear leveling</button>
+             ✅ <strong>Resource leveling is APPLIED</strong> — mode: <b>${levelMode === 'extend' ? '📅 extend timeline' : '⚖ within slack'}</b>. This is a receipt, not a pending action: you already ran it, ${leveledCount} task${leveledCount>1?'s carry':' carries'} a start-no-earlier-than shift, and it stays applied on every recalculation until cleared.${extNote}
+             <span class="help-text" style="display:block;margin-top:0.25rem">Re-clicking a Level button just re-runs it against the latest plan (safe). <button class="btn-sm btn-secondary" onclick="clearLeveling()">↺ Clear leveling</button> undoes the shifts.</span>
            </div>`;
       }
       cont.innerHTML = `
@@ -4978,6 +4978,21 @@
         </div>
         ${summary}
         ${billingBreakdownHtml()}`;
+
+      // reflect the applied leveling mode on the header buttons — "applied"
+      // state lives on the button itself, so the banner reads as a receipt
+      (() => {
+        const active = leveledCount > 0 ? levelMode : 'none';
+        const sb = document.getElementById('levelSlackBtn'), eb = document.getElementById('levelExtendBtn'), cb = document.getElementById('clearLevelBtn');
+        if (!sb || !eb || !cb) return;
+        sb.textContent = active === 'slack' ? '✅ Leveled within slack — applied' : '⚖ Level within slack';
+        eb.textContent = active === 'extend' ? '✅ Leveled & extended — applied' : '📅 Level & extend timeline';
+        sb.style.outline = active === 'slack' ? '2px solid var(--primary)' : '';
+        eb.style.outline = active === 'extend' ? '2px solid #b45309' : '';
+        sb.title = active === 'slack' ? 'Already applied — clicking again re-runs leveling against the latest plan (safe)' : 'Delay non-critical tasks within their slack — finish date stays fixed';
+        eb.title = active === 'extend' ? 'Already applied — clicking again re-runs leveling against the latest plan (safe)' : 'Resolve every conflict even if the finish date must move out — use when you can\'t add people';
+        cb.style.display = active === 'none' ? 'none' : '';
+      })();
 
       // bind inputs/buttons by index (safe against names with quotes)
       cont.querySelectorAll('input.rl-cap').forEach(inp => {
