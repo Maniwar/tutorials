@@ -305,6 +305,7 @@
           <button onclick="exportWBSDictionaryCSV()">WBS dictionary (.csv)</button>
           <button onclick="exportResourcesCSV()">Resources &amp; PTO (.csv)</button>
           <button onclick="exportJSON()">Backup / Reopen (.json)</button>
+          <button onclick="exportEditableWorkbook()" title="Four editable CSVs — activities & estimates, user stories & acceptance criteria, test cases & results, RAID log. Send them to the client, take the edited files back with IMPORT: rows are matched by their ID column (leave the ID blank on new rows). Changed criteria offer test-case regeneration; failed test results open RAID issues.">✏️ Editable workbook (4 CSVs)</button>
           <button onclick="exportAllProjects()" title="One file with EVERY project in this browser — use it to move your whole library to another browser or to the GitHub Pages site (browser storage is per-site, so projects don't follow the app there by themselves). Restore with IMPORT on the other side.">📦 Backup ALL projects (.json)</button>
           <div class="grp">Visuals</div>
           <button onclick="downloadChartSVG('gantt')">Gantt (.svg)</button>
@@ -314,7 +315,7 @@
       </details>
       <label class="btn-ghost btn-sm" style="cursor:pointer;margin:0">
         Import
-        <input type="file" accept=".json" onchange="importJSON(event)" style="display:none" />
+        <input type="file" accept=".json,.csv" onchange="importJSON(event)" style="display:none" title="A .json backup opens as its own project; an ✏️ editable-workbook .csv merges into the open project by ID" />
       </label>
       <button class="btn-ghost btn-sm" id="diskAutoBtn" onclick="setupDiskAutosave()" title="Pick a .json file once — every change then auto-saves to it on your disk (Chrome/Edge)">💾 Auto-save file</button>
       <button class="btn-secondary btn-sm" onclick="resetProject()" title="Start a fresh plan — the current project stays saved in the 📁 Projects menu">New Project</button>
@@ -563,6 +564,7 @@
             <button class="btn-secondary btn-sm" onclick="exportTestCasesCSV()" title="UAT execution sheet (CSV): one row per test case with numbered steps, expected result, owner, schedule, and blank Result / Defect columns for the tester to fill in">⬇ Test cases (.csv)</button>
             <button class="btn-secondary btn-sm" onclick="exportTestCasesXLS()" title="Same execution sheet formatted for Excel: styled header, wrapped steps, yellow fill-in columns. Excel shows a one-time format notice, then opens normally.">⬇ Excel</button>
             <button class="btn-secondary btn-sm" onclick="exportReqsMarkdown()" title="Full requirements document: personas, epics, stories, ACs, NFRs, assumptions — ready for the SOW appendix">⬇ Markdown</button>
+            <button class="btn-secondary btn-sm" onclick="exportStoriesEditableCSV()" title="One row per acceptance criterion, Excel-safe. Send it to the client for edits, then bring the edited file back with IMPORT — stories merge by Story ID (blank ID = new story) and changed criteria offer test-case regeneration.">✏️ Editable stories (.csv)</button>
             <button class="btn-secondary btn-sm" onclick="exportTraceCSV()" title="Traceability matrix: one row per acceptance criterion — epic → story → AC → test cases → WBS item → status">⬇ Traceability (.csv)</button>
             <button class="btn-secondary btn-sm" onclick="exportTraceXLS()" title="Same traceability matrix formatted for Excel: styled header, sized columns, line breaks inside Given/When/Then and test-case cells. Excel shows a one-time format notice, then opens normally.">⬇ Traceability Excel</button>
           </div>
@@ -7202,13 +7204,22 @@ Write the test cases for the criteria above, following the contract exactly. Ret
         <select class="st-ac-type" title="happy = it works · error = fails gracefully · edge = boundaries/empty/timeouts · perf = measured threshold" style="padding:0.35rem 0.4rem;font-size:0.8rem">
           <option value="happy">✅ happy path</option><option value="error">⚠️ error path</option>
           <option value="edge">🧪 edge case</option><option value="perf">📏 performance</option></select>
-        <textarea class="st-ac-text" rows="2" placeholder="Given … When … Then …" oninput="autoGrowTA(this)" style="font-size:0.85rem"></textarea>
+        <textarea class="st-ac-text" rows="2" placeholder="Given … When … Then …" oninput="autoGrowTA(this);stAcGwtHint(this)" style="font-size:0.85rem"></textarea>
         <button type="button" class="btn-sm btn-danger" title="Remove this criterion" onclick="this.parentElement.remove()">✕</button>`;
       if (/^(happy|error|edge|perf)$/.test(String(a.type))) row.querySelector('select').value = a.type;
       row.querySelector('textarea').value = a.text || '';
       wrap.appendChild(row);
       autoGrowTA(row.querySelector('textarea'));
+      stAcGwtHint(row.querySelector('textarea'));
       return row;
+    }
+    // live nudge while typing: a criterion needs ALL THREE of Given/When/Then
+    // (And-clauses welcome) before it can translate into a test case
+    function stAcGwtHint(ta) {
+      const v = String(ta.value || '').trim();
+      const okGwt = !v || /given[\s\S]*when[\s\S]*then/i.test(v);
+      ta.style.borderColor = okGwt ? '' : '#f59e0b';
+      ta.title = okGwt ? '' : 'Not in full Given / When / Then form yet — state the initial context (Given), the trigger (When) AND the observable outcome (Then). Multiple And-clauses are fine; a second When means split into two criteria.';
     }
     function stAcEntries() {
       return [...document.querySelectorAll('#stAcRows .st-ac-row')]
@@ -7451,13 +7462,13 @@ ${JSON.stringify({ id: s.id, persona: s.persona, want: s.want, soThat: s.soThat,
 Rewrite the acceptance criteria so they describe the CURRENT intended behaviour. Keep criteria that are still correct VERBATIM; rewrite stale ones; drop obsolete ones; add missing error/edge coverage.
 Rules:
 - The persona is WHO ACCEPTS THE VALUE (client-side user/manager/stakeholder) — never the developer/consultant delivering the work.
-- Each criterion is ONE Given [state] When [action] Then [measurable outcome] — binary pass/fail, observable from outside the system, no implementation detail.
+- Each criterion is ONE Given [state] When [action] Then [measurable outcome] — FILL EVERY SLOT (a Given-only fragment is not a criterion); "And" clauses welcome in every section; time-bound outcomes where timing matters ("within 2 seconds"); binary pass/fail, observable from outside the system, no implementation detail.
 - Cover the happy path + ≥1 error path + ≥1 edge case; add a perf criterion only with a number AND its measurement condition.
 - BANNED untestable words: fast, quick, responsive, seamless, smooth, intuitive, user-friendly, easy, robust, reliable, scalable, real-time, secure, handle, support, manage — write the number and its measurement condition instead.
 - nfrs carry numbers; assumptions are "A: … — impact if false: …", client dependencies "D: … — if slipped: …".
 - AC ids: "${acBase}.1", "${acBase}.2", … sequential from .1.
 Return ONLY JSON (no prose, no fences):
-{${opts.includeCore ? '"persona":"…","want":"…","soThat":"…",' : ''}"ac":[{"id":"${acBase}.1","type":"happy|error|edge|perf","text":"Given … When … Then …"}],"nfrs":["…"],"assumptions":["…"]}`;
+{${opts.includeCore ? '"persona":"…","want":"…","soThat":"…",' : ''}"ac":[{"id":"${acBase}.1","type":"happy|error|edge|perf","text":"Given … [And …] When … Then … [And …]"}],"nfrs":["…"],"assumptions":["…"]}`;
       const onDelta = streamShow('Re-drafting ' + s.id + (opts.includeCore ? ' (story + criteria)' : ' acceptance criteria'));
       let res;
       try {
@@ -7593,7 +7604,7 @@ Return ONLY JSON (no prose, no fences):
 - Personas are specific named roles ("as a user" is banned — an admin story and an end-user story with identical wording can differ 3× in cost). Define every persona used in personas[] — the glossary belongs in the SOW.
 - The persona is WHO RECEIVES AND ACCEPTS THE VALUE — a client-side user, manager or stakeholder — NEVER the person delivering the work. Delivery-team roles (developer, engineer, consultant, implementation specialist, QA/tester as builder) are BANNED as personas for build/design/configure activities: "As a Sprinklr Developer, I want to configure the data model" is a to-do item, not a user story, and the client cannot accept it. Write the beneficiary instead: "As an operations manager, I want agent NPS aggregated on accurate case data, so that quartile rankings reflect true performance." A delivery-side persona is acceptable ONLY when the deliverable's direct consumer genuinely is the delivery team (e.g. an internal runbook). This ban applies to PRODUCT stories (verification "uat"). PROCESS/governance stories (verification "artifact" — kickoff, requirements elicitation, documentation, training delivery, internal QA execution, sign-offs) keep the RESPONSIBLE ROLE as persona ("As a Project Manager, I want to conduct the kickoff…") — never contort them into a client voice ("As a Client Stakeholder, I want to conduct a kickoff meeting with client stakeholders" is nonsense).
 - personas[] is the glossary of those CLIENT-SIDE user/business roles, each with a one-line definition for the SOW. The WBS outline's "owner:" labels are the DELIVERY ROSTER — never copy roster names into personas[]; derive personas from the domain and who consumes each capability (e.g. operations manager, team lead, frontline agent, program sponsor, compliance reviewer).
-- Acceptance criteria per story, each ONE criterion in Given [initial state/context] When [specific action or trigger] Then [measurable, observable outcome] form (multiple "And" clauses are fine; a second "When" means split the criterion). Cover ALL THREE path types: the happy path, at least one ERROR path (invalid input / dependency failure rejected gracefully) and at least one EDGE case (boundaries, empty states, maximums, concurrency, timeouts, dependency failure). Add a perf criterion whenever a measurable threshold applies. Happy-path-only stories get estimated at 40–60% of true cost — never produce one. No implementation detail in the Then ("behaviour, not the database table"); binary pass/fail; observable from outside the system.
+- Acceptance criteria per story, each ONE criterion in Given [initial state/context] When [specific action or trigger] Then [measurable, observable outcome] form. FILL EVERY SLOT — a criterion with only a Given, or missing the Then, is not testable and will be rejected. "And" clauses are welcome in ALL THREE sections — Given [context] And [more context] When [ONE trigger] Then [outcome] And [second observable outcome] And [audit/log record where relevant]; a second "When" means split into two criteria. Time-bound every outcome where timing matters ("within 2 seconds", "within 24 hours"). Expected caliber: "Given an authenticated user is in an active conversation And the sentiment service is available When the classifier scores a message below the 0.3 risk threshold Then the pending automated response is suppressed And the conversation enters the Priority Human queue within 2 seconds And an audit record with conversation ID, score, model version and timestamp is written". When several criteria share one type, start each text with a short scenario label so testers can tell them apart ("Edge — queue at capacity: Given …"). Cover ALL THREE path types: the happy path, at least one ERROR path (invalid input / dependency failure rejected gracefully) and at least one EDGE case (boundaries, empty states, maximums, concurrency, timeouts, dependency failure). Add a perf criterion whenever a measurable threshold applies. Happy-path-only stories get estimated at 40–60% of true cost — never produce one. No implementation detail in the Then ("behaviour, not the database table"); binary pass/fail; observable from outside the system.
 - BANNED words in criteria (untestable — every one is a future argument): fast, quick, responsive, seamless, smooth, intuitive, user-friendly, easy, robust, reliable, scalable, real-time, secure, handle, support, manage, best practices, industry standard, etc./and so on/including but not limited to. Always write the number AND its measurement condition instead (e.g. "p95 response ≤ 800 ms under 200 concurrent users", "99.9% monthly availability measured as …", "passes OWASP ASVS Level 2 verification", "90% of test participants complete the task unaided in ≤ 3 minutes").
 - nfrs: run the NFR checklist per story (performance, throughput, availability, recovery RTO/RPO, security standard, authN/authZ, data residency, privacy/compliance, auditability, accessibility, localization, browser/device, observability, retention, interoperability, migration) and attach the applicable ones WITH numbers. A story with no NFRs attached is not estimable — omit the array only if truly none apply.
 - assumptions: strings prefixed "A:" for assumptions — each MUST state the impact if false (e.g. "A: the sentiment service exposes a documented REST endpoint ≤200 ms p95 — impact if false: +120–200 hours, re-baseline the epic"); and "D:" for client dependencies — each MUST state the consequence of a slip (e.g. "D: 1,000 labeled conversations by end of Sprint 2 — if slipped: validation cannot start, day-for-day schedule extension").
@@ -7604,7 +7615,7 @@ Return ONLY JSON (no prose, no fences):
 {"personas":[{"name":"…","definition":"…"}],
  "epics":[{"id":"EP-1","title":"…","businessNeed":"…","wbsName":"exact phase name or empty string"}],
  "stories":[{"id":"US-1","epicId":"EP-1","wbsName":"EXACT leaf activity name","persona":"…","want":"…","soThat":"…","verification":"uat|artifact",
-   "ac":[{"id":"AC-1.1","type":"happy|error|edge|perf","text":"Given … When … Then …"}],
+   "ac":[{"id":"AC-1.1","type":"happy|error|edge|perf","text":"Given … [And …] When … Then … [And …]"}],
    "nfrs":["…"],"assumptions":["A: … — impact if false: …","D: … — if slipped: …"]}]}`;
     }
     // the rules as a CACHED prompt prefix: identical across single-shot,
@@ -8332,6 +8343,14 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       const file = ev.target.files[0]; if (!file) return;
       const reader = new FileReader();
       reader.onload = async e => {
+        // ✏️ editable-workbook CSVs merge into the OPEN project (rows matched
+        // by their ID column) — unlike a .json import, which lands in its own
+        // project slot
+        if (/\.csv$/i.test(file.name)) {
+          try { await importCsvText(e.target.result); }
+          catch (err) { alert('Could not import: ' + err.message); }
+          return;
+        }
         try {
           const data = JSON.parse(e.target.result);
           // a 📦 whole-library backup restores every project it contains
@@ -8355,6 +8374,386 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       reader.readAsText(file); ev.target.value = '';
     }
 
+
+    // ============== EDITABLE WORKBOOK — CSV ROUND TRIP ==============
+    // Four editable CSVs (activities & estimates, stories & ACs, test cases &
+    // results, RAID). Send them to the client, take the edited files back
+    // through IMPORT. The "(do not change)" ID column is the merge key: rows
+    // with a known ID update in place, rows with a BLANK ID are added, rows
+    // deleted from the file are NOT deleted here (delete in the app, where
+    // links and undo are visible). Excel-safe: UTF-8 BOM, quoted newlines.
+    const CSV_BOM = '\uFEFF';
+    function dlCsv(name, rows) { download(safeName() + name, CSV_BOM + rows.map(r => r.map(csvCell).join(',')).join('\r\n'), 'text/csv'); }
+    function predText(t) {
+      return (t.predecessors || []).map(p => {
+        const pt = tasks.find(x => x.id === p.id);
+        const nm = pt ? (pt.wbs || String(pt.id)) : String(p.id);
+        return nm + ((p.type === 'FS' && !p.lag) ? '' : p.type + (p.lag ? (p.lag > 0 ? '+' + p.lag : String(p.lag)) : ''));
+      }).join(', ');
+    }
+    function exportActivitiesEditableCSV() {
+      computeWbsCodes();
+      const u = unitLabel();
+      const rows = [['Task ID (do not change)', 'Type', 'WBS', 'Parent WBS', 'Activity name', 'Milestone (yes/no)', 'Owner', 'Owner units %', 'Additional attendees (Name@units)', 'Optimistic (' + u + ')', 'Most likely (' + u + ')', 'Pessimistic (' + u + ')', '% complete', 'Fixed cost $', 'Predecessors (WBS codes, e.g. 1.2, 2.1SS+1)', 'Start no earlier than (YYYY-MM-DD)', 'Deadline (YYYY-MM-DD)', 'Deliverable', 'Description / scope', 'Acceptance (done-when)', 'Actual start (YYYY-MM-DD)', 'Actual finish (YYYY-MM-DD)']];
+      tasksInWbsOrder().forEach(({ task: t }) => {
+        if (isTestCaseTask(t)) return; // test cases travel on their own sheet
+        const isSum = isSummaryId(t.id);
+        const parent = t.parentId != null ? ((tasks.find(x => x.id === t.parentId) || {}).wbs || '') : '';
+        rows.push([t.id, isSum ? 'phase' : t.milestone ? 'milestone' : 'activity', t.wbs || '', parent, t.name,
+          t.milestone ? 'yes' : 'no', isSum ? '' : (t.owner || ''), isSum ? '' : (t.units == null ? 100 : t.units),
+          isSum ? '' : (t.attendees || []).map(a => a.name + (a.units !== 100 ? '@' + a.units : '')).join(', '),
+          isSum ? '' : t.o, isSum ? '' : t.m, isSum ? '' : t.p, isSum ? '' : (t.percentComplete || 0), t.fixedCost || 0,
+          predText(t), t.startNoEarlier || '', t.deadline || '', t.deliverable || '', t.description || '', t.acceptance || '',
+          t.actualStart || '', t.actualFinish || '']);
+      });
+      dlCsv('-activities-editable.csv', rows);
+    }
+    function exportStoriesEditableCSV() {
+      if (!reqs || !(reqs.stories || []).length) { alert('No user stories yet — Requirements ▸ 🤖 Draft from WBS (or ＋ Add story) first.'); return; }
+      computeWbsCodes();
+      const rows = [['Story ID (do not change)', 'Epic', 'WBS code', 'WBS activity', 'Persona (As a…)', 'I want to', 'So that', 'Verified by (uat/artifact)', 'AC ID (do not change)', 'AC type (happy/error/edge/perf)', 'Acceptance criterion (Given/When/Then)', 'NFRs (one per line — first row of the story)', 'Assumptions & client dependencies (A:/D: one per line — first row)']];
+      reqs.stories.forEach(s => {
+        const t = s.wbsId != null ? tasks.find(x => x.id === s.wbsId) : null;
+        const acs = (s.ac && s.ac.length) ? s.ac : [null];
+        acs.forEach((a, i) => rows.push([
+          s.id, i ? '' : (s.epicId || ''), i ? '' : (t ? t.wbs || '' : ''), i ? '' : (t ? t.name : (s.wbsName || '')),
+          i ? '' : (s.persona || ''), i ? '' : (s.want || ''), i ? '' : (s.soThat || ''), i ? '' : (s.verification || 'uat'),
+          a ? a.id : '', a ? (a.type || '') : '', a ? (a.text || '') : '',
+          i ? '' : (s.nfrs || []).join('\n'), i ? '' : (s.assumptions || []).join('\n')]));
+      });
+      dlCsv('-stories-editable.csv', rows);
+    }
+    function exportTestCasesEditableCSV() {
+      const tcs = tasks.filter(isTestCaseTask);
+      if (!tcs.length) { alert('No test-case tasks yet — 🧪 Generate test plan first.'); return; }
+      const u = unitLabel();
+      const rows = [['Task ID (do not change)', 'Verifies AC', 'Test case name', 'Steps (numbered, one per line)', 'Expected result', 'Owner', 'Optimistic (' + u + ')', 'Most likely (' + u + ')', 'Pessimistic (' + u + ')', '% complete', 'Result (pass/fail/blocked)', 'Defect / notes (a fail row becomes a RAID issue)']];
+      tcs.forEach(tc => rows.push([tc.id, ((tc.name || '').match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '', tc.name,
+        hasRealSteps(tc) ? tcStepLines(tc.description) : (tc.description || ''), tc.acceptance || '', tc.owner || '',
+        tc.o, tc.m, tc.p, tc.percentComplete || 0, (tc.percentComplete || 0) >= 100 ? 'pass' : '', '']));
+      dlCsv('-test-cases-editable.csv', rows);
+    }
+    function exportRaidEditableCSV() {
+      if (!raid.length) { alert('The RAID log is empty — nothing to export yet.'); return; }
+      const rows = [['RAID ID (do not change)', 'Type (Risk/Assumption/Issue/Dependency)', 'Title', 'Description', 'Probability 1-5', 'Impact 1-5', 'Owner', 'Mitigation / next step', 'Status']];
+      raid.forEach(r => rows.push([r.id, r.type, r.title, r.description || '', r.probability, r.impact, r.owner || '', r.mitigation || '', r.status || 'Open']));
+      dlCsv('-raid-editable.csv', rows);
+    }
+    function exportEditableWorkbook() {
+      computeWbsCodes();
+      exportActivitiesEditableCSV();
+      if (reqs && (reqs.stories || []).length) exportStoriesEditableCSV();
+      if (tasks.some(isTestCaseTask)) exportTestCasesEditableCSV();
+      if (raid.length) exportRaidEditableCSV();
+      flashSaved('✏️ Editable workbook exported — edit any file (even in Excel) and bring it back with IMPORT. IDs are the merge keys: keep them; leave the ID blank on new rows.');
+    }
+    // real CSV parser (quoted cells, embedded commas/newlines/quotes, BOM, CRLF)
+    function parseCSV(text) {
+      const s = String(text || '').replace(/^\uFEFF/, '');
+      const rows = []; let row = [], cell = '', q = false;
+      for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (q) {
+          if (ch === '"') { if (s[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+          else cell += ch;
+        } else if (ch === '"') q = true;
+        else if (ch === ',') { row.push(cell); cell = ''; }
+        else if (ch === '\n' || ch === '\r') {
+          if (ch === '\r' && s[i + 1] === '\n') i++;
+          row.push(cell); cell = '';
+          rows.push(row); row = [];
+        } else cell += ch;
+      }
+      if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+      return rows.filter(r => r.some(c => String(c).trim() !== ''));
+    }
+    // ---- universal CSV import: header-sniff the domain, merge by ID ----
+    function csvColIdx(head, frag) {
+      let i = head.findIndex(h => h.trim() === frag);
+      if (i < 0) i = head.findIndex(h => h.indexOf(frag) >= 0);
+      return i;
+    }
+    async function importCsvText(text) {
+      const rows = parseCSV(text);
+      if (rows.length < 2) throw new Error('the CSV has no data rows');
+      const head = rows[0].map(h => String(h || '').toLowerCase());
+      const has = f => head.some(h => h.indexOf(f) >= 0);
+      const body = rows.slice(1);
+      if (has('story id')) return importStoriesRows(head, body);
+      if (has('verifies ac')) return importTestCasesRows(head, body);
+      if (has('raid id')) return importRaidRows(head, body);
+      if (has('task id') && has('predecessors')) return importActivitiesRows(head, body);
+      throw new Error('unrecognized CSV — expected one of the ✏️ editable workbook files (activities, stories, test cases or RAID; keep the header row)');
+    }
+    function importReport(title, rep) {
+      const L = ['📥 ' + title, '• updated: ' + rep.updated + '  • added: ' + rep.added];
+      if (rep.notes && rep.notes.length) rep.notes.forEach(n => L.push('• ' + n));
+      if (rep.rejected.length) { L.push('', '⚠ ' + rep.rejected.length + ' row(s) NOT applied:'); rep.rejected.forEach(x => L.push('  – ' + x)); }
+      if (rep.rejected.length) alert(L.join('\n')); else flashSaved(L.join(' '));
+    }
+    function importActivitiesRows(head, body) {
+      const col = f => csvColIdx(head, f);
+      const c = { id: col('task id'), wbs: col('wbs'), parent: col('parent wbs'), name: col('activity name'), ms: col('milestone'), owner: col('owner'), units: col('owner units'), att: col('attendees'), o: col('optimistic'), m: col('most likely'), p: col('pessimistic'), pct: col('% complete'), fixed: col('fixed cost'), preds: col('predecessors'), snet: col('start no earlier'), dl: col('deadline'), del: col('deliverable'), desc: col('description'), acc: col('acceptance'), as: col('actual start'), af: col('actual finish') };
+      const rep = { updated: 0, added: 0, rejected: [], notes: [] };
+      computeWbsCodes();
+      const wbsToId = {}; tasks.forEach(t => { if (t.wbs) wbsToId[t.wbs] = t.id; });
+      const nameToId = {}; tasks.forEach(t => { if (!isTestCaseTask(t)) nameToId[t.name.trim().toLowerCase()] = t.id; });
+      const iso = /^\d{4}-\d{2}-\d{2}$/;
+      const parsed = [];
+      body.forEach((r, ri) => {
+        const cell = i => (i >= 0 && i < r.length) ? String(r[i] == null ? '' : r[i]).trim() : '';
+        const idRaw = cell(c.id), name = cell(c.name);
+        if (!idRaw && !name) return;
+        let t = null;
+        if (idRaw) {
+          t = tasks.find(x => String(x.id) === idRaw);
+          if (!t) { rep.rejected.push('row ' + (ri + 2) + ' ("' + (name || idRaw) + '"): Task ID ' + idRaw + ' is not in this project — leave the ID blank to add a new activity'); return; }
+          if (isTestCaseTask(t)) { rep.rejected.push('row ' + (ri + 2) + ': Task ' + idRaw + ' is a test case — edit it on the test-cases sheet'); return; }
+        }
+        parsed.push({ ri, cell, t, name });
+      });
+      // placeholder ids first, so file-internal parent/pred references resolve
+      // even when they point at rows that are themselves new or renumbered
+      parsed.forEach(pr => {
+        if (!pr.t) { pr.newId = nextId++; }
+        const w = pr.cell(c.wbs);
+        if (w) wbsToId[w] = pr.t ? pr.t.id : pr.newId;
+      });
+      const resolveRef = ref => {
+        if (wbsToId[ref] != null) return wbsToId[ref];
+        if (nameToId[ref.toLowerCase()] != null) return nameToId[ref.toLowerCase()];
+        const asId = tasks.find(x => String(x.id) === ref); return asId ? asId.id : null;
+      };
+      const renamed = [];
+      parsed.forEach(pr => {
+        const { cell, ri } = pr;
+        const errs = [];
+        const numOf = (i, dflt) => { const v = cell(i); if (v === '') return dflt; const n = parseFloat(v); if (!Number.isFinite(n)) { errs.push('"' + v + '" is not a number'); return dflt; } return n; };
+        const isMs = /^(yes|true|1|milestone)$/i.test(cell(c.ms)) || cell(1) === 'milestone';
+        const isSum = pr.t ? isSummaryId(pr.t.id) : false;
+        const o = numOf(c.o, isMs ? 0 : 1), m = numOf(c.m, isMs ? 0 : o), p = numOf(c.p, isMs ? 0 : m);
+        if (!isMs && !isSum && !(o <= m && m <= p)) errs.push('estimates must satisfy O ≤ M ≤ P (got ' + o + '/' + m + '/' + p + ')');
+        const preds = []; const badPred = [];
+        cell(c.preds).split(/[,;]+/).map(x => x.trim()).filter(Boolean).forEach(tok => {
+          let type = 'FS', lag = 0, ref = tok;
+          const mm = tok.match(/^(.*?)\s*(FS|SS|FF|SF)\s*([+-]\s*\d+(?:\.\d+)?)?\s*$/i);
+          if (mm && mm[1].trim()) { ref = mm[1].trim(); type = mm[2].toUpperCase(); lag = mm[3] ? parseFloat(mm[3].replace(/\s+/g, '')) : 0; }
+          const pid = resolveRef(ref);
+          if (pid == null) badPred.push(tok); else preds.push({ id: pid, type, lag });
+        });
+        if (badPred.length) errs.push('predecessor(s) not found: ' + badPred.join(', '));
+        const snet = cell(c.snet), dl = cell(c.dl), aS = cell(c.as), aF = cell(c.af);
+        [['start pin', snet], ['deadline', dl], ['actual start', aS], ['actual finish', aF]].forEach(([lbl, v]) => { if (v && !iso.test(v)) errs.push(lbl + ' "' + v + '" is not YYYY-MM-DD'); });
+        if (errs.length) { rep.rejected.push('row ' + (ri + 2) + ' ("' + (pr.name || (pr.t && pr.t.name) || '?') + '"): ' + errs.join('; ')); if (pr.newId != null) { /* id reserved but unused — harmless */ } return; }
+        const parentRef = cell(c.parent);
+        const parentId = parentRef ? resolveRef(parentRef) : null;
+        if (parentRef && parentId == null) { rep.rejected.push('row ' + (ri + 2) + ' ("' + (pr.name || '?') + '"): Parent WBS "' + parentRef + '" not found'); return; }
+        const ownerParts = cell(c.att).split(/[,;]+/).map(x => x.trim()).filter(Boolean).map(tok => { const mm = tok.match(/^(.*?)\s*@\s*(\d+(?:\.\d+)?)\s*%?$/); return mm && mm[1].trim() ? { name: mm[1].trim(), units: Math.max(0, parseFloat(mm[2])) } : { name: tok, units: 100 }; });
+        if (!pr.t) { // new activity
+          const t = makeTask({ id: pr.newId, name: pr.name || ('Imported activity ' + pr.newId), o, m, p, milestone: isMs, owner: cell(c.owner), units: numOf(c.units, 100), attendees: ownerParts, percentComplete: Math.min(100, Math.max(0, numOf(c.pct, 0))), fixedCost: numOf(c.fixed, 0), predecessors: preds, parentId, startNoEarlier: snet, deadline: dl, deliverable: cell(c.del), description: cell(c.desc), acceptance: cell(c.acc), actualStart: aS, actualFinish: aF });
+          tasks.push(t); rep.added++;
+          if (t.percentComplete > 0) applyPctActuals(t, 0);
+          return;
+        }
+        const t = pr.t;
+        if (pr.name && pr.name !== t.name) { renamed.push({ t, oldName: t.name }); t.name = pr.name; }
+        t.parentId = parentId;
+        if (cell(c.preds) !== '' || preds.length) t.predecessors = preds;
+        t.startNoEarlier = snet; t.deadline = dl;
+        if (cell(c.del) || t.deliverable) t.deliverable = cell(c.del);
+        if (cell(c.desc) || t.description) t.description = cell(c.desc);
+        if (cell(c.acc) || t.acceptance) t.acceptance = cell(c.acc);
+        t.fixedCost = numOf(c.fixed, t.fixedCost || 0);
+        if (!isSum) { // phases roll up — their own estimate/owner/% are display-only
+          t.milestone = isMs;
+          t.o = o; t.m = m; t.p = p;
+          t.owner = cell(c.owner); t.units = numOf(c.units, t.units == null ? 100 : t.units);
+          t.attendees = ownerParts;
+          const newPct = Math.min(100, Math.max(0, numOf(c.pct, t.percentComplete || 0)));
+          if (newPct !== (t.percentComplete || 0)) { const prev = t.percentComplete || 0; t.percentComplete = newPct; applyPctActuals(t, prev); }
+          if (aS) { t.actualStart = aS; t.autoActualStart = false; }
+          if (aF) { t.actualFinish = aF; t.autoActualFinish = false; }
+        }
+        rep.updated++;
+      });
+      if (renamed.length) {
+        let n = 0;
+        renamed.forEach(({ t }) => ((reqs && reqs.stories) || []).forEach(st => { if (st.wbsId === t.id) { st.wbsName = t.name; n++; } }));
+        if (n) rep.notes.push(n + ' linked stor' + (n === 1 ? 'y' : 'ies') + ' re-pointed at renamed activities — if the rename changed the MEANING, use the story card\u2019s AI refresh (\ud83e\uddea\u21bb) so criteria and test cases follow');
+      }
+      rep.notes.push('rows deleted from the file are never deleted here — remove activities in the app, where links and \u21b6 Undo are visible');
+      syncResources(); saveLocal(); calculated = false;
+      renderTaskTable(); renderWBS(); renderRaid();
+      if (tasks.length && recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT(); }
+      importReport('Activities CSV merged — ' + rep.updated + ' updated, ' + rep.added + ' added', rep);
+    }
+    async function importStoriesRows(head, body) {
+      const col = f => csvColIdx(head, f);
+      const c = { id: col('story id'), epic: col('epic'), wbsCode: col('wbs code'), wbsName: col('wbs activity'), persona: col('persona'), want: col('i want'), soThat: col('so that'), ver: col('verified by'), acId: col('ac id'), acType: col('ac type'), acText: col('acceptance criterion'), nfr: col('nfr'), assume: col('assumption') };
+      const rep = { updated: 0, added: 0, rejected: [], notes: [] };
+      if (!reqs) reqs = { personas: [], epics: [], stories: [] };
+      computeWbsCodes();
+      // group rows by Story ID (repeated per AC row; blank continues the previous story)
+      const groups = []; let cur = null;
+      body.forEach((r, ri) => {
+        const cell = i => (i >= 0 && i < r.length) ? String(r[i] == null ? '' : r[i]).trim() : '';
+        const sid = cell(c.id);
+        if (sid && (!cur || cur.sid !== sid)) { cur = { sid, rows: [] }; groups.push(cur); }
+        if (!cur) { rep.rejected.push('row ' + (ri + 2) + ': no Story ID'); return; }
+        cur.rows.push({ ri, cell });
+      });
+      const staleAll = new Set(); const orphansAll = []; let acChanged = 0;
+      groups.forEach(g => {
+        const first = v => { for (const row of g.rows) { const x = row.cell(v); if (x) return x; } return ''; };
+        let s = reqs.stories.find(x => String(x.id).toLowerCase() === g.sid.toLowerCase());
+        const isNew = !s;
+        if (isNew) {
+          if (!/^[A-Za-z0-9_.-]+$/.test(g.sid)) { rep.rejected.push('story "' + g.sid + '": IDs must match A-Z a-z 0-9 _ . - (or reuse an existing Story ID)'); return; }
+          s = { id: g.sid, epicId: null, wbsId: null, wbsName: '', persona: '', want: '', soThat: '', verification: 'uat', ac: [], nfrs: [], assumptions: [] };
+          reqs.stories.push(s);
+        }
+        const oldAc = (s.ac || []).map(a => ({ id: a.id, type: a.type, text: a.text }));
+        const persona = first(c.persona), want = first(c.want), soThat = first(c.soThat), ver = first(c.ver);
+        if (persona) s.persona = persona;
+        if (want) s.want = want;
+        if (soThat) s.soThat = soThat;
+        if (ver) s.verification = /artifact/i.test(ver) ? 'artifact' : 'uat';
+        const epicRef = first(c.epic);
+        if (epicRef) { const e = (reqs.epics || []).find(x => String(x.id).toLowerCase() === epicRef.toLowerCase() || String(x.title || '').toLowerCase() === epicRef.toLowerCase()); s.epicId = e ? e.id : s.epicId; }
+        const wbsRef = first(c.wbsCode) || first(c.wbsName);
+        if (wbsRef) {
+          const t = tasks.find(x => x.wbs === wbsRef) || tasks.find(x => x.name.trim().toLowerCase() === wbsRef.toLowerCase());
+          if (t) { s.wbsId = t.id; s.wbsName = t.name; }
+          else rep.notes.push(g.sid + ': WBS "' + wbsRef + '" not found — trace left as it was');
+        }
+        const nfrPacked = first(c.nfr), asPacked = first(c.assume);
+        if (nfrPacked) s.nfrs = nfrPacked.split('\n').map(x => x.trim()).filter(Boolean);
+        if (asPacked) s.assumptions = asPacked.split('\n').map(x => x.trim()).filter(Boolean).map(x => /^[AD]\s*:/i.test(x) ? x : 'A: ' + x);
+        // rebuild the criteria list from the rows, in file order
+        const acBase = s.id.replace(/^US/i, 'AC');
+        const newAc = [];
+        g.rows.forEach(row => {
+          const text = row.cell(c.acText); if (!text) return;
+          const ty = row.cell(c.acType).toLowerCase();
+          const givenId = row.cell(c.acId);
+          newAc.push({ id: /^[A-Za-z0-9_.-]+$/.test(givenId) && givenId ? givenId : acBase + '.' + (newAc.length + 1), type: /^(happy|error|edge|perf)$/.test(ty) ? ty : 'happy', text });
+        });
+        if (newAc.length || oldAc.length) s.ac = newAc;
+        if (isNew) { rep.added++; return; }
+        rep.updated++;
+        // positional staleness diff — same pairing rule as the story editor
+        oldAc.forEach((oa, i) => {
+          const tcs = testCasesForAC(oa.id);
+          if (!tcs.length) return;
+          const nu = newAc[i];
+          if (!nu || String(nu.id).toLowerCase() !== String(oa.id).toLowerCase()) { orphansAll.push(...tcs); return; }
+          if (nu.text.trim() !== String(oa.text || '').trim() || nu.type !== oa.type) { staleAll.add(String(nu.id).toLowerCase()); acChanged++; }
+        });
+      });
+      saveLocal();
+      if (document.getElementById('view-req').classList.contains('active')) renderReqs();
+      importReport('Stories CSV merged — ' + rep.updated + ' updated, ' + rep.added + ' added', rep);
+      // batched staleness chain: ONE decision for orphans, ONE for regeneration
+      if (orphansAll.length && confirm(orphansAll.length + ' scheduled test case(s) verify criteria that no longer exist after this import:\n' + orphansAll.slice(0, 12).map(t => '\u2022 ' + t.name).join('\n') + (orphansAll.length > 12 ? '\n\u2026' : '') + '\n\nDelete them? (Cancel keeps them — they will show as unlinked.) \u21b6 Undo restores.')) {
+        removeTestCaseTasks(orphansAll, '\ud83d\uddd1 ' + orphansAll.length + ' orphaned test case(s) removed after import. \u21b6 Undo restores');
+      }
+      if (staleAll.size) {
+        const hasKey = !!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE));
+        if (hasKey && confirm(staleAll.size + ' test case(s) still describe the OLD behaviour — their criteria changed in this import.\n\nRegenerate them now with AI? Steps, pass condition and estimate are rewritten IN PLACE (id, schedule position, links survive) and % complete resets to 0.')) {
+          await generateTestPlan(staleAll);
+        } else {
+          flashSaved('\u26a0 ' + staleAll.size + ' test case(s) may be stale after the import — use \ud83e\uddea Generate test plan (or the story card\u2019s \ud83e\uddea\u21bb) when ready.');
+        }
+      }
+    }
+    function importTestCasesRows(head, body) {
+      const col = f => csvColIdx(head, f);
+      const c = { id: col('task id'), ac: col('verifies ac'), name: col('test case name'), steps: col('steps'), exp: col('expected result'), owner: col('owner'), o: col('optimistic'), m: col('most likely'), p: col('pessimistic'), pct: col('% complete'), result: col('result (pass'), notes: col('defect') };
+      const rep = { updated: 0, added: 0, rejected: [], notes: [] };
+      let defects = 0;
+      const today = fmtISO(new Date());
+      const acIdx = {}; ((reqs && reqs.stories) || []).forEach(s => (s.ac || []).forEach(a => { acIdx[String(a.id).toLowerCase()] = s; }));
+      body.forEach((r, ri) => {
+        const cell = i => (i >= 0 && i < r.length) ? String(r[i] == null ? '' : r[i]).trim() : '';
+        const idRaw = cell(c.id), acRef = cell(c.ac);
+        if (!idRaw && !cell(c.name) && !acRef) return;
+        let tc = null;
+        if (idRaw) {
+          tc = tasks.find(x => String(x.id) === idRaw);
+          if (!tc) { rep.rejected.push('row ' + (ri + 2) + ': Task ID ' + idRaw + ' not in this project'); return; }
+          if (!isTestCaseTask(tc)) { rep.rejected.push('row ' + (ri + 2) + ': task ' + idRaw + ' ("' + tc.name + '") is not a test case — edit it on the activities sheet'); return; }
+        }
+        const errs = [];
+        const numOf = (i, dflt) => { const v = cell(i); if (v === '') return dflt; const n = parseFloat(v); if (!Number.isFinite(n)) { errs.push('"' + v + '" is not a number'); return dflt; } return n; };
+        const o = numOf(c.o, tc ? tc.o : 0.02), m = numOf(c.m, tc ? tc.m : 0.04), p = numOf(c.p, tc ? tc.p : 0.09);
+        if (!(o <= m && m <= p)) errs.push('estimates must satisfy O \u2264 M \u2264 P');
+        if (errs.length) { rep.rejected.push('row ' + (ri + 2) + ' ("' + (cell(c.name) || idRaw) + '"): ' + errs.join('; ')); return; }
+        if (!tc) { // new test case, placed with its siblings under the AC's story
+          const story = acIdx[acRef.toLowerCase()];
+          if (!story) { rep.rejected.push('row ' + (ri + 2) + ' ("' + cell(c.name) + '"): new test cases need a "Verifies AC" that exists (got "' + acRef + '")'); return; }
+          const sibling = (story.ac || []).flatMap(a => testCasesForAC(a.id))[0];
+          const hostId = sibling ? sibling.parentId : story.wbsId;
+          let nm = cell(c.name) || ('verify ' + acRef);
+          if (!/^tc\s/i.test(nm)) nm = 'TC ' + acRef + ' \u2014 ' + nm;
+          const t = makeTask({ id: nextId++, name: nm, o, m, p, owner: cell(c.owner) || (sibling ? sibling.owner : ''), units: 100, parentId: hostId != null ? hostId : null, predecessors: [], description: cell(c.steps), acceptance: cell(c.exp), percentComplete: 0 });
+          tasks.push(t); rep.added++;
+          tc = t;
+        } else {
+          const nm = cell(c.name);
+          if (nm && nm !== tc.name) tc.name = /^tc\s/i.test(nm) ? nm : ((tc.name.match(/^TC\s+[A-Za-z0-9_.-]+\s*\u2014?\s*/i) || ['TC ' + acRef + ' \u2014 '])[0] + nm);
+          if (cell(c.steps)) tc.description = cell(c.steps);
+          if (cell(c.exp)) tc.acceptance = cell(c.exp);
+          if (cell(c.owner)) tc.owner = cell(c.owner);
+          tc.o = o; tc.m = m; tc.p = p;
+          rep.updated++;
+        }
+        const result = cell(c.result).toLowerCase();
+        let newPct = Math.min(100, Math.max(0, numOf(c.pct, tc.percentComplete || 0)));
+        if (result === 'pass') newPct = 100;
+        if ((tc.percentComplete || 0) !== newPct) { const prev = tc.percentComplete || 0; tc.percentComplete = newPct; applyPctActuals(tc, prev); }
+        const notes = cell(c.notes);
+        if (result === 'fail' || (result === 'blocked' && notes)) {
+          const title = (result === 'fail' ? 'Defect: ' : 'Blocked: ') + tc.name.replace(/^TC\s+/i, '').slice(0, 90);
+          if (!raid.some(x => x.taskId === tc.id && x.title === title && x.status !== 'Closed')) {
+            raid.push({ id: nextRaidId++, type: 'Issue', title, description: (notes || 'reported ' + result + ' in imported test results') + ' (imported test result, ' + today + ')', probability: 4, impact: 3, owner: tc.owner || '', status: 'Open', mitigation: '', taskId: tc.id, createdAt: today });
+            defects++;
+          }
+        }
+      });
+      if (defects) rep.notes.push(defects + ' failed/blocked result(s) opened RAID issues (linked to their test-case tasks)');
+      syncResources(); saveLocal(); calculated = false;
+      renderTaskTable(); renderWBS(); renderRaid();
+      if (tasks.length && recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT(); }
+      importReport('Test-case CSV merged — ' + rep.updated + ' updated, ' + rep.added + ' added' + (defects ? ', ' + defects + ' defect(s) \u2192 RAID' : ''), rep);
+    }
+    function importRaidRows(head, body) {
+      const col = f => csvColIdx(head, f);
+      const c = { id: col('raid id'), type: col('type'), title: col('title'), desc: col('description'), prob: col('probability'), imp: col('impact'), owner: col('owner'), mit: col('mitigation'), status: col('status') };
+      const rep = { updated: 0, added: 0, rejected: [], notes: [] };
+      const typeOf = v => { const x = String(v || '').trim().toLowerCase(); return x.startsWith('r') ? 'Risk' : x.startsWith('a') ? 'Assumption' : x.startsWith('i') ? 'Issue' : x.startsWith('d') ? 'Dependency' : null; };
+      const clamp15 = v => { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.min(5, Math.max(1, n)) : 3; };
+      body.forEach((r, ri) => {
+        const cell = i => (i >= 0 && i < r.length) ? String(r[i] == null ? '' : r[i]).trim() : '';
+        const idRaw = cell(c.id), title = cell(c.title);
+        if (!idRaw && !title) return;
+        const ty = typeOf(cell(c.type));
+        if (!ty) { rep.rejected.push('row ' + (ri + 2) + ' ("' + (title || idRaw) + '"): Type must be Risk, Assumption, Issue or Dependency'); return; }
+        let it = idRaw ? raid.find(x => String(x.id) === idRaw) : null;
+        if (idRaw && !it) { rep.rejected.push('row ' + (ri + 2) + ' ("' + (title || idRaw) + '"): RAID ID ' + idRaw + ' not in this project — leave it blank to add a new item'); return; }
+        if (!it) {
+          raid.push({ id: nextRaidId++, type: ty, title: title || '(untitled)', description: cell(c.desc), probability: clamp15(cell(c.prob)), impact: clamp15(cell(c.imp)), owner: cell(c.owner), status: cell(c.status) || 'Open', mitigation: cell(c.mit), taskId: null, createdAt: fmtISO(new Date()) });
+          rep.added++; return;
+        }
+        it.type = ty;
+        if (title) it.title = title;
+        it.description = cell(c.desc); it.probability = clamp15(cell(c.prob)); it.impact = clamp15(cell(c.imp));
+        it.owner = cell(c.owner); it.mitigation = cell(c.mit);
+        if (cell(c.status)) it.status = cell(c.status);
+        rep.updated++;
+      });
+      saveLocal(); renderRaid();
+      importReport('RAID CSV merged — ' + rep.updated + ' updated, ' + rep.added + ' added', rep);
+    }
     function csvCell(v) {
       const s = String(v == null ? '' : v);
       return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
