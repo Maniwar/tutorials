@@ -6709,16 +6709,20 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     }
     function exportWBSDictionaryCSV() {
       if (!ensureCalc()) return;
-      const rows = [['WBS','Level','Element','Type','Owner','Start','Finish','Duration','% Complete','Deliverable','Description / scope','Acceptance criteria','User stories (trace)','Story acceptance criteria']];
+      const rows = [['WBS','Level','Element','Type','Owner','Start','Finish','Duration','% Complete','Deliverable','Description / scope','Acceptance criteria','Predecessors','User stories (trace)','Story acceptance criteria','Verified by (test cases)']];
+      const idTo = {}; tasks.forEach(x => { idTo[x.id] = x; });
       tasksInWbsOrder().forEach(({ task: t, depth }) => {
         const st = storiesForTask(t.id);
+        const verif = st.flatMap(s => (s.ac || []).flatMap(a => testCasesForAC(a.id).map(tc => tc.name)));
         rows.push([
-          t.wbs, depth + 1, t.name, t.isSummary ? 'Summary' : (t.milestone ? 'Milestone' : 'Work package'),
+          t.wbs, depth + 1, t.name, t.isSummary ? 'Summary' : (t.milestone ? 'Milestone' : (isTestCaseTask(t) ? 'Test case' : 'Work package')),
           t.owner || '', t.startDate?fmtISO(t.startDate):'', t.finishDate?fmtISO(t.finishDate):'',
           t.milestone ? '0' : (t.te||0).toFixed(1), (t.percentComplete||0)+'%',
           t.deliverable||'', t.description||'', t.acceptance||'',
+          (t.predecessors || []).map(pd => { const pt = idTo[pd.id]; return pt ? (pt.wbs ? pt.wbs + ' ' : '') + pt.name + ' (' + pd.type + (pd.lag ? (pd.lag > 0 ? '+' : '') + pd.lag : '') + ')' : ''; }).filter(Boolean).join(' || '),
           st.map(s => s.id + ' — As a ' + (s.persona||'?') + ', I want to ' + (s.want||'?') + ', so that ' + (s.soThat||'?')).join(' || '),
-          st.flatMap(s => (s.ac||[]).map(a => a.id + ' (' + a.type + ') ' + a.text)).join(' || ')
+          st.flatMap(s => (s.ac||[]).map(a => a.id + ' (' + a.type + ') ' + a.text)).join(' || '),
+          verif.join(' || ') || (st.length && st.every(isProcessStory) ? 'Process — verified by the deliverable/sign-off artifact itself' : '')
         ]);
       });
       download(safeName() + '-wbs-dictionary.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
