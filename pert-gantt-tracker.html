@@ -301,6 +301,7 @@
           <button onclick="exportWBSDictionaryCSV()">WBS dictionary (.csv)</button>
           <button onclick="exportResourcesCSV()">Resources &amp; PTO (.csv)</button>
           <button onclick="exportJSON()">Backup / Reopen (.json)</button>
+          <button onclick="exportAllProjects()" title="One file with EVERY project in this browser — use it to move your whole library to another browser or to the GitHub Pages site (browser storage is per-site, so projects don't follow the app there by themselves). Restore with IMPORT on the other side.">📦 Backup ALL projects (.json)</button>
           <div class="grp">Visuals</div>
           <button onclick="downloadChartSVG('gantt')">Gantt (.svg)</button>
           <button onclick="downloadChartSVG('pert')">PERT (.svg)</button>
@@ -8075,12 +8076,54 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       data.exportedAt = new Date().toISOString();
       download(safeName() + '.json', JSON.stringify(data, null, 2), 'application/json');
     }
+    // Whole-library backup: browser storage is PER-SITE, so projects made in
+    // the downloaded file don't appear on the GitHub Pages site (and vice
+    // versa). This exports every project in one file; IMPORT on the other
+    // side restores them all as additional projects.
+    async function exportAllProjects() {
+      if (tasks.length) { saveLocal(); await persistNow(); } // the open project's latest edits ride along
+      const idx = projIndex();
+      const projects = [];
+      for (const id of Object.keys(idx)) {
+        try {
+          const blob = await projBlobGet(id);
+          if (!blob) continue;
+          const data = JSON.parse(blob);
+          if (!Array.isArray(data.tasks)) continue;
+          projects.push({ name: (idx[id] && idx[id].name) || data.projectName || 'Untitled', updatedAt: (idx[id] && idx[id].updatedAt) || null, data });
+        } catch (e) {}
+      }
+      if (!projects.length) { alert('No saved projects found in this browser.'); return; }
+      download('engagement-planner-library.json', JSON.stringify({ format: 'engagement-planner-library', version: 1, exportedAt: new Date().toISOString(), projects }), 'application/json');
+      flashSaved('📦 ' + projects.length + ' project(s) exported — on the other site/browser, use IMPORT with this file to restore them all');
+    }
+    async function importLibraryBundle(bundle) {
+      const list = (bundle.projects || []).filter(p => p && p.data && Array.isArray(p.data.tasks));
+      if (!list.length) { alert('This library file contains no restorable projects.'); return; }
+      if (!confirm('Restore ' + list.length + ' project(s) from this library backup?\n\n' + list.slice(0, 10).map(p => '• ' + (p.name || p.data.projectName || 'Untitled')).join('\n') + (list.length > 10 ? '\n…' : '') + '\n\nThey are ADDED as new projects — nothing already here is touched. A project whose name already exists comes in as “… (imported)”.')) return;
+      if (tasks.length) { saveLocal(); await persistNow(); }
+      const taken = new Set(Object.values(projIndex()).map(x => String((x && x.name) || '').toLowerCase()));
+      let n = 0;
+      for (const p of list) {
+        const id = 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36) + n;
+        let name = String(p.name || p.data.projectName || 'Untitled');
+        if (taken.has(name.toLowerCase())) { name += ' (imported)'; p.data.projectName = name; }
+        taken.add(name.toLowerCase());
+        await idbSet(PROJ_PREFIX + id, JSON.stringify(p.data));
+        const ix = projIndex(); ix[id] = { name, updatedAt: p.updatedAt || new Date().toISOString() }; saveProjIndex(ix);
+        n++;
+      }
+      renderProjectMenu();
+      flashSaved('📦 ' + n + ' project(s) restored — open them from 📁 Projects');
+    }
     function importJSON(ev) {
       const file = ev.target.files[0]; if (!file) return;
       const reader = new FileReader();
       reader.onload = async e => {
         try {
           const data = JSON.parse(e.target.result);
+          // a 📦 whole-library backup restores every project it contains
+          if (data && data.format === 'engagement-planner-library' && Array.isArray(data.projects)) { await importLibraryBundle(data); return; }
           if (!data.tasks || !Array.isArray(data.tasks)) throw new Error('Invalid format');
           // an import lands in its OWN project slot — it must never replace the
           // plan that happens to be open (same in-place trap as the old header
