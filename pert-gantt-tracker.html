@@ -216,6 +216,16 @@
     .export-panel {
       position: absolute; right: 0; top: 110%; background: white; border: 1px solid var(--border);
       border-radius: 10px; box-shadow: 0 10px 25px -5px rgb(0 0 0 /.2); padding: 0.5rem; z-index: 50; min-width: 230px;
+      max-height: min(72vh, 540px); overflow-y: auto; overscroll-behavior: contain;
+    }
+    /* phones: the header buttons sit near the LEFT edge, so a right-anchored
+       absolute panel hangs off-screen — pin it to the viewport instead */
+    @media (max-width: 640px) {
+      .export-panel {
+        position: fixed; left: 50%; right: auto; top: 9vh; transform: translateX(-50%);
+        width: min(92vw, 380px); max-height: 78vh; z-index: 200;
+        box-shadow: 0 20px 50px -10px rgb(0 0 0 / .45);
+      }
     }
     .export-panel button { width: 100%; justify-content: flex-start; background: transparent; color: var(--text); font-weight: 500; }
     .export-panel button:hover { background: #f1f5f9; }
@@ -10980,6 +10990,17 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
 
     // ========================= INIT =========================
     (async function init() {
+      // header dropdowns (Export / Projects) close on an outside tap, and on
+      // picking an action inside — essential on phones, where the panel is a
+      // fixed overlay; the client-safe TOGGLE keeps the menu open so its
+      // state change stays visible
+      document.addEventListener('click', e => {
+        document.querySelectorAll('details.export-menu[open]').forEach(d => {
+          if (!d.contains(e.target)) { d.removeAttribute('open'); return; }
+          const btn = e.target.closest('.export-panel button, .export-panel [data-proj]');
+          if (btn && btn.id !== 'clientSafeBtn') d.removeAttribute('open');
+        });
+      });
       // default start date = today
       const startInput = document.getElementById('projectStart');
       await migrateToIdb(); // move payloads out of the ~5 MB localStorage into IndexedDB
