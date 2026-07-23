@@ -1843,7 +1843,9 @@
       document.getElementById('depRows').innerHTML = '';
       document.getElementById('attRows').innerHTML = '';
       (t.attendees || []).forEach(a => addAttRow(a));
-      document.getElementById('mDesc').value = t.description || '';
+      // test-case steps read best one per line — normalize run-on "1. … 2. …"
+      // from older generations for display; saving keeps the multi-line form
+      document.getElementById('mDesc').value = (isTestCaseTask(t) && hasRealSteps(t)) ? tcStepLines(t.description) : (t.description || '');
       document.getElementById('mDeliverable').value = t.deliverable || '';
       document.getElementById('mAcceptance').value = t.acceptance || '';
       document.getElementById('mActualStart').value = t.actualStart || '';
@@ -5755,7 +5757,7 @@ Return ONLY JSON (no prose, no fences):
           const existing = testCasesForAC(acId)[0];
           if (existing) {
             if (!hasRealSteps(existing)) {
-              if (String(tc.steps || '').trim()) existing.description = String(tc.steps).trim();
+              if (String(tc.steps || '').trim()) existing.description = tcStepLines(String(tc.steps).trim()); // one step per line
               if (String(tc.pass || '').trim()) existing.acceptance = String(tc.pass).trim();
               if (!existing.deliverable) existing.deliverable = 'Test evidence: pass/fail + defects logged (S1–S4)';
               respec++;
@@ -5773,7 +5775,7 @@ Return ONLY JSON (no prose, no fences):
           const nt = makeTask({ id: nextId++, name: nm, o: arr[0], m: arr[1], p: arr[2], milestone: false,
             owner: String(tc.owner || '').trim() || qaOwner, units: 100, parentId: host.id,
             predecessors: (wa && wa.s.wbsId != null && tasks.some(t => t.id === wa.s.wbsId) && !hostAnc.has(wa.s.wbsId)) ? [{ id: wa.s.wbsId, type: 'FS', lag: 0 }] : [],
-            description: String(tc.steps || '').trim(),
+            description: tcStepLines(String(tc.steps || '').trim()), // stored with one numbered step per line
             deliverable: 'Test evidence: pass/fail + defects logged (S1–S4)',
             acceptance: String(tc.pass || '').trim() });
           tasks.push(nt); made++;
