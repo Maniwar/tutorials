@@ -1069,6 +1069,13 @@
       const human = hrs < 1 ? Math.round(hrs * 60) + ' min' : (Math.round(hrs * 10) / 10) + ' h';
       return human + ' <span class="help-text" title="Stored as a fraction of a day so rollups and the schedule stay in one unit (1 day = 8 h)">(' + n.toFixed(2) + ' ' + unitLabel() + ')</span>';
     }
+    // plain-text variant for exports (CSV cells, markdown, SOW) — no HTML
+    function fmtDurText(v) {
+      const n = +v || 0;
+      if (document.getElementById('durationUnit').value !== 'days' || n <= 0 || n >= 1) return n.toFixed(1) + ' ' + unitLabel();
+      const hrs = n * 8;
+      return (hrs < 1 ? Math.round(hrs * 60) + ' min' : (Math.round(hrs * 10) / 10) + ' h') + ' (' + n.toFixed(2) + ' ' + unitLabel() + ')';
+    }
     // convert a duration in the chosen unit to whole calendar working-day span for date math
     function unitToWorkingDays(v) {
       const u = document.getElementById('durationUnit').value;
@@ -3720,6 +3727,85 @@
       return (Number(t.fixedCost) || 0) + labor;
     }
     function projectCost() { return leafTasks().reduce((s, t) => s + taskCost(t), 0); }
+    // 💰 who is billed, who is not, and why — the audit data for pricing.
+    // Mirrors taskCost() exactly: cost = rate × TE-days × units%, client-kind
+    // people always $0, plus per-task fixed costs.
+    function billingData() {
+      const per = new Map(); // name → { days, tasks, tcs }
+      let fixedTotal = 0, noEstCount = 0;
+      leafTasks().forEach(t => {
+        fixedTotal += Number(t.fixedCost) || 0;
+        if (!t.milestone && !(t.p > 0)) noEstCount++;
+        const days = unitToWorkingDays(t.te || 0);
+        taskParticipants(t).forEach(pr => {
+          const rec = per.get(pr.name) || { days: 0, tasks: 0, tcs: 0 };
+          rec.days += days * pr.units / 100; rec.tasks++; if (isTestCaseTask(t)) rec.tcs++;
+          per.set(pr.name, rec);
+        });
+      });
+      const rows = [...per.entries()].map(([nm, rec]) => {
+        const client = isClientResource(nm);
+        const rate = getRate(nm), bill = getBillRate(nm);
+        return { nm, rec, client, rate, bill,
+          cost: client ? 0 : rate * rec.days,
+          billed: client ? 0 : bill * rec.days,
+          statusText: client ? 'client — unbilled' : (rate || bill) ? 'billed' : 'internal, NO RATE → $0' };
+      }).sort((a, b) => (b.billed + b.cost) - (a.billed + a.cost) || b.rec.days - a.rec.days);
+      return { rows, fixedTotal, noEstCount,
+        totCost: rows.reduce((s, r) => s + r.cost, 0) + fixedTotal,
+        totBill: rows.reduce((s, r) => s + r.billed, 0) + fixedTotal,
+        totDays: rows.reduce((s, r) => s + r.rec.days, 0),
+        unbilledDays: rows.filter(r => r.client).reduce((s, r) => s + r.rec.days, 0) };
+    }
+    function billingBreakdownHtml() {
+      const d = billingData();
+      if (!d.rows.length && !d.fixedTotal) return '';
+      const statusBadge = r => r.client
+        ? '<span class="badge badge-prog" title="Client-side (kind “client”): their effort is real work in the schedule but NEVER costed or billed — it appears in the SOW as a client responsibility.">🤝 client — unbilled</span>'
+        : (r.rate || r.bill)
+          ? '<span class="badge badge-done" title="Internal: effort × rates flows into cost, price, margin and the SOW.">💰 billed</span>'
+          : '<span class="badge badge-critical" title="Internal person with NO rates — their effort silently prices at $0, understating cost and the SOW. Set rates in the roster above or apply a rate card.">⚠ internal, no rate → $0</span>';
+      return `<h3 style="font-size:0.95rem;margin:1.25rem 0 0.25rem">💰 Billing &amp; cost breakdown <span class="help-text" style="font-weight:400">(what is billed right now, what is not, and why)</span>
+        <button class="btn-sm btn-secondary no-print" style="margin-left:8px" onclick="exportBillingCSV()" title="One row per person: kind, rates, effort, cost and billed totals — for finance review or the SOW appendix">⬇ Billing (.csv)</button></h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Person / role</th><th>Status</th><th title="Σ expected effort across their tasks: TE × units% (attendee shares included)">Effort (days)</th><th title="Tasks they participate in (test cases counted separately)">Tasks</th><th title="Internal cost/day × effort — your delivery cost">Cost $</th><th title="Bill rate/day × effort — what the client is charged; margin = bill − cost">Billed $</th></tr></thead>
+          <tbody>
+            ${d.rows.map(r => `<tr${r.client ? ' style="background:#fffbeb"' : ''}>
+              <td>${escapeHtml(r.nm)}${r.rec.tcs ? ` <span class="help-text" style="font-size:0.68rem">(${r.rec.tcs} TC)</span>` : ''}</td>
+              <td>${statusBadge(r)}</td>
+              <td>${r.rec.days.toFixed(1)}</td>
+              <td>${r.rec.tasks}</td>
+              <td>${r.client ? '<span class="help-text">$0 — client-side</span>' : fmtMoney(r.cost)}</td>
+              <td>${r.client ? '<span class="help-text">$0 — client-side</span>' : (r.bill ? fmtMoney(r.billed) : '<span class="help-text">no bill rate</span>')}</td>
+            </tr>`).join('')}
+            ${d.fixedTotal ? `<tr><td>Fixed costs (licenses, travel…)</td><td><span class="badge badge-done">💰 billed</span></td><td>—</td><td>—</td><td>${fmtMoney(d.fixedTotal)}</td><td>${fmtMoney(d.fixedTotal)}</td></tr>` : ''}
+            <tr style="font-weight:700;background:#f8fafc"><td>Σ Total</td><td></td><td>${d.totDays.toFixed(1)}</td><td></td><td>${fmtMoney(d.totCost)}</td><td>${fmtMoney(d.totBill)}</td></tr>
+          </tbody></table></div>
+        <p class="help-text" style="margin-top:0.4rem">Cost uses each person's <b>cost rate</b>; Billed uses their <b>bill rate</b> (margin = the difference). Client-side people (highlighted) do real scheduled work but are never billed — that work lands in the SOW as a client responsibility instead.${d.unbilledDays ? ` Right now <b>${d.unbilledDays.toFixed(1)} ${unitLabel()}</b> of effort is client-side/unbilled.` : ''}${d.noEstCount ? ` <span style="color:var(--critical)">⚠ ${d.noEstCount} work package(s) have no estimate at all — they are missing from BOTH columns (see the alarm on the Tasks tab).</span>` : ''}</p>`;
+    }
+    // Roster entries participating in zero tasks — usually AI-proposed parallel
+    // staff that never got work, or leftovers from an earlier plan version.
+    function removeIdleResources() {
+      const used = new Set();
+      tasks.forEach(t => taskParticipants(t).forEach(pr => used.add(pr.name)));
+      const idle = Object.keys(resources).filter(n => !used.has(n));
+      if (!idle.length) { flashSaved('✓ No idle roster entries.'); return; }
+      if (!confirm('Remove ' + idle.length + ' roster entr' + (idle.length === 1 ? 'y' : 'ies') + ' with no work in this plan?\n\n' + idle.join(', ') + '\n\nRates/PTO on them are discarded; tasks are untouched (they own none). ↶ Undo restores.')) return;
+      idle.forEach(n => { delete resources[n]; });
+      saveLocal();
+      renderResources();
+      flashSaved('🧹 ' + idle.length + ' idle roster entr' + (idle.length === 1 ? 'y' : 'ies') + ' removed. ↶ Undo restores.');
+    }
+    function exportBillingCSV() {
+      if (!ensureCalc()) return;
+      const d = billingData();
+      const rows = [['Person / role','Status','Kind','Cost rate/day','Bill rate/day','Effort (days)','Tasks','Test cases','Cost $','Billed $']];
+      d.rows.forEach(r => rows.push([r.nm, r.statusText, r.client ? 'client' : 'internal', r.client ? '' : r.rate, r.client ? '' : r.bill,
+        r.rec.days.toFixed(2), r.rec.tasks, r.rec.tcs, r.cost.toFixed(0), r.billed.toFixed(0)]));
+      if (d.fixedTotal) rows.push(['Fixed costs (licenses, travel…)', 'billed', '', '', '', '', '', '', d.fixedTotal.toFixed(0), d.fixedTotal.toFixed(0)]);
+      rows.push(['TOTAL', '', '', '', '', d.totDays.toFixed(2), '', '', d.totCost.toFixed(0), d.totBill.toFixed(0)]);
+      download(safeName() + '-billing.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
+    }
     function earnedValue() { return leafTasks().reduce((s, t) => s + taskCost(t) * ((t.percentComplete || 0) / 100), 0); }
     function fmtMoney(v) {
       if (!Number.isFinite(v)) return '—';
@@ -4753,10 +4839,17 @@
           </td>
         </tr>`;
       }).join('');
+      const idleNames = (() => {
+        const used = new Set();
+        tasks.forEach(t => taskParticipants(t).forEach(pr => used.add(pr.name)));
+        return Object.keys(resources).filter(n => !used.has(n));
+      })();
       const roster = `
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.4rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.4rem;gap:0.5rem;flex-wrap:wrap">
           <h3 style="font-size:0.95rem">Resource roster</h3>
-          <button class="btn-sm btn-primary no-print" onclick="addResourcePrompt()">➕ Add resource</button>
+          <span style="display:inline-flex;gap:0.4rem">
+          ${idleNames.length ? `<button class="btn-sm btn-secondary no-print" onclick="removeIdleResources()" title="Remove ${idleNames.map(escapeHtml).join(', ')} — on the roster but participating in ZERO tasks. Usually left over from an AI update that proposed extra parallel staff ('QA Tester 2') without assigning them work, or from an old version of the plan. ↶ Undo restores.">🧹 Remove ${idleNames.length} idle</button>` : ''}
+          <button class="btn-sm btn-primary no-print" onclick="addResourcePrompt()">➕ Add resource</button></span>
         </div>
         <div class="table-wrap" style="margin-bottom:1rem"><table>
           <thead><tr><th title="Person, role or team">Resource</th><th title="Internal = yours (costed & billed). Client = their people: tracked for workload/PTO but never costed or billed">Type</th><th title="100 = one full-time person; 300 = a 3-person team; 50 = someone available half-time">Capacity %</th><th title="What they cost YOU per working day — drives the cost & EVM layer">Cost $/d</th><th title="What you charge the client per day — drives pricing, margin and the SOW">Bill $/d</th><th title="Vacation / unavailable dates. Scheduled work on these days is flagged as a conflict">PTO / unavailable</th><th title="Tasks they participate in (incl. as attendee)">Tasks</th><th title="Total planned working days × their allocation">Planned effort</th><th title="Busiest single day as % of capacity">Peak load</th><th title="OK = within capacity every day; over ×N = N conflict days to resolve">Status</th><th></th></tr></thead>
@@ -4883,7 +4976,8 @@
           <div class="legend-item"><div class="legend-swatch" style="background:#dc2626"></div>Over capacity / work on PTO</div>
           <div class="legend-item"><div class="legend-swatch" style="background:#e9d5ff"></div>PTO</div>
         </div>
-        ${summary}`;
+        ${summary}
+        ${billingBreakdownHtml()}`;
 
       // bind inputs/buttons by index (safe against names with quotes)
       cont.querySelectorAll('input.rl-cap').forEach(inp => {
@@ -6043,7 +6137,7 @@ Return ONLY JSON (no prose, no fences):
         testCasesForAC(a.id).forEach(tc => {
           anySpec = true;
           L.push('', '### ' + tc.name, '- **Verifies:** ' + a.id + ' (' + s.id + ') — ' + a.text,
-            '- **Owner:** ' + (tc.owner || '_unassigned_') + ' • **Estimate:** ' + (tc.te || 0).toFixed(1) + ' ' + unitLabel() + ' • **Status:** ' + ((tc.percentComplete || 0) >= 100 ? '✅ executed' : (tc.percentComplete || 0) > 0 ? 'in progress' : 'not run'),
+            '- **Owner:** ' + (tc.owner || '_unassigned_') + ' • **Estimate:** ' + fmtDurText(tc.te) + ' • **Status:** ' + ((tc.percentComplete || 0) >= 100 ? '✅ executed' : (tc.percentComplete || 0) > 0 ? 'in progress' : 'not run'),
             '- **Steps:**');
           if (!hasRealSteps(tc)) L.push('  ⚠ **No executable steps recorded** — run 🧪 Generate test plan (it re-specifies shallow test cases in place). Current note: ' + (tc.description || '_none_'));
           else String(tc.description).split(/(?<![\w.])(?=\d+\.\s)/).map(x => x.trim()).filter(Boolean).forEach(st => L.push('  ' + (/^\d+\./.test(st) ? st : '1. ' + st)));
@@ -6087,7 +6181,7 @@ Return ONLY JSON (no prose, no fences):
         const acId = ((tc.name.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').toLowerCase();
         const hit = acIndex[acId];
         rows.push([tc.name, hit ? hit.a.id : acId.toUpperCase(), hit ? gwtLines(hit.a.text) : '', hit ? hit.s.id + '\nAs a ' + (hit.s.persona || '?') + ', I want to ' + (hit.s.want || '?') : '',
-          hasRealSteps(tc) ? tcStepLines(tc.description) : '⚠ NO EXECUTABLE STEPS — run 🧪 Generate test plan (re-specifies shallow TCs)' + (tc.description ? '\nCurrent note: ' + tc.description : ''), gwtLines(tc.acceptance), tc.owner || '', (tc.te || 0).toFixed(1), (tc.percentComplete || 0) + '%', taskStatus(tc).label,
+          hasRealSteps(tc) ? tcStepLines(tc.description) : '⚠ NO EXECUTABLE STEPS — run 🧪 Generate test plan (re-specifies shallow TCs)' + (tc.description ? '\nCurrent note: ' + tc.description : ''), gwtLines(tc.acceptance), tc.owner || '', fmtDurText(tc.te), (tc.percentComplete || 0) + '%', taskStatus(tc).label,
           tc.startDate ? fmtISO(tc.startDate) : '', '', '']);
       });
       return rows;
@@ -6967,7 +7061,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         rows.push([
           t.wbs, depth + 1, t.name, t.isSummary ? 'Summary' : (t.milestone ? 'Milestone' : (isTestCaseTask(t) ? 'Test case' : 'Work package')),
           t.owner || '', t.startDate?fmtISO(t.startDate):'', t.finishDate?fmtISO(t.finishDate):'',
-          t.milestone ? '0' : (t.te||0).toFixed(1), (t.percentComplete||0)+'%',
+          t.milestone ? '0' : (t.te||0).toFixed(2), (t.percentComplete||0)+'%',
           t.deliverable||'', t.description||'', t.acceptance||'',
           (t.predecessors || []).map(pd => { const pt = idTo[pd.id]; return pt ? fmtLink(pt, pd.type, pd.lag) : ''; }).filter(Boolean).join(' || '),
           (succOf[t.id] || []).join(' || '),
@@ -7784,12 +7878,16 @@ ${aiSchemaHint()}`;
           if (preds.length || dependsOn.length === 0) t.predecessors = preds; // all names unresolvable → keep old links
         }
       });
-      // 3) resources — merge-only: add/update capacity & kind; rates/PTO untouched
+      // 3) resources — merge-only: add/update capacity & kind; rates/PTO untouched.
+      // A NEW name is only kept if some task actually references it after the
+      // merge — AI updates love proposing "QA Tester 2"-style parallel staff
+      // without assigning them work, which used to leave idle roster clutter.
       if (Array.isArray(plan.resources)) {
+        const brandNew = new Set();
         plan.resources.forEach(r => {
           let nm = String((r && r.name) || '').trim(); if (!nm) return;
           const exKey = Object.keys(resources).find(k => k.toLowerCase() === nm.toLowerCase());
-          if (exKey) nm = exKey;
+          if (exKey) nm = exKey; else brandNew.add(nm);
           const old = resources[nm] || {};
           const cap = Number(r.capacityPercent != null ? r.capacityPercent : r.capacity);
           resources[nm] = Object.assign({}, old, {
@@ -7797,6 +7895,11 @@ ${aiSchemaHint()}`;
             kind: r.kind === 'client' ? 'client' : (old.kind || 'internal')
           });
         });
+        if (brandNew.size) {
+          const used = new Set();
+          tasks.forEach(t => taskParticipants(t).forEach(pr => used.add(pr.name.toLowerCase())));
+          brandNew.forEach(nm => { if (!used.has(nm.toLowerCase())) delete resources[nm]; });
+        }
       }
       syncResources();
       calculated = false;
@@ -8281,8 +8384,8 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
             // blank duration on a phase row reads like an omission
             effort: (clientSafeReports || t.milestone) ? null
               : t.isSummary
-                ? leafDescendants(t.id).reduce((sx, x) => sx + (x.te || 0), 0).toFixed(1) + ' ' + u + ' (rolled up)'
-                : (t.te || 0).toFixed(1) + ' ' + u
+                ? fmtDurText(leafDescendants(t.id).reduce((sx, x) => sx + (x.te || 0), 0)) + ' (rolled up)'
+                : fmtDurText(t.te)
           }));
         })(),
         // aggregated non-functional requirements across all stories (deduped, with story refs)
