@@ -598,14 +598,14 @@
           <div class="form-group" style="margin-top:0.7rem;margin-bottom:0"><label>I want to…</label><textarea id="stWant" rows="2" placeholder="export monthly metrics to CSV" oninput="autoGrowTA(this);updateStoryPreview()"></textarea></div>
           <div class="form-group" style="margin-top:0.7rem;margin-bottom:0"><label>So that…</label><textarea id="stSoThat" rows="2" placeholder="I can report in our BI tool" oninput="autoGrowTA(this);updateStoryPreview()"></textarea></div>
           <div id="stPreview" class="help-text" style="margin-top:0.55rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:0.5rem 0.7rem;font-size:0.82rem;line-height:1.5"></div>
-          <div class="form-group" style="margin-top:0.7rem;margin-bottom:0"><label>Acceptance criteria — one per line, prefix with the path type <span class="info-icon" title="Cover all three: happy = it works; error = user/system does something invalid and it fails gracefully; edge = boundaries, empty states, timeouts, capacity. perf = measurable thresholds. Use Given / When / Then.">i</span></label>
-            <textarea id="stAc" rows="8" oninput="autoGrowTA(this)" placeholder="[happy] Given an admin on the Analytics page, When they export a ≤24-month range, Then a CSV downloads within 5s at p95
-[error] Given a user without the admin role, When they call the export endpoint, Then it returns 403 with no data
-[edge]  Given a range with no records, When they export, Then 'No records found' is shown and no file downloads
-[perf]  Given 100,000 rows, When exported, Then the file completes within 5 s at p95"></textarea></div>
+          <div class="form-group" style="margin-top:0.7rem;margin-bottom:0"><label>Acceptance criteria <span class="info-icon" title="Cover all three: happy = it works; error = something invalid fails gracefully; edge = boundaries, empty states, timeouts, capacity. perf = measurable thresholds. Write each as Given / When / Then.">i</span></label>
+            <div id="stAcRows"></div>
+            <button class="btn-sm btn-secondary no-print" type="button" onclick="stAddAcRow()">＋ Add criterion</button></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-top:0.7rem">
-            <div class="form-group"><label>NFRs (one per line) <span class="info-icon" title="Non-functional requirements: performance, availability, security, accessibility, audit… The most under-scoped and most expensive category in an SOW.">i</span></label><textarea id="stNfr" rows="4" oninput="autoGrowTA(this)" placeholder="p95 export ≤ 5 s at 100k rows&#10;WCAG 2.2 AA on the export control"></textarea></div>
-            <div class="form-group"><label>Assumptions &amp; client dependencies (one per line) <span class="info-icon" title="Each assumption should state the impact if false; each client dependency the consequence of a slip — that's what makes the estimate defensible and re-priceable.">i</span></label><textarea id="stAssume" rows="4" oninput="autoGrowTA(this)" placeholder="A: Sentiment API exists as documented — if false +120-200h&#10;D: Client provides labeled data by Sprint 2 — slip = day-for-day extension"></textarea></div>
+            <div class="form-group" style="align-self:start"><label>NFRs (one per line) <span class="info-icon" title="Non-functional requirements: performance, availability, security, accessibility, audit… The most under-scoped and most expensive category in an SOW.">i</span></label><textarea id="stNfr" rows="4" oninput="autoGrowTA(this)" placeholder="p95 export ≤ 5 s at 100k rows&#10;WCAG 2.2 AA on the export control"></textarea></div>
+            <div class="form-group"><label>Assumptions &amp; client dependencies <span class="info-icon" title="Each assumption states the impact if false; each client dependency the consequence of a slip — that's what makes the estimate defensible and re-priceable.">i</span></label>
+              <div id="stAssumeRows"></div>
+              <button class="btn-sm btn-secondary no-print" type="button" onclick="stAddAssumeRow()">＋ Add</button></div>
           </div>
           <div id="storyModalError" class="error" style="display:none;margin-top:0.6rem"></div>
         </div>
@@ -951,8 +951,9 @@
         <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:0.75rem">
           <div class="form-group">
             <label>Owner / Resource</label>
-            <input id="mOwner" type="text" placeholder="e.g. A. Rivera" list="ownerList" />
+            <input id="mOwner" type="text" placeholder="e.g. A. Rivera" list="ownerList" oninput="updateOwnerRoleHint()" onchange="updateOwnerRoleHint()" />
             <datalist id="ownerList"></datalist>
+            <div id="mOwnerRole" style="margin-top:2px"></div>
           </div>
           <div class="form-group">
             <label>Units % <span class="info-icon" title="How much of the resource this task consumes while active. 100 = full-time. Two 100% tasks at once for one person = over-allocated.">i</span></label>
@@ -1884,6 +1885,7 @@
       document.getElementById('mM').value = '';
       document.getElementById('mP').value = '';
       document.getElementById('mOwner').value = '';
+      updateOwnerRoleHint();
       document.getElementById('mUnits').value = 100;
       document.getElementById('mPct').value = 0;
       document.getElementById('mFixedCost').value = 0;
@@ -1964,6 +1966,7 @@
       document.getElementById('mM').value = isSum ? (t.mUp != null ? +(+t.mUp).toFixed(2) : '') : t.m;
       document.getElementById('mP').value = isSum ? (t.pUp != null ? +(+t.pUp).toFixed(2) : '') : t.p;
       document.getElementById('mOwner').value = t.owner || '';
+      updateOwnerRoleHint();
       document.getElementById('mUnits').value = (t.units == null ? 100 : t.units);
       document.getElementById('mPct').value = t.percentComplete || 0;
       document.getElementById('mFixedCost').value = t.fixedCost || 0;
@@ -2075,7 +2078,10 @@
       const dl = document.getElementById('ownerList');
       if (!dl) return;
       const names = new Set([...tasks.map(t => (t.owner || '').trim()).filter(Boolean), ...Object.keys(resources)]);
-      dl.innerHTML = [...names].map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+      dl.innerHTML = [...names].map(n => {
+        const h = roleHintPlain(n);
+        return `<option value="${escapeHtml(n)}"${h ? ` label="${escapeHtml(n + ' \u2014 ' + h)}"` : ''}></option>`;
+      }).join('');
     }
     // Type-ahead task references: label "WBS · Name" (indented to show hierarchy),
     // resolvable back by label, WBS code, or plain name — case-insensitive.
@@ -2113,9 +2119,10 @@
       row.className = 'dep-row';
       row.style.gridTemplateColumns = '3fr 1fr auto';
       row.innerHTML = `
-        <input class="att-name" list="ownerList" value="${escapeHtml(att.name)}" placeholder="Type resource name…" autocomplete="off" />
+        <div style="min-width:0"><input class="att-name" list="ownerList" value="${escapeHtml(att.name)}" placeholder="Type resource name…" autocomplete="off" style="width:100%" oninput="this.parentElement.querySelector('.att-role').innerHTML = ownerRoleHintHtml(this.value)" />
+        <div class="att-role" style="margin-top:1px">${ownerRoleHintHtml(att.name)}</div></div>
         <input class="att-units" type="number" min="0" step="5" value="${att.units}" title="Units % for this attendee" />
-        <button type="button" class="btn-sm btn-danger" onclick="this.parentElement.remove()">✕</button>`;
+        <button type="button" class="btn-sm btn-danger" onclick="this.parentElement.closest('.dep-row').remove()">✕</button>`;
       wrap.appendChild(row);
     }
     function addDepRow(pred) {
@@ -2370,7 +2377,7 @@
     // filters every suggestion on that string and the second token gets no
     // help. This popover suggests on the LAST token only; clicking or ↓/Enter
     // picks, appends ", " and keeps suggesting so several can be chained.
-    function attachTokenSuggest(inp, labels) {
+    function attachTokenSuggest(inp, labels, hintFn) {
       const pop = document.createElement('div');
       pop.style.cssText = 'position:absolute;z-index:300;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 25px -5px rgb(0 0 0 /.25);max-height:230px;overflow-y:auto;display:none';
       document.body.appendChild(pop);
@@ -2397,7 +2404,7 @@
         items = items.slice(0, 40); // the popover scrolls — never hide options behind a tiny cap
         sel = -1;
         if (!items.length) { pop.style.display = 'none'; return; }
-        pop.innerHTML = items.map((l, i) => `<div data-i="${i}" style="padding:0.35rem 0.6rem;font-size:0.8rem;cursor:pointer;white-space:nowrap">${escapeHtml(l)}</div>`).join('');
+        pop.innerHTML = items.map((l, i) => { const h = hintFn ? hintFn(l) : ''; return `<div data-i="${i}" style="padding:0.35rem 0.6rem;font-size:0.8rem;cursor:pointer;white-space:nowrap">${escapeHtml(l)}${h ? ` <span style="color:var(--muted);font-size:0.68rem">${escapeHtml(h)}</span>` : ''}</div>`; }).join('');
         place(); pop.style.display = 'block';
         [...pop.children].forEach(el => {
           el.addEventListener('mousedown', e => { e.preventDefault(); pick(+el.dataset.i); }); // preventDefault keeps focus → no blur-commit mid-pick
@@ -2500,7 +2507,7 @@
         if (t.owner) syncResources();
         return '';
       });
-      attachTokenSuggest(td.querySelector('input'), Object.keys(resources));
+      attachTokenSuggest(td.querySelector('input'), Object.keys(resources), roleHintPlain);
     }
     function beginOmpEdit(td, id, f) {
       const t = tasks.find(x => x.id === id); if (!t) return;
@@ -2646,6 +2653,30 @@
       if (!r && !cli) return n;
       return n + ' (' + (r || 'client-side') + (r && cli ? ', client' : '') + ')';
     }
+    // plain "Role · CLIENT" tail for datalist labels and suggest popovers
+    function roleHintPlain(name) {
+      const n = String(name || '').trim();
+      if (!n) return '';
+      const r = (resources[n] || {}).role || '';
+      const cli = isClientResource(n);
+      return r + (r && cli ? ' \u00b7 ' : '') + (cli ? 'CLIENT' : '');
+    }
+    // live line under the editor's owner/attendee fields: WHO this person is —
+    // their role and side — or a nudge when the roster doesn't know yet
+    function ownerRoleHintHtml(name) {
+      const n = String(name || '').trim();
+      if (!n) return '';
+      if (!resources[n]) return '<span class="help-text" style="font-size:0.68rem">new person \u2014 joins the roster on save; set their role on the \ud83d\udc65 Team tab</span>';
+      const r = (resources[n] || {}).role || '';
+      const cli = isClientResource(n);
+      if (!r && !cli) return '<span class="help-text" style="font-size:0.68rem">role not set \u2014 add it in the \ud83d\udc65 Team roster so every view and email shows who does what</span>';
+      return '<span class="help-text" style="font-size:0.68rem">' + escapeHtml(r) + (r && cli ? ' \u00b7 ' : '') + (cli ? '<span style="color:#3730a3;font-weight:700">CLIENT</span>' : '') + '</span>';
+    }
+    function updateOwnerRoleHint() {
+      const el = document.getElementById('mOwnerRole'); if (!el) return;
+      const inp = document.getElementById('mOwner');
+      el.innerHTML = ownerRoleHintHtml(inp ? inp.value : '');
+    }
     // Who actually does the work under a summary/phase row — the phase's own
     // owner label does no scheduled work; the sub-tasks carry the effort.
     function summaryOwnerCell(t) {
@@ -2655,7 +2686,7 @@
       if (!list.length) return escapeHtml(t.owner || '—');
       const mismatch = (t.owner || '').trim() && !counts.has((t.owner || '').trim());
       const label = list[0][0] + (list.length > 1 ? ' +' + (list.length - 1) : '');
-      const title = 'Who does the work in this phase (rolled up from sub-tasks): ' + list.map(([n, c]) => n + ' ×' + c).join(', ')
+      const title = 'Who does the work in this phase (rolled up from sub-tasks): ' + list.map(([n, c]) => roleText(n) + ' ×' + c).join(', ')
         + (mismatch ? '. ⚠ The phase row itself is labeled "' + (t.owner || '').trim() + '" but owns no scheduled work — sub-tasks carry all the effort. Reassign the sub-tasks (bulk-select or ⚖ Spread test cases) if the wrong people ended up doing it.' : '');
       return `<span style="cursor:help${mismatch ? ';color:#b45309' : ''}" title="${escapeHtml(title)}">${mismatch ? '⚠ ' : ''}${escapeHtml(label)} <span class="help-text" style="font-size:0.65rem">does the work</span></span>`;
     }
@@ -4701,7 +4732,7 @@
             const risk = ci >= 80 ? ['High','#fee2e2','#b91c1c'] : ci >= 30 ? ['Medium','#fef3c7','#b45309'] : ['Low','#dcfce7','#15803d'];
             return `<tr>
               <td>${escapeHtml(t.name)}</td>
-              <td style="font-size:0.8rem">${escapeHtml(t.owner||'—')}</td>
+              <td style="font-size:0.8rem">${escapeHtml(t.owner||'—') + roleSub(t.owner)}</td>
               <td><div style="display:flex;align-items:center;gap:0.5rem"><div class="progress-track" style="flex:1"><div class="progress-fill" style="width:${ci}%;background:#ef4444"></div></div><span style="font-size:0.8rem;min-width:38px">${ci.toFixed(0)}%</span></div></td>
               <td>${Math.abs(t.slack) < 0.05 ? '0.0' : t.slack.toFixed(1)}</td>
               <td>${t.variance.toFixed(2)}</td>
@@ -6383,7 +6414,7 @@
             ? tcs.map(tc => `<span class="badge ${tc.percentComplete >= 100 ? 'badge-done' : tc.percentComplete > 0 ? 'badge-prog' : 'badge-notstarted'}" style="cursor:pointer" onclick="openEditModal(${tc.id})" title="${escapeHtml(tc.name + ' — ' + (tc.percentComplete || 0) + '% complete.' + (tc.description ? '\nSTEPS: ' + (tc.description.length > 260 ? tc.description.slice(0, 258) + '…' : tc.description) : '') + (tc.acceptance ? '\nEXPECTED: ' + (tc.acceptance.length > 160 ? tc.acceptance.slice(0, 158) + '…' : tc.acceptance) : '') + '\nClick to open the test-case task.')}">${escapeHtml((tc.wbs || 'TC'))}</span>`).join(' ')
             : (isProcessStory(s) ? '<span class="help-text" title="PM/governance process criterion — acceptance is evidenced by the artifact itself (signed document, distributed report, log entry), not by a scheduled UAT test case.">📋 process</span>' : '<span class="help-text" title="No test-case task references this criterion yet — 🧪 Generate test plan covers it (named TC ' + escapeHtml(a.id) + ' — …)">—</span>'); })() : ''}</td>
           <td style="font-size:0.75rem;white-space:nowrap;${t ? 'cursor:pointer;color:var(--primary)' : ''}" ${t ? `onclick="openEditModal(${t.id}, true)" title="Open ${escapeHtml(t.wbs + ' ' + t.name)}"` : ''}>${t ? escapeHtml(t.wbs + ' ' + (t.name.length > 24 ? t.name.slice(0, 22) + '…' : t.name)) : '⚠ unlinked'}</td>
-          <td style="font-size:0.75rem">${t ? escapeHtml(t.owner || '—') : ''}</td>
+          <td style="font-size:0.75rem">${t ? escapeHtml(t.owner || '—') + roleSub(t.owner) : ''}</td>
           <td style="font-size:0.75rem;white-space:nowrap">${t ? (t.percentComplete || 0) + '% · ' + taskStatus(t).label : ''}</td>
         </tr>`;
         acsList.forEach((a, i) => matrixRows.push(cells(a, i === 0)));
@@ -6396,7 +6427,7 @@
           <td style="font-size:0.78rem;color:#b45309;min-width:220px">⚠ <b>No story yet</b> — scoped &amp; priced work with no agreed acceptance criteria. Use “🤖 Draft the missing stories” in the coverage banner.</td>
           <td style="font-size:0.75rem;color:#b45309">—</td><td></td><td style="font-size:0.78rem;color:#b45309"><i>none</i></td><td></td>
           <td style="font-size:0.75rem;white-space:nowrap;cursor:pointer;color:var(--primary)" onclick="openEditModal(${t.id}, true)" title="Open ${escapeHtml(t.wbs + ' ' + t.name)}">${escapeHtml(t.wbs + ' ' + (t.name.length > 24 ? t.name.slice(0, 22) + '…' : t.name))}</td>
-          <td style="font-size:0.75rem">${escapeHtml(t.owner || '—')}</td>
+          <td style="font-size:0.75rem">${escapeHtml(t.owner || '—') + roleSub(t.owner)}</td>
           <td style="font-size:0.75rem;white-space:nowrap">${(t.percentComplete || 0)}% · ${escapeHtml(taskStatus(t).label)}</td>
         </tr>`);
       });
@@ -6420,7 +6451,7 @@
           <td style="font-size:0.75rem;white-space:nowrap" title="${hit ? escapeHtml(hit.a.text) : 'criterion not found in Requirements'}">${hit ? escapeHtml(hit.a.id) + ' <span class="help-text">(' + escapeHtml(hit.s.id) + ')</span>' : escapeHtml(acId.toUpperCase() || '—')}</td>
           <td style="font-size:0.76rem;min-width:260px;max-width:380px">${steps}</td>
           <td style="font-size:0.76rem;min-width:180px;max-width:300px">${escapeHtml(tc.acceptance || '—')}</td>
-          <td style="font-size:0.75rem;white-space:nowrap">${escapeHtml(tc.owner || '—')}</td>
+          <td style="font-size:0.75rem;white-space:nowrap">${escapeHtml(tc.owner || '—') + roleSub(tc.owner)}</td>
           <td style="font-size:0.75rem;white-space:nowrap">${tc.startDate ? escapeHtml(fmtNice(tc.startDate) + ' → ' + fmtNice(tc.finishDate)) : '—'}</td>
           <td style="font-size:0.75rem;white-space:nowrap">${(tc.percentComplete || 0)}% · ${escapeHtml(st.label)}</td>
         </tr>`;
@@ -7159,6 +7190,68 @@ Write the test cases for the criteria above, following the contract exactly. Ret
         setTimeout(() => { el.style.background = orig || '#fff'; }, 1800);
       }, 60);
     }
+    // ---- structured story-editor rows: type dropdowns instead of [happy] /
+    // A: / D: prefixes. Same data model — save rebuilds the exact arrays.
+    function stAddAcRow(a) {
+      a = a || { type: 'happy', text: '' };
+      const wrap = document.getElementById('stAcRows');
+      const row = document.createElement('div');
+      row.className = 'st-ac-row';
+      row.style.cssText = 'display:grid;grid-template-columns:132px 1fr auto;gap:0.5rem;align-items:start;margin-bottom:0.45rem';
+      row.innerHTML = `
+        <select class="st-ac-type" title="happy = it works · error = fails gracefully · edge = boundaries/empty/timeouts · perf = measured threshold" style="padding:0.35rem 0.4rem;font-size:0.8rem">
+          <option value="happy">✅ happy path</option><option value="error">⚠️ error path</option>
+          <option value="edge">🧪 edge case</option><option value="perf">📏 performance</option></select>
+        <textarea class="st-ac-text" rows="2" placeholder="Given … When … Then …" oninput="autoGrowTA(this)" style="font-size:0.85rem"></textarea>
+        <button type="button" class="btn-sm btn-danger" title="Remove this criterion" onclick="this.parentElement.remove()">✕</button>`;
+      if (/^(happy|error|edge|perf)$/.test(String(a.type))) row.querySelector('select').value = a.type;
+      row.querySelector('textarea').value = a.text || '';
+      wrap.appendChild(row);
+      autoGrowTA(row.querySelector('textarea'));
+      return row;
+    }
+    function stAcEntries() {
+      return [...document.querySelectorAll('#stAcRows .st-ac-row')]
+        .map(r => ({ type: r.querySelector('.st-ac-type').value, text: r.querySelector('.st-ac-text').value.trim() }))
+        .filter(x => x.text);
+    }
+    // bracket-line bridge (paste-style input; also what the probes drive)
+    function stSetAcLines(text) {
+      document.getElementById('stAcRows').innerHTML = '';
+      String(text || '').split('\n').map(l => l.trim()).filter(Boolean).forEach(l => {
+        const m = l.match(/^\[(happy|error|edge|perf)\]\s*(.*)$/i);
+        stAddAcRow(m ? { type: m[1].toLowerCase(), text: m[2] } : { type: 'happy', text: l });
+      });
+    }
+    function stAddAssumeRow(x) {
+      x = x || { kind: 'A', text: '' };
+      const wrap = document.getElementById('stAssumeRows');
+      const row = document.createElement('div');
+      row.className = 'st-as-row';
+      row.style.cssText = 'display:grid;grid-template-columns:176px 1fr auto;gap:0.5rem;align-items:start;margin-bottom:0.45rem';
+      row.innerHTML = `
+        <select class="st-as-kind" title="Assumption: state the impact if false. Client dependency: state the consequence of a slip." style="padding:0.35rem 0.4rem;font-size:0.8rem">
+          <option value="A">🤔 Assumption</option><option value="D">🤝 Client dependency</option></select>
+        <textarea class="st-as-text" rows="2" placeholder="… — impact if false / if slipped: …" oninput="autoGrowTA(this)" style="font-size:0.85rem"></textarea>
+        <button type="button" class="btn-sm btn-danger" title="Remove" onclick="this.parentElement.remove()">✕</button>`;
+      if (x.kind === 'D') row.querySelector('select').value = 'D';
+      row.querySelector('textarea').value = x.text || '';
+      wrap.appendChild(row);
+      autoGrowTA(row.querySelector('textarea'));
+      return row;
+    }
+    function stAssumeEntries() {
+      return [...document.querySelectorAll('#stAssumeRows .st-as-row')]
+        .map(r => { const tx = r.querySelector('.st-as-text').value.trim(); return tx ? r.querySelector('.st-as-kind').value + ': ' + tx : ''; })
+        .filter(Boolean);
+    }
+    function stSetAssumeLines(text) {
+      document.getElementById('stAssumeRows').innerHTML = '';
+      String(text || '').split('\n').map(l => l.trim()).filter(Boolean).forEach(l => {
+        const m = l.match(/^([AD])\s*:\s*(.*)$/i);
+        stAddAssumeRow(m ? { kind: m[1].toUpperCase(), text: m[2] } : { kind: 'A', text: l });
+      });
+    }
     function openStoryModal(storyId) {
       if (!reqs) reqs = { personas: [], epics: [], stories: [] };
       editingStoryId = storyId;
@@ -7179,9 +7272,12 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       document.getElementById('stWant').value = s ? (s.want || '') : '';
       document.getElementById('stSoThat').value = s ? (s.soThat || '') : '';
       document.getElementById('stVerif').value = s ? (s.verification || '') : '';
-      document.getElementById('stAc').value = s ? (s.ac || []).map(a => `[${a.type}] ${a.text}`).join('\n') : '';
+      document.getElementById('stAcRows').innerHTML = '';
+      if (s) (s.ac || []).forEach(a => stAddAcRow(a));
+      else { stAddAcRow({ type: 'happy', text: '' }); stAddAcRow({ type: 'error', text: '' }); stAddAcRow({ type: 'edge', text: '' }); }
       document.getElementById('stNfr').value = s ? (s.nfrs || []).join('\n') : '';
-      document.getElementById('stAssume').value = s ? (s.assumptions || []).join('\n') : '';
+      document.getElementById('stAssumeRows').innerHTML = '';
+      if (s) (s.assumptions || []).forEach(l => { const m = String(l).match(/^([AD])\s*:\s*(.*)$/i); stAddAssumeRow(m ? { kind: m[1].toUpperCase(), text: m[2] } : { kind: 'A', text: l }); });
       document.getElementById('stDeleteBtn').style.display = s ? '' : 'none';
       document.getElementById('storyModalError').style.display = 'none';
       document.getElementById('storyModal').classList.add('open');
@@ -7196,7 +7292,8 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       el.style.height = Math.min(el.scrollHeight + 2, 420) + 'px'; // cap so a huge AC list scrolls inside its box, not the page
     }
     function storyModalAutosize() {
-      ['stWant', 'stSoThat', 'stAc', 'stNfr', 'stAssume'].forEach(x => autoGrowTA(document.getElementById(x)));
+      ['stWant', 'stSoThat', 'stNfr'].forEach(x => autoGrowTA(document.getElementById(x)));
+      document.querySelectorAll('#stAcRows textarea, #stAssumeRows textarea').forEach(autoGrowTA);
     }
     function updateStoryPreview() {
       const el = document.getElementById('stPreview');
@@ -7240,10 +7337,7 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       const beforeCore = before ? JSON.stringify([before.persona || '', before.want || '', before.soThat || '']) : null;
       const splitLines = elId => document.getElementById(elId).value.split('\n').map(l => l.trim()).filter(Boolean);
       const acBase = id.replace(/^US/i, 'AC');
-      const ac = splitLines('stAc').map((l, i) => {
-        const m = l.match(/^\[(happy|error|edge|perf)\]\s*(.*)$/i);
-        return { id: acBase + '.' + (i + 1), type: m ? m[1].toLowerCase() : 'happy', text: m ? m[2] : l };
-      });
+      const ac = stAcEntries().map((x, i) => ({ id: acBase + '.' + (i + 1), type: x.type, text: x.text }));
       const wbsIdVal = document.getElementById('stWbs').value ? Number(document.getElementById('stWbs').value) : null;
       const wbsTask = wbsIdVal != null ? tasks.find(t => t.id === wbsIdVal) : null;
       const story = {
@@ -7253,7 +7347,7 @@ Write the test cases for the criteria above, following the contract exactly. Ret
         persona: document.getElementById('stPersona').value.trim(),
         want, soThat: document.getElementById('stSoThat').value.trim(),
         verification: document.getElementById('stVerif').value || null,
-        ac, nfrs: splitLines('stNfr'), assumptions: splitLines('stAssume')
+        ac, nfrs: splitLines('stNfr'), assumptions: stAssumeEntries()
       };
       const idx = editingStoryId != null ? reqs.stories.findIndex(s => s.id === editingStoryId) : -1;
       if (idx >= 0) reqs.stories[idx] = story; else reqs.stories.push(story);
@@ -9542,7 +9636,7 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
           <td><span class="badge ${r.type === 'Risk' ? 'badge-critical' : r.type === 'Issue' ? 'badge-warn' : r.type === 'Assumption' ? 'badge-info' : 'badge-slack'}">${r.type}</span></td>
           <td style="font-weight:600">${escapeHtml(r.title)}</td>
           <td>${raidScoreBadge(r)}</td>
-          <td style="font-size:0.8rem">${escapeHtml(r.owner || '—')}</td>
+          <td style="font-size:0.8rem">${escapeHtml(r.owner || '—') + roleSub(r.owner)}</td>
           <td style="font-size:0.8rem">${t ? escapeHtml(t.wbs + ' ' + t.name) : '—'}</td>
           <td style="font-size:0.8rem;max-width:300px">${escapeHtml(r.mitigation || '')}</td>
           <td><select class="mini-inp" style="width:auto" onchange="setRaidStatus(${r.id}, this.value)">
