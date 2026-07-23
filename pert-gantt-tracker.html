@@ -574,7 +574,8 @@
             <button class="btn-secondary btn-sm" onclick="exportTestCasesCSV()" title="UAT execution sheet (CSV): one row per test case with numbered steps, expected result, owner, schedule, and blank Result / Defect columns for the tester to fill in">⬇ Test cases (.csv)</button>
             <button class="btn-secondary btn-sm" onclick="exportTestCasesXLS()" title="Same execution sheet formatted for Excel: styled header, wrapped steps, yellow fill-in columns. Excel shows a one-time format notice, then opens normally.">⬇ Excel</button>
             <button class="btn-secondary btn-sm" onclick="exportReqsMarkdown()" title="Full requirements document: personas, epics, stories, ACs, NFRs, assumptions — ready for the SOW appendix">⬇ Markdown</button>
-            <button class="btn-secondary btn-sm" onclick="exportStoriesEditableCSV()" title="One row per acceptance criterion, Excel-safe. Send it to the client for edits, then bring the edited file back with IMPORT — stories merge by Story ID (blank ID = new story) and changed criteria offer test-case regeneration.">✏️ Editable stories (.csv)</button>
+            <button class="btn-secondary btn-sm" onclick="exportJiraCSV()" title="One CSV Jira imports directly (Settings ▸ System ▸ External System Import): epics, stories with full Given/When/Then acceptance criteria, and test cases with steps + expected results — formatted with Jira wiki markup. Stories/test cases that already carry a Jira link export their key in an Issue Key column, so re-exporting UPDATES those tickets instead of duplicating them.">⬆ Jira import (.csv)</button>
+          <button class="btn-secondary btn-sm" onclick="exportStoriesEditableCSV()" title="One row per acceptance criterion, Excel-safe. Send it to the client for edits, then bring the edited file back with IMPORT — stories merge by Story ID (blank ID = new story) and changed criteria offer test-case regeneration.">✏️ Editable stories (.csv)</button>
             <button class="btn-secondary btn-sm" onclick="exportTraceCSV()" title="Traceability matrix: one row per acceptance criterion — epic → story → AC → test cases → WBS item → status">⬇ Traceability (.csv)</button>
             <button class="btn-secondary btn-sm" onclick="exportTraceXLS()" title="Same traceability matrix formatted for Excel: styled header, sized columns, line breaks inside Given/When/Then and test-case cells. Excel shows a one-time format notice, then opens normally.">⬇ Traceability Excel</button>
           </div>
@@ -598,7 +599,7 @@
             <div class="form-group" style="margin-bottom:0"><label>Epic</label><select id="stEpic"></select></div>
             <div class="form-group" style="margin-bottom:0"><label>WBS activity (traces to) <span class="info-icon" title="The plan task that builds this story — status and completeness roll up from it">i</span></label><select id="stWbs"></select></div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:0.75rem;margin-top:0.7rem">
+          <div style="display:grid;grid-template-columns:1fr 1.35fr 0.85fr;gap:0.75rem;margin-top:0.7rem">
             <div class="form-group" style="margin-bottom:0"><label>As a… (persona) <span class="info-icon" title="WHO accepts the value — a client-side user, manager or stakeholder. Delivery-team roles are flagged by the lint on product stories.">i</span></label><input id="stPersona" type="text" placeholder="billing administrator" oninput="updateStoryPreview()" /></div>
             <div class="form-group" style="margin-bottom:0"><label>Verified by <span class="info-icon" title="UAT test cases = a tester executes steps against the built product (features, data rules, dashboards, access control). Artifact = acceptance is evidenced by the deliverable or record itself (meetings, requirements docs, design approvals, documentation, training, QA/UAT execution) — real acceptance criteria for billing, but 🧪 Generate test plan will NOT create test tasks for it.">i</span></label>
             <select id="stVerif">
@@ -606,6 +607,7 @@
               <option value="uat">UAT test cases — tester executes steps against the product</option>
               <option value="artifact">Artifact / sign-off — the deliverable itself is the evidence</option>
             </select></div>
+            <div class="form-group" style="margin-bottom:0"><label>Jira ticket <span class="info-icon" title="Paste the Jira URL (or key) once the build team creates the ticket. It shows as a 🔗 chip on the story card and traceability matrix, survives the editable-workbook round trip, and makes the ⬆ Jira export UPDATE this ticket instead of duplicating it.">i</span></label><input id="stJira" type="text" placeholder="https://team.atlassian.net/browse/HLX-42" /></div>
           </div>
           <div class="form-group" style="margin-top:0.7rem;margin-bottom:0"><label>I want to…</label><textarea id="stWant" rows="2" placeholder="export monthly metrics to CSV" oninput="autoGrowTA(this);updateStoryPreview()"></textarea></div>
           <div class="form-group" style="margin-top:0.7rem;margin-bottom:0"><label>So that…</label><textarea id="stSoThat" rows="2" placeholder="I can report in our BI tool" oninput="autoGrowTA(this);updateStoryPreview()"></textarea></div>
@@ -1031,6 +1033,10 @@
                 <input id="mActualCost" type="number" min="0" step="100" value="0" />
               </div>
             </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label>Jira / evidence link <span class="info-icon" title="The build team's ticket for this work — or, on a test case, the link that EVIDENCES the result (the Jira where the run/defect lives). Renders as a 🔗 chip in the test-case views, survives the editable-workbook round trip, and lets the ⬆ Jira export UPDATE the linked ticket instead of creating a duplicate.">i</span></label>
+              <input id="mJira" type="text" placeholder="https://yourteam.atlassian.net/browse/HLX-142 (or just HLX-142)" />
+            </div>
           </div>
         </details>
         <div id="modalError" class="error" style="display:none"></div>
@@ -1124,7 +1130,7 @@
       return Object.assign({
         id: 0, name: '', o: 0, m: 0, p: 0, milestone: false,
         owner: '', units: 100, attendees: [], levelDelay: 0, percentComplete: 0, predecessors: [],
-        startNoEarlier: '', deadline: '', autoActualStart: false, autoActualFinish: false,
+        startNoEarlier: '', deadline: '', jira: '', autoActualStart: false, autoActualFinish: false,
         parentId: null, description: '', deliverable: '', acceptance: '',
         actualStart: '', actualFinish: '', fixedCost: 0, actualCost: 0,
         baseStart: null, baseFinish: null, baseTe: null, baseCost: null,
@@ -1683,7 +1689,7 @@
           baseStart: t.baseStart ? fmtISO(new Date(t.baseStart)) : null,
           baseFinish: t.baseFinish ? fmtISO(new Date(t.baseFinish)) : null,
           baseTe: t.baseTe, baseCost: (t.baseCost == null ? null : t.baseCost),
-          startNoEarlier: t.startNoEarlier || '', deadline: t.deadline || '',
+          startNoEarlier: t.startNoEarlier || '', deadline: t.deadline || '', jira: t.jira || '',
           autoActualStart: !!t.autoActualStart, autoActualFinish: !!t.autoActualFinish
         }))
       };
@@ -1709,6 +1715,7 @@
         // strict ISO or nothing — these flow into title/value attributes and
         // the scheduler, and imported backup JSON is untrusted input
         startNoEarlier: /^\d{4}-\d{2}-\d{2}$/.test(t.startNoEarlier || '') ? t.startNoEarlier : '',
+        jira: String(t.jira || '').trim(),
         deadline: /^\d{4}-\d{2}-\d{2}$/.test(t.deadline || '') ? t.deadline : '',
         fixedCost: Number(t.fixedCost) || 0, actualCost: Number(t.actualCost) || 0,
         baseStart: t.baseStart ? new Date(t.baseStart + 'T00:00:00') : null,
@@ -1942,6 +1949,7 @@
             ${acHit ? `<div style="margin-bottom:0.4rem"><b>Acceptance criterion:</b><br/>${gwtLines(acHit.text).split('\n').map(escapeHtml).join('<br/>')}</div>` : ''}
             ${hasRealSteps(t) ? `<div><b>Steps for the tester:</b><ol style="margin:0.2rem 0 0.45rem;padding-left:1.25rem">${steps.map(sx => `<li>${escapeHtml(sx.replace(/^\d+\.\s*/, ''))}</li>`).join('')}</ol></div>` : `<div style="color:#b45309;margin-bottom:0.35rem">⚠ This test case has no real numbered steps yet${t.description ? ' (only: “' + escapeHtml(t.description.slice(0, 90)) + (t.description.length > 90 ? '…' : '') + '”)' : ''} — run 🧪 Generate test plan on the Requirements tab; it now rewrites shallow test cases in place with executable steps.</div>`}
             ${t.acceptance ? `<div style="background:#dcfce7;border-radius:6px;padding:0.35rem 0.55rem"><b>✅ Pass when:</b> ${gwtLines(t.acceptance).split('\n').map(escapeHtml).join('<br/>')}</div>` : ''}
+            ${t.jira ? `<div style="margin-top:0.4rem"><b>\ud83d\udd17 Jira / evidence:</b>${jiraChip(t.jira)}</div>` : ''}
             ${stHit ? `<div class="help-text" style="margin-top:0.4rem">From <b>${escapeHtml(stHit.id)}</b> — As a ${escapeHtml(stHit.persona || '?')}, I want to ${escapeHtml(stHit.want || '?')} <button class="btn-lite no-print" style="margin-left:0.4rem" onclick="openStoryModal('${escapeHtml(stHit.id)}')" title="Edit the story (and this criterion) right here — opens on top, saving refreshes this panel">✎ Edit</button> <button class="btn-lite no-print" onclick="closeModal();openReqStory('${escapeHtml(stHit.id)}')">Open story →</button></div>` : ''}
           </div>`;
         }
@@ -1995,6 +2003,7 @@
       document.getElementById('mActualStart').value = t.actualStart || '';
       document.getElementById('mActualFinish').value = t.actualFinish || '';
       document.getElementById('mActualCost').value = t.actualCost || 0;
+      document.getElementById('mJira').value = t.jira || '';
       populateOwnerList();
       modalRefMap = buildTaskDatalist('predDatalist', x => x.id !== id);
       buildTaskDatalist('parentDatalist', x => !x.milestone && x.id !== id && !allDescendants(id).some(d => d.id === x.id));
@@ -2213,7 +2222,7 @@
       const seen = {}; preds.forEach(pr => seen[pr.id] = pr);
       const finalPreds = Object.values(seen).filter(pr => pr.id !== editingId);
 
-      const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, actualCost, percentComplete: pct, predecessors: finalPreds,
+      const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, actualCost, percentComplete: pct, predecessors: finalPreds, jira: document.getElementById('mJira').value.trim(),
         parentId, description, deliverable, acceptance, actualStart, actualFinish };
       // roll-up rows: the locked, computed-from-children fields never save
       if (isSum) ['o', 'm', 'p', 'milestone', 'owner', 'units', 'attendees', 'percentComplete'].forEach(k => delete fields[k]);
@@ -2644,6 +2653,17 @@
     function rollCell(v, kind) {
       if (!calculated || v == null) return '—';
       return `<span class="help-text" style="cursor:help;font-style:italic" title="Rolled up automatically from the sub-tasks: elapsed span through their dependency network if every one hits its ${kind} estimate. Parallel branches overlap (and staggered starts count as span), so this can differ from a simple sum of effort — and an optimistic span can even exceed a pessimistic one when compression staggers the start times.">${fmtDur(+v)}</span>`;
+    }
+    // Jira reference helpers: extract the KEY from a URL or raw value, and a
+    // small 🔗 chip that links out (stopPropagation so chips inside clickable
+    // rows/cells never also open the row)
+    function jiraKeyOf(v) { const m = String(v || '').match(/([A-Za-z][A-Za-z0-9_]+-\d+)/); return m ? m[1].toUpperCase() : ''; }
+    function jiraChip(v) {
+      const raw = String(v || '').trim(); if (!raw) return '';
+      const key = jiraKeyOf(raw) || (raw.length > 18 ? raw.slice(0, 16) + '\u2026' : raw);
+      return /^https?:\/\//i.test(raw)
+        ? ` <a class="btn-lite no-print" style="text-decoration:none" href="${escapeHtml(raw)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Jira / evidence: ${escapeHtml(raw)}">\ud83d\udd17 ${escapeHtml(key)}</a>`
+        : ` <span class="btn-lite no-print" style="cursor:default" title="Jira reference \u201c${escapeHtml(raw)}\u201d \u2014 paste the full URL to make the chip clickable">\ud83d\udd17 ${escapeHtml(key)}</span>`;
     }
     // One source of truth for showing WHO someone is, not just their name:
     // roleSub → a small second line for HTML tables ("Integration Specialist ·
@@ -6417,7 +6437,7 @@
         const sentence = `As a <b>${escapeHtml(s.persona || '?')}</b>, I want to ${escapeHtml(s.want || '?')}, <span style="color:var(--muted)">so that ${escapeHtml(s.soThat || '?')}</span>`;
         const cells = (a, first) => `<tr>
           ${first ? `<td rowspan="${span}" style="font-size:0.75rem;white-space:nowrap;vertical-align:top">${escapeHtml(s.epicId || '—')}</td>
-          <td rowspan="${span}" style="font-size:0.75rem;white-space:nowrap;vertical-align:top"><b>${escapeHtml(s.id)}</b></td>
+          <td rowspan="${span}" style="font-size:0.75rem;vertical-align:top"><b>${escapeHtml(s.id)}</b>${jiraChip(s.jira)}</td>
           <td rowspan="${span}" style="font-size:0.78rem;min-width:220px;max-width:360px;vertical-align:top">${sentence}</td>` : ''}
           <td style="font-size:0.75rem;white-space:nowrap">${a ? escapeHtml(a.id) : '—'}</td>
           <td style="font-size:0.75rem">${a ? escapeHtml(a.type) : ''}</td>
@@ -6459,7 +6479,7 @@
           ? `<ol style="margin:0;padding-left:1.1rem">${tcStepLines(tc.description).split('\n').filter(Boolean).map(sx => `<li>${escapeHtml(sx.replace(/^\d+\.\s*/, ''))}</li>`).join('')}</ol>`
           : `<span style="color:#b45309">⚠ no executable steps — re-run 🧪 Generate test plan</span>${tc.description ? `<div class="help-text">${escapeHtml(tc.description.slice(0, 120))}</div>` : ''}`;
         return `<tr>
-          <td style="font-size:0.78rem;min-width:180px;max-width:260px;cursor:pointer;color:var(--primary)" onclick="openEditModal(${tc.id}, true)" title="Open the task — full spec, schedule, % complete">${escapeHtml(tc.name)}</td>
+          <td style="font-size:0.78rem;min-width:180px;max-width:260px;cursor:pointer;color:var(--primary)" onclick="openEditModal(${tc.id}, true)" title="Open the task — full spec, schedule, % complete">${escapeHtml(tc.name)}${jiraChip(tc.jira)}</td>
           <td style="font-size:0.75rem;white-space:nowrap" title="${hit ? escapeHtml(hit.a.text) : 'criterion not found in Requirements'}">${hit ? escapeHtml(hit.a.id) + ' <span class="help-text">(' + escapeHtml(hit.s.id) + ')</span>' : escapeHtml(acId.toUpperCase() || '—')}</td>
           <td style="font-size:0.76rem;min-width:260px;max-width:380px">${steps}</td>
           <td style="font-size:0.76rem;min-width:180px;max-width:300px">${escapeHtml(tc.acceptance || '—')}</td>
@@ -6578,6 +6598,7 @@
           <span style="flex:1;min-width:240px;font-size:0.85rem">${sentence}</span>
           <span style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap">
             <span class="help-text" style="font-size:0.72rem;cursor:help;white-space:nowrap" title="Acceptance-criteria mix: ${nAc('happy')} happy path · ${nAc('error')} error path · ${nAc('edge')} edge case${nAc('perf') ? ' · ' + nAc('perf') + ' performance' : ''}${(s.nfrs || []).length ? ' — plus ' + s.nfrs.length + ' NFR(s)' : ''}. Click the row to expand.">${mix}</span>
+            ${jiraChip(s.jira)}
             ${warns.length ? `<span class="risk-tag" style="background:#fef3c7;color:#b45309;cursor:help" title="${escapeHtml(warns.join('\n'))}">⚠ ${warns.length}</span>` : ''}
             ${t ? `<span class="badge badge-info" style="cursor:pointer" onclick="event.preventDefault();event.stopPropagation();openEditModal(${t.id}, true)" title="Traces to WBS ${escapeHtml(t.wbs)} ${escapeHtml(t.name)} — click to open the activity (dictionary inside)">↳ ${escapeHtml(t.wbs)} ${escapeHtml(t.name.length > 22 ? t.name.slice(0, 20) + '…' : t.name)}</span>
               <span class="badge ${pct >= 100 ? 'badge-done' : pct > 0 ? 'badge-prog' : 'badge-notstarted'}" title="Status inherited from the linked WBS activity — check work off on the Tasks tab and this follows">${pct >= 100 ? '✓ done' : pct > 0 ? pct + '%' : 'not started'}</span>`
@@ -7290,6 +7311,7 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       epicSel.value = s ? (s.epicId || '') : '';
       wbsSel.value = s && s.wbsId != null ? String(s.wbsId) : '';
       document.getElementById('stPersona').value = s ? (s.persona || '') : '';
+      document.getElementById('stJira').value = s ? (s.jira || '') : '';
       document.getElementById('stWant').value = s ? (s.want || '') : '';
       document.getElementById('stSoThat').value = s ? (s.soThat || '') : '';
       document.getElementById('stVerif').value = s ? (s.verification || '') : '';
@@ -7368,7 +7390,8 @@ Write the test cases for the criteria above, following the contract exactly. Ret
         persona: document.getElementById('stPersona').value.trim(),
         want, soThat: document.getElementById('stSoThat').value.trim(),
         verification: document.getElementById('stVerif').value || null,
-        ac, nfrs: splitLines('stNfr'), assumptions: stAssumeEntries()
+        ac, nfrs: splitLines('stNfr'), assumptions: stAssumeEntries(),
+        jira: document.getElementById('stJira').value.trim()
       };
       const idx = editingStoryId != null ? reqs.stories.findIndex(s => s.id === editingStoryId) : -1;
       if (idx >= 0) reqs.stories[idx] = story; else reqs.stories.push(story);
@@ -7793,7 +7816,7 @@ ${existingBatch.length ? 'EXISTING STORIES FOR THIS BRANCH — keep their IDs, i
         const idx = reqs.stories.findIndex(x => x.id === s.id);
         if (idx >= 0) {
           const ex = reqs.stories[idx];
-          if (ex.wbsId == null || ex.wbsId === s.wbsId) reqs.stories[idx] = s;
+          if (ex.wbsId == null || ex.wbsId === s.wbsId) { if (!s.jira && ex.jira) s.jira = ex.jira; reqs.stories[idx] = s; }
           else { s.id = nextStoryId(); reqs.stories.push(s); } // id collision across branches → re-number
         } else reqs.stories.push(s);
       });
@@ -7832,7 +7855,8 @@ ${existingBatch.length ? 'EXISTING STORIES FOR THIS BRANCH — keep their IDs, i
             id: safeId(a.id, 'AC-' + (i + 1), j), type: ['happy', 'error', 'edge', 'perf'].includes(clean(a.type)) ? clean(a.type) : 'happy', text: clean(a.text)
           })).filter(a => a.text) : [],
           nfrs: Array.isArray(s.nfrs) ? s.nfrs.map(clean).filter(Boolean) : [],
-          assumptions: Array.isArray(s.assumptions) ? s.assumptions.map(clean).filter(Boolean) : []
+          assumptions: Array.isArray(s.assumptions) ? s.assumptions.map(clean).filter(Boolean) : [],
+          jira: clean(s.jira)
         };
       }).filter(s => s.want);
       return {
@@ -7841,7 +7865,11 @@ ${existingBatch.length ? 'EXISTING STORIES FOR THIS BRANCH — keep their IDs, i
       };
     }
     function applyReqsFromAI(res) {
-      reqs = normalizeReqsResponse(res);
+      const old = ((reqs && reqs.stories) || []);
+      const next = normalizeReqsResponse(res);
+      // a re-draft keeps IDs — the stored Jira link must survive it
+      next.stories.forEach(st => { if (!st.jira) { const ex = old.find(x => x.id === st.id); if (ex && ex.jira) st.jira = ex.jira; } });
+      reqs = next;
     }
     function exportReqsMarkdown() {
       if (!reqs || !reqs.stories.length) { alert('No requirements yet — draft or add stories first.'); return; }
@@ -8404,7 +8432,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     function exportActivitiesEditableCSV() {
       computeWbsCodes();
       const u = unitLabel();
-      const rows = [['Task ID (do not change)', 'Type', 'WBS', 'Parent WBS', 'Activity name', 'Milestone (yes/no)', 'Owner', 'Owner units %', 'Additional attendees (Name@units)', 'Optimistic (' + u + ')', 'Most likely (' + u + ')', 'Pessimistic (' + u + ')', '% complete', 'Fixed cost $', 'Predecessors (WBS codes, e.g. 1.2, 2.1SS+1)', 'Start no earlier than (YYYY-MM-DD)', 'Deadline (YYYY-MM-DD)', 'Deliverable', 'Description / scope', 'Acceptance (done-when)', 'Actual start (YYYY-MM-DD)', 'Actual finish (YYYY-MM-DD)']];
+      const rows = [['Task ID (do not change)', 'Type', 'WBS', 'Parent WBS', 'Activity name', 'Milestone (yes/no)', 'Owner', 'Owner units %', 'Additional attendees (Name@units)', 'Optimistic (' + u + ')', 'Most likely (' + u + ')', 'Pessimistic (' + u + ')', '% complete', 'Fixed cost $', 'Predecessors (WBS codes, e.g. 1.2, 2.1SS+1)', 'Start no earlier than (YYYY-MM-DD)', 'Deadline (YYYY-MM-DD)', 'Deliverable', 'Description / scope', 'Acceptance (done-when)', 'Actual start (YYYY-MM-DD)', 'Actual finish (YYYY-MM-DD)', 'Jira / evidence link']];
       tasksInWbsOrder().forEach(({ task: t }) => {
         if (isTestCaseTask(t)) return; // test cases travel on their own sheet
         const isSum = isSummaryId(t.id);
@@ -8414,14 +8442,14 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           isSum ? '' : (t.attendees || []).map(a => a.name + (a.units !== 100 ? '@' + a.units : '')).join(', '),
           isSum ? '' : t.o, isSum ? '' : t.m, isSum ? '' : t.p, isSum ? '' : (t.percentComplete || 0), t.fixedCost || 0,
           predText(t), t.startNoEarlier || '', t.deadline || '', t.deliverable || '', t.description || '', t.acceptance || '',
-          t.actualStart || '', t.actualFinish || '']);
+          t.actualStart || '', t.actualFinish || '', t.jira || '']);
       });
       dlCsv('-activities-editable.csv', rows);
     }
     function exportStoriesEditableCSV() {
       if (!reqs || !(reqs.stories || []).length) { alert('No user stories yet — Requirements ▸ 🤖 Draft from WBS (or ＋ Add story) first.'); return; }
       computeWbsCodes();
-      const rows = [['Story ID (do not change)', 'Epic', 'WBS code', 'WBS activity', 'Persona (As a…)', 'I want to', 'So that', 'Verified by (uat/artifact)', 'AC ID (do not change)', 'AC type (happy/error/edge/perf)', 'Acceptance criterion (Given/When/Then)', 'NFRs (one per line — first row of the story)', 'Assumptions & client dependencies (A:/D: one per line — first row)']];
+      const rows = [['Story ID (do not change)', 'Epic', 'WBS code', 'WBS activity', 'Persona (As a…)', 'I want to', 'So that', 'Verified by (uat/artifact)', 'AC ID (do not change)', 'AC type (happy/error/edge/perf)', 'Acceptance criterion (Given/When/Then)', 'NFRs (one per line — first row of the story)', 'Assumptions & client dependencies (A:/D: one per line — first row)', 'Jira ticket (key or URL — first row)']];
       reqs.stories.forEach(s => {
         const t = s.wbsId != null ? tasks.find(x => x.id === s.wbsId) : null;
         const acs = (s.ac && s.ac.length) ? s.ac : [null];
@@ -8429,7 +8457,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           s.id, i ? '' : (s.epicId || ''), i ? '' : (t ? t.wbs || '' : ''), i ? '' : (t ? t.name : (s.wbsName || '')),
           i ? '' : (s.persona || ''), i ? '' : (s.want || ''), i ? '' : (s.soThat || ''), i ? '' : (s.verification || 'uat'),
           a ? a.id : '', a ? (a.type || '') : '', a ? (a.text || '') : '',
-          i ? '' : (s.nfrs || []).join('\n'), i ? '' : (s.assumptions || []).join('\n')]));
+          i ? '' : (s.nfrs || []).join('\n'), i ? '' : (s.assumptions || []).join('\n'), i ? '' : (s.jira || '')]));
       });
       dlCsv('-stories-editable.csv', rows);
     }
@@ -8437,10 +8465,10 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       const tcs = tasks.filter(isTestCaseTask);
       if (!tcs.length) { alert('No test-case tasks yet — 🧪 Generate test plan first.'); return; }
       const u = unitLabel();
-      const rows = [['Task ID (do not change)', 'Verifies AC', 'Test case name', 'Steps (numbered, one per line)', 'Expected result', 'Owner', 'Optimistic (' + u + ')', 'Most likely (' + u + ')', 'Pessimistic (' + u + ')', '% complete', 'Result (pass/fail/blocked)', 'Defect / notes (a fail row becomes a RAID issue)']];
+      const rows = [['Task ID (do not change)', 'Verifies AC', 'Test case name', 'Steps (numbered, one per line)', 'Expected result', 'Owner', 'Optimistic (' + u + ')', 'Most likely (' + u + ')', 'Pessimistic (' + u + ')', '% complete', 'Result (pass/fail/blocked)', 'Defect / notes (a fail row becomes a RAID issue)', 'Jira / evidence link']];
       tcs.forEach(tc => rows.push([tc.id, ((tc.name || '').match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '', tc.name,
         hasRealSteps(tc) ? tcStepLines(tc.description) : (tc.description || ''), tc.acceptance || '', tc.owner || '',
-        tc.o, tc.m, tc.p, tc.percentComplete || 0, (tc.percentComplete || 0) >= 100 ? 'pass' : '', '']));
+        tc.o, tc.m, tc.p, tc.percentComplete || 0, (tc.percentComplete || 0) >= 100 ? 'pass' : '', '', tc.jira || '']));
       dlCsv('-test-cases-editable.csv', rows);
     }
     function exportRaidEditableCSV() {
@@ -8448,6 +8476,43 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       const rows = [['RAID ID (do not change)', 'Type (Risk/Assumption/Issue/Decision/Exclusion)', 'Title', 'Description', 'Probability 1-5', 'Impact 1-5', 'Owner', 'Mitigation / next step', 'Status']];
       raid.forEach(r => rows.push([r.id, r.type, r.title, r.description || '', r.probability, r.impact, r.owner || '', r.mitigation || '', r.status || 'Open']));
       dlCsv('-raid-editable.csv', rows);
+    }
+    // ⬆ JIRA BRIDGE — one CSV Jira's external system import reads directly:
+    // epics + stories + test cases. Rows that already carry a Jira link emit
+    // their key in "Issue Key", so mapping that column makes the import UPDATE
+    // the existing tickets instead of creating duplicates. Descriptions use
+    // Jira wiki markup (h3./bullets) so ACs, steps and expected results land
+    // formatted. This tool stays the source of truth for ACCEPTANCE; the team
+    // works the tickets where they live.
+    function jiraStoryDesc(s, t) {
+      const L = ['*As a* ' + (s.persona || '?') + ', *I want to* ' + (s.want || '?') + ', *so that* ' + (s.soThat || '?') + '.', '', 'h3. Acceptance criteria'];
+      (s.ac || []).forEach(a => L.push('* *' + a.id + '* (' + a.type + ') \u2014 ' + a.text));
+      if ((s.nfrs || []).length) { L.push('', 'h3. Non-functional requirements'); s.nfrs.forEach(n => L.push('* ' + n)); }
+      if ((s.assumptions || []).length) { L.push('', 'h3. Assumptions & client dependencies'); s.assumptions.forEach(a => L.push('* ' + a)); }
+      L.push('', '----', 'Exported from Engagement Planner \u2014 ' + s.id + (t ? ', traces to WBS ' + (t.wbs ? t.wbs + ' ' : '') + t.name : ', no WBS trace') + '. Verified by: ' + (s.verification === 'artifact' ? 'artifact / sign-off' : 'UAT test cases') + '. Acceptance criteria are the billing checklist \u2014 changes to them belong in the planner (change control), not only in this ticket.');
+      return L.join('\n');
+    }
+    function exportJiraCSV() {
+      if (!reqs || !(reqs.stories || []).length) { alert('No user stories yet \u2014 Requirements \u25b8 \ud83e\udd16 Draft from WBS (or \uff0b Add story) first.'); return; }
+      computeWbsCodes();
+      const rows = [['Issue Type', 'Issue Key (updates existing)', 'Summary', 'Description', 'Labels', 'Epic Name', 'Epic Link']];
+      const epicTitle = e => e ? (e.title || e.id) : '';
+      (reqs.epics || []).forEach(e => rows.push(['Epic', '', (e.title || e.id).slice(0, 250), (e.businessNeed || '') + (e.wbsName ? '\n\nPhase: ' + e.wbsName : ''), 'engagement-planner ' + e.id, e.title || e.id, '']));
+      reqs.stories.forEach(st => {
+        const t = st.wbsId != null ? tasks.find(x => x.id === st.wbsId) : null;
+        const e = (reqs.epics || []).find(x => x.id === st.epicId);
+        rows.push(['Story', jiraKeyOf(st.jira), (st.id + ' \u2014 As a ' + (st.persona || '?') + ', I want to ' + (st.want || '?')).slice(0, 250), jiraStoryDesc(st, t), 'engagement-planner ' + st.id, '', epicTitle(e)]);
+      });
+      const acIdx = {}; reqs.stories.forEach(st => (st.ac || []).forEach(a => { acIdx[String(a.id).toLowerCase()] = st; }));
+      tasks.filter(isTestCaseTask).forEach(tc2 => {
+        const acId = ((tc2.name.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '');
+        const st = acIdx[acId.toLowerCase()];
+        const e = st ? (reqs.epics || []).find(x => x.id === st.epicId) : null;
+        const d = ['h3. Steps', hasRealSteps(tc2) ? tcStepLines(tc2.description) : (tc2.description || '(no executable steps yet \u2014 regenerate the test plan)'), '', '*Expected result:* ' + (tc2.acceptance || ''), '', '----', 'Verifies ' + (acId || '?') + (st ? ' of ' + st.id : '') + '. Owner: ' + (tc2.owner ? roleText(tc2.owner) : 'unassigned') + '. Estimate O/M/P (days): ' + tc2.o + '/' + tc2.m + '/' + tc2.p + '.'].join('\n');
+        rows.push(['Task', jiraKeyOf(tc2.jira), tc2.name.slice(0, 250), d, ('engagement-planner ' + (st ? st.id + ' ' : '') + acId).trim(), '', epicTitle(e)]);
+      });
+      dlCsv('-jira-import.csv', rows);
+      flashSaved('\u2b06 Jira CSV \u2014 in Jira: Settings \u25b8 System \u25b8 External System Import \u25b8 CSV. Map Summary, Issue Type, Description, Labels, Epic Name + Epic Link \u2014 and map \u201cIssue Key\u201d so already-linked tickets UPDATE instead of duplicating. Paste the created ticket URLs back into stories/test cases (or the workbook\u2019s Jira column) to close the loop.');
     }
     function exportEditableWorkbook() {
       computeWbsCodes();
@@ -8503,7 +8568,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     }
     function importActivitiesRows(head, body) {
       const col = f => csvColIdx(head, f);
-      const c = { id: col('task id'), wbs: col('wbs'), parent: col('parent wbs'), name: col('activity name'), ms: col('milestone'), owner: col('owner'), units: col('owner units'), att: col('attendees'), o: col('optimistic'), m: col('most likely'), p: col('pessimistic'), pct: col('% complete'), fixed: col('fixed cost'), preds: col('predecessors'), snet: col('start no earlier'), dl: col('deadline'), del: col('deliverable'), desc: col('description'), acc: col('acceptance'), as: col('actual start'), af: col('actual finish') };
+      const c = { id: col('task id'), wbs: col('wbs'), parent: col('parent wbs'), name: col('activity name'), ms: col('milestone'), owner: col('owner'), units: col('owner units'), att: col('attendees'), o: col('optimistic'), m: col('most likely'), p: col('pessimistic'), pct: col('% complete'), fixed: col('fixed cost'), preds: col('predecessors'), snet: col('start no earlier'), dl: col('deadline'), del: col('deliverable'), desc: col('description'), acc: col('acceptance'), as: col('actual start'), af: col('actual finish'), jira: col('jira') };
       const rep = { updated: 0, added: 0, rejected: [], notes: [] };
       computeWbsCodes();
       const wbsToId = {}; tasks.forEach(t => { if (t.wbs) wbsToId[t.wbs] = t.id; });
@@ -8560,7 +8625,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         if (parentRef && parentId == null) { rep.rejected.push('row ' + (ri + 2) + ' ("' + (pr.name || '?') + '"): Parent WBS "' + parentRef + '" not found'); return; }
         const ownerParts = cell(c.att).split(/[,;]+/).map(x => x.trim()).filter(Boolean).map(tok => { const mm = tok.match(/^(.*?)\s*@\s*(\d+(?:\.\d+)?)\s*%?$/); return mm && mm[1].trim() ? { name: mm[1].trim(), units: Math.max(0, parseFloat(mm[2])) } : { name: tok, units: 100 }; });
         if (!pr.t) { // new activity
-          const t = makeTask({ id: pr.newId, name: pr.name || ('Imported activity ' + pr.newId), o, m, p, milestone: isMs, owner: cell(c.owner), units: numOf(c.units, 100), attendees: ownerParts, percentComplete: Math.min(100, Math.max(0, numOf(c.pct, 0))), fixedCost: numOf(c.fixed, 0), predecessors: preds, parentId, startNoEarlier: snet, deadline: dl, deliverable: cell(c.del), description: cell(c.desc), acceptance: cell(c.acc), actualStart: aS, actualFinish: aF });
+          const t = makeTask({ id: pr.newId, name: pr.name || ('Imported activity ' + pr.newId), o, m, p, milestone: isMs, owner: cell(c.owner), units: numOf(c.units, 100), attendees: ownerParts, percentComplete: Math.min(100, Math.max(0, numOf(c.pct, 0))), fixedCost: numOf(c.fixed, 0), predecessors: preds, parentId, startNoEarlier: snet, deadline: dl, deliverable: cell(c.del), description: cell(c.desc), acceptance: cell(c.acc), actualStart: aS, actualFinish: aF, jira: c.jira >= 0 ? cell(c.jira) : '' });
           tasks.push(t); rep.added++;
           if (t.percentComplete > 0) applyPctActuals(t, 0);
           return;
@@ -8574,6 +8639,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         if (cell(c.desc) || t.description) t.description = cell(c.desc);
         if (cell(c.acc) || t.acceptance) t.acceptance = cell(c.acc);
         t.fixedCost = numOf(c.fixed, t.fixedCost || 0);
+        if (c.jira >= 0 && (cell(c.jira) || t.jira)) t.jira = cell(c.jira);
         if (!isSum) { // phases roll up — their own estimate/owner/% are display-only
           t.milestone = isMs;
           t.o = o; t.m = m; t.p = p;
@@ -8599,7 +8665,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     }
     async function importStoriesRows(head, body) {
       const col = f => csvColIdx(head, f);
-      const c = { id: col('story id'), epic: col('epic'), wbsCode: col('wbs code'), wbsName: col('wbs activity'), persona: col('persona'), want: col('i want'), soThat: col('so that'), ver: col('verified by'), acId: col('ac id'), acType: col('ac type'), acText: col('acceptance criterion'), nfr: col('nfr'), assume: col('assumption') };
+      const c = { id: col('story id'), epic: col('epic'), wbsCode: col('wbs code'), wbsName: col('wbs activity'), persona: col('persona'), want: col('i want'), soThat: col('so that'), ver: col('verified by'), acId: col('ac id'), acType: col('ac type'), acText: col('acceptance criterion'), nfr: col('nfr'), assume: col('assumption'), jira: col('jira') };
       const rep = { updated: 0, added: 0, rejected: [], notes: [] };
       if (!reqs) reqs = { personas: [], epics: [], stories: [] };
       computeWbsCodes();
@@ -8639,6 +8705,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         const nfrPacked = first(c.nfr), asPacked = first(c.assume);
         if (nfrPacked) s.nfrs = nfrPacked.split('\n').map(x => x.trim()).filter(Boolean);
         if (asPacked) s.assumptions = asPacked.split('\n').map(x => x.trim()).filter(Boolean).map(x => /^[AD]\s*:/i.test(x) ? x : 'A: ' + x);
+        const jr = c.jira >= 0 ? first(c.jira) : ''; if (jr) s.jira = jr;
         // rebuild the criteria list from the rows, in file order
         const acBase = s.id.replace(/^US/i, 'AC');
         const newAc = [];
@@ -8678,7 +8745,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     }
     function importTestCasesRows(head, body) {
       const col = f => csvColIdx(head, f);
-      const c = { id: col('task id'), ac: col('verifies ac'), name: col('test case name'), steps: col('steps'), exp: col('expected result'), owner: col('owner'), o: col('optimistic'), m: col('most likely'), p: col('pessimistic'), pct: col('% complete'), result: col('result (pass'), notes: col('defect') };
+      const c = { id: col('task id'), ac: col('verifies ac'), name: col('test case name'), steps: col('steps'), exp: col('expected result'), owner: col('owner'), o: col('optimistic'), m: col('most likely'), p: col('pessimistic'), pct: col('% complete'), result: col('result (pass'), notes: col('defect'), jira: col('jira') };
       const rep = { updated: 0, added: 0, rejected: [], notes: [] };
       let defects = 0;
       const today = fmtISO(new Date());
@@ -8705,7 +8772,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           const hostId = sibling ? sibling.parentId : story.wbsId;
           let nm = cell(c.name) || ('verify ' + acRef);
           if (!/^tc\s/i.test(nm)) nm = 'TC ' + acRef + ' \u2014 ' + nm;
-          const t = makeTask({ id: nextId++, name: nm, o, m, p, owner: cell(c.owner) || (sibling ? sibling.owner : ''), units: 100, parentId: hostId != null ? hostId : null, predecessors: [], description: cell(c.steps), acceptance: cell(c.exp), percentComplete: 0 });
+          const t = makeTask({ id: nextId++, name: nm, o, m, p, owner: cell(c.owner) || (sibling ? sibling.owner : ''), units: 100, parentId: hostId != null ? hostId : null, predecessors: [], description: cell(c.steps), acceptance: cell(c.exp), percentComplete: 0, jira: c.jira >= 0 ? cell(c.jira) : '' });
           tasks.push(t); rep.added++;
           tc = t;
         } else {
@@ -8717,6 +8784,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           tc.o = o; tc.m = m; tc.p = p;
           rep.updated++;
         }
+        if (c.jira >= 0 && (cell(c.jira) || tc.jira)) tc.jira = cell(c.jira);
         const result = cell(c.result).toLowerCase();
         let newPct = Math.min(100, Math.max(0, numOf(c.pct, tc.percentComplete || 0)));
         if (result === 'pass') newPct = 100;
@@ -8725,7 +8793,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         if (result === 'fail' || (result === 'blocked' && notes)) {
           const title = (result === 'fail' ? 'Defect: ' : 'Blocked: ') + tc.name.replace(/^TC\s+/i, '').slice(0, 90);
           if (!raid.some(x => x.taskId === tc.id && x.title === title && x.status !== 'Closed')) {
-            raid.push({ id: nextRaidId++, type: 'Issue', title, description: (notes || 'reported ' + result + ' in imported test results') + ' (imported test result, ' + today + ')', probability: 4, impact: 3, owner: tc.owner || '', status: 'Open', mitigation: '', taskId: tc.id, createdAt: today });
+            raid.push({ id: nextRaidId++, type: 'Issue', title, description: (notes || 'reported ' + result + ' in imported test results') + ' (imported test result, ' + today + ')' + (tc.jira ? ' \u2014 evidence: ' + tc.jira : ''), probability: 4, impact: 3, owner: tc.owner || '', status: 'Open', mitigation: '', taskId: tc.id, createdAt: today });
             defects++;
           }
         }
@@ -9247,6 +9315,14 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
              ['A: hypercare is 2 weeks as priced — impact if false: an extension is a change order at the stated weekly rate'])
         ]
       };
+      // Jira keys the build team already assigned — chips link out everywhere,
+      // and ⬆ Jira export UPDATES these tickets instead of duplicating them
+      const JBASE = 'https://example.atlassian.net/browse/';
+      reqs.stories.find(s2 => s2.id === 'US-6').jira = JBASE + 'HLX-141';
+      reqs.stories.find(s2 => s2.id === 'US-10').jira = JBASE + 'HLX-142';
+      reqs.stories.find(s2 => s2.id === 'US-11').jira = JBASE + 'HLX-143';
+      tasks.find(t => t.id === 20).jira = JBASE + 'HLX-151';
+      tasks.find(t => t.id === 21).jira = JBASE + 'HLX-152';
       statusHistory = []; sowDraft = ''; statusNarrative = null; healthFindings = null; coLog = []; sowBaseline = null; coDraft = '';
       pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 };
       reserves = { contingency: { value: 10, unit: 'percent' }, management: { value: 5, unit: 'percent' } };
