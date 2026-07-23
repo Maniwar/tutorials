@@ -6642,18 +6642,26 @@ ${reqRulesBlock()}`;
       const tcs = tasks.filter(t => isTestCaseTask(t) && (t.owner || '') === ownerName && (t.percentComplete || 0) < 100);
       if (!tcs.length) { flashSaved('ℹ No open test cases owned by ' + ownerName + '.'); return; }
       const suggestion = [...new Set([ownerName, ...Object.keys(resources).filter(isClientResource)])].join(', ');
-      const input = prompt('Spread ' + tcs.length + ' test case(s) across which testers?\n\nComma-separated names — new names are added to the roster automatically. Client-side testers cost nothing (kind "client").\n\nTip: real UAT is executed by CLIENT testers; QA facilitates.', suggestion);
+      const input = prompt('Spread ' + tcs.length + ' test case(s) across which testers?\n\nComma-separated names — new names join the roster automatically:\n• plain name → CLIENT tester (unbilled — real UAT is executed by the client)\n• name* (with a star) → INTERNAL/billable tester (e.g. "Priya*" for a Sprinklr QA who runs the technical/perf cases)\nNames already on the roster keep their existing kind and rates.', suggestion);
       if (!input) return;
-      const testers = input.split(',').map(s => s.trim()).filter(Boolean);
+      const testers = input.split(',').map(s => s.trim()).filter(Boolean).map(raw => {
+        const internal = /\*$/.test(raw);
+        return { name: raw.replace(/\*+$/, '').trim(), internal };
+      }).filter(x => x.name);
       if (!testers.length) return;
-      // new names default to client-kind (unbilled) — UAT execution is client work
-      testers.forEach(nm => { if (!resources[nm]) resources[nm] = { capacity: 100, kind: 'client' }; });
-      tcs.forEach((t, i) => { t.owner = testers[i % testers.length]; });
+      // new plain names default to client-kind (unbilled — UAT execution is
+      // client work); a trailing * marks a new INTERNAL tester who bills
+      testers.forEach(x => { if (!resources[x.name]) resources[x.name] = { capacity: 100, kind: x.internal ? 'internal' : 'client' }; });
+      tcs.forEach((t, i) => { t.owner = testers[i % testers.length].name; });
       syncResources();
       saveLocal();
       if (calculated) recompute();
       refreshAll();
-      flashSaved('⚖ ' + tcs.length + ' test case(s) spread across ' + testers.length + ' tester(s) — re-run 📊 the resource view to confirm the peak is gone. ↶ Undo reverses.');
+      const nClient = testers.filter(x => isClientResource(x.name)).length;
+      const nInt = testers.length - nClient;
+      flashSaved('⚖ ' + tcs.length + ' test case(s) spread across ' + testers.length + ' tester(s)' +
+        (nInt && nClient ? ' — ' + nClient + ' client (unbilled) + ' + nInt + ' internal (billed at their rate; set it on the Resources tab)' : nInt ? ' — all internal/billable' : ' — all client-side (unbilled)') +
+        '. Re-run 📊 the resource view to confirm the peak is gone. ↶ Undo reverses.');
     }
     // 🔗 AI link repair: proposes predecessors for the selected rows (or, with
     // nothing selected, every non-milestone leaf that has none — e.g. test cases
