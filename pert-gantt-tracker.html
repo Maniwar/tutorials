@@ -4628,6 +4628,21 @@
 
       // chart-area layer (clipped so nothing bleeds into the label column)
       svg += `<g clip-path="url(#g-clip)">`;
+      // Where a milestone's diamond sits: a zero-duration checkpoint lives at
+      // an INSTANT. If a predecessor finishes ON the milestone's own day, the
+      // instant is that day's END; otherwise it is the boundary at the day's
+      // start (its preds finished the day before). Either way the diamond
+      // never sits before the work that gates it, and successors line up.
+      const msAnchorX = tt => {
+        const bxx = dateX(tt.startDate);
+        if (!tt.startDate) return bxx;
+        const key = tt.startDate.toDateString();
+        const sameDayPred = (tt.predecessors || []).some(pp => {
+          const q = tasks.find(x => x.id === pp.id);
+          return q && q.finishDate && q.finishDate.toDateString() === key;
+        });
+        return bxx + (sameDayPred ? dayW : 0);
+      };
       let links = '';
       // transitively-redundant edges add arrows but no gating — don't draw them
       const redundantEdges = new Set(redundantLinkList().map(r => r.task.id + ':' + r.predId));
@@ -4635,13 +4650,16 @@
         if (!visibleIds.has(t.id)) return;
         const si = rowIndexOf[t.id];
         const sX = dateX(t.startDate), sY = Y0 + si * ROWH + ROWH / 2;
-        const sSpanW = t.milestone ? dayW / 2 + 6 : Math.max(dayW, (calDaysBetween(t.startDate, t.finishDate) + 1) * dayW);
+        const sSpanW = t.milestone ? (msAnchorX(t) - sX) + 10 : Math.max(dayW, (calDaysBetween(t.startDate, t.finishDate) + 1) * dayW);
+        // horizontal entries land on a bar's left edge — or a diamond's left tip
+        // (milestones anchor at the END of their day: they mark completion)
+        const sEdge = t.milestone ? msAnchorX(t) - 11 : sX;
         effectivePreds(t).forEach((p, k) => {
           if (redundantEdges.has(t.id + ':' + p.id)) return;
           const pt = tasks.find(x => x.id === p.id);
           if (!pt || !visibleIds.has(p.id)) return;
           const pi = rowIndexOf[p.id];
-          const spanW = pt.milestone ? dayW / 2 + 6 : Math.max(dayW, (calDaysBetween(pt.startDate, pt.finishDate) + 1) * dayW);
+          const spanW = pt.milestone ? (msAnchorX(pt) - dateX(pt.startDate)) + 10 : Math.max(dayW, (calDaysBetween(pt.startDate, pt.finishDate) + 1) * dayW);
           const pX = dateX(pt.startDate) + spanW;
           const pY = Y0 + pi * ROWH + ROWH / 2;
           const crit = t.isCritical && pt.isCritical;
@@ -4653,25 +4671,25 @@
             // forward link: run along the predecessor's row, drop just BEFORE the
             // successor — a drop right after the pred stabs through any bar in
             // the rows between (multiple preds also converge into one column)
-            const dropX = sX - 10; // 9px final approach — always longer than the 6.5px arrowhead
+            const dropX = sEdge - 9; // 9px final approach — always longer than the 6.5px arrowhead
             if (pt.milestone) {
               // a milestone's date label sits right of the diamond at mid-height —
               // exit the diamond's bottom (or top) tip and travel the row
               // boundary instead of slicing through its own label
               const pRowT = Y0 + pi * ROWH;
               const below2 = sY > pY;
-              const exitX2 = dateX(pt.startDate) + dayW / 2;
+              const exitX2 = msAnchorX(pt);
               const lane2 = below2 ? pRowT + ROWH - 2 : pRowT + 2;
-              links += `<path d="M${exitX2},${below2 ? pY + 11 : pY - 11} L${exitX2},${lane2} L${dropX},${lane2} L${dropX},${sY} L${sX - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+              links += `<path d="M${exitX2},${below2 ? pY + 11 : pY - 11} L${exitX2},${lane2} L${dropX},${lane2} L${dropX},${sY} L${sEdge - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
             } else if (dropX - pX > dayW * 2.2) {
               // LONG run: a mid-row horizontal would cut through the slack hatch
               // and labels for weeks — hop into this row's edge gap right after
               // the bar end and travel there instead
               const pRowT = Y0 + pi * ROWH;
               const prLane = sY > pY ? pRowT + ROWH - 1.5 : pRowT + 1.5;
-              links += `<path d="M${pX},${pY} L${pX + 5},${pY} L${pX + 5},${prLane} L${dropX},${prLane} L${dropX},${sY} L${sX - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+              links += `<path d="M${pX},${pY} L${pX + 5},${pY} L${pX + 5},${prLane} L${dropX},${prLane} L${dropX},${sY} L${sEdge - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
             } else
-            links += `<path d="M${pX},${pY} L${dropX},${pY} L${dropX},${sY} L${sX - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+            links += `<path d="M${pX},${pY} L${dropX},${pY} L${dropX},${sY} L${sEdge - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
           } else {
             // successor starts at/before the predecessor's right edge (typical for
             // sub-day tasks that each fill a whole day cell). The link EMITS from
@@ -4694,12 +4712,25 @@
             // milestone predecessor: emit from the diamond's bottom (or top) TIP
             // straight down whenever that column lands inside the successor —
             // the tip is the natural anchor, and a single vertical can't crook
-            const pCx = dateX(pt.startDate) + dayW / 2;
-            if (pt.milestone && (t.milestone ? Math.abs(pCx - (sX + dayW / 2)) < 3 : (pCx >= sX + 4 && pCx <= sX + sSpanW - 4))) {
-              links += `<path d="M${pCx},${below ? pY + 11 : pY - 11} L${pCx},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+            const pCx = msAnchorX(pt); // diamond tip column (boundary or end-of-day)
+            if (pt.milestone) {
+              // milestone predecessor: emit from the diamond's tip. Straight
+              // drop when the tip column lands in the successor; otherwise a
+              // short lane jog — never route through the diamond's date label.
+              const tipY = below ? pY + 11 : pY - 11;
+              const dX = t.milestone ? msAnchorX(t) : Math.max(sX + 5, Math.min(sX + sSpanW - 5, pCx));
+              if (Math.abs(dX - pCx) < 3) {
+                links += `<path d="M${pCx},${tipY} L${pCx},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+              } else {
+                const laneM = below ? sRowTop - 4 : sRowTop + ROWH + 4;
+                links += `<path d="M${pCx},${tipY} L${pCx},${laneM} L${dX},${laneM} L${dX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+              }
             } else {
-            const desiredX = t.milestone ? sX + dayW / 2
-              : Math.max(sX + 5, Math.min(sX + sSpanW - 5, pX - k * 7));
+            // aim the drop column 6px PAST the predecessor's end — the link
+            // should visibly emit and travel forward before it drops; a drop
+            // flush against the bar's edge reads as "leaning", not flowing
+            const desiredX = t.milestone ? msAnchorX(t)
+              : Math.max(sX + 5, Math.min(sX + sSpanW - 5, pX + 6 - k * 7));
             if (desiredX >= pX - 0.5) {
               links += `<path d="M${pX},${pY}${desiredX - pX > 0.5 ? ` L${desiredX},${pY}` : ''} L${desiredX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
             } else if (desiredX >= dateX(pt.startDate) + 2) {
@@ -4742,9 +4773,7 @@
             `<title>${escapeXml(tip)}</title></g>`;
         } else if (t.milestone) {
           const done = t.percentComplete >= 100;
-          // center the diamond in its day cell — anchored at the cell's left
-          // edge it read as happening BEFORE its date
-          const cx = bx + dayW / 2, cy = y + ROWH / 2;
+          const cx = msAnchorX(t), cy = y + ROWH / 2; // boundary or end-of-day — see msAnchorX
           const msLabelRight = (cx + 84) < (W - PAD);
           svg += `<g data-gopen="${t.id}" style="cursor:pointer"><rect x="${cx - 7}" y="${cy - 7}" width="14" height="14" rx="2" transform="rotate(45 ${cx} ${cy})" fill="${done ? '#16a34a' : '#7c3aed'}"/>` +
             `<text x="${msLabelRight ? cx + 14 : cx - 14}" y="${cy + 4}" font-family="${FF}" font-size="10" font-weight="600" fill="${done ? '#16a34a' : '#6d28d9'}" ${msLabelRight ? '' : 'text-anchor="end"'}>${done ? '✓ ' : ''}${escapeXml(fmtNice(t.finishDate))}</text>` +
