@@ -4684,6 +4684,18 @@
           g.n++; mergeGroups.set(e.t.id, g);
         }
       });
+      // divergence twin: one bar fanning out to 3+ successors below shares a
+      // single exit + out-spine, with a short tap into each successor
+      const outGroups = new Map();
+      edgeList.forEach(e => {
+        const pyC = Y0 + rowIndexOf[e.pt.id] * ROWH + (e.pt.isSummary ? 13 : ROWH / 2);
+        const syC = Y0 + rowIndexOf[e.t.id] * ROWH + (e.t.isSummary ? 13 : ROWH / 2);
+        if (!(syC > pyC)) return;
+        const g2 = mergeGroups.get(e.t.id);
+        if (g2 && g2.n >= 3) return; // that edge rides the successor's in-bus instead
+        const o = outGroups.get(e.pt.id) || { n: 0, taps: 0, crit: false, allTc: true, maxLane: 0 };
+        o.n++; outGroups.set(e.pt.id, o);
+      });
       edgeList.forEach(({ t0, pt0, t, pt, k }) => {
           const si = rowIndexOf[t.id], pi = rowIndexOf[pt.id];
           const sX = dateX(t.startDate);
@@ -4724,6 +4736,24 @@
             grp.crit = grp.crit || (crit && !tcLink);
             grp.allTc = grp.allTc && tcLink;
             grp.t = t; grp.si = si; grp.sX = sX; grp.sSpanW = sSpanW;
+            return;
+          }
+          const og = outGroups.get(pt.id);
+          if (og && og.n >= 3 && sY > pY) {
+            // out-bus: draw only this successor's TAP off the shared spine;
+            // the single exit + spine is drawn once after the loop
+            const spineX2 = pX + 8;
+            const laneC2 = Y0 + si * ROWH - 4;
+            const entryX2 = t.milestone ? msAnchorX(t) : Math.max(sX + 5, Math.min(sX + sSpanW - 5, spineX2));
+            const entryY2 = t.milestone ? sY - 11 : t.isSummary ? Y0 + si * ROWH + 9 : Y0 + si * ROWH + 6;
+            const d2 = Math.abs(entryX2 - spineX2) > 0.5
+              ? `M${spineX2},${laneC2} L${entryX2},${laneC2} L${entryX2},${entryY2}`
+              : `M${spineX2},${laneC2} L${spineX2},${entryY2}`;
+            links += `<path d="${d2}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${mk})"/>`;
+            og.taps++; og.pX = pX; og.pY = pY;
+            og.maxLane = Math.max(og.maxLane, laneC2);
+            og.crit = og.crit || (crit && !tcLink);
+            og.allTc = og.allTc && tcLink;
             return;
           }
           const bend = pX + 7;
@@ -4830,6 +4860,14 @@
           (Math.abs(entryX - spineX) > 0.5 ? ` L${entryX},${laneC}` : '') +
           ` L${entryX},${entryY}`;
         links += `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${g.crit ? 'g-arrC' : 'g-arr'})"><title>${escapeXml(g.cols.length + ' predecessors converge here — hover the task bar for the full list')}</title></path>`;
+      });
+      // out-bus spines: single exit from the fanning bar down to its deepest tap
+      outGroups.forEach(o => {
+        if (o.taps < 3) return;
+        const stroke = o.crit ? '#dc2626' : '#94a3b8';
+        const sw = o.crit ? 1.7 : o.allTc ? 0.9 : 1.2, op = o.crit ? 0.9 : o.allTc ? 0.35 : 0.5;
+        const dash = o.allTc ? ' stroke-dasharray="3,3"' : '';
+        links += `<path d="M${o.pX},${o.pY} L${o.pX + 8},${o.pY} L${o.pX + 8},${o.maxLane}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash}><title>${escapeXml(o.taps + ' successors fan out from here')}</title></path>`;
       });
       svg += links;
 
