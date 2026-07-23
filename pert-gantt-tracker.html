@@ -5701,7 +5701,13 @@
       const rendered = new Set();
       const epicBlock = (eid, title, need) => {
         const list = stories.filter(s => (s.epicId || '—') === eid);
-        if (!list.length) return '';
+        // empty epics render too — hiding them made the Epics stat card count
+        // more than the eye could see. Usually the epic covers milestones /
+        // sign-off checkpoints, which deliberately carry no stories.
+        if (!list.length) return `<div style="margin-bottom:1.1rem;opacity:0.75">
+          <h3 style="font-size:0.95rem;margin:0 0 0.35rem;cursor:${need ? 'help' : 'default'}" title="${escapeHtml(need || '')}">${escapeHtml(eid)}${title ? ' — ' + escapeHtml(title) : ''} <span class="help-text">(0 stories)</span></h3>
+          <p class="help-text" style="margin:0 0 0.3rem">No story traces to this epic — typical when it only covers ◆ milestones or sign-off checkpoints (those need no stories). Group a story under it in the story editor (✎), or remove it.
+          <button class="btn-sm btn-secondary no-print" data-epic-rm="${escapeHtml(eid)}" style="margin-left:6px">🗑 Remove empty epic</button></p></div>`;
         list.forEach(s => rendered.add(s.id));
         return `<div style="margin-bottom:1.1rem">
           <h3 style="font-size:0.95rem;margin:0 0 0.5rem;cursor:${need ? 'help' : 'default'}" title="${escapeHtml(need || '')}">${escapeHtml(eid)}${title ? ' — ' + escapeHtml(title) : ''} <span class="help-text">(${list.length} stor${list.length === 1 ? 'y' : 'ies'})</span></h3>
@@ -5714,6 +5720,14 @@
       // buttons live inside <summary> — stop the click from toggling the row
       cont.querySelectorAll('[data-story-edit]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); openStoryModal(b.dataset.storyEdit); }));
       cont.querySelectorAll('[data-story-mk]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); createTaskFromStory(b.dataset.storyMk); }));
+      cont.querySelectorAll('[data-epic-rm]').forEach(b => b.addEventListener('click', e => {
+        e.preventDefault(); e.stopPropagation();
+        const eid = b.dataset.epicRm;
+        if (!confirm('Remove empty epic ' + eid + '? No stories reference it. ↶ Undo restores.')) return;
+        reqs.epics = (reqs.epics || []).filter(x => x.id !== eid);
+        saveLocal(); renderReqs();
+        flashSaved('🗑 ' + eid + ' removed — the Epics count matches what you see again. ↶ Undo restores.');
+      }));
     }
     // Backlog-style story rows: ONE compact line per story (ID · sentence ·
     // AC-mix · trace · status), expandable for the Given/When/Then detail.
