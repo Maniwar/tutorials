@@ -8075,10 +8075,16 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           ((reqs && reqs.stories) || []).forEach(s => (s.assumptions || []).forEach(x => { if (/^D:/i.test(x)) out.push({ text: String(x).replace(/^D:\s*/i, ''), ref: s.id }); }));
           return out;
         })(),
-        // story-level assumptions ("A:") with impact-if-false — merged into §Assumptions
+        // story-level assumptions ("A:") split into statement + impact-if-false
         storyAssumps: (() => {
           const out = [];
-          ((reqs && reqs.stories) || []).forEach(s => (s.assumptions || []).forEach(x => { if (/^A:/i.test(x)) out.push(String(x).replace(/^A:\s*/i, '') + ' (' + s.id + ')'); }));
+          ((reqs && reqs.stories) || []).forEach(s => (s.assumptions || []).forEach(x => {
+            if (!/^A:/i.test(x)) return;
+            const body = String(x).replace(/^A:\s*/i, '').trim();
+            if (/no WBS activity covers this yet/i.test(body)) return; // internal scope-gap marker — never client-facing
+            const parts = body.split(/\s*[—-]\s*impact if false:\s*/i);
+            out.push({ text: parts[0], impact: parts[1] || '', ref: s.id });
+          }));
           return out;
         })(),
         milestones: tasks.filter(t => t.milestone).map(t => ({ name: t.name, date: fmtNice(t.finishDate) })),
@@ -8087,7 +8093,7 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           role: n,
           duties: tasks.filter(t => !t.isSummary && taskParticipants(t).some(pr => pr.name === n)).map(t => t.name)
         })).filter(c => c.duties.length),
-        assumptions: raid.filter(r => r.type === 'Assumption' && r.status !== 'Closed').map(r => r.title + (r.mitigation ? ' — ' + r.mitigation : '')),
+        assumptions: raid.filter(r => r.type === 'Assumption' && r.status !== 'Closed').map(r => ({ text: r.title, impact: r.mitigation || '', ref: 'RAID' })),
         exclusions: raid.filter(r => r.type === 'Exclusion').map(r => r.title),
         risks: raid.filter(r => r.type === 'Risk' && r.status !== 'Closed').sort((a, b) => b.probability * b.impact - a.probability * a.impact).slice(0, 6).map(r => r.title),
         price: (() => { const rev = laborRevenue() + leafTasks().reduce((sx, t) => sx + (+t.fixedCost || 0), 0);
@@ -8141,7 +8147,10 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         <p style="font-size:13px"><b>${d.price.model}:</b> ${d.price.amount}${d.price.model === 'Fixed price' ? ' (risk-adjusted at ' + d.price.basis + ' effort basis)' : ''}. ${n.paymentTerms || '<em>[Payment schedule — e.g. per milestone above.]</em>'}</p>` : ''}
         <h2 style="font-size:16px;margin:16px 0 6px">9. Assumptions</h2>
         ${(d.assumptions.length || (d.storyAssumps && d.storyAssumps.length))
-          ? '<ul style="font-size:13px">' + d.assumptions.map(x => '<li>' + h(x) + '</li>').join('') + (d.storyAssumps || []).map(x => '<li>' + h(x) + '</li>').join('') + '</ul>'
+          ? `<p style="font-size:12.5px;color:#475569">Pricing and schedule are based on the assumptions below. If one proves false, the stated impact applies and is handled through change control (§11).</p>
+             <table style="border-collapse:collapse;width:100%"><tr><th style="${th}">Assumption</th><th style="${th}">Impact if false / validation</th><th style="${th};width:70px">Source</th></tr>
+             ${d.assumptions.map(a => `<tr><td style="${td}">${h(a.text)}</td><td style="${td}">${h(a.impact) || '—'}</td><td style="${td}">${h(a.ref)}</td></tr>`).join('')}
+             ${(d.storyAssumps || []).map(a => `<tr><td style="${td}">${h(a.text)}</td><td style="${td}">${h(a.impact) || '—'}</td><td style="${td}">${h(a.ref)}</td></tr>`).join('')}</table>`
           : '<p style="font-size:13px"><em>[Add assumptions to the RAID log or to stories ("A:") and regenerate.]</em></p>'}
         <h2 style="font-size:16px;margin:16px 0 6px">10. Acceptance Process &amp; Defect Severity</h2>
         <p style="font-size:13px">${n.acceptanceProcess || 'Deliverables are accepted against the acceptance criteria in §2 and the story-level criteria in the appendix. The client has five (5) business days to review each deliverable; absent written feedback within that window the deliverable is deemed accepted.'}</p>
