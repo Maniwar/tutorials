@@ -1687,7 +1687,10 @@
         description: t.description || '', deliverable: t.deliverable || '', acceptance: t.acceptance || '',
         actualStart: t.actualStart || '', actualFinish: t.actualFinish || '',
         autoActualStart: !!t.autoActualStart, autoActualFinish: !!t.autoActualFinish,
-        startNoEarlier: t.startNoEarlier || '', deadline: t.deadline || '',
+        // strict ISO or nothing — these flow into title/value attributes and
+        // the scheduler, and imported backup JSON is untrusted input
+        startNoEarlier: /^\d{4}-\d{2}-\d{2}$/.test(t.startNoEarlier || '') ? t.startNoEarlier : '',
+        deadline: /^\d{4}-\d{2}-\d{2}$/.test(t.deadline || '') ? t.deadline : '',
         fixedCost: Number(t.fixedCost) || 0, actualCost: Number(t.actualCost) || 0,
         baseStart: t.baseStart ? new Date(t.baseStart + 'T00:00:00') : null,
         baseFinish: t.baseFinish ? new Date(t.baseFinish + 'T00:00:00') : null,
@@ -2354,14 +2357,26 @@
       pop.style.cssText = 'position:absolute;z-index:300;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 25px -5px rgb(0 0 0 /.25);max-height:230px;overflow-y:auto;display:none';
       document.body.appendChild(pop);
       inp._suggestPop = pop;
-      let items = [], sel = -1;
+      let items = [], sel = -1, typed = false;
       const place = () => { const r = inp.getBoundingClientRect(); pop.style.left = (r.left + window.scrollX) + 'px'; pop.style.top = (r.bottom + window.scrollY + 2) + 'px'; pop.style.minWidth = Math.max(240, r.width) + 'px'; };
       const bounds = () => { const v = inp.value; const cut = Math.max(v.lastIndexOf(','), v.lastIndexOf(';')); return { prefix: cut >= 0 ? v.slice(0, cut + 1) : '', token: v.slice(cut + 1).trim() }; };
       const highlight = i => { sel = i; [...pop.children].forEach((el, j) => { el.style.background = j === i ? '#eef2ff' : ''; }); };
-      const pick = i => { if (!items[i]) return; const { prefix } = bounds(); inp.value = (prefix ? prefix + ' ' : '') + items[i] + ', '; render(); inp.focus(); };
+      const pick = i => { if (!items[i]) return; const { prefix } = bounds(); inp.value = (prefix ? prefix + ' ' : '') + items[i] + ', '; typed = false; render(); inp.focus(); };
       const render = () => {
         const tl = bounds().token.toLowerCase().replace(/ /g, '');
-        items = labels.filter(l => !tl || l.toLowerCase().replace(/ /g, '').indexOf(tl) >= 0).slice(0, 9);
+        const norm = l => l.toLowerCase().replace(/ /g, '').trim();
+        const isExact = !!tl && labels.some(l => norm(l) === tl);
+        // the editor opens PREFILLED — until the user types a partial token
+        // (or right after an exact value), show the FULL list so a different
+        // entry can be picked without clearing the field first; the current
+        // value just sorts to the top
+        if (!typed || !tl || isExact) {
+          items = labels.slice();
+          if (isExact) items.sort((a, b) => (norm(b) === tl ? 1 : 0) - (norm(a) === tl ? 1 : 0));
+        } else {
+          items = labels.filter(l => norm(l).indexOf(tl) >= 0);
+        }
+        items = items.slice(0, 40); // the popover scrolls — never hide options behind a tiny cap
         sel = -1;
         if (!items.length) { pop.style.display = 'none'; return; }
         pop.innerHTML = items.map((l, i) => `<div data-i="${i}" style="padding:0.35rem 0.6rem;font-size:0.8rem;cursor:pointer;white-space:nowrap">${escapeHtml(l)}</div>`).join('');
@@ -2371,7 +2386,7 @@
           el.addEventListener('mouseenter', () => highlight(+el.dataset.i));
         });
       };
-      inp.addEventListener('input', render);
+      inp.addEventListener('input', () => { typed = true; render(); });
       inp.addEventListener('keydown', e => {
         if (pop.style.display === 'none') return;
         if (e.key === 'ArrowDown') { e.preventDefault(); highlight(Math.min(items.length - 1, sel + 1)); if (pop.children[sel]) pop.children[sel].scrollIntoView({ block: 'nearest' }); }
@@ -6768,9 +6783,11 @@ Return ONLY JSON:
       const batches = [];
       for (let i = 0; i < work.length; i += 12) batches.push(work.slice(i, i + 12));
       let made = 0, respec = 0;
-      // the contract below is identical for every batch — it rides the prompt
-      // cache (batch 1 writes it, batches 2+ read it at ~10% input cost); only
-      // the per-batch criteria list streams in fresh
+      // the contract below is identical for every batch — with the benchmarks
+      // block ahead of it, it rides the prompt cache across batches WHEN the
+      // combined prefix clears the model's minimum cacheable size (the 🗃
+      // toast reports what the API actually cached); only the per-batch
+      // criteria list streams in fresh
       const tcContract = `You are a QA lead writing executable UAT test cases from acceptance criteria (each criterion translates directly into one or more test cases).
 PROJECT: ${projName()}. Available people: ${roster}. Default test owner: ${qaOwner || '(leave empty)'}.
 Rules:
@@ -6800,7 +6817,7 @@ Return ONLY JSON (no prose, no fences):
 ${batch.map(({ s, a }) => `- ${a.id} [${a.type}] (from ${s.id}: As a ${s.persona || '?'}, I want to ${s.want || '?'}): ${a.text}`).join('\n')}
 Write the test cases for the criteria above, following the contract exactly. Return ONLY the JSON object described.`;
         const onDelta = streamShow('Writing test cases [' + partBar + '] batch ' + (bi + 1) + '/' + batches.length + ' (' + batch.length + ' ACs)');
-        const text = await callAnthropic(prompt, { onDelta, cachePrefix: tcContract });
+        const text = await callAnthropic(prompt, { onDelta, cachePrefix: [histPromptBlock(), tcContract] });
         streamHide(true);
         const res = parseAIJsonStrict(text, 'test-case batch ' + (bi + 1)); // never keep a partial batch
         (res.testCases || []).forEach(tc => {
@@ -7389,8 +7406,9 @@ Return ONLY JSON (no prose, no fences):
    "nfrs":["…"],"assumptions":["A: … — impact if false: …","D: … — if slipped: …"]}]}`;
     }
     // the rules as a CACHED prompt prefix: identical across single-shot,
-    // chunked and gap-fill drafting, so call 2 onward reads it from the prompt
-    // cache instead of re-billing ~1.5k tokens of house style every time
+    // chunked and gap-fill drafting — call 2 onward reads it from the prompt
+    // cache when the prefix clears the model's minimum cacheable size (the 🗃
+    // toast reports what the API actually cached)
     function reqRulesPrefix() {
       return 'HOUSE RULES for drafting the requirements layer — they govern the task described below:\n' + reqRulesBlock();
     }
@@ -8691,11 +8709,13 @@ Rules:
       const cacheBlocks = (Array.isArray(opts.cachePrefix) ? opts.cachePrefix : opts.cachePrefix ? [opts.cachePrefix] : [])
         .map(s => String(s || '')).filter(s => s.trim())
         .map(s => ({ type: 'text', text: s, cache_control: { type: 'ephemeral' } }));
-      const userMsg = markTail => {
-        if (!cacheBlocks.length && !markTail) return userContent; // wire-identical to the pre-caching shape
-        const tail = { type: 'text', text: userContent };
-        if (markTail) tail.cache_control = { type: 'ephemeral' }; // continuation rounds re-send the identical prompt — cache it once, read it every later round
-        return cacheBlocks.concat([tail]);
+      // NOTE: continuation rounds deliberately do NOT cache-mark the tail: a
+      // continuation only happens after a full max-token generation, which
+      // takes longer than the 5-minute cache TTL — the entry would be written
+      // (+25% on input) every round and never read back.
+      const userMsg = () => {
+        if (!cacheBlocks.length) return userContent; // wire-identical to the pre-caching shape
+        return cacheBlocks.concat([{ type: 'text', text: userContent }]);
       };
       let lastData = Date.now(), lastText = Date.now(), gotText = false, stalled = false;
       const watchdog = setInterval(() => {
@@ -8750,6 +8770,15 @@ Rules:
               if (!payload || payload === '[DONE]') continue;
               try {
                 const ev = JSON.parse(payload);
+                // honest cache accounting: the API says what actually cached —
+                // below a model's minimum prefix size a cache mark is silently
+                // ignored, so never CLAIM savings; report what happened
+                if (ev.type === 'message_start' && ev.message && ev.message.usage) {
+                  const u = ev.message.usage;
+                  const rd = u.cache_read_input_tokens || 0, wr = u.cache_creation_input_tokens || 0;
+                  if (rd > 0) flashSaved('🗃 prompt cache HIT — ' + (rd >= 1000 ? (rd / 1000).toFixed(1) + 'k' : rd) + ' tokens read at ~10% cost');
+                  else if (wr > 0) flashSaved('🗃 prompt cache primed (' + (wr >= 1000 ? (wr / 1000).toFixed(1) + 'k' : wr) + ' tokens) — calls in the next 5 min reuse it');
+                }
                 if (ev.type === 'content_block_delta' && ev.delta && ev.delta.text) {
                   text += ev.delta.text;
                   lastText = Date.now(); gotText = true;
@@ -8775,8 +8804,8 @@ Rules:
         for (let round = 0; round < 8; round++) {
           const prefill = full.replace(/\s+$/, ''); // API rejects trailing whitespace in prefills
           const messages = prefill
-            ? [{ role: 'user', content: userMsg(true) }, { role: 'assistant', content: prefill }]
-            : [{ role: 'user', content: userMsg(false) }];
+            ? [{ role: 'user', content: userMsg() }, { role: 'assistant', content: prefill }]
+            : [{ role: 'user', content: userMsg() }];
           if (prefill) full = prefill;
           const r = await once(messages, full);
           full += r.text;
@@ -10085,20 +10114,27 @@ IMPORTANT: rows marked [ROLL-UP] are WBS summary rows — the tool schedules and
       computeWbsCodes();
       const byWbs = {}; tasks.forEach(t => { if (t.wbs) byWbs[t.wbs] = t; });
       const nameSorted = tasks.slice().sort((a, b) => b.name.length - a.name.length);
+      // Inserted anchors are STASHED behind placeholder tokens until the very
+      // end, so one pass can never re-match text inside another pass's markup
+      // (a title like "Open 4.2 …" must not get an <a> injected into it, and
+      // the curly quotes an anchor emits must not be re-wrapped by the same
+      // task's curly-quote needle).
       const linkify = text => {
         let html = escapeHtml(String(text || ''));
+        const stash = [];
+        const put = frag => { stash.push(frag); return '' + (stash.length - 1) + ''; };
+        const mkLink = (id, tip, label) => put(`<a href="#" style="font-weight:600;color:var(--primary);text-decoration:underline dotted" onclick="event.preventDefault();openEditModal(${id}, true)" title="${tip}">${label}</a>`);
+        html = html.replace(/(^|[\s(;:])(\d+(?:\.\d+)+)(?=$|[\s)<.,;:'’])/g, (m, pre, code) =>
+          byWbs[code] ? pre + mkLink(byWbs[code].id, 'Open ' + code + ' ' + escapeHtml(byWbs[code].name) + ' in the editor', code) : m);
         nameSorted.forEach(t => {
           if (!t.name) return;
-          const link = `<a href="#" style="font-weight:600;color:var(--primary);text-decoration:underline dotted" onclick="event.preventDefault();openEditModal(${t.id}, true)" title="Open ${escapeHtml(t.wbs || '')} ${escapeHtml(t.name)} in the editor">`;
           ['&quot;', '&#039;', '“', '‘'].forEach((q, qi) => {
             const close = ['&quot;', '&#039;', '”', '’'][qi];
             const needle = q + escapeHtml(t.name) + close;
-            if (html.indexOf(needle) >= 0) html = html.split(needle).join(link + '“' + escapeHtml(t.name) + '”</a>');
+            if (html.indexOf(needle) >= 0) html = html.split(needle).join(mkLink(t.id, 'Open ' + escapeHtml(t.wbs || '') + ' ' + escapeHtml(t.name) + ' in the editor', '“' + escapeHtml(t.name) + '”'));
           });
         });
-        html = html.replace(/(^|[\s(;:])(\d+(?:\.\d+)+)(?=$|[\s)<.,;:'’])/g, (m, pre, code) =>
-          byWbs[code] ? `${pre}<a href="#" style="font-weight:600;color:var(--primary);text-decoration:underline dotted" onclick="event.preventDefault();openEditModal(${byWbs[code].id}, true)" title="Open ${code} ${escapeHtml(byWbs[code].name)} in the editor">${code}</a>` : m);
-        return html;
+        return html.replace(/(\d+)/g, (m, i) => stash[+i]);
       };
       const rows = healthFindings.findings.map((fd, fi) => {
         const c = sevCol[fd.severity] || sevCol.info;
