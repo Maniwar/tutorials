@@ -2615,6 +2615,26 @@
       if (!calculated || v == null) return '—';
       return `<span class="help-text" style="cursor:help;font-style:italic" title="Rolled up automatically from the sub-tasks: elapsed span through their dependency network if every one hits its ${kind} estimate. Parallel branches overlap (and staggered starts count as span), so this can differ from a simple sum of effort — and an optimistic span can even exceed a pessimistic one when compression staggers the start times.">${fmtDur(+v)}</span>`;
     }
+    // One source of truth for showing WHO someone is, not just their name:
+    // roleSub → a small second line for HTML tables ("Integration Specialist ·
+    // CLIENT"); roleText → "Tom (Director of Operations, client)" for
+    // tooltips, the Gantt, the SOW, status reports and email round trips.
+    function roleSub(name) {
+      const n = String(name || '').trim();
+      if (!n) return '';
+      const r = (resources[n] || {}).role || '';
+      const cli = isClientResource(n);
+      if (!r && !cli) return '';
+      return `<span class="help-text" style="display:block;font-size:0.65rem;line-height:1.25">${escapeHtml(r)}${r && cli ? ' · ' : ''}${cli ? '<span style="color:#3730a3;font-weight:700">CLIENT</span>' : ''}</span>`;
+    }
+    function roleText(name) {
+      const n = String(name || '').trim();
+      if (!n) return '';
+      const r = (resources[n] || {}).role || '';
+      const cli = isClientResource(n);
+      if (!r && !cli) return n;
+      return n + ' (' + (r || 'client-side') + (r && cli ? ', client' : '') + ')';
+    }
     // Who actually does the work under a summary/phase row — the phase's own
     // owner label does no scheduled work; the sub-tasks carry the effort.
     function summaryOwnerCell(t) {
@@ -2710,7 +2730,7 @@
           <td style="cursor:grab;color:var(--muted)" title="Drag to reorder / re-nest">⠿</td>
           <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
           <td data-name-id="${t.id}">${nameCell}</td>
-          <td data-owner-id="${t.id}" style="font-size:0.8rem${summary ? '' : ';cursor:text'}" title="${(resources[(t.owner || '').trim()] || {}).role ? escapeHtml((t.owner || '').trim() + ' — ' + resources[(t.owner || '').trim()].role) + '. ' : ''}${t.overallocated ? escapeHtml((t.owner||'')+' is over-allocated during this task. ') : ''}${summary ? '' : 'Click to reassign right here (type-ahead from the roster). Comma-separate for several people — first = owner, the rest join as attendees; @N sets allocation % (e.g. QA Tester@50).'}"${summary ? '' : ` onclick="beginOwnerEdit(${t.id}, this)"`}>${t.overallocated ? '<span style="color:var(--critical)" title="over-allocated">⚠ </span>' : ''}${summary ? summaryOwnerCell(t) : escapeHtml(t.owner || '—')}${(!t.milestone && !summary && t.units !== 100) ? ` <span class="help-text" style="font-size:0.68rem">@${t.units}%</span>` : ''}${(t.attendees && t.attendees.length) ? ` <span class="badge badge-info" title="${escapeHtml(t.attendees.map(a => a.name + ' @' + a.units + '%').join(', '))}">+${t.attendees.length}</span>` : ''}</td>
+          <td data-owner-id="${t.id}" style="font-size:0.8rem${summary ? '' : ';cursor:text'}" title="${(resources[(t.owner || '').trim()] || {}).role ? escapeHtml((t.owner || '').trim() + ' — ' + resources[(t.owner || '').trim()].role) + '. ' : ''}${t.overallocated ? escapeHtml((t.owner||'')+' is over-allocated during this task. ') : ''}${summary ? '' : 'Click to reassign right here (type-ahead from the roster). Comma-separate for several people — first = owner, the rest join as attendees; @N sets allocation % (e.g. QA Tester@50).'}"${summary ? '' : ` onclick="beginOwnerEdit(${t.id}, this)"`}>${t.overallocated ? '<span style="color:var(--critical)" title="over-allocated">⚠ </span>' : ''}${summary ? summaryOwnerCell(t) : escapeHtml(t.owner || '—') + roleSub(t.owner)}${(!t.milestone && !summary && t.units !== 100) ? ` <span class="help-text" style="font-size:0.68rem">@${t.units}%</span>` : ''}${(t.attendees && t.attendees.length) ? ` <span class="badge badge-info" title="${escapeHtml(t.attendees.map(a => a.name + ' @' + a.units + '%').join(', '))}">+${t.attendees.length}</span>` : ''}</td>
           ${(() => { const noEst = !summary && !t.milestone && !(t.p > 0);
             const a = noEst ? ' style="background:#fee2e2;color:#b91c1c;font-weight:700" title="NO ESTIMATE — this work package contributes nothing to the schedule, the critical path or the price. Click the cell and type the estimate right here."' : '';
             const ed = f => (!summary && !t.milestone) ? ` data-omp="${f}" onclick="beginOmpEdit(this, ${t.id}, '${f}')"${noEst ? '' : ' style="cursor:text"'}` : '';
@@ -4230,7 +4250,7 @@
           <thead><tr><th>Person / role</th><th>Status</th><th title="Σ expected effort across their tasks: TE × units% (attendee shares included)">Effort (days)</th><th title="Tasks they participate in (test cases counted separately)">Tasks</th><th title="Internal cost/day × effort — your delivery cost">Cost $</th><th title="Bill rate/day × effort — what the client is charged; margin = bill − cost">Billed $</th></tr></thead>
           <tbody>
             ${d.rows.map(r => `<tr${r.client ? ' style="background:#fffbeb"' : ''}>
-              <td>${escapeHtml(r.nm)}${r.rec.tcs ? ` <span class="help-text" style="font-size:0.68rem">(${r.rec.tcs} TC)</span>` : ''}</td>
+              <td>${escapeHtml(r.nm)}${(resources[r.nm] || {}).role ? `<span class="help-text" style="display:block;font-size:0.65rem">${escapeHtml(resources[r.nm].role)}</span>` : ''}${r.rec.tcs ? ` <span class="help-text" style="font-size:0.68rem">(${r.rec.tcs} TC)</span>` : ''}</td>
               <td>${statusBadge(r)}</td>
               <td>${r.rec.days.toFixed(1)}</td>
               <td>${r.rec.tasks}</td>
@@ -5285,7 +5305,7 @@
         const bw = Math.max(dayW, spanDays * dayW);
         const tipParts = [
           `${t.wbs}  ${t.name}`,
-          `${fmtNice(t.startDate)} → ${fmtNice(t.finishDate)}  •  ${t.percentComplete || 0}% done${!t.isSummary ? '  •  slack ' + (Math.abs(t.slack || 0) < 0.05 ? '0.0' : (t.slack || 0).toFixed(1)) : ''}${t.owner ? '  •  ' + t.owner : ''}`
+          `${fmtNice(t.startDate)} → ${fmtNice(t.finishDate)}  •  ${t.percentComplete || 0}% done${!t.isSummary ? '  •  slack ' + (Math.abs(t.slack || 0) < 0.05 ? '0.0' : (t.slack || 0).toFixed(1)) : ''}${t.owner ? '  •  ' + roleText(t.owner) : ''}`
         ];
         if (t.deliverable) tipParts.push('Deliverable: ' + t.deliverable);
         if (t.description) tipParts.push('Scope: ' + (t.description.length > 90 ? t.description.slice(0, 88) + '…' : t.description));
@@ -5783,7 +5803,7 @@
         return `<tr data-wbsrow="${t.id}" style="cursor:pointer;${t.isSummary ? 'font-weight:700;background:#f8fafc' : ''}" ondblclick="openEditModal(${t.id}, true)" title="Double-click to edit">
           <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
           <td style="padding-left:${8 + depth * 18}px"><span style="display:inline-flex;align-items:center">${twisty}${t.milestone ? '◆ ' : ''}${escapeHtml(t.milestone ? t.name.replace(/^◆\s*/, '') : t.name)}${collapsedIds.has(t.id) ? ` <span class="help-text" style="font-size:0.68rem;margin-left:4px">(+${leafDescendants(t.id).length})</span>` : ''}</span></td>
-          <td style="font-size:0.8rem">${t.isSummary ? summaryOwnerCell(t) : escapeHtml(t.owner || '—')}</td>
+          <td style="font-size:0.8rem">${t.isSummary ? summaryOwnerCell(t) : escapeHtml(t.owner || '—') + roleSub(t.owner)}</td>
           <td>${dur}</td>
           <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.startDate) : '—'}</td>
           <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.finishDate) : '—'}</td>
@@ -6150,7 +6170,7 @@
         // owner + dates must FIT the box — long role names get truncated (full
         // text lives in the hover tooltip), dates always survive intact
         const dateStr2 = fmtNice(t.startDate) + ' → ' + fmtNice(t.finishDate);
-        let ownerLbl = (t.owner || '').trim();
+        let ownerLbl = roleText((t.owner || '').trim());
         if (ownerLbl && ownerLbl.length + 3 + dateStr2.length > 36) {
           const budget = 36 - dateStr2.length - 4;
           ownerLbl = budget >= 4 ? ownerLbl.slice(0, budget) + '…' : '';
@@ -6160,6 +6180,7 @@
         svg += `<rect x="${P.x + 1}" y="${progY}" width="${NW - 2}" height="5" fill="#e2e8f0"/>`;
         svg += `<rect x="${P.x + 1}" y="${progY}" width="${(NW - 2) * Math.min(100, t.percentComplete || 0) / 100}" height="5" fill="${done ? '#16a34a' : '#2563eb'}"/>`;
         const ptip = [`${t.wbs}  ${t.name} — ${t.percentComplete || 0}% complete, slack ${fmt1(t.slack)}`];
+        if (t.owner) ptip.push('Owner: ' + roleText(t.owner));
         if (t.deliverable) ptip.push('Deliverable: ' + t.deliverable);
         if (t.description) ptip.push('Scope: ' + (t.description.length > 90 ? t.description.slice(0, 88) + '…' : t.description));
         ptip.push('Click to open / edit (WBS dictionary inside)');
@@ -7910,7 +7931,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         <h2 style="margin:0 0 2px;font-size:16px">Status update request — ${escapeHtml(projName())}${escapeHtml(scopeNote)}</h2>
         <p style="margin:0 0 10px;font-size:12.5px;color:#475569">${escapeHtml(fmtNice(new Date()))} • Please fill in the <b>yellow cells</b> on your rows — a %, or “done” plus the finish date, and any blockers — then reply with the table. The reply gets pasted straight back into the plan; blockers you note are logged into the project risk register.</p>`;
       owners.forEach(o => {
-        html += `<h3 style="margin:12px 0 4px;font-size:13.5px">${escapeHtml(o)} — ${byOwner[o].length} open item${byOwner[o].length === 1 ? '' : 's'}</h3>
+        html += `<h3 style="margin:12px 0 4px;font-size:13.5px">${escapeHtml(roleText(o))} — ${byOwner[o].length} open item${byOwner[o].length === 1 ? '' : 's'}</h3>
         <table style="border-collapse:collapse;width:100%">
           <tr><th style="${th}">WBS</th><th style="${th}">Task</th><th style="${th}">Planned window</th><th style="${th}">% today</th><th style="${fillTh}">Now at %</th><th style="${fillTh}">Done? (finish date)</th><th style="${fillTh}">Blockers / notes</th></tr>
           ${byOwner[o].map(t => `<tr>
@@ -7933,7 +7954,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       L.push('Reply with the whole list — it gets pasted straight back into the plan.');
       owners.forEach(o => {
         L.push('');
-        L.push('== ' + o + ' ==');
+        L.push('== ' + roleText(o) + ' ==');
         byOwner[o].forEach(t => {
           const win = calculated && t.startDate ? fmtNice(t.startDate) + ' → ' + fmtNice(t.finishDate) + ', ' : '';
           L.push(`• [${t.wbs}] ${t.name}${t.milestone ? ' (milestone)' : ''} — ${win}currently ${t.percentComplete || 0}%${isLate(t) ? '  ⚠ behind schedule' : ''}`);
@@ -7983,7 +8004,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         <h2 style="margin:0 0 2px;font-size:16px">Estimate review request — ${escapeHtml(projName())}${escapeHtml(scopeNote)}</h2>
         <p style="margin:0 0 10px;font-size:12.5px;color:#475569">${escapeHtml(fmtNice(new Date()))} • You are closest to this work — please sanity-check the three-point estimates on your rows (${escapeHtml(unit)}). Fill the <b>yellow cells</b> ONLY where the current numbers are wrong: new Optimistic / Most&nbsp;Likely / Pessimistic (keep O ≤ M ≤ P) and a one-line basis (what you know that the plan doesn't). Reply with the table — it pastes straight back into the plan.</p>`;
       owners.forEach(o => {
-        html += `<h3 style="margin:12px 0 4px;font-size:13.5px">${escapeHtml(o)} — ${byOwner[o].length} item${byOwner[o].length === 1 ? '' : 's'}</h3>
+        html += `<h3 style="margin:12px 0 4px;font-size:13.5px">${escapeHtml(roleText(o))} — ${byOwner[o].length} item${byOwner[o].length === 1 ? '' : 's'}</h3>
         <table style="border-collapse:collapse;width:100%">
           <tr><th style="${th}">WBS</th><th style="${th}">Task</th><th style="${th}">Current O / M / P (${escapeHtml(unit)})</th><th style="${fillTh}">New O</th><th style="${fillTh}">New M</th><th style="${fillTh}">New P</th><th style="${fillTh}">Basis / what changed</th></tr>
           ${byOwner[o].map(t => `<tr>
@@ -8002,7 +8023,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       L.push('Only reply where the numbers should change: fill new O/M/P (keep O <= M <= P) and say why.');
       owners.forEach(o => {
         L.push('');
-        L.push('== ' + o + ' ==');
+        L.push('== ' + roleText(o) + ' ==');
         byOwner[o].forEach(t => {
           L.push(`• [${t.wbs}] ${t.name} — current O/M/P: ${t.o} / ${t.m} / ${t.p} ${unit}${(t.percentComplete || 0) > 0 ? ' (' + t.percentComplete + '% done — estimate the whole task)' : ''}`);
           L.push('    new O/M/P: ____ / ____ / ____    basis:');
@@ -8059,7 +8080,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         const varD = (t.baseFinish && t.finishDate) ? calDaysBetween(t.baseFinish, currentFinish(t)) : null;
         return `<tr><td style="${td}${bold}">${t.wbs}</td>
           <td style="${td}${bold}padding-left:${9 + depth * 14}px">${t.milestone ? '◆ ' : ''}${escapeHtml(t.name)}</td>
-          <td style="${td}${bold}">${escapeHtml(t.owner || '')}</td>
+          <td style="${td}${bold}">${escapeHtml(t.owner ? roleText(t.owner) : '')}</td>
           <td style="${td}${bold}">${fmtNice(t.startDate)}</td>
           <td style="${td}${bold}">${fmtNice(t.finishDate)}</td>
           <td style="${td}${bold}text-align:right">${t.percentComplete || 0}%</td>
@@ -9672,9 +9693,9 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           return out;
         })(),
         milestones: tasks.filter(t => t.milestone).map(t => ({ name: t.name, date: fmtNice(t.finishDate) })),
-        team: Object.keys(resources).filter(n => !isClientResource(n)).map(n => ({ role: n, capacity: getCapacity(n), billRate: getBillRate(n) })).filter(r => tasks.some(t => taskParticipants(t).some(pr => pr.name === r.role))),
+        team: Object.keys(resources).filter(n => !isClientResource(n)).map(n => ({ role: (resources[n] && resources[n].role) ? n + ' — ' + resources[n].role : n, capacity: getCapacity(n), billRate: getBillRate(n) })).filter(r => tasks.some(t => taskParticipants(t).some(pr => pr.name === r.role))),
         clientTeam: Object.keys(resources).filter(isClientResource).map(n => ({
-          role: n,
+          role: (resources[n] && resources[n].role) ? n + ' — ' + resources[n].role : n,
           duties: tasks.filter(t => !t.isSummary && taskParticipants(t).some(pr => pr.name === n)).map(t => t.name)
         })).filter(c => c.duties.length),
         assumptions: raid.filter(r => r.type === 'Assumption' && r.status !== 'Closed').map(r => ({ text: r.title, impact: r.mitigation || '', ref: 'RAID' })),
