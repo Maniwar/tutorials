@@ -4646,29 +4646,40 @@
       let links = '';
       // transitively-redundant edges add arrows but no gating — don't draw them
       const redundantEdges = new Set(redundantLinkList().map(r => r.task.id + ':' + r.predId));
-      leafTasks().forEach(t => {
-        if (!visibleIds.has(t.id)) return;
-        const si = rowIndexOf[t.id];
-        const sX = dateX(t.startDate), sY = Y0 + si * ROWH + ROWH / 2;
-        const sSpanW = t.milestone ? (msAnchorX(t) - sX) + 10 : Math.max(dayW, (calDaysBetween(t.startDate, t.finishDate) + 1) * dayW);
-        // horizontal entries land on a bar's left edge — or a diamond's left tip
-        // (milestones anchor at the END of their day: they mark completion)
-        const sEdge = t.milestone ? msAnchorX(t) - 11 : sX;
-        // "verified by" plumbing: links INTO test cases (or into a collapsed
-        // summary standing in for its test cases) are informational — a real
-        // plan has dozens converging on the same UAT window, and at full
-        // strength they read as a cable bundle. Draw them faint and dashed.
-        const tcChildPredIds = t.isSummary ? new Set(leafDescendants(t.id).filter(isTestCaseTask).flatMap(c => (c.predecessors || []).map(pp => pp.id))) : null;
-        effectivePreds(t).forEach((p, k) => {
-          if (redundantEdges.has(t.id + ':' + p.id)) return;
-          const pt = tasks.find(x => x.id === p.id);
-          if (!pt || !visibleIds.has(p.id)) return;
-          const pi = rowIndexOf[p.id];
+      // Endpoints hidden inside a collapsed phase REMAP to that phase's summary
+      // bar — a link must never silently vanish (a floating, unconnected
+      // Go-Live diamond) nor draw once per hidden child (dedupe by pair; the
+      // first drawn pair wins, and real-flow links come before TC plumbing).
+      const repOf = id => { let cur = tasks.find(x => x.id === id); let g = 0; while (cur && !visibleIds.has(cur.id) && g++ < 50) cur = tasks.find(x => x.id === cur.parentId); return (cur && visibleIds.has(cur.id)) ? cur : null; };
+      const drawnPairs = new Set();
+      const inCount = new Map(); // per visible successor — staggers converging drops
+      const leafOrder = leafTasks().slice().sort((a, b) => (isTestCaseTask(a) ? 1 : 0) - (isTestCaseTask(b) ? 1 : 0));
+      leafOrder.forEach(t0 => {
+        effectivePreds(t0).forEach(p => {
+          if (redundantEdges.has(t0.id + ':' + p.id)) return;
+          const pt0 = tasks.find(x => x.id === p.id);
+          if (!pt0) return;
+          const t = repOf(t0.id), pt = repOf(p.id);
+          if (!t || !pt || t.id === pt.id) return;
+          const pairKey = pt.id + '>' + t.id;
+          if (drawnPairs.has(pairKey)) return;
+          drawnPairs.add(pairKey);
+          const k = inCount.get(t.id) || 0; inCount.set(t.id, k + 1);
+          const si = rowIndexOf[t.id], pi = rowIndexOf[pt.id];
+          const sX = dateX(t.startDate);
+          // summary bars are THIN bars at the TOP of their row — anchor to the
+          // bar itself, not the row's empty mid-height
+          const sY = Y0 + si * ROWH + (t.isSummary ? 13 : ROWH / 2);
+          const sSpanW = t.milestone ? (msAnchorX(t) - sX) + 10 : Math.max(dayW, (calDaysBetween(t.startDate, t.finishDate) + 1) * dayW);
+          const sEdge = t.milestone ? msAnchorX(t) - 11 : sX;
           const spanW = pt.milestone ? (msAnchorX(pt) - dateX(pt.startDate)) + 10 : Math.max(dayW, (calDaysBetween(pt.startDate, pt.finishDate) + 1) * dayW);
           const pX = dateX(pt.startDate) + spanW;
-          const pY = Y0 + pi * ROWH + ROWH / 2;
+          const pY = Y0 + pi * ROWH + (pt.isSummary ? 13 : ROWH / 2);
           const crit = t.isCritical && pt.isCritical;
-          const tcLink = (isTestCaseTask(t) && !isTestCaseTask(pt)) || (tcChildPredIds && tcChildPredIds.has(p.id));
+          // "verified by" plumbing: links whose ORIGINAL successor is a test
+          // case are informational — dozens converge on one UAT window; draw
+          // them faint and dashed so they sit behind the real schedule flow
+          const tcLink = isTestCaseTask(t0) && !isTestCaseTask(pt0);
           const stroke = crit && !tcLink ? '#dc2626' : '#94a3b8';
           const mk = crit && !tcLink ? 'g-arrC' : 'g-arr';
           const sw = tcLink ? 0.9 : crit ? 1.7 : 1.2, op = tcLink ? 0.35 : crit ? 0.9 : 0.5;
@@ -4709,7 +4720,9 @@
             const below = sY > pY; // successor drawn below the predecessor
             const entryY = t.milestone
               ? (below ? sY - 11 : sY + 11)
-              : (below ? sRowTop + 6 : sRowTop + 8 + BAR_H);
+              : t.isSummary
+                ? (below ? sRowTop + 9 : sRowTop + 24)
+                : (below ? sRowTop + 6 : sRowTop + 8 + BAR_H);
             // ONE rule so the arrowhead always rides a long vertical (a final
             // approach shorter than the 6.5px head makes it sit crooked on the
             // bend): pick the entry point nearest the predecessor's end. If it
@@ -4745,7 +4758,9 @@
               // entry column passes under (or over) the predecessor itself —
               // one straight vertical from its edge; a lane here would hug the
               // bar's bottom and read as an underline
-              const pEdgeY = below ? (Y0 + pi * ROWH + 7 + BAR_H) : (Y0 + pi * ROWH + 7);
+              const pEdgeY = pt.isSummary
+                ? (below ? Y0 + pi * ROWH + 18 : Y0 + pi * ROWH + 9)
+                : (below ? (Y0 + pi * ROWH + 7 + BAR_H) : (Y0 + pi * ROWH + 7));
               links += `<path d="M${desiredX},${pEdgeY} L${desiredX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${mk})"/>`;
             } else {
               const lane = below ? sRowTop - 4 : sRowTop + ROWH + 4;
