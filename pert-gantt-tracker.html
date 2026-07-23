@@ -4653,7 +4653,7 @@
             // forward link: run along the predecessor's row, drop just BEFORE the
             // successor — a drop right after the pred stabs through any bar in
             // the rows between (multiple preds also converge into one column)
-            const dropX = sX - 8;
+            const dropX = sX - 10; // 9px final approach — always longer than the 6.5px arrowhead
             if (pt.milestone) {
               // a milestone's date label sits right of the diamond at mid-height —
               // exit the diamond's bottom (or top) tip and travel the row
@@ -4684,23 +4684,34 @@
             const entryY = t.milestone
               ? (below ? sY - 11 : sY + 11)
               : (below ? sRowTop + 6 : sRowTop + 8 + BAR_H);
-            // PREFER one straight vertical drop from the predecessor's end —
-            // whenever that x lands inside the successor (with a stagger for
-            // multiple predecessors). Only when it can't land do we jog, and
-            // then the lane sits a row-gap away so the final approach is a
-            // full 10px run — an approach shorter than the 6.5px arrowhead
-            // makes the marker swallow the segment and sit crooked on the bend.
-            const straightX = pX - k * 7;
-            const lands = t.milestone
-              ? Math.abs(straightX - (sX + 6)) < 3
-              : straightX >= sX + 4 && straightX <= sX + sSpanW - 4;
-            if (lands) {
-              links += `<path d="M${pX},${pY}${straightX !== pX ? ` L${straightX},${pY}` : ''} L${straightX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+            // ONE rule so the arrowhead always rides a long vertical (a final
+            // approach shorter than the 6.5px head makes it sit crooked on the
+            // bend): pick the entry point nearest the predecessor's end. If it
+            // is AT/RIGHT of the end, run right at the pred's mid-height and
+            // make a single full-height drop. Only when the entry must be LEFT
+            // of the end (pred overshoots the successor) take the lane route,
+            // with a full row-gap approach.
+            // milestone predecessor: emit from the diamond's bottom (or top) TIP
+            // straight down whenever that column lands inside the successor —
+            // the tip is the natural anchor, and a single vertical can't crook
+            const pCx = dateX(pt.startDate) + 6;
+            if (pt.milestone && (t.milestone ? Math.abs(pCx - (sX + 6)) < 3 : (pCx >= sX + 4 && pCx <= sX + sSpanW - 4))) {
+              links += `<path d="M${pCx},${below ? pY + 11 : pY - 11} L${pCx},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
             } else {
-              const entryX = t.milestone ? sX + 6
-                : Math.max(sX + 5, Math.min(sX + sSpanW - 5, pX - 8 - k * 7));
+            const desiredX = t.milestone ? sX + 6
+              : Math.max(sX + 5, Math.min(sX + sSpanW - 5, pX - k * 7));
+            if (desiredX >= pX - 0.5) {
+              links += `<path d="M${pX},${pY}${desiredX - pX > 0.5 ? ` L${desiredX},${pY}` : ''} L${desiredX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+            } else if (desiredX >= dateX(pt.startDate) + 2) {
+              // entry column passes under (or over) the predecessor itself —
+              // one straight vertical from its edge; a lane here would hug the
+              // bar's bottom and read as an underline
+              const pEdgeY = below ? (Y0 + pi * ROWH + 7 + BAR_H) : (Y0 + pi * ROWH + 7);
+              links += `<path d="M${desiredX},${pEdgeY} L${desiredX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+            } else {
               const lane = below ? sRowTop - 4 : sRowTop + ROWH + 4;
-              links += `<path d="M${pX},${pY} L${pX},${lane} L${entryX},${lane} L${entryX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+              links += `<path d="M${pX},${pY} L${pX},${lane} L${desiredX},${lane} L${desiredX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+            }
             }
           }
         });
