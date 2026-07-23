@@ -4791,40 +4791,30 @@
         });
       });
       critNodes.sort((a, b) => (a.sd - b.sd) || (a.fd - b.fd));
-      if (critNodes.length > 1 || (critNodes.length === 1 && critNodes[0].sum)) {
-        const yOf = n => Y0 + rowIndexOf[n.rowId] * ROWH + ROWH / 2 + (n.point ? 0 : BAR_H / 2 + 2);
-        let cp = '';
-        critNodes.forEach(n => {
-          if (n.point) return;
-          const y = yOf(n);
-          cp += ` M${dateX(n.sd)},${y} L${dateX(n.fd) + dayW},${y}`;
-        });
-        for (let ci = 0; ci < critNodes.length - 1; ci++) {
-          const a = critNodes[ci], b2 = critNodes[ci + 1];
-          const ay = yOf(a), by = yOf(b2);
-          const ax = dateX(a.fd) + (a.point ? 0 : dayW);
-          const bx = dateX(b2.sd);
-          if (bx <= ax - dayW) continue; // overlapping spans (nested rollups) need no connector
-          const mx = Math.max(ax, Math.min(bx, ax + Math.max(4, (bx - ax) / 2)));
-          cp += ay === by ? ` M${ax},${ay} L${bx},${by}` : ` M${ax},${ay} L${mx},${ay} L${mx},${by} L${bx},${by}`;
-        }
-        const nSums = critNodes.filter(n => n.sum).length;
-        svg += `<g><path d="${cp.trim()}" fill="none" stroke="#dc2626" stroke-width="2.5" opacity="0.85" stroke-linecap="round" stroke-linejoin="round"/>
-          <title>${escapeXml('CRITICAL PATH — the zero-slack chain: any delay on this line moves the finish date day-for-day.' + (nSums ? ' A red run under a BLACK phase bar means the path goes through that collapsed group — click its ▸ to see the tasks.' : '') + ' Shorten it via ⑂ decompose, added resources, or re-sequencing — Analytics ▸ Criticality Index has per-task fixes.')}</title></g>`;
+      // The critical chain is already fully told by red bars + red arrows —
+      // an extra trace line under every bar just read as "underlined bars".
+      // The ONE place it adds information is a COLLAPSED phase: the black
+      // summary bar hides criticality, so draw the red run only there.
+      const critSums = critNodes.filter(n => n.sum);
+      if (critSums.length) {
+        const yOf = n => Y0 + rowIndexOf[n.rowId] * ROWH + ROWH / 2 + BAR_H / 2 + 2;
+        const cp = critSums.map(n => `M${dateX(n.sd)},${yOf(n)} L${dateX(n.fd) + dayW},${yOf(n)}`).join(' ');
+        svg += `<g><path d="${cp}" fill="none" stroke="#dc2626" stroke-width="2.5" opacity="0.85" stroke-linecap="round" stroke-linejoin="round"/>
+          <title>${escapeXml('CRITICAL PATH runs through this collapsed group — the black phase bar hides it; click the group’s ▸ to see the zero-slack tasks. Any delay on this run moves the finish date day-for-day.')}</title></g>`;
         // Why doesn't the path reach day one? If the earliest zero-slack task
-        // starts mid-project, everything before it has float — flag the start
-        // with a ⚠ badge that explains the pin (leveling vs float upstream).
-        const firstCritLeaf = leafTasks().filter(t => t.isCritical && t.startDate).sort((a, b) => a.es - b.es)[0];
-        if (firstCritLeaf && (firstCritLeaf.es || 0) > 0.51) {
-          const n0 = critNodes[0];
-          const x0c = dateX(n0.sd), y0c = yOf(n0);
-          const reason = (firstCritLeaf.levelDelay || 0) > 0
-            ? 'The first zero-slack activity ("' + firstCritLeaf.name + '") is pinned by RESOURCE LEVELING (start pushed +' + firstCritLeaf.levelDelay.toFixed(1) + ' ' + unitLabel() + ' to resolve an over-allocation). Clear or change leveling on the Resources tab and the dependency-driven path will reach further back.'
-            : 'Everything to the left of this point carries float — those activities can slip (by their slack numbers) WITHOUT moving the finish date. The finish is driven only from "' + firstCritLeaf.name + '" onward, so focus compression there.';
-          svg += `<path d="M${X0},${y0c} L${x0c - 10},${y0c}" fill="none" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="2,5" opacity="0.45"/>`;
-          svg += `<g data-cpwhy="1" style="cursor:help"><circle cx="${x0c - 9}" cy="${y0c}" r="8" fill="#fff" stroke="#dc2626" stroke-width="1.6"/><text x="${x0c - 9}" y="${y0c + 3.5}" font-family="${FF}" font-size="10" font-weight="800" fill="#dc2626" text-anchor="middle">?</text>
-            <title>${escapeXml('Why does the critical path start HERE, not at day one?\n' + reason)}</title></g>`;
-        }
+      }
+      // If the earliest zero-slack task starts mid-project, everything before
+      // it has float — flag the start with a ? badge that explains the pin.
+      const firstCritLeaf = leafTasks().filter(t => t.isCritical && t.startDate).sort((a, b) => a.es - b.es)[0];
+      if (firstCritLeaf && (firstCritLeaf.es || 0) > 0.51 && rowIndexOf[firstCritLeaf.id] != null) {
+        const y0c = Y0 + rowIndexOf[firstCritLeaf.id] * ROWH + ROWH / 2;
+        const x0c = dateX(firstCritLeaf.startDate);
+        const reason = (firstCritLeaf.levelDelay || 0) > 0
+          ? 'The first zero-slack activity ("' + firstCritLeaf.name + '") is pinned by RESOURCE LEVELING (start pushed +' + firstCritLeaf.levelDelay.toFixed(1) + ' ' + unitLabel() + ' to resolve an over-allocation). Clear or change leveling on the Resources tab and the dependency-driven path will reach further back.'
+          : 'Everything to the left of this point carries float — those activities can slip (by their slack numbers) WITHOUT moving the finish date. The finish is driven only from "' + firstCritLeaf.name + '" onward, so focus compression there.';
+        svg += `<path d="M${X0},${y0c} L${x0c - 18},${y0c}" fill="none" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="2,5" opacity="0.45"/>`;
+        svg += `<g data-cpwhy="1" style="cursor:help"><circle cx="${x0c - 17}" cy="${y0c}" r="8" fill="#fff" stroke="#dc2626" stroke-width="1.6"/><text x="${x0c - 17}" y="${y0c + 3.5}" font-family="${FF}" font-size="10" font-weight="800" fill="#dc2626" text-anchor="middle">?</text>
+          <title>${escapeXml('Why does the critical path start HERE, not at day one?\n' + reason)}</title></g>`;
       }
       svg += `</g>`; // end clipped chart layer
       if (todayOff >= 0 && todayOff <= totalDays) {
