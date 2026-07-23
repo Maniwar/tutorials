@@ -1057,6 +1057,18 @@
       const u = document.getElementById('durationUnit').value;
       return u === 'weeks' ? 'wks' : u === 'hours' ? 'hrs' : 'days';
     }
+    // Auto-scaling duration display: the MATH stays in the project unit (one
+    // canonical unit, no mixed-unit scheduling), but sub-day values READ as
+    // hours/minutes (1 day = 8 h). Level-3 detail like test cases becomes
+    // human-sized, and moving a task up or down the hierarchy re-scales its
+    // display automatically — nothing to re-enter.
+    function fmtDur(v) {
+      const n = +v || 0;
+      if (document.getElementById('durationUnit').value !== 'days' || n <= 0 || n >= 1) return n.toFixed(1) + ' ' + unitLabel();
+      const hrs = n * 8;
+      const human = hrs < 1 ? Math.round(hrs * 60) + ' min' : (Math.round(hrs * 10) / 10) + ' h';
+      return human + ' <span class="help-text" title="Stored as a fraction of a day so rollups and the schedule stay in one unit (1 day = 8 h)">(' + n.toFixed(2) + ' ' + unitLabel() + ')</span>';
+    }
     // convert a duration in the chosen unit to whole calendar working-day span for date math
     function unitToWorkingDays(v) {
       const u = document.getElementById('durationUnit').value;
@@ -1899,7 +1911,12 @@
       renderImpactPanel(id);
       // say which unit O/M/P are in — it's set on the main page (working days /
       // hours / weeks) and easy to forget mid-edit
-      document.querySelectorAll('#modal .m-unit-hint').forEach(el => { el.textContent = 'in ' + unitLabel(); });
+      document.querySelectorAll('#modal .m-unit-hint').forEach(el => {
+        el.textContent = 'in ' + unitLabel();
+        // sub-day cheat sheet: fine-grained work (test cases, small sub-tasks)
+        // is entered as a fraction of a day but thought about in hours/minutes
+        if (document.getElementById('durationUnit').value === 'days') el.title = 'Fractions of a day for fine-grained work (1 day = 8 h): 0.06 ≈ 30 min · 0.12 ≈ 1 h · 0.25 = 2 h · 0.5 = half a day. Tables display sub-day values in hours/minutes automatically.';
+      });
       const lagHint = document.getElementById('mLagHint');
       if (lagHint) lagHint.textContent = 'FS = Finish→Start (default), SS = Start→Start, FF = Finish→Finish, SF = Start→Finish. Lag in ' + unitLabel() + ' (negative = lead).';
       document.getElementById('modal').classList.add('open');
@@ -2221,7 +2238,7 @@
       }
       tbody.innerHTML = totalRow + visibleWbsOrder().map(({ task: t, depth }) => {
         const summary = t.isSummary;
-        const teStr = t.milestone ? '◆' : (calculated ? (t.te || 0).toFixed(2) : '—');
+        const teStr = t.milestone ? '◆' : (calculated ? fmtDur(t.te) : '—');
         const slackStr = calculated ? (Math.abs(t.slack) < 0.05 ? '0.0' : t.slack.toFixed(1)) : '—';
         const st = taskStatus(t);
         const badgeTips = {
@@ -4786,12 +4803,15 @@
           const movable = contrib.filter(t => !t.isCritical && t.slack > 0.25 && t.percentComplete < 100)
             .sort((a, b) => b.slack - a.slack); // suggest the task with the MOST room, not the least
           const tcContrib = contrib.filter(isTestCaseTask);
+          const totEff = contrib.reduce((s2, t) => s2 + (t.milestone ? 0 : (t.te || 0)), 0);
           const rowsHtml = contrib.map(t => `<tr>
               <td>${escapeHtml(t.name)}</td>
+              <td>${t.milestone ? '◆' : fmtDur(t.te)}</td>
               <td>${t.units}%</td>
               <td>${fmtNice(t.startDate)} → ${fmtNice(t.finishDate)}</td>
               <td>${t.isCritical ? '<span class="badge badge-critical">critical</span>' : t.slack.toFixed(1) + ' ' + u}</td>
-            </tr>`).join('');
+            </tr>`).join('')
+            + `<tr style="font-weight:700;background:#fef2f2"><td>Σ total effort in this peak</td><td>${totEff.toFixed(1)} ${u}${u === 'days' ? ' <span class="help-text" style="font-weight:400">(' + (totEff * 8).toFixed(0) + ' h)</span>' : ''}</td><td colspan="3" class="help-text" style="font-weight:400">vs a ${(() => { const s0 = Math.min(...contrib.map(t => t.es || 0)), f0 = Math.max(...contrib.map(t => t.ef || 0)); return Math.max(f0 - s0, 0).toFixed(1); })()} ${u} window — that ratio IS the ${Math.round(R.peak)}%</td></tr>`;
           const advice = tcContrib.length >= 3 && tcContrib.length >= contrib.length / 2
             ? `This peak is <strong>${tcContrib.length} test cases piled onto one tester</strong> — roughly ${tcContrib.reduce((s2, t) => s2 + (t.te || 0), 0).toFixed(1)} ${u} of execution squeezed into the same window. Real UAT spreads cases across several testers (client testers are unbilled): use <strong>⚖ Spread test cases</strong> below, or 📅 extend the timeline to see the honest single-tester span.`
             : movable.length
@@ -4799,7 +4819,7 @@
               : `The overlapping tasks have little or no float. Mend it by <strong>adding capacity</strong> (buttons below), <strong>reducing Units %</strong>, <strong>reassigning</strong> a task, or <strong>Level &amp; extend timeline</strong> to accept a later finish.`;
           summary += `<div class="conflict-card">
             <div style="font-weight:700;margin-bottom:0.25rem">${escapeHtml(name)} — peak ${Math.round(R.peak)}% vs ${R.capacity}% capacity <span class="help-text" style="font-weight:400">(over on: ${ranges})</span></div>
-            <div class="table-wrap"><table><thead><tr><th>Overlapping task</th><th>Units</th><th>Window</th><th>Slack</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
+            <div class="table-wrap"><table><thead><tr><th>Overlapping task</th><th title="Expected work (TE) — the number that actually adds up to the overload. Slack is how far a task can slip, NOT how big it is.">Effort</th><th>Units</th><th>Window</th><th>Slack</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
             <p class="help-text" style="margin-top:0.5rem">💡 ${advice}</p>
             <div class="toolbar no-print" style="margin-top:0.5rem">
               <button class="btn-sm btn-success" data-mend-add="${names.indexOf(name)}" title="Raise ${escapeHtml(name)}'s capacity by one full-time person">➕ Add 1 person to ${escapeHtml(name)}</button>
@@ -4903,7 +4923,7 @@
         const predChips = (t.predecessors || []).map(pd => { const pt = idToW[pd.id]; return pt ? `<span style="white-space:nowrap" title="${escapeHtml('Waits for ' + (pt.wbs ? pt.wbs + ' ' : '') + pt.name + ' (' + pd.type + lagStr(pd.lag) + ')')}">↤ ${escapeHtml(pt.wbs || pt.name)}</span>` : ''; }).filter(Boolean);
         const succChips = (succOfW[t.id] || []).map(s2 => `<span style="white-space:nowrap" title="${escapeHtml('Feeds ' + (s2.t.wbs ? s2.t.wbs + ' ' : '') + s2.t.name + ' (' + s2.type + lagStr(s2.lag) + ')')}">↦ ${escapeHtml(s2.t.wbs || s2.t.name)}</span>`);
         const linksCell = predChips.concat(succChips).join(' · ') || '<span class="help-text">—</span>';
-        const dur = t.milestone ? '◆' : (calculated ? (t.te || 0).toFixed(1) : '—');
+        const dur = t.milestone ? '◆' : (calculated ? fmtDur(t.te) : '—');
         const twisty = t.isSummary
           ? `<button class="wbs-twisty" onclick="toggleCollapse(${t.id})" title="${collapsedIds.has(t.id) ? 'Expand' : 'Collapse'}">${collapsedIds.has(t.id) ? '▸' : '▾'}</button>`
           : '<span class="wbs-twisty-spacer"></span>';
@@ -5521,7 +5541,11 @@
             <p class="help-text" style="margin-top:0.4rem">Project-level risks/assumptions live in the RAID tab; these story-level ones are contract armor — the D: rows become §7 “Client Responsibilities &amp; Dependencies” in the SOW.</p>`
           : '<p class="help-text" style="margin-top:0.5rem">None yet — added per story when drafting, or by hand in the story editor: “A: … — impact if false: …” / “D: … — if slipped: …”.</p>'}
       </details>`;
+      const fatTcs = oversizedTcList();
       html += `<details id="tcListPanel" style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">🧪 Test cases — ${tcAll.length} scheduled${tcAll.length ? ' (' + tcAll.filter(t => (t.percentComplete || 0) >= 100).length + ' executed)' : ''} <span class="help-text" style="font-weight:400">(the on-screen execution sheet — the CSV/Excel exports match it; click a name to open the task)</span></summary>
+        ${fatTcs.length ? `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:0.5rem 0.75rem;margin-top:0.5rem;font-size:0.8rem">
+          <strong>⏱ ${fatTcs.length} test case(s) look oversized</strong> — each estimated above ~1 hour of execution. A scripted UAT case is a 5–30 minute walkthrough; oversizing inflates the UAT window, the resource peaks and the price.
+          <div style="margin-top:0.4rem"><button class="btn-sm btn-primary" onclick="rightSizeTestCases()" title="Sets each oversized test case's O/M/P to ≈10 min likely / ~1 h worst case. Steps, pass criteria, owners and links stay. ↶ Undo reverses.">⏱ Right-size ${fatTcs.length} test case(s)</button></div></div>` : ''}
         ${tcAll.length
           ? `<div class="table-wrap" style="margin-top:0.5rem;max-height:460px;overflow:auto"><table>
               <thead><tr><th>Test case</th><th title="The acceptance criterion this verifies — hover for the Given/When/Then">Verifies</th><th>Steps for the tester</th><th>Pass when</th><th>Owner</th><th>Scheduled window</th><th>Status</th></tr></thead>
@@ -5875,7 +5899,7 @@ Rules:
 - name MUST start with "TC <AC-id> — " — the tool links TCs to criteria by that prefix. After the dash: the path type, a colon, then a SHORT VERB-FIRST action naming what the tester does (e.g. "TC AC-3.2 — error path: attempt export without admin role", "TC AC-1.1 — happy path: verify sponsor signs off all three documents in 5 days"). Never a noun-phrase restatement of the criterion.
 - steps: MINIMUM 3 numbered steps derived from the Given/When/Then (Given → setup, When → action, Then → observation), executable by a client UAT tester without asking questions — name the exact test data or account in the setup. "1. Log in as billing admin (test user uat_billing01). 2. Open Analytics ▸ Export and select Jan–Mar 2026. 3. Click Export CSV and time the download." — that level of concreteness.
 - pass: the EXPECTED RESULT — the observable behaviour that means PASS, copied faithfully from the criterion's Then (keep every number and its measurement condition). Never restate the steps here.
-- Durations in ${document.getElementById('durationUnit').value}: executing ONE test case typically takes 0.5–2 hours (0.05–0.25 days) — size them that way, and the SUM of all test cases must fit inside a realistic UAT window for this project's size; test cases run in PARALLEL across testers, they are not a serial chain. Data setup or environment work belongs in its own test case only if a criterion demands it.
+- Durations in ${document.getElementById('durationUnit').value}: executing ONE scripted test case takes 5–30 MINUTES (0.01–0.06 days) — a UAT case is a scripted walkthrough with evidence capture, not exploratory testing. Reserve up to 1 hour (0.12 days) ONLY for genuinely long scenarios (performance timing runs, multi-role end-to-end flows). The SUM of all test cases must fit inside a realistic UAT window for this project's size; test cases run in PARALLEL across testers, they are not a serial chain. Data setup or environment work belongs in its own test case only if a criterion demands it.
 Return ONLY JSON (no prose, no fences):
 {"testCases":[{"name":"TC AC-1.1 — …","ac":"AC-1.1","optimistic":0.1,"mostLikely":0.25,"pessimistic":0.5,"owner":"","steps":"1. … 2. …","pass":"…"}]}`;
         const onDelta = streamShow('Writing test cases [' + partBar + '] batch ' + (bi + 1) + '/' + batches.length + ' (' + batch.length + ' ACs)');
@@ -6070,6 +6094,29 @@ Return ONLY JSON (no prose, no fences):
       if (calculated) recompute();
       refreshAll(); renderReqs();
       flashSaved('🧹 ' + list.length + ' process test case(s) removed — their criteria remain, verified by their artifacts. ↶ Undo restores');
+    }
+    // Oversized test cases: a scripted UAT case is a 5–30 minute walkthrough
+    // (up to ~1 h for perf/end-to-end runs). Anything bigger inflates the UAT
+    // window, the price and the resource peaks — flag and right-size in bulk.
+    function tcSizeCap() { // expected work > ~1 hour ⇒ oversized
+      const un = document.getElementById('durationUnit').value;
+      return un === 'hours' ? 1.05 : un === 'weeks' ? 0.027 : 0.131;
+    }
+    function oversizedTcList() {
+      return tasks.filter(t => isTestCaseTask(t) && !t.milestone && (t.percentComplete || 0) < 100
+        && ((t.te || 0) || ((t.o || 0) + 4 * (t.m || 0) + (t.p || 0)) / 6) > tcSizeCap());
+    }
+    function rightSizeTestCases() {
+      const list = oversizedTcList();
+      if (!list.length) { flashSaved('✓ No oversized test cases.'); return; }
+      const un = document.getElementById('durationUnit').value;
+      const [o2, m2, p2] = un === 'hours' ? [0.2, 0.5, 1] : un === 'weeks' ? [0.005, 0.012, 0.025] : [0.02, 0.06, 0.12];
+      if (!confirm('Right-size ' + list.length + ' oversized test case(s) to realistic scripted-execution durations?\n\nSets O/M/P to ' + o2 + ' / ' + m2 + ' / ' + p2 + ' ' + un + ' each (≈10 min likely, ~1 h worst case). Steps, pass criteria, owners and links are untouched. ↶ Undo reverses.')) return;
+      list.forEach(t => { t.o = o2; t.m = m2; t.p = p2; });
+      saveLocal();
+      if (calculated) recompute();
+      refreshAll(); renderReqs();
+      flashSaved('⏱ ' + list.length + ' test case(s) right-sized — re-run 📊 the resource view; UAT peaks and the price both drop. ↶ Undo reverses.');
     }
     // Remove stories that trace to test-case tasks (created before the coverage
     // fix) plus any TC tasks generated from THOSE stories' criteria.
@@ -7891,6 +7938,7 @@ Rules:
 - Default: 3 to 8 concrete, trackable sub-tasks that fully cover the parent's scope. BUT if the guidance lists specific items (intents, integrations, reports, regions, workshops…), create ONE sub-task per listed item — each individually check-off-able — plus any setup/review/sign-off tasks the guidance implies.
 - If the guidance asks for TEST CASES or UAT-level decomposition, derive one sub-task per test scenario from the acceptance criteria above — name them "TC <AC-id> — <scenario>" (e.g. "TC AC-3.2 — error path: export without admin role"), cover happy, error AND edge paths, put the pass condition in each sub-task's "acceptance", and add test-data preparation and defect-triage sub-tasks where the criteria imply them.
 - The sum of mostLikely values should be close to the parent's M (${t.m} ${unit}) unless the guidance or historical data clearly says otherwise.
+${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fine-grained sub-task in hours or minutes first, then output the day-fraction equivalent (1 day = 8 h: 30 min = 0.06, 1 h = 0.12, 2 h = 0.25, half-day = 0.5). Never inflate a sub-hour job to a multi-hour estimate just to make the numbers look rounder — parents roll up from these fractions automatically.' : ''}
 - optimistic <= mostLikely <= pessimistic for each.
 - Default owner to "${t.owner || ''}" unless a sub-task clearly belongs to someone else.
 - dependsOn may only reference sub-task names in this same array (sequence them realistically; parallel where sensible).
@@ -8635,6 +8683,8 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       const noPreds = leaves.filter(t => !effectivePreds(t).length);
       if (noPreds.length > Math.max(2, leaves.length * 0.3)) findings.push({ severity: 'high', area: 'Dependencies', finding: `${noPreds.length} of ${leaves.length} tasks have no predecessors — the network is probably under-linked`, recommendation: 'Link the real sequence or the critical path (and every forecast) is understated.' });
       if (!tasks.some(t => t.milestone)) findings.push({ severity: 'medium', area: 'Milestones', finding: 'No milestones defined', recommendation: 'Add sign-off / go-live checkpoints — they anchor the SOW payment schedule and status reporting.' });
+      const fatTcs = oversizedTcList();
+      if (fatTcs.length >= 3) findings.push({ severity: 'medium', area: 'Estimate realism', finding: fatTcs.length + ' test case(s) are estimated above ~1 hour of execution each (' + fatTcs.reduce((s2, t) => s2 + (t.te || 0), 0).toFixed(1) + ' ' + u + ' total) — a scripted UAT case is a 5–30 minute walkthrough, so this inflates the UAT window, tester peaks and the price', recommendation: 'Requirements tab ▸ 🧪 Test cases ▸ ⏱ Right-size — one undoable click sets them to ≈10 min likely / ~1 h worst case.', jump: 'req' });
       const dupClones = parallelCloneTasks();
       if (dupClones.length) findings.push({ severity: 'high', area: 'Duplicates', finding: dupClones.length + ' duplicate "(Parallel Track)" task(s) inflate effort and price: ' + dupClones.slice(0, 4).map(t => t.name).join('; ') + (dupClones.length > 4 ? '…' : ''), recommendation: 'Requirements tab ▸ 🧹 Remove the duplicates (one undoable click) — their originals already carry the stories and estimates.', jump: 'req' });
       if (!leaves.some(t => /manag|pm\b|status|govern|coordinat/i.test(t.name))) findings.push({ severity: 'medium', area: 'Missing scope', finding: 'No project-management/governance effort in the plan', recommendation: 'Delivery overhead is typically 10–15% — add a PM workstream or it comes out of margin.' });
