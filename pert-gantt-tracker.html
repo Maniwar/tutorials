@@ -7880,6 +7880,7 @@ ${aiSchemaHint()}`;
       }
       // 2) upserts — existing tasks are edited IN PLACE
       let addedN = 0, updatedN = 0;
+      const addedTasks = [];
       const parentNames = new Set(changed.map(x => String((x && x.parent) || '').trim().toLowerCase()).filter(Boolean));
       const pending = [];
       changed.forEach(pt => {
@@ -7897,7 +7898,7 @@ ${aiSchemaHint()}`;
             attendees: attendees || [],
             deliverable: String(pt.deliverable || '').trim(), description: String(pt.description || '').trim(),
             acceptance: String(pt.acceptance || '').trim(), predecessors: [] });
-          tasks.push(t); addedN++;
+          tasks.push(t); addedN++; addedTasks.push(t);
         } else {
           updatedN++;
           t.name = name; // rename via "was" keeps id → progress, links, history survive
@@ -7932,6 +7933,23 @@ ${aiSchemaHint()}`;
           const preds = dependsOn.map(dn => byLower[String(dn || '').trim().toLowerCase()]).filter(x => x && x.id !== t.id).map(x => ({ id: x.id, type: 'FS', lag: 0 }));
           if (preds.length || dependsOn.length === 0) t.predecessors = preds; // all names unresolvable → keep old links
         }
+      });
+      // 2b) place NEW tasks where they belong in the list, not at the bottom:
+      // right after their latest predecessor (or their parent), and before the
+      // first task that depends on them — so an inserted "Design Review" lands
+      // between the activities it actually sits between, WBS numbers included.
+      addedTasks.forEach(nt => {
+        const pos = tasks.indexOf(nt);
+        if (pos < 0) return;
+        tasks.splice(pos, 1);
+        const iOf = id => tasks.findIndex(k => k.id === id);
+        let lo = -1;
+        (nt.predecessors || []).forEach(pd => { lo = Math.max(lo, iOf(pd.id)); });
+        if (nt.parentId != null) lo = Math.max(lo, iOf(nt.parentId));
+        let hi = Infinity;
+        tasks.forEach((k, i) => { if ((k.predecessors || []).some(pd => pd.id === nt.id)) hi = Math.min(hi, i); });
+        const insertAt = (lo < 0 && hi === Infinity) ? tasks.length : (hi <= lo ? hi : lo + 1);
+        tasks.splice(Math.max(0, Math.min(insertAt, tasks.length)), 0, nt);
       });
       // 3) resources — merge-only: add/update capacity & kind; rates/PTO untouched.
       // A NEW name is only kept if some task actually references it after the
