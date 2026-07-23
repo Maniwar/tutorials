@@ -4681,18 +4681,25 @@
             // (or rises into its bottom).
             const sRowTop = Y0 + si * ROWH;
             const below = sY > pY; // successor drawn below the predecessor
-            // enter the successor at the point NEAREST the predecessor's end —
-            // minimal lane travel, no long runs skimming other bars' tops
-            const entryX = t.milestone ? sX + 6
-              : Math.max(sX + 5, Math.min(sX + sSpanW - 5, pX - 6 - k * 7));
             const entryY = t.milestone
               ? (below ? sY - 11 : sY + 11)
               : (below ? sRowTop + 6 : sRowTop + 8 + BAR_H);
-            if (Math.abs(pX - entryX) < 2.5) {
-              // entry sits right under the predecessor's end — one straight drop
-              links += `<path d="M${pX},${pY} L${pX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+            // PREFER one straight vertical drop from the predecessor's end —
+            // whenever that x lands inside the successor (with a stagger for
+            // multiple predecessors). Only when it can't land do we jog, and
+            // then the lane sits a row-gap away so the final approach is a
+            // full 10px run — an approach shorter than the 6.5px arrowhead
+            // makes the marker swallow the segment and sit crooked on the bend.
+            const straightX = pX - k * 7;
+            const lands = t.milestone
+              ? Math.abs(straightX - (sX + 6)) < 3
+              : straightX >= sX + 4 && straightX <= sX + sSpanW - 4;
+            if (lands) {
+              links += `<path d="M${pX},${pY}${straightX !== pX ? ` L${straightX},${pY}` : ''} L${straightX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
             } else {
-              const lane = below ? sRowTop + 2.5 : sRowTop + ROWH - 2.5;
+              const entryX = t.milestone ? sX + 6
+                : Math.max(sX + 5, Math.min(sX + sSpanW - 5, pX - 8 - k * 7));
+              const lane = below ? sRowTop - 4 : sRowTop + ROWH + 4;
               links += `<path d="M${pX},${pY} L${pX},${lane} L${entryX},${lane} L${entryX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
             }
           }
