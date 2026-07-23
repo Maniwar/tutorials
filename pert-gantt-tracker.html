@@ -4663,6 +4663,13 @@
               const exitX2 = dateX(pt.startDate) + 6;
               const lane2 = below2 ? pRowT + ROWH - 2 : pRowT + 2;
               links += `<path d="M${exitX2},${below2 ? pY + 11 : pY - 11} L${exitX2},${lane2} L${dropX},${lane2} L${dropX},${sY} L${sX - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+            } else if (dropX - pX > dayW * 2.2) {
+              // LONG run: a mid-row horizontal would cut through the slack hatch
+              // and labels for weeks — hop into this row's edge gap right after
+              // the bar end and travel there instead
+              const pRowT = Y0 + pi * ROWH;
+              const prLane = sY > pY ? pRowT + ROWH - 1.5 : pRowT + 1.5;
+              links += `<path d="M${pX},${pY} L${pX + 5},${pY} L${pX + 5},${prLane} L${dropX},${prLane} L${dropX},${sY} L${sX - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
             } else
             links += `<path d="M${pX},${pY} L${dropX},${pY} L${dropX},${sY} L${sX - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
           } else {
@@ -4726,8 +4733,9 @@
           const done = t.percentComplete >= 100;
           const grad = done ? 'g-done' : (t.isCritical ? 'g-crit' : 'g-norm');
           const slackW = unitToWorkingDays(t.slack) > 0 ? unitToWorkingDays(t.slack) * dayW : 0;
-          // baseline underbar
-          if (t.baseStart && t.baseFinish) {
+          // baseline underbar — only when it DIFFERS from the current schedule;
+          // a just-baselined plan otherwise draws a phantom line under every bar
+          if (t.baseStart && t.baseFinish && (Math.abs(t.baseStart - t.startDate) > 432e5 || Math.abs(t.baseFinish - t.finishDate) > 432e5)) {
             const bbx = dateX(t.baseStart);
             const bbw = Math.max(4, (calDaysBetween(t.baseStart, t.baseFinish) + 1) * dayW);
             svg += `<rect x="${bbx}" y="${y + 24}" width="${bbw}" height="3.5" rx="1.5" fill="#94a3b8"><title>Baseline ${escapeXml(fmtNice(t.baseStart))} → ${escapeXml(fmtNice(t.baseFinish))}</title></rect>`;
