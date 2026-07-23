@@ -4869,11 +4869,14 @@
       // summary bar hides criticality, so draw the red run only there.
       const critSums = critNodes.filter(n => n.sum);
       if (critSums.length) {
-        const yOf = n => Y0 + rowIndexOf[n.rowId] * ROWH + ROWH / 2 + BAR_H / 2 + 2;
-        const cp = critSums.map(n => `M${dateX(n.sd)},${yOf(n)} L${dateX(n.fd) + dayW},${yOf(n)}`).join(' ');
-        svg += `<g><path d="${cp}" fill="none" stroke="#dc2626" stroke-width="2.5" opacity="0.85" stroke-linecap="round" stroke-linejoin="round"/>
-          <title>${escapeXml('CRITICAL PATH runs through this collapsed group — the black phase bar hides it; click the group’s ▸ to see the zero-slack tasks. Any delay on this run moves the finish date day-for-day.')}</title></g>`;
-        // Why doesn't the path reach day one? If the earliest zero-slack task
+        // paint the critical span ON the black phase bar itself — a separate
+        // line under the bar collided with connectors and milestones below
+        critSums.forEach(n => {
+          const yTop = Y0 + rowIndexOf[n.rowId] * ROWH + 10;
+          const x1 = dateX(n.sd), w = Math.max(6, dateX(n.fd) + dayW - x1);
+          svg += `<g><rect x="${x1}" y="${yTop}" width="${w}" height="7" rx="2" fill="#dc2626" opacity="0.92"/>
+            <title>${escapeXml('CRITICAL PATH runs through this collapsed group (the red span of the phase bar) — click the group’s ▸ to see the zero-slack tasks. Any delay here moves the finish date day-for-day.')}</title></g>`;
+        });
       }
       // If the earliest zero-slack task starts mid-project, everything before
       // it has float — flag the start with a ? badge that explains the pin.
