@@ -6551,14 +6551,23 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     function importJSON(ev) {
       const file = ev.target.files[0]; if (!file) return;
       const reader = new FileReader();
-      reader.onload = e => {
+      reader.onload = async e => {
         try {
           const data = JSON.parse(e.target.result);
           if (!data.tasks || !Array.isArray(data.tasks)) throw new Error('Invalid format');
+          // an import lands in its OWN project slot — it must never replace the
+          // plan that happens to be open (same in-place trap as the old header
+          // New Project button)
+          if (tasks.length) { saveLocal(); await persistNow(); }
+          const id = 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+          localStorage.setItem(PROJ_ACTIVE_KEY, id);
           resetUndo();
           hydrate(data);
-          renderTaskTable(); switchTab('tasks'); saveLocal();
-          alert('Project imported. Click Calculate to analyze.');
+          calculated = false;
+          saveLocal();
+          renderTaskTable(); renderWBS(); renderRaid(); renderProjectMenu(); switchTab('tasks');
+          if (tasks.length && recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT(); }
+          flashSaved('📥 Imported "' + (data.projectName || 'project') + '" as its own project (' + tasks.length + ' tasks) — the previous plan stays in 📁 Projects');
         } catch (err) { alert('Could not import: ' + err.message); }
       };
       reader.readAsText(file); ev.target.value = '';
