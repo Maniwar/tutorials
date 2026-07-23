@@ -568,6 +568,12 @@
             <div><label>I want to…</label><input id="stWant" type="text" placeholder="export monthly metrics to CSV" /></div>
             <div><label>So that…</label><input id="stSoThat" type="text" placeholder="I can report in our BI tool" /></div>
           </div>
+          <div class="form-group" style="margin-top:0.6rem"><label>Verified by <span class="info-icon" title="UAT test cases = a tester executes steps against the built product (features, data rules, dashboards, access control). Artifact = acceptance is evidenced by the deliverable or record itself (meetings, requirements docs, design approvals, documentation, training, QA/UAT execution) — real acceptance criteria for billing, but 🧪 Generate test plan will NOT create test tasks for it.">i</span></label>
+            <select id="stVerif" style="max-width:340px">
+              <option value="">Auto (classified from the activity name)</option>
+              <option value="uat">UAT test cases — tester executes steps against the product</option>
+              <option value="artifact">Artifact / sign-off — the deliverable itself is the evidence</option>
+            </select></div>
           <div class="form-group" style="margin-top:0.6rem"><label>Acceptance criteria — one per line, prefix with the path type <span class="info-icon" title="Cover all three: happy = it works; error = user/system does something invalid and it fails gracefully; edge = boundaries, empty states, timeouts, capacity. perf = measurable thresholds. Use Given / When / Then.">i</span></label>
             <textarea id="stAc" rows="6" placeholder="[happy] Given an admin on the Analytics page, When they export a ≤24-month range, Then a CSV downloads within 5s at p95
 [error] Given a user without the admin role, When they call the export endpoint, Then it returns 403 with no data
@@ -5338,6 +5344,13 @@
           these were drafted when test cases wrongly counted as uncovered scope (a fixed bug). A story describes scope; a test case verifies it — a "story about a test case" (and any test cases generated for <i>its</i> criteria) is double-counted noise in coverage, the matrix and the SOW.
           <div style="margin-top:0.4rem"><button class="btn-sm btn-danger" onclick="cleanupTestCaseStories()" title="Deletes these stories AND the test-case tasks generated from their criteria (tests of tests). One ↶ undo reverses all of it.">🧹 Remove them (and their derived test cases)</button></div></div>`;
       }
+      // TCs generated for artifact-verified criteria before the classifier existed
+      const procTcs = processTcList();
+      if (procTcs.length) {
+        html += `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
+          <strong>📋 ${procTcs.length} test case(s) attached to PROCESS criteria</strong> (kickoff/meetings, requirements gathering, documentation, training, QA/UAT execution) — those criteria are accepted via their artifact (notes, sign-off, log), not by a scheduled test task; these add noise to the schedule and the PERT network.
+          <div style="margin-top:0.4rem"><button class="btn-sm btn-primary" onclick="cleanupProcessTCs()" title="Removes only the test-case tasks; the stories and acceptance criteria stay — they define how those deliverables get accepted and billed. ↶ Undo reverses.">🧹 Remove process test cases (keeps the criteria)</button></div></div>`;
+      }
       if (uncovered.length) {
         html += `<div id="covBanner" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
           <strong>⚠ ${uncovered.length} WBS activit${uncovered.length === 1 ? 'y has' : 'ies have'} no story:</strong>
@@ -5450,7 +5463,12 @@
     // test case. A story counts as process work when its activity (or any
     // ancestor) is project-management/governance work.
     function isProcessStory(story) {
-      const re = /project management|governance|pmo\b|status report|steering committee|raid log|change control/i;
+      // authoritative: the AI classifies verification at draft time
+      if (story && story.verification === 'artifact') return true;
+      if (story && story.verification === 'uat') return false;
+      // fallback for stories drafted before the field existed: activity-name
+      // heuristic over the task and its ancestors
+      const re = /project management|governance|pmo\b|status report|steering committee|raid log|change control|kick[\s-]?off|meeting|workshop|interview|elicit|gather.*requirement|requirements? gather|discovery session|wireframe|mock-?up|design review|documentation|user guide|training|enablement|sign[\s-]?off|approval|internal qa|qa testing|user acceptance|uat\b|test execution|hypercare|lessons learned|project closure/i;
       let cur = story && story.wbsId != null ? tasks.find(x => x.id === story.wbsId) : null;
       let guard = 0;
       while (cur && guard++ < 50) {
@@ -5861,6 +5879,32 @@ Return ONLY JSON (no prose, no fences):
       flashSaved('⬇ ' + (rows.length - 1) + ' test cases exported (Excel) — yellow columns are for the tester to fill in');
     }
 
+    // Test cases generated for artifact-verified (process) criteria — kickoffs,
+    // requirements gathering, documentation, training, QA/UAT execution — are
+    // schedule noise: those criteria are accepted via the artifact itself.
+    function processTcList() {
+      const acOwner = {};
+      ((reqs && reqs.stories) || []).forEach(s => (s.ac || []).forEach(a => { acOwner[String(a.id).toLowerCase()] = s; }));
+      return tasks.filter(t => {
+        if (!isTestCaseTask(t)) return false;
+        const acId = ((t.name.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').toLowerCase();
+        const s = acOwner[acId];
+        return !!s && isProcessStory(s);
+      });
+    }
+    function cleanupProcessTCs() {
+      const list = processTcList();
+      if (!list.length) { flashSaved('✓ No test cases attached to process criteria.'); return; }
+      if (!confirm('Remove ' + list.length + ' test-case task(s) generated for artifact-verified (process) criteria — kickoff/meetings, requirements gathering, documentation, training, QA/UAT execution?\n\nThe stories and acceptance criteria STAY (they are how those deliverables get accepted and billed) — only the unnecessary scheduled test tasks go. ↶ Undo reverses.')) return;
+      const rm = new Set(list.map(t => t.id));
+      tasks = tasks.filter(t => !rm.has(t.id));
+      tasks.forEach(t => { t.predecessors = t.predecessors.filter(p => !rm.has(p.id)); });
+      rm.forEach(id => { selectedTaskIds.delete(id); collapsedIds.delete(id); });
+      saveLocal();
+      if (calculated) recompute();
+      refreshAll(); renderReqs();
+      flashSaved('🧹 ' + list.length + ' process test case(s) removed — their criteria remain, verified by their artifacts. ↶ Undo restores');
+    }
     // Remove stories that trace to test-case tasks (created before the coverage
     // fix) plus any TC tasks generated from THOSE stories' criteria.
     function cleanupTestCaseStories() {
@@ -5924,6 +5968,7 @@ Return ONLY JSON (no prose, no fences):
       document.getElementById('stPersona').value = s ? (s.persona || '') : '';
       document.getElementById('stWant').value = s ? (s.want || '') : '';
       document.getElementById('stSoThat').value = s ? (s.soThat || '') : '';
+      document.getElementById('stVerif').value = s ? (s.verification || '') : '';
       document.getElementById('stAc').value = s ? (s.ac || []).map(a => `[${a.type}] ${a.text}`).join('\n') : '';
       document.getElementById('stNfr').value = s ? (s.nfrs || []).join('\n') : '';
       document.getElementById('stAssume').value = s ? (s.assumptions || []).join('\n') : '';
@@ -5952,6 +5997,7 @@ Return ONLY JSON (no prose, no fences):
         wbsName: wbsTask ? wbsTask.name : '',
         persona: document.getElementById('stPersona').value.trim(),
         want, soThat: document.getElementById('stSoThat').value.trim(),
+        verification: document.getElementById('stVerif').value || null,
         ac, nfrs: splitLines('stNfr'), assumptions: splitLines('stAssume')
       };
       const idx = editingStoryId != null ? reqs.stories.findIndex(s => s.id === editingStoryId) : -1;
@@ -5977,11 +6023,12 @@ Return ONLY JSON (no prose, no fences):
 - nfrs: run the NFR checklist per story (performance, throughput, availability, recovery RTO/RPO, security standard, authN/authZ, data residency, privacy/compliance, auditability, accessibility, localization, browser/device, observability, retention, interoperability, migration) and attach the applicable ones WITH numbers. A story with no NFRs attached is not estimable — omit the array only if truly none apply.
 - assumptions: strings prefixed "A:" for assumptions — each MUST state the impact if false (e.g. "A: the sentiment service exposes a documented REST endpoint ≤200 ms p95 — impact if false: +120–200 hours, re-baseline the epic"); and "D:" for client dependencies — each MUST state the consequence of a slip (e.g. "D: 1,000 labeled conversations by end of Sprint 2 — if slipped: validation cannot start, day-for-day schedule extension").
 - For AI/probabilistic features, write the outcome in statistical form against a defined evaluation dataset (size, labeling method, inter-annotator agreement), with precision/recall floors, latency at stated concurrency, fallback behaviour on timeout/low confidence, and drift monitoring — never deterministic pass/fail on a probabilistic output.
+- verification: classify how each story's acceptance is verified. "uat" = behaviour a tester can EXECUTE against the built product (features, calculations, data rules, dashboards, integrations, access control, performance) — these get UAT test cases. "artifact" = acceptance is evidenced by the deliverable or a record itself (kickoff/meetings/workshops, requirements elicitation, design/wireframe approvals, documentation, training delivery, the QA/UAT execution activities themselves, PM/governance, sign-offs) — still real acceptance criteria for billing, but verified by the artifact, never by a scheduled test case.
 - IDs: epics EP-1…, stories US-1…, criteria AC-<storyNo>.<n>. IDs must match ^[A-Za-z0-9_.-]+$.
 Return ONLY JSON (no prose, no fences):
 {"personas":[{"name":"…","definition":"…"}],
  "epics":[{"id":"EP-1","title":"…","businessNeed":"…","wbsName":"exact phase name or empty string"}],
- "stories":[{"id":"US-1","epicId":"EP-1","wbsName":"EXACT leaf activity name","persona":"…","want":"…","soThat":"…",
+ "stories":[{"id":"US-1","epicId":"EP-1","wbsName":"EXACT leaf activity name","persona":"…","want":"…","soThat":"…","verification":"uat|artifact",
    "ac":[{"id":"AC-1.1","type":"happy|error|edge|perf","text":"Given … When … Then …"}],
    "nfrs":["…"],"assumptions":["A: … — impact if false: …","D: … — if slipped: …"]}]}`;
     }
@@ -6169,6 +6216,7 @@ ${reqRulesBlock()}`;
           // strip a leading "to " — the UI renders "I want to <want>", so a
           // model-supplied "to establish…" would read "I want to to establish…"
           persona: clean(s.persona), want: clean(s.want).replace(/^to\s+/i, ''), soThat: clean(s.soThat),
+          verification: clean(s.verification) === 'artifact' ? 'artifact' : clean(s.verification) === 'uat' ? 'uat' : null,
           ac: Array.isArray(s.ac) ? s.ac.map((a, j) => ({
             id: safeId(a.id, 'AC-' + (i + 1), j), type: ['happy', 'error', 'edge', 'perf'].includes(clean(a.type)) ? clean(a.type) : 'happy', text: clean(a.text)
           })).filter(a => a.text) : [],
