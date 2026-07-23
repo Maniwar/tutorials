@@ -7012,29 +7012,52 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       const tasksActive = document.getElementById('view-tasks').classList.contains('active');
       box.classList.toggle('stream-float', !tasksActive);
       box.style.display = 'block';
-      head.textContent = label + ' — connecting…';
       txt.textContent = '';
+      // Global activity strip: pinned to the top of the WINDOW on every tab, so
+      // AI work is impossible to miss no matter where it was started from.
+      let strip = document.getElementById('aiActivityStrip');
+      if (!strip) {
+        strip = document.createElement('div');
+        strip.id = 'aiActivityStrip';
+        strip.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2900;background:linear-gradient(90deg,#0f172a,#1e3a8a,#0f172a);background-size:200% 100%;animation:stripslide 2.2s linear infinite;color:#a5f3fc;padding:7px 14px;font-size:12.5px;display:flex;gap:0.75rem;align-items:center;box-shadow:0 2px 10px rgba(2,6,23,.4)';
+        strip.innerHTML = '<span style="animation:blink 1s infinite">🤖</span><span id="aiActivityLabel" style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></span><button onclick="stopAIStream()" style="background:#dc2626;color:#fff;border:none;border-radius:5px;padding:3px 10px;cursor:pointer;font-size:12px" title="Abort — the model stops generating server-side, unspent tokens are never billed, and NOTHING is applied">⏹ Stop</button>';
+        document.body.appendChild(strip);
+        if (!document.getElementById('stripSlideCss')) {
+          const st = document.createElement('style');
+          st.id = 'stripSlideCss';
+          st.textContent = '@keyframes stripslide{0%{background-position:0 0}100%{background-position:200% 0}}';
+          document.head.appendChild(st);
+        }
+      }
+      streamShow._gen = (streamShow._gen || 0) + 1; // batch flows re-show instantly
+      const setLabel = t => { head.textContent = t; const l = document.getElementById('aiActivityLabel'); if (l) l.textContent = t; };
+      setLabel(label + ' — connecting…');
       // heartbeat: before the first token the model is "thinking" (big prompts
       // take up to a minute) — show elapsed time so silence never looks stuck
       let n = 0, started = Date.now(), lastBeat = 0;
       clearInterval(streamShow._tick);
       streamShow._tick = setInterval(() => {
         const secs = Math.round((Date.now() - started) / 1000);
-        if (!lastBeat) head.textContent = `${label} — ⏳ ${secs}s — model is thinking (long prompts can take a minute before text appears; ⏹ Stop to abort)`;
-        else if (Date.now() - lastBeat > 5000) head.textContent = `${label} — ${(n / 1000).toFixed(1)}k chars · ${secs}s — ⏳ no data for ${Math.round((Date.now() - lastBeat) / 1000)}s`;
+        if (!lastBeat) setLabel(`${label} — ⏳ ${secs}s — model is thinking (long prompts can take a minute before text appears)`);
+        else if (Date.now() - lastBeat > 5000) setLabel(`${label} — ${(n / 1000).toFixed(1)}k chars · ${secs}s — ⏳ no data for ${Math.round((Date.now() - lastBeat) / 1000)}s`);
       }, 1000);
       return (delta, full) => {
         lastBeat = Date.now();
         n = full.length;
-        head.textContent = `${label} — ${(n / 1000).toFixed(1)}k chars`;
+        setLabel(`${label} — ${(n / 1000).toFixed(1)}k chars`);
         txt.textContent = full.length > 4000 ? '…' + full.slice(-4000) : full; // keep the tail visible
         box.scrollTop = box.scrollHeight;
       };
     }
     function streamHide(ok) {
       clearInterval(streamShow._tick);
-      const box = document.getElementById('aiStreamBox');
-      if (box) setTimeout(() => { box.style.display = 'none'; box.classList.remove('stream-float'); }, ok ? 600 : 4000);
+      const gen = streamShow._gen;
+      setTimeout(() => {
+        if (streamShow._gen !== gen) return; // a new batch/stream took over
+        const s2 = document.getElementById('aiActivityStrip'); if (s2) s2.remove();
+        const box = document.getElementById('aiStreamBox');
+        if (box) { box.style.display = 'none'; box.classList.remove('stream-float'); }
+      }, ok ? 500 : 3500);
     }
 
     function aiSchemaHint() {
