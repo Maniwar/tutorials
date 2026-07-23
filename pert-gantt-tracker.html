@@ -4691,6 +4691,10 @@
             // the rows between. Converging predecessors STAGGER into separate
             // drop columns so they don't fuse into one heavy line
             const dropX = sEdge - 9 - (k % 6) * 5; // ≥9px final approach — always longer than the 6.5px arrowhead
+            // a MILESTONE successor is always entered through its TOP tip — a
+            // sideways left-tip entry floats disconnected next to the diamond
+            const msIn = t.milestone ? ` L${msAnchorX(t)},${sY - 11}` : ` L${dropX},${sY} L${sEdge - 1},${sY}`;
+            const railX = t.milestone ? msAnchorX(t) : dropX;
             if (pt.milestone) {
               // a milestone's date label sits right of the diamond at mid-height —
               // exit the diamond's bottom (or top) tip and travel the row
@@ -4699,16 +4703,16 @@
               const below2 = sY > pY;
               const exitX2 = msAnchorX(pt);
               const lane2 = below2 ? pRowT + ROWH - 2 : pRowT + 2;
-              links += `<path d="M${exitX2},${below2 ? pY + 11 : pY - 11} L${exitX2},${lane2} L${dropX},${lane2} L${dropX},${sY} L${sEdge - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${mk})"/>`;
-            } else if (dropX - pX > dayW * 2.2) {
+              links += `<path d="M${exitX2},${below2 ? pY + 11 : pY - 11} L${exitX2},${lane2} L${railX},${lane2}${msIn}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${mk})"/>`;
+            } else if (railX - pX > dayW * 2.2) {
               // LONG run: a mid-row horizontal would cut through the slack hatch
               // and labels for weeks — hop into this row's edge gap right after
               // the bar end and travel there instead
               const pRowT = Y0 + pi * ROWH;
               const prLane = sY > pY ? pRowT + ROWH - 1.5 : pRowT + 1.5;
-              links += `<path d="M${pX},${pY} L${pX + 5},${pY} L${pX + 5},${prLane} L${dropX},${prLane} L${dropX},${sY} L${sEdge - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${mk})"/>`;
+              links += `<path d="M${pX},${pY} L${pX + 5},${pY} L${pX + 5},${prLane} L${railX},${prLane}${msIn}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${mk})"/>`;
             } else
-            links += `<path d="M${pX},${pY} L${dropX},${pY} L${dropX},${sY} L${sEdge - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${mk})"/>`;
+            links += `<path d="M${pX},${pY} L${railX},${pY}${msIn}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${mk})"/>`;
           } else {
             // successor starts at/before the predecessor's right edge (typical for
             // sub-day tasks that each fill a whole day cell). The link EMITS from
@@ -4817,7 +4821,10 @@
             `<rect x="${bx}" y="${y + 7}" width="${bw}" height="${BAR_H}" rx="4" fill="url(#${grad})"/>`;
           const pctw = bw * Math.min(100, t.percentComplete || 0) / 100;
           if (pctw > 0 && !done) svg += `<rect x="${bx}" y="${y + 7}" width="${pctw}" height="${BAR_H}" rx="4" fill="#0f172a" opacity="0.32"/>`;
-          const lbl = `${(t.te || 0).toFixed(1)}${done ? ' ✓' : (t.percentComplete > 0 ? ' · ' + t.percentComplete + '%' : '')}`;
+          // sub-day durations label as minutes/hours — "0.0" on a 20-minute
+          // test case reads as no work at all
+          const teLbl = (() => { const n = t.te || 0; if (document.getElementById('durationUnit').value !== 'days' || n <= 0 || n >= 1) return n.toFixed(1); const h2 = n * 8; return h2 < 1 ? Math.round(h2 * 60) + 'm' : (Math.round(h2 * 10) / 10) + 'h'; })();
+          const lbl = `${teLbl}${done ? ' ✓' : (t.percentComplete > 0 ? ' · ' + t.percentComplete + '%' : '')}`;
           if (bw >= 56) svg += `<text x="${bx + 6}" y="${y + 7 + BAR_H - 4.5}" font-family="${FF}" font-size="9.5" font-weight="600" fill="white">${escapeXml(lbl)}</text>`;
           else svg += `<text x="${bx + bw + (slackW > 2 ? slackW : 0) + 5}" y="${y + 7 + BAR_H - 4.5}" font-family="${FF}" font-size="9.5" font-weight="600" fill="#475569">${escapeXml(lbl)}</text>`;
           svg += `<title>${escapeXml(tip)}</title></g>`;
