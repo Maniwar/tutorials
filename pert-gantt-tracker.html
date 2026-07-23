@@ -573,7 +573,7 @@
     </div>
 
     <!-- story editor modal -->
-    <div class="modal-overlay" id="storyModal">
+    <div class="modal-overlay" id="storyModal" style="z-index:130">
       <div class="modal" style="max-width:760px">
         <div class="modal-header"><h3 id="storyModalTitle">Edit user story</h3><button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeStoryModal()">✕</button></div>
         <div class="modal-body">
@@ -1900,6 +1900,44 @@
       document.getElementById('modal').classList.add('open');
       document.getElementById('mName').focus();
     }
+    // Linked-stories panel inside the activity editor — rebuilt IN PLACE after
+    // a story is edited from here (the ✎ buttons open the story editor stacked
+    // on top; unsaved activity fields are untouched by the refresh).
+    function refreshTaskStoriesPanel(id) {
+      const sp = document.getElementById('mStoriesPanel');
+      if (!sp) return;
+      const t = tasks.find(x => x.id === id);
+      if (!t) { sp.innerHTML = ''; return; }
+      const st = storiesForTask(id);
+        const typeIcon = { happy: '✅', error: '⚠️', edge: '🧪', perf: '📏' };
+        // full test-case specification: which criterion it verifies, the numbered
+        // steps for the tester, and the exact pass condition
+        let tcSpec = '';
+        if (isTestCaseTask(t)) {
+          const acId = ((t.name.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').toLowerCase();
+          let acHit = null, stHit = null;
+          ((reqs && reqs.stories) || []).forEach(s => (s.ac || []).forEach(a => { if (a.id.toLowerCase() === acId) { acHit = a; stHit = s; } }));
+          const steps = tcStepLines(t.description).split('\n').filter(Boolean);
+          tcSpec = `<div style="margin-bottom:1rem;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:0.6rem 0.8rem;font-size:0.8rem;line-height:1.5">
+            <div style="font-weight:700;color:#166534;margin-bottom:0.3rem">🧪 Test case — ${acHit ? 'verifies ' + escapeHtml(acHit.id) + ' (' + (typeIcon[acHit.type] || '') + ' ' + escapeHtml(acHit.type) + ' path)' : (acId ? 'references ' + escapeHtml(acId.toUpperCase()) + ' — criterion not found in Requirements' : 'no AC reference in the name')}</div>
+            ${acHit ? `<div style="margin-bottom:0.4rem"><b>Acceptance criterion:</b><br/>${gwtLines(acHit.text).split('\n').map(escapeHtml).join('<br/>')}</div>` : ''}
+            ${hasRealSteps(t) ? `<div><b>Steps for the tester:</b><ol style="margin:0.2rem 0 0.45rem;padding-left:1.25rem">${steps.map(sx => `<li>${escapeHtml(sx.replace(/^\d+\.\s*/, ''))}</li>`).join('')}</ol></div>` : `<div style="color:#b45309;margin-bottom:0.35rem">⚠ This test case has no real numbered steps yet${t.description ? ' (only: “' + escapeHtml(t.description.slice(0, 90)) + (t.description.length > 90 ? '…' : '') + '”)' : ''} — run 🧪 Generate test plan on the Requirements tab; it now rewrites shallow test cases in place with executable steps.</div>`}
+            ${t.acceptance ? `<div style="background:#dcfce7;border-radius:6px;padding:0.35rem 0.55rem"><b>✅ Pass when:</b> ${gwtLines(t.acceptance).split('\n').map(escapeHtml).join('<br/>')}</div>` : ''}
+            ${stHit ? `<div class="help-text" style="margin-top:0.4rem">From <b>${escapeHtml(stHit.id)}</b> — As a ${escapeHtml(stHit.persona || '?')}, I want to ${escapeHtml(stHit.want || '?')} <button class="btn-sm btn-secondary no-print" style="margin-left:0.4rem" onclick="openStoryModal('${escapeHtml(stHit.id)}')" title="Edit the story (and this criterion) right here — opens on top, saving refreshes this panel">✎ Edit</button> <button class="btn-sm btn-secondary no-print" onclick="closeModal();openReqStory('${escapeHtml(stHit.id)}')">Open story →</button></div>` : ''}
+          </div>`;
+        }
+        sp.innerHTML = tcSpec + (st.length
+          ? `<details open style="margin-bottom:1rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:0.5rem 0.75rem">
+              <summary style="cursor:pointer;font-size:0.8rem;font-weight:600;color:#0369a1">📖 User stories traced to this activity (${st.length}) — the acceptance criteria that define “done” for billing</summary>
+              ${st.map(s => `<div style="margin:0.5rem 0;font-size:0.8rem;line-height:1.45">
+                <b>${escapeHtml(s.id)}</b> — As a <b>${escapeHtml(s.persona || '?')}</b>, I want to ${escapeHtml(s.want || '?')}, so that ${escapeHtml(s.soThat || '?')} <button class="btn-sm btn-secondary no-print" style="margin-left:0.35rem" onclick="openStoryModal('${escapeHtml(s.id)}')" title="Edit ${escapeHtml(s.id)} right here — persona, acceptance criteria, NFRs, assumptions. The story editor opens ON TOP of this one; saving refreshes this panel and your unsaved activity fields stay put. Criteria edits still offer test-case regeneration.">✎ Edit</button>
+                ${(s.ac || []).length ? `<ul style="list-style:none;margin:0.25rem 0 0;padding-left:0.5rem">${s.ac.map(a => `<li>${typeIcon[a.type] || '•'} <span style="color:#475569">${escapeHtml(a.id)}</span> ${escapeHtml(a.text)}</li>`).join('')}</ul>` : ''}
+              </div>`).join('')}
+              <button class="btn-sm btn-secondary no-print" onclick="closeModal();openReqStory('${escapeHtml(st[0].id)}')" title="Jump straight to ${escapeHtml(st[0].id)} on the Requirements tab — edit, lint, traceability matrix">Open in Requirements →</button>
+            </details>`
+          : (reqs && Array.isArray(reqs.stories) && reqs.stories.length && !isSummaryId(id) && !t.milestone && !isTestCaseTask(t)
+            ? `<p class="help-text" style="margin-bottom:0.75rem">No user story traces to this activity yet — Requirements tab ▸ 🤖 Draft from WBS fills the gaps.</p>` : ''));
+    }
     function openEditModal(id, expandDict) {
       const t = tasks.find(x => x.id === id);
       if (!t) return;
@@ -1938,39 +1976,7 @@
       document.getElementById('mParent').value = curPar ? ((curPar.wbs ? curPar.wbs + ' · ' : '') + curPar.name) : '';
       t.predecessors.forEach(p => addDepRow(p));
       toggleMilestoneFields();
-      // linked user stories — read-only trace so the drill-in shows requirements too
-      const sp = document.getElementById('mStoriesPanel');
-      if (sp) {
-        const st = storiesForTask(id);
-        const typeIcon = { happy: '✅', error: '⚠️', edge: '🧪', perf: '📏' };
-        // full test-case specification: which criterion it verifies, the numbered
-        // steps for the tester, and the exact pass condition
-        let tcSpec = '';
-        if (isTestCaseTask(t)) {
-          const acId = ((t.name.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').toLowerCase();
-          let acHit = null, stHit = null;
-          ((reqs && reqs.stories) || []).forEach(s => (s.ac || []).forEach(a => { if (a.id.toLowerCase() === acId) { acHit = a; stHit = s; } }));
-          const steps = tcStepLines(t.description).split('\n').filter(Boolean);
-          tcSpec = `<div style="margin-bottom:1rem;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:0.6rem 0.8rem;font-size:0.8rem;line-height:1.5">
-            <div style="font-weight:700;color:#166534;margin-bottom:0.3rem">🧪 Test case — ${acHit ? 'verifies ' + escapeHtml(acHit.id) + ' (' + (typeIcon[acHit.type] || '') + ' ' + escapeHtml(acHit.type) + ' path)' : (acId ? 'references ' + escapeHtml(acId.toUpperCase()) + ' — criterion not found in Requirements' : 'no AC reference in the name')}</div>
-            ${acHit ? `<div style="margin-bottom:0.4rem"><b>Acceptance criterion:</b><br/>${gwtLines(acHit.text).split('\n').map(escapeHtml).join('<br/>')}</div>` : ''}
-            ${hasRealSteps(t) ? `<div><b>Steps for the tester:</b><ol style="margin:0.2rem 0 0.45rem;padding-left:1.25rem">${steps.map(sx => `<li>${escapeHtml(sx.replace(/^\d+\.\s*/, ''))}</li>`).join('')}</ol></div>` : `<div style="color:#b45309;margin-bottom:0.35rem">⚠ This test case has no real numbered steps yet${t.description ? ' (only: “' + escapeHtml(t.description.slice(0, 90)) + (t.description.length > 90 ? '…' : '') + '”)' : ''} — run 🧪 Generate test plan on the Requirements tab; it now rewrites shallow test cases in place with executable steps.</div>`}
-            ${t.acceptance ? `<div style="background:#dcfce7;border-radius:6px;padding:0.35rem 0.55rem"><b>✅ Pass when:</b> ${gwtLines(t.acceptance).split('\n').map(escapeHtml).join('<br/>')}</div>` : ''}
-            ${stHit ? `<div class="help-text" style="margin-top:0.4rem">From <b>${escapeHtml(stHit.id)}</b> — As a ${escapeHtml(stHit.persona || '?')}, I want to ${escapeHtml(stHit.want || '?')} <button class="btn-sm btn-secondary no-print" style="margin-left:0.4rem" onclick="closeModal();openReqStory('${escapeHtml(stHit.id)}')">Open story →</button></div>` : ''}
-          </div>`;
-        }
-        sp.innerHTML = tcSpec + (st.length
-          ? `<details open style="margin-bottom:1rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:0.5rem 0.75rem">
-              <summary style="cursor:pointer;font-size:0.8rem;font-weight:600;color:#0369a1">📖 User stories traced to this activity (${st.length}) — the acceptance criteria that define “done” for billing</summary>
-              ${st.map(s => `<div style="margin:0.5rem 0;font-size:0.8rem;line-height:1.45">
-                <b>${escapeHtml(s.id)}</b> — As a <b>${escapeHtml(s.persona || '?')}</b>, I want to ${escapeHtml(s.want || '?')}, so that ${escapeHtml(s.soThat || '?')}
-                ${(s.ac || []).length ? `<ul style="list-style:none;margin:0.25rem 0 0;padding-left:0.5rem">${s.ac.map(a => `<li>${typeIcon[a.type] || '•'} <span style="color:#475569">${escapeHtml(a.id)}</span> ${escapeHtml(a.text)}</li>`).join('')}</ul>` : ''}
-              </div>`).join('')}
-              <button class="btn-sm btn-secondary no-print" onclick="closeModal();openReqStory('${escapeHtml(st[0].id)}')" title="Jump straight to ${escapeHtml(st[0].id)} on the Requirements tab — edit, lint, traceability matrix">Open in Requirements →</button>
-            </details>`
-          : (reqs && Array.isArray(reqs.stories) && reqs.stories.length && !isSummaryId(id) && !t.milestone && !isTestCaseTask(t)
-            ? `<p class="help-text" style="margin-bottom:0.75rem">No user story traces to this activity yet — Requirements tab ▸ 🤖 Draft from WBS fills the gaps.</p>` : ''));
-      }
+      refreshTaskStoriesPanel(id);
       renderImpactPanel(id);
       // say which unit O/M/P are in — it's set on the main page (working days /
       // hours / weeks) and easy to forget mid-edit
@@ -7186,6 +7192,9 @@ Write the test cases for the criteria above, following the contract exactly. Ret
         beforeAc.forEach(a => { a.id = String(a.id || '').replace(new RegExp('^' + esc + '\\.', 'i'), acBase + '.'); });
       }
       saveLocal(); closeStoryModal(); renderReqs();
+      // edited from inside the activity editor? refresh its stories panel in
+      // place — the activity's own unsaved fields stay exactly as typed
+      if (editingId != null && document.getElementById('modal').classList.contains('open')) { refreshTaskStoriesPanel(editingId); renderImpactPanel(editingId); }
       if (!before) return;
       // ripple the edit down the chain: changed criteria → stale test cases;
       // changed story sentence with UNTOUCHED criteria → offer an AI re-draft
@@ -7208,6 +7217,7 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       const orphanTcs = s ? (s.ac || []).flatMap(a => testCasesForAC(a.id)) : [];
       reqs.stories = reqs.stories.filter(x => x.id !== sid);
       saveLocal(); closeStoryModal(); renderReqs();
+      if (editingId != null && document.getElementById('modal').classList.contains('open')) { refreshTaskStoriesPanel(editingId); renderImpactPanel(editingId); }
       if (orphanTcs.length && confirm(orphanTcs.length + ' scheduled test case task(s) verify ' + sid + '\'s criteria and are now orphaned:\n' + orphanTcs.map(t => '• ' + t.name).join('\n') + '\n\nDelete them too? (Cancel keeps them in the plan.) ↶ Undo restores.')) {
         removeTestCaseTasks(orphanTcs, '🗑 ' + orphanTcs.length + ' orphaned test case(s) removed with ' + sid + '. ↶ Undo restores');
       }
