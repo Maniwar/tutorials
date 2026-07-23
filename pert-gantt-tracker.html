@@ -4672,12 +4672,15 @@
           edgeList.push({ t0, pt0, t, pt, k });
         });
       });
-      const mergeGroups = new Map(); // successor id → collector state
+      const mergeGroups = new Map(); // successor id → bus-spine state
       edgeList.forEach(e => {
         const pyC = Y0 + rowIndexOf[e.pt.id] * ROWH + (e.pt.isSummary ? 13 : ROWH / 2);
         const syC = Y0 + rowIndexOf[e.t.id] * ROWH + (e.t.isSummary ? 13 : ROWH / 2);
         if (pyC < syC) { // converging from above
-          const g = mergeGroups.get(e.t.id) || { n: 0, cols: [], crit: false, allTc: true };
+          const g = mergeGroups.get(e.t.id) || { n: 0, cols: [], crit: false, allTc: true, maxPX: 0, minSubL: Infinity };
+          const spanW0 = e.pt.milestone ? (msAnchorX(e.pt) - dateX(e.pt.startDate)) + 10 : Math.max(dayW, (calDaysBetween(e.pt.startDate, e.pt.finishDate) + 1) * dayW);
+          g.maxPX = Math.max(g.maxPX, dateX(e.pt.startDate) + spanW0 + 32);
+          g.minSubL = Math.min(g.minSubL, Y0 + rowIndexOf[e.pt.id] * ROWH + ROWH - 3.5);
           g.n++; mergeGroups.set(e.t.id, g);
         }
       });
@@ -4706,16 +4709,18 @@
             // convergence: this source only rides down to the collector lane —
             // ONE trunk arrow (drawn after the loop) enters the bar for the
             // whole group instead of a row of stacked arrowheads
-            const laneC = Y0 + si * ROWH - 4;
-            const col = pt.milestone ? msAnchorX(pt) : pX + 32 + (k % 3) * 4; // clear of the duration label right of the bar
+            // every source joins ONE shared bus spine via a short stub under
+            // its own label — the spine (drawn once, after the loop) carries
+            // the whole group down to a single entry arrow
+            const spineX = grp.maxPX;
             const pRowT2 = Y0 + pi * ROWH;
-            const subL = pRowT2 + ROWH - 3.5; // rail under the label, not through it
+            const subL = pRowT2 + ROWH - 3.5; // stub rail under the label, not through it
             const pBot = pt.isSummary ? pRowT2 + 18 : pRowT2 + 7 + BAR_H;
             const d0 = pt.milestone
-              ? `M${col},${pY + 11} L${col},${laneC}`
-              : `M${pX - 4},${pBot} L${pX - 4},${subL} L${col},${subL} L${col},${laneC}`;
+              ? `M${msAnchorX(pt)},${pY + 11} L${msAnchorX(pt)},${subL} L${spineX},${subL}`
+              : `M${pX - 4},${pBot} L${pX - 4},${subL} L${spineX},${subL}`;
             links += `<path d="${d0}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash}/>`;
-            grp.cols.push(col);
+            grp.cols.push(spineX);
             grp.crit = grp.crit || (crit && !tcLink);
             grp.allTc = grp.allTc && tcLink;
             grp.t = t; grp.si = si; grp.sX = sX; grp.sSpanW = sSpanW;
@@ -4810,19 +4815,21 @@
             }
           }
       });
-      // convergence trunks: one collector run + one entry arrow per group
+      // bus spines: ONE vertical per convergence group + one entry arrow
       mergeGroups.forEach(g => {
         if (!g.t || g.cols.length < 3) return;
         const t = g.t, sRowTop = Y0 + g.si * ROWH;
         const laneC = sRowTop - 4;
-        const lo = Math.min(...g.cols), hi = Math.max(...g.cols);
-        const entryX = t.milestone ? msAnchorX(t) : Math.max(g.sX + 5, Math.min(g.sX + g.sSpanW - 5, hi));
+        const spineX = g.maxPX;
+        const entryX = t.milestone ? msAnchorX(t) : Math.max(g.sX + 5, Math.min(g.sX + g.sSpanW - 5, spineX));
         const entryY = t.milestone ? sRowTop + ROWH / 2 - 11 : t.isSummary ? sRowTop + 9 : sRowTop + 6;
         const stroke = g.crit ? '#dc2626' : '#94a3b8';
         const sw = g.crit ? 1.7 : g.allTc ? 0.9 : 1.2, op = g.crit ? 0.9 : g.allTc ? 0.35 : 0.5;
         const dash = g.allTc ? ' stroke-dasharray="3,3"' : '';
-        links += `<path d="M${Math.min(lo, entryX)},${laneC} L${Math.max(hi, entryX)},${laneC}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash}/>`;
-        links += `<path d="M${entryX},${laneC} L${entryX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${g.crit ? 'g-arrC' : 'g-arr'})"><title>${escapeXml(g.cols.length + ' predecessors converge here — hover the task bar for the full list')}</title></path>`;
+        const d = `M${spineX},${g.minSubL} L${spineX},${laneC}` +
+          (Math.abs(entryX - spineX) > 0.5 ? ` L${entryX},${laneC}` : '') +
+          ` L${entryX},${entryY}`;
+        links += `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${g.crit ? 'g-arrC' : 'g-arr'})"><title>${escapeXml(g.cols.length + ' predecessors converge here — hover the task bar for the full list')}</title></path>`;
       });
       svg += links;
 
