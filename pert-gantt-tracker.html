@@ -4920,7 +4920,7 @@
           const tcContrib = contrib.filter(isTestCaseTask);
           const totEff = contrib.reduce((s2, t) => s2 + (t.milestone ? 0 : (t.te || 0)), 0);
           const rowsHtml = contrib.map(t => `<tr>
-              <td>${escapeHtml(t.name)}</td>
+              <td><span style="cursor:pointer;color:var(--primary)" onclick="openEditModal(${t.id}, true)" title="Click to open this task — re-estimate O/M/P, change owner or Units %, adjust dependencies; the 🕸 impact panel inside shows everything that pulls on it">${escapeHtml(t.name)}</span></td>
               <td>${t.milestone ? '◆' : fmtDur(t.te)}</td>
               <td>${t.units}%</td>
               <td>${fmtNice(t.startDate)} → ${fmtNice(t.finishDate)}</td>
