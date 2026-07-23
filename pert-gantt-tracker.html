@@ -4475,7 +4475,7 @@
       renderGantt._lastAutoDayW = autoW;
       const dayW = ganttDayW || autoW;
 
-      const PAD = 12, LABELW = Math.max(180, Math.min(640, ganttLabelW || 300)), TITLE_H = 44, MON_H = 20, DAY_H = 24, ROWH = 30, BAR_H = 16, LEGEND_H = 34;
+      const PAD = 12, LABELW = Math.max(180, Math.min(640, ganttLabelW || 300)), TITLE_H = 62, MON_H = 20, DAY_H = 24, ROWH = 30, BAR_H = 16, LEGEND_H = 34; // TITLE_H reserves a strip for the TODAY pill above the month header
       const HEADER_H = MON_H + DAY_H;
       const chartW = totalDays * dayW;
       const hasReserve = rv.contingencyUnits > 0 || rv.managementUnits > 0;
@@ -4605,18 +4605,27 @@
             links += `<path d="M${pX},${pY} L${bend},${pY} L${bend},${sY} L${sX - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
           } else {
             // successor starts at/before the predecessor's right edge (typical for
-            // sub-day tasks that each fill a whole day cell). The old 8px zigzag
-            // wrapped BACK around the successor bar and plowed through neighbours.
-            // MS-Project style instead: travel along the clear lane between rows
-            // and drop INTO the successor's top (or rise into its bottom).
-            const sRowTop = Y0 + si * ROWH;
+            // sub-day tasks that each fill a whole day cell). Never loop around
+            // the predecessor's end — exit its BOTTOM (or top) edge and staircase
+            // straight into the successor's top (or bottom), MS-Project style.
+            const sRowTop = Y0 + si * ROWH, pRowTop = Y0 + pi * ROWH;
             const below = sY > pY; // successor drawn below the predecessor
-            const lane = below ? sRowTop + 2.5 : sRowTop + ROWH - 2.5;
             const entryX = Math.min(sX + (t.milestone ? 6 : 9) + k * 7, sX + Math.max(6, sSpanW - 5));
             const entryY = t.milestone
               ? (below ? sY - 11 : sY + 11)
               : (below ? sRowTop + 6 : sRowTop + 8 + BAR_H);
-            links += `<path d="M${pX},${pY} L${bend},${pY} L${bend},${lane} L${entryX},${lane} L${entryX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+            const exitY = pt.milestone
+              ? (below ? pY + 11 : pY - 11)
+              : (below ? pRowTop + 8 + BAR_H : pRowTop + 6);
+            const pX0 = dateX(pt.startDate);
+            const exitX = pt.milestone ? pX0 + 6 : Math.max(pX0 + 4, Math.min(pX - 4, entryX));
+            if (Math.abs(exitX - entryX) < 2) {
+              // successor entry sits under the predecessor — one straight drop
+              links += `<path d="M${entryX},${exitY} L${entryX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+            } else {
+              const lane = below ? sRowTop + 2.5 : sRowTop + ROWH - 2.5;
+              links += `<path d="M${exitX},${exitY} L${exitX},${lane} L${entryX},${lane} L${entryX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+            }
           }
         });
       });
@@ -4749,10 +4758,10 @@
       }
       svg += `</g>`; // end clipped chart layer
       if (todayOff >= 0 && todayOff <= totalDays) {
-        // pill sits at the BOTTOM of the today line — at the top it covered the
-        // month/date headers whenever today is near the project start
+        // pill lives in its own reserved strip between the meta line and the
+        // month header (TITLE_H makes room) — it can never cover a date there
         const x = Math.max(X0 + 20, X0 + todayOff * dayW);
-        svg += `<rect x="${x - 20}" y="${Y0 + bodyH + 2}" width="40" height="15" rx="7" fill="#ef4444"/><text x="${x}" y="${Y0 + bodyH + 13}" font-family="${FF}" font-size="9" font-weight="700" fill="white" text-anchor="middle">TODAY</text>`;
+        svg += `<rect x="${x - 20}" y="${PAD + 44}" width="40" height="15" rx="7" fill="#ef4444"/><text x="${x}" y="${PAD + 55}" font-family="${FF}" font-size="9" font-weight="700" fill="white" text-anchor="middle">TODAY</text>`;
       }
 
       // legend (baked into the export)
