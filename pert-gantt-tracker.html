@@ -2194,6 +2194,47 @@
     }
 
     // ========================= RENDER TABLE =========================
+    // Transitive reduction: A→B→C plus an explicit A→C link — the chain
+    // already gates C, the direct link only adds arrows. Schedule math is
+    // identical with or without these edges (CPM takes the max path).
+    function redundantLinkList() {
+      const predIds = {};
+      tasks.forEach(t => { predIds[t.id] = (t.predecessors || []).map(p => p.id); });
+      const memo = new Map();
+      const reaches = (from, to, guard) => { // is `from` an ancestor of `to` through the pred graph?
+        const key = from + ':' + to;
+        if (memo.has(key)) return memo.get(key);
+        if (guard.has(to)) return false; // cycle guard
+        guard.add(to);
+        let r = false;
+        for (const pid of (predIds[to] || [])) { if (pid === from || reaches(from, pid, guard)) { r = true; break; } }
+        guard.delete(to);
+        memo.set(key, r);
+        return r;
+      };
+      const out = [];
+      tasks.forEach(t => {
+        const ps = predIds[t.id];
+        if (!ps || ps.length < 2) return;
+        ps.forEach(u => {
+          if (ps.some(w => w !== u && reaches(u, w, new Set()))) {
+            const pt = tasks.find(x => x.id === u);
+            out.push({ task: t, predId: u, predName: pt ? pt.name : String(u) });
+          }
+        });
+      });
+      return out;
+    }
+    function cleanupRedundantLinks() {
+      const list = redundantLinkList();
+      if (!list.length) { flashSaved('✓ No redundant dependency links.'); return; }
+      if (!confirm('Remove ' + list.length + ' redundant dependency link(s)?\n\n' + list.slice(0, 8).map(r => '• ' + r.predName + ' → ' + r.task.name + ' (already gated through the chain)').join('\n') + (list.length > 8 ? '\n…' : '') + '\n\nThe schedule does not change — these links are already implied by the chain between them. ↶ Undo restores.')) return;
+      list.forEach(r => { r.task.predecessors = r.task.predecessors.filter(p => p.id !== r.predId); });
+      saveLocal();
+      if (calculated) recompute();
+      refreshAll();
+      flashSaved('🧹 ' + list.length + ' redundant link(s) removed — same schedule, fewer arrows. ↶ Undo restores.');
+    }
     // Predecessors display: WBS codes, never internal task ids — ids happen to
     // match row numbers on a fresh flat plan, but the moment rows are dragged
     // or tasks inserted they diverge and the column reads like nonsense.
@@ -2273,7 +2314,11 @@
         <strong style="color:var(--critical)">⚠ ${noEstLeaves.length} work package(s) have NO estimate</strong> — O/M/P are zero, so they add nothing to the schedule, the critical path or the price:
         ${noEstLeaves.slice(0, 5).map(t => `<span class="badge badge-critical" style="cursor:pointer" onclick="openEditModal(${t.id}, true)" title="Click to open and estimate">${escapeHtml((t.wbs ? t.wbs + ' ' : '') + (t.name.length > 40 ? t.name.slice(0, 38) + '…' : t.name))}</span>`).join(' ')}${noEstLeaves.length > 5 ? ' +' + (noEstLeaves.length - 5) + ' more' : ''}
         — click one to estimate it, or make it a milestone if it is a zero-duration checkpoint.</td></tr>` : '';
-      tbody.innerHTML = totalRow + alarmRow + visibleWbsOrder().map(({ task: t, depth }) => {
+      const redun = redundantLinkList();
+      const redunRow = redun.length ? `<tr class="no-print"><td colspan="99" style="background:#eff6ff;border-left:4px solid var(--primary);font-size:0.8rem;padding:0.4rem 0.75rem">
+        🧹 <strong>${redun.length} redundant dependency link(s)</strong> — already implied through the chain (e.g. ${escapeHtml(redun[0].predName)} → ${escapeHtml(redun[0].task.name)}: the tasks between them gate it anyway). The Gantt no longer draws these.
+        <button class="btn-sm btn-secondary" onclick="cleanupRedundantLinks()" title="Removes only the redundant links — the schedule is IDENTICAL (the chain already gates them); the charts and exports get cleaner. ↶ Undo restores.">Remove ${redun.length} link(s)</button></td></tr>` : '';
+      tbody.innerHTML = totalRow + alarmRow + redunRow + visibleWbsOrder().map(({ task: t, depth }) => {
         const summary = t.isSummary;
         const teStr = t.milestone ? '◆' : (calculated ? fmtDur(t.te) : '—');
         const slackStr = calculated ? (Math.abs(t.slack) < 0.05 ? '0.0' : t.slack.toFixed(1)) : '—';
@@ -4504,8 +4549,8 @@
         <pattern id="g-hatchS" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#94a3b8" stroke-width="2"/></pattern>
         <pattern id="g-hatchC" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)"><rect width="7" height="7" fill="#fef3c7"/><line x1="0" y1="0" x2="0" y2="7" stroke="#f59e0b" stroke-width="2.5"/></pattern>
         <pattern id="g-hatchM" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)"><rect width="7" height="7" fill="#fee2e2"/><line x1="0" y1="0" x2="0" y2="7" stroke="#ef4444" stroke-width="2.5"/></pattern>
-        <marker id="g-arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/></marker>
-        <marker id="g-arrC" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#dc2626"/></marker>
+        <marker id="g-arr" markerWidth="6.5" markerHeight="5" refX="5.5" refY="2.5" orient="auto" markerUnits="userSpaceOnUse"><polygon points="0 0, 6.5 2.5, 0 5" fill="#94a3b8"/></marker>
+        <marker id="g-arrC" markerWidth="6.5" markerHeight="5" refX="5.5" refY="2.5" orient="auto" markerUnits="userSpaceOnUse"><polygon points="0 0, 6.5 2.5, 0 5" fill="#dc2626"/></marker>
         <clipPath id="g-clip"><rect x="${X0}" y="${PAD + TITLE_H}" width="${W - X0 - PAD + 2}" height="${HEADER_H + bodyH + 2}"/></clipPath>
       </defs>`;
       // canvas
@@ -4584,12 +4629,15 @@
       // chart-area layer (clipped so nothing bleeds into the label column)
       svg += `<g clip-path="url(#g-clip)">`;
       let links = '';
+      // transitively-redundant edges add arrows but no gating — don't draw them
+      const redundantEdges = new Set(redundantLinkList().map(r => r.task.id + ':' + r.predId));
       leafTasks().forEach(t => {
         if (!visibleIds.has(t.id)) return;
         const si = rowIndexOf[t.id];
         const sX = dateX(t.startDate), sY = Y0 + si * ROWH + ROWH / 2;
         const sSpanW = t.milestone ? 12 : Math.max(dayW, (calDaysBetween(t.startDate, t.finishDate) + 1) * dayW);
         effectivePreds(t).forEach((p, k) => {
+          if (redundantEdges.has(t.id + ':' + p.id)) return;
           const pt = tasks.find(x => x.id === p.id);
           if (!pt || !visibleIds.has(p.id)) return;
           const pi = rowIndexOf[p.id];
@@ -4599,7 +4647,7 @@
           const crit = t.isCritical && pt.isCritical;
           const stroke = crit ? '#dc2626' : '#94a3b8';
           const mk = crit ? 'g-arrC' : 'g-arr';
-          const sw = crit ? 2 : 1.3, op = crit ? 0.95 : 0.55;
+          const sw = crit ? 1.7 : 1.2, op = crit ? 0.9 : 0.5;
           const bend = pX + 7;
           if (sX >= bend + 4) {
             // forward link: run along the predecessor's row, drop just BEFORE the
@@ -4619,26 +4667,26 @@
             links += `<path d="M${pX},${pY} L${dropX},${pY} L${dropX},${sY} L${sX - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
           } else {
             // successor starts at/before the predecessor's right edge (typical for
-            // sub-day tasks that each fill a whole day cell). Never loop around
-            // the predecessor's end — exit its BOTTOM (or top) edge and staircase
-            // straight into the successor's top (or bottom), MS-Project style.
-            const sRowTop = Y0 + si * ROWH, pRowTop = Y0 + pi * ROWH;
+            // sub-day tasks that each fill a whole day cell). The link EMITS from
+            // the predecessor's finish — right edge, mid height, same place a
+            // forward link leaves from — turns down past the bar's end corner,
+            // runs the lane between rows, and drops into the successor's top
+            // (or rises into its bottom).
+            const sRowTop = Y0 + si * ROWH;
             const below = sY > pY; // successor drawn below the predecessor
-            const entryX = Math.min(sX + (t.milestone ? 6 : 9) + k * 7, sX + Math.max(6, sSpanW - 5));
+            // enter the successor at the point NEAREST the predecessor's end —
+            // minimal lane travel, no long runs skimming other bars' tops
+            const entryX = t.milestone ? sX + 6
+              : Math.max(sX + 5, Math.min(sX + sSpanW - 5, pX - 6 - k * 7));
             const entryY = t.milestone
               ? (below ? sY - 11 : sY + 11)
               : (below ? sRowTop + 6 : sRowTop + 8 + BAR_H);
-            const exitY = pt.milestone
-              ? (below ? pY + 11 : pY - 11)
-              : (below ? pRowTop + 8 + BAR_H : pRowTop + 6);
-            const pX0 = dateX(pt.startDate);
-            const exitX = pt.milestone ? pX0 + 6 : Math.max(pX0 + 4, Math.min(pX - 4, entryX));
-            if (Math.abs(exitX - entryX) < 2) {
-              // successor entry sits under the predecessor — one straight drop
-              links += `<path d="M${entryX},${exitY} L${entryX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+            if (Math.abs(pX - entryX) < 2.5) {
+              // entry sits right under the predecessor's end — one straight drop
+              links += `<path d="M${pX},${pY} L${pX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
             } else {
               const lane = below ? sRowTop + 2.5 : sRowTop + ROWH - 2.5;
-              links += `<path d="M${exitX},${exitY} L${exitX},${lane} L${entryX},${lane} L${entryX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+              links += `<path d="M${pX},${pY} L${pX},${lane} L${entryX},${lane} L${entryX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
             }
           }
         });
@@ -7639,7 +7687,7 @@ ${uatStylePref() === 'bigbang'
 - For larger efforts, organise work into a WBS: create phase/deliverable grouping tasks (no durations needed) and set each work item's "parent" to the exact name of its phase. Group tasks reference their parent by name; the parent itself should appear as its own entry with an empty/zero duration and be marked milestone:false.
 - Every duration must satisfy optimistic <= mostLikely <= pessimistic, all >= 0.
 - If the notes give only a single estimate for a task, expand it to a sensible 3-point range (optimistic ~= 0.75x, pessimistic ~= 1.6x, rounded).
-- Set realistic dependencies so the plan sequences correctly; use parallel work where the notes imply it. dependsOn must reference names that appear in this same tasks array.
+- Set realistic dependencies so the plan sequences correctly; use parallel work where the notes imply it. dependsOn must reference names that appear in this same tasks array. List only DIRECT predecessors — NEVER restate a link already implied through the chain (if "Execute" waits on "Sign-off" and "Sign-off" waits on "Present design", Execute lists ONLY "Sign-off" — the chain gates the rest).
 - Mark clear checkpoints (go-live, sign-off, approval, kickoff decision) as milestones with 0/0/0 durations.
 - Assign owners only when named or clearly implied. Default units to 100 unless the notes say a task is part-time or shared.
 - Draft the FULL WBS dictionary: every task (including phases and milestones) gets a concise deliverable, description, and acceptance — never leave them blank.
@@ -7672,7 +7720,7 @@ ${uatStylePref() === 'bigbang'
 }
 Rules:
 - changedTasks holds ONLY new tasks and tasks where a field genuinely changes. Fill every field for each task you include (its stored planning fields are overwritten; % complete, actual dates and story/test-case links are preserved automatically).
-- "parent" and "dependsOn" reference exact task names — current ones or new ones introduced in this same response.
+- "parent" and "dependsOn" reference exact task names — current ones or new ones introduced in this same response. dependsOn lists only DIRECT predecessors — never restate a link already implied through the chain (if C waits on B and B waits on A, C lists ONLY B).
 - Use "was" to rename without losing tracking history.
 - "resources" lists ONLY new or changed people (capacityPercent > 100 for teams; kind "client" for client-side people — they are never billed). Rates and PTO are managed in the app and never change here.
 - removeTasks and resources may be empty arrays. Every array may be empty if the request needs no change of that kind.
@@ -8969,6 +9017,8 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       if (!tasks.some(t => t.milestone)) findings.push({ severity: 'medium', area: 'Milestones', finding: 'No milestones defined', recommendation: 'Add sign-off / go-live checkpoints — they anchor the SOW payment schedule and status reporting.' });
       const fatTcs = oversizedTcList();
       if (fatTcs.length >= 3) findings.push({ severity: 'medium', area: 'Estimate realism', finding: fatTcs.length + ' test case(s) are estimated above ~1 hour of execution each (' + fatTcs.reduce((s2, t) => s2 + (t.te || 0), 0).toFixed(1) + ' ' + u + ' total) — a scripted UAT case is a 5–30 minute walkthrough, so this inflates the UAT window, tester peaks and the price', recommendation: 'Requirements tab ▸ 🧪 Test cases ▸ ⏱ Right-size — one undoable click sets them to ≈10 min likely / ~1 h worst case.', jump: 'req' });
+      const redunL = redundantLinkList();
+      if (redunL.length) findings.push({ severity: 'low', area: 'Dependencies', finding: redunL.length + ' redundant dependency link(s) — already implied through the chain: ' + redunL.slice(0, 3).map(r => '"' + r.predName + '" → "' + r.task.name + '"').join('; ') + (redunL.length > 3 ? '…' : ''), recommendation: 'Tasks tab banner ▸ Remove them (one undoable click) — the schedule is identical, the charts get cleaner. New AI plans now list only direct predecessors.' });
       const dupClones = parallelCloneTasks();
       if (dupClones.length) findings.push({ severity: 'high', area: 'Duplicates', finding: dupClones.length + ' duplicate "(Parallel Track)" task(s) inflate effort and price: ' + dupClones.slice(0, 4).map(t => t.name).join('; ') + (dupClones.length > 4 ? '…' : ''), recommendation: 'Requirements tab ▸ 🧹 Remove the duplicates (one undoable click) — their originals already carry the stories and estimates.', jump: 'req' });
       if (!leaves.some(t => /manag|pm\b|status|govern|coordinat/i.test(t.name))) findings.push({ severity: 'medium', area: 'Missing scope', finding: 'No project-management/governance effort in the plan', recommendation: 'Delivery overhead is typically 10–15% — add a PM workstream or it comes out of margin.' });
