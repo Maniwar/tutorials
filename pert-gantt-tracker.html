@@ -5174,8 +5174,9 @@
           const tip = `${name} — ${dd.toLocaleDateString()}: ${isPto ? 'PTO' + (load > 0 ? ' but ' + Math.round(load) + '% assigned!' : '') : Math.round(load) + '% of ' + R.capacity + '% capacity'}`
             + (dayTasks.length > 1 ? `\n${dayTasks.length} tasks OVERLAP on this day:` : dayTasks.length === 1 ? '\nWorking on:' : '')
             + dayTasks.map(t => `\n• @${t.units || 100}%  ${t.name}  (${t.milestone ? '◆ milestone' : fmtDurText(t.te)})`).join('')
-            + (isOver ? '\n\n⚠ Over capacity — click this cell to jump to the fix suggestions below.' : '');
-          cells += `<div class="rl-cell${isOver ? ' over' : ''}" style="left:${i * cellW}px;width:${cellW}px;background:${bg}${isOver ? ';cursor:pointer' : ''}" title="${escapeHtml(tip)}"${isOver ? ` onclick="(function(){var el=document.getElementById('rlconf-${names.indexOf(name)}');if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.style.boxShadow='0 0 0 3px #fca5a5';setTimeout(function(){el.style.boxShadow='';},1600);}})()"` : ''}></div>`;
+            + (dayTasks.length ? '\n\nClick to drill in — open any of these tasks.' : '')
+            + (isOver ? '\n⚠ Over capacity — the drill-in links to the fix suggestions below.' : '');
+          cells += `<div class="rl-cell${isOver ? ' over' : ''}" style="left:${i * cellW}px;width:${cellW}px;background:${bg}${dayTasks.length ? ';cursor:pointer' : ''}" title="${escapeHtml(tip)}"${dayTasks.length ? ` data-rl-drill="${ri}|${iso}"` : ''}></div>`;
         });
         const over = R.overDays.length;
         rows += `<div class="rl-row">
@@ -5251,7 +5252,8 @@
         ${levelBanner}
         ${renderRateCardPanel(names)}
         ${roster}
-        <h3 style="font-size:0.95rem;margin-bottom:0.4rem">Daily workload heatmap</h3>
+        <h3 style="font-size:0.95rem;margin-bottom:0.4rem">Daily workload heatmap <span class="help-text" style="font-weight:400">(click any loaded day to drill into its tasks)</span></h3>
+        <div id="rlDrill"></div>
         <div class="rl-wrap">
           <div class="rl-chart" style="min-width:${180 + trackW}px">
             <div class="rl-headrow"><div class="rl-corner"></div><div class="rl-monthtrack" style="width:${trackW}px">${monthHdr}</div></div>
@@ -5281,6 +5283,32 @@
         eb.title = active === 'extend' ? 'Already applied — clicking again re-runs leveling against the latest plan (safe)' : 'Resolve every conflict even if the finish date must move out — use when you can\'t add people';
         cb.style.display = active === 'none' ? 'none' : '';
       })();
+
+      // heatmap drill-in: click a loaded day → card with that day's tasks
+      cont.querySelectorAll('[data-rl-drill]').forEach(cell => cell.addEventListener('click', () => {
+        const [riS, iso] = cell.dataset.rlDrill.split('|');
+        const name = names[+riS];
+        const R = rl.perResource[name];
+        const day = R && R.days[iso];
+        if (!day) return;
+        computeWbsCodes();
+        const dd = new Date(iso + 'T00:00:00');
+        const isOver = day.load > R.capacity + 1e-6;
+        const list = day.tasks.map(idq => tasks.find(x => x.id === idq)).filter(Boolean);
+        const el = document.getElementById('rlDrill');
+        el.innerHTML = `<div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:.6rem .8rem;margin:.4rem 0 .6rem;font-size:.8rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
+            <strong>📅 ${escapeHtml(name)} — ${escapeHtml(fmtNice(dd))}: ${Math.round(day.load)}% of ${R.capacity}% capacity${isOver ? ' <span style="color:var(--critical);font-weight:700">⚠ over</span>' : ''}</strong>
+            <button class="btn-sm btn-secondary" onclick="document.getElementById('rlDrill').innerHTML=''">✕</button>
+          </div>
+          ${list.map(t => `<div style="display:flex;gap:.5rem;justify-content:space-between;align-items:center;padding:.2rem 0;border-bottom:1px dashed var(--border)">
+            <span style="cursor:pointer;color:var(--primary)" onclick="openEditModal(${t.id}, true)" title="Open this task — re-estimate, change owner or Units %, adjust links (🕸 impact panel inside)">${escapeHtml((t.wbs ? t.wbs + ' ' : '') + t.name)}</span>
+            <span class="help-text" style="white-space:nowrap">@${t.units || 100}% · ${t.milestone ? '◆' : fmtDur(t.te)}${t.isCritical ? ' · <span style="color:var(--critical)">critical</span>' : ''}</span>
+          </div>`).join('')}
+          ${isOver ? `<div style="margin-top:.4rem"><button class="btn-sm btn-danger" onclick="(function(){var e2=document.getElementById('rlconf-${+riS}');if(e2){e2.scrollIntoView({behavior:'smooth',block:'center'});e2.style.boxShadow='0 0 0 3px #fca5a5';setTimeout(function(){e2.style.boxShadow='';},1600);}})()">↓ Jump to fix suggestions</button></div>` : ''}
+        </div>`;
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }));
 
       // bind inputs/buttons by index (safe against names with quotes)
       cont.querySelectorAll('input.rl-cap').forEach(inp => {
