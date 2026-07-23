@@ -4778,16 +4778,20 @@
           // union of contributing tasks on over-days
           const ids = new Set(); R.overDays.forEach(iso => R.days[iso].tasks.forEach(id => ids.add(id)));
           const contrib = [...ids].map(id => tasks.find(t => t.id === id)).filter(Boolean).sort((a, b) => a.es - b.es);
-          const movable = contrib.filter(t => !t.isCritical && t.slack > 1e-6 && t.percentComplete < 100);
+          const movable = contrib.filter(t => !t.isCritical && t.slack > 0.25 && t.percentComplete < 100)
+            .sort((a, b) => b.slack - a.slack); // suggest the task with the MOST room, not the least
+          const tcContrib = contrib.filter(isTestCaseTask);
           const rowsHtml = contrib.map(t => `<tr>
               <td>${escapeHtml(t.name)}</td>
               <td>${t.units}%</td>
               <td>${fmtNice(t.startDate)} → ${fmtNice(t.finishDate)}</td>
               <td>${t.isCritical ? '<span class="badge badge-critical">critical</span>' : t.slack.toFixed(1) + ' ' + u}</td>
             </tr>`).join('');
-          const advice = movable.length
-            ? `Move a non-critical task within its slack — e.g. delay <strong>${escapeHtml(movable[0].name)}</strong> (has ${movable[0].slack.toFixed(1)} ${u} of float). Try <em>Level within slack</em> above.`
-            : `All overlapping tasks are on the critical path (no float). Mend it by <strong>adding capacity</strong> (buttons below), <strong>reducing Units %</strong>, <strong>reassigning</strong> a task, or <strong>Level &amp; extend timeline</strong> to accept a later finish.`;
+          const advice = tcContrib.length >= 3 && tcContrib.length >= contrib.length / 2
+            ? `This peak is <strong>${tcContrib.length} test cases piled onto one tester</strong> — roughly ${tcContrib.reduce((s2, t) => s2 + (t.te || 0), 0).toFixed(1)} ${u} of execution squeezed into the same window. Real UAT spreads cases across several testers (client testers are unbilled): use <strong>⚖ Spread test cases</strong> below, or 📅 extend the timeline to see the honest single-tester span.`
+            : movable.length
+              ? `Move a non-critical task within its slack — e.g. delay <strong>${escapeHtml(movable[0].name)}</strong> (has ${movable[0].slack.toFixed(1)} ${u} of float). Try <em>Level within slack</em> above.`
+              : `The overlapping tasks have little or no float. Mend it by <strong>adding capacity</strong> (buttons below), <strong>reducing Units %</strong>, <strong>reassigning</strong> a task, or <strong>Level &amp; extend timeline</strong> to accept a later finish.`;
           summary += `<div class="conflict-card">
             <div style="font-weight:700;margin-bottom:0.25rem">${escapeHtml(name)} — peak ${Math.round(R.peak)}% vs ${R.capacity}% capacity <span class="help-text" style="font-weight:400">(over on: ${ranges})</span></div>
             <div class="table-wrap"><table><thead><tr><th>Overlapping task</th><th>Units</th><th>Window</th><th>Slack</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
@@ -4795,6 +4799,7 @@
             <div class="toolbar no-print" style="margin-top:0.5rem">
               <button class="btn-sm btn-success" data-mend-add="${names.indexOf(name)}" title="Raise ${escapeHtml(name)}'s capacity by one full-time person">➕ Add 1 person to ${escapeHtml(name)}</button>
               <button class="btn-sm btn-secondary" data-mend-peak="${names.indexOf(name)}" title="Raise capacity to exactly cover the peak load">⤒ Raise capacity to peak (${Math.round(R.peak)}%)</button>
+              ${tcContrib.length >= 3 ? `<button class="btn-sm btn-primary" onclick="spreadTestCases('${escapeHtml(name)}')" title="Round-robin the test cases owned by ${escapeHtml(name)} across several testers — you pick the names (client-side testers are unbilled). One ↶ undo reverses.">⚖ Spread test cases across testers</button>` : ''}
               <button class="btn-sm" style="background:#fef3c7;color:#b45309" onclick="autoLevelExtend()" title="Push conflicting work later, extending the finish date">📅 Extend timeline instead</button>
             </div>
           </div>`;
@@ -6528,6 +6533,26 @@ ${reqRulesBlock()}`;
     // 2) People type into the yellow cells and reply. 3) Paste the filled table
     //    into Tasks ▸ AI mode "Update progress" → %s, actual dates and
     //    TE-weighted rollups update; noted blockers are logged into RAID.
+    // ⚖ Round-robin the test cases owned by one overloaded tester across a set
+    // of testers the user names — the standard fix for a UAT day where dozens
+    // of cases pile onto a single person.
+    function spreadTestCases(ownerName) {
+      const tcs = tasks.filter(t => isTestCaseTask(t) && (t.owner || '') === ownerName && (t.percentComplete || 0) < 100);
+      if (!tcs.length) { flashSaved('ℹ No open test cases owned by ' + ownerName + '.'); return; }
+      const suggestion = [...new Set([ownerName, ...Object.keys(resources).filter(isClientResource)])].join(', ');
+      const input = prompt('Spread ' + tcs.length + ' test case(s) across which testers?\n\nComma-separated names — new names are added to the roster automatically. Client-side testers cost nothing (kind "client").\n\nTip: real UAT is executed by CLIENT testers; QA facilitates.', suggestion);
+      if (!input) return;
+      const testers = input.split(',').map(s => s.trim()).filter(Boolean);
+      if (!testers.length) return;
+      // new names default to client-kind (unbilled) — UAT execution is client work
+      testers.forEach(nm => { if (!resources[nm]) resources[nm] = { capacity: 100, kind: 'client' }; });
+      tcs.forEach((t, i) => { t.owner = testers[i % testers.length]; });
+      syncResources();
+      saveLocal();
+      if (calculated) recompute();
+      refreshAll();
+      flashSaved('⚖ ' + tcs.length + ' test case(s) spread across ' + testers.length + ' tester(s) — re-run 📊 the resource view to confirm the peak is gone. ↶ Undo reverses.');
+    }
     // 🔗 AI link repair: proposes predecessors for the selected rows (or, with
     // nothing selected, every non-milestone leaf that has none — e.g. test cases
     // whose looping links were dropped during a move). Every suggestion is
