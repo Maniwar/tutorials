@@ -5757,7 +5757,7 @@ Rules:
 - name MUST start with "TC <AC-id> — " — the tool links TCs to criteria by that prefix. After the dash: the path type, a colon, then a SHORT VERB-FIRST action naming what the tester does (e.g. "TC AC-3.2 — error path: attempt export without admin role", "TC AC-1.1 — happy path: verify sponsor signs off all three documents in 5 days"). Never a noun-phrase restatement of the criterion.
 - steps: MINIMUM 3 numbered steps derived from the Given/When/Then (Given → setup, When → action, Then → observation), executable by a client UAT tester without asking questions — name the exact test data or account in the setup. "1. Log in as billing admin (test user uat_billing01). 2. Open Analytics ▸ Export and select Jan–Mar 2026. 3. Click Export CSV and time the download." — that level of concreteness.
 - pass: the EXPECTED RESULT — the observable behaviour that means PASS, copied faithfully from the criterion's Then (keep every number and its measurement condition). Never restate the steps here.
-- Durations in ${document.getElementById('durationUnit').value}: small and realistic for executing one test (typically 0.1–0.5 days) — data setup or environment work belongs in its own test case only if a criterion demands it.
+- Durations in ${document.getElementById('durationUnit').value}: executing ONE test case typically takes 0.5–2 hours (0.05–0.25 days) — size them that way, and the SUM of all test cases must fit inside a realistic UAT window for this project's size; test cases run in PARALLEL across testers, they are not a serial chain. Data setup or environment work belongs in its own test case only if a criterion demands it.
 Return ONLY JSON (no prose, no fences):
 {"testCases":[{"name":"TC AC-1.1 — …","ac":"AC-1.1","optimistic":0.1,"mostLikely":0.25,"pessimistic":0.5,"owner":"","steps":"1. … 2. …","pass":"…"}]}`;
         const onDelta = streamShow('Writing test cases [' + partBar + '] batch ' + (bi + 1) + '/' + batches.length + ' (' + batch.length + ' ACs)');
@@ -7185,6 +7185,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
 }
 Rules:
 - Break the work into concrete, trackable activities (aim for 5–20 unless the input clearly implies more).
+- CALIBRATE TOTAL SIZE to the work described: a single dashboard/report/integration is typically 2–4 weeks elapsed with 1–2 builders — do not gold-plate a small ask into a mega-project. If the notes state a duration/effort budget ("about two weeks", "one developer"), FIT the plan within it and list anything that will not fit as explicitly optional scope. Prefer parallel tracks over one long serial chain: independent work (design vs data vs config) must not be chained end-to-end with FS links it does not need.
 - For larger efforts, organise work into a WBS: create phase/deliverable grouping tasks (no durations needed) and set each work item's "parent" to the exact name of its phase. Group tasks reference their parent by name; the parent itself should appear as its own entry with an empty/zero duration and be marked milestone:false.
 - Every duration must satisfy optimistic <= mostLikely <= pessimistic, all >= 0.
 - If the notes give only a single estimate for a task, expand it to a sensible 3-point range (optimistic ~= 0.75x, pessimistic ~= 1.6x, rounded).
