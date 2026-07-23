@@ -5306,6 +5306,7 @@
         <div class="stat-card" style="cursor:pointer" onclick="reqScrollTo('traceMatrix', true)" title="Click to open the traceability matrix — one row per criterion with its test cases and status"><div class="value">${acCount}</div><div class="label">Acceptance criteria</div></div>
         <div class="stat-card ${uncovered.length ? 'warn' : 'success'}" style="cursor:pointer" onclick="${uncovered.length ? `reqScrollTo('covBanner')` : `reqScrollTo('traceMatrix', true)`}" title="${uncovered.length ? 'Activities without a story: ' + escapeHtml(uncovered.slice(0, 8).map(t => t.name).join(', ')) + (uncovered.length > 8 ? '…' : '') + ' — click for the gap list & targeted draft button' : 'Every non-milestone activity has at least one story — click for the matrix'}"><div class="value">${leaves.length - uncovered.length}/${leaves.length}</div><div class="label">WBS coverage</div></div>
         <div class="stat-card ${allWarns ? 'critical' : 'success'}" style="cursor:pointer" onclick="${allWarns ? `reqScrollTo('lintBanner')` : `void(0)`}" title="${allWarns ? 'Click for the lint findings and the one-click AI repair' : 'INVEST/testability lint is clean: every story has error/edge paths, real personas, measurable criteria'}"><div class="value">${allWarns}</div><div class="label">Lint warnings</div></div>
+        ${(() => { const tcs = tasks.filter(isTestCaseTask); const shallow = tcs.filter(t => !hasRealSteps(t)).length; return `<div class="stat-card ${shallow ? 'warn' : ''}" style="cursor:pointer" onclick="reqScrollTo('tcListPanel', true)" title="${tcs.length ? 'Click for the full on-screen test-case sheet — steps, pass conditions, owners, schedule' + (shallow ? ' (⚠ ' + shallow + ' shallow — re-run 🧪 Generate test plan)' : '') : 'No test cases yet — 🧪 Generate test plan creates one per UAT-testable criterion'}"><div class="value">🧪 ${tcs.length}</div><div class="label">Test cases</div></div>`; })()}
       </div>`;
       if (reqs.personas && reqs.personas.length) {
         html += `<details style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">👥 Personas glossary (${reqs.personas.length}) — copy into the SOW; “as a user” stories are unpriceable</summary>
@@ -5388,6 +5389,34 @@
         <div class="table-wrap" style="margin-top:0.5rem;max-height:420px;overflow:auto"><table>
           <thead><tr><th>Epic</th><th>Story</th><th>User story</th><th>AC</th><th title="happy / error / edge / perf path">Type</th><th>Acceptance criterion</th><th title="WBS tasks named 'TC <AC-id> — …' that verify this criterion (⑂ decompose your UAT task to test-case level to generate them)">Test cases</th><th title="Click to open the activity">WBS trace</th><th>Owner</th><th>Status</th></tr></thead>
           <tbody>${matrixRows.join('')}</tbody></table></div></details>`;
+
+      // 🧪 on-screen test-case sheet — the full spec of every TC without exporting
+      const tcAll = tasks.filter(isTestCaseTask);
+      const acIdx = {}; stories.forEach(s => (s.ac || []).forEach(a => { acIdx[String(a.id).toLowerCase()] = { s, a }; }));
+      const tcRows = tcAll.map(tc => {
+        const acId = ((tc.name.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').toLowerCase();
+        const hit = acIdx[acId];
+        const st = taskStatus(tc);
+        const steps = hasRealSteps(tc)
+          ? `<ol style="margin:0;padding-left:1.1rem">${tcStepLines(tc.description).split('\n').filter(Boolean).map(sx => `<li>${escapeHtml(sx.replace(/^\d+\.\s*/, ''))}</li>`).join('')}</ol>`
+          : `<span style="color:#b45309">⚠ no executable steps — re-run 🧪 Generate test plan</span>${tc.description ? `<div class="help-text">${escapeHtml(tc.description.slice(0, 120))}</div>` : ''}`;
+        return `<tr>
+          <td style="font-size:0.78rem;min-width:180px;max-width:260px;cursor:pointer;color:var(--primary)" onclick="openEditModal(${tc.id}, true)" title="Open the task — full spec, schedule, % complete">${escapeHtml(tc.name)}</td>
+          <td style="font-size:0.75rem;white-space:nowrap" title="${hit ? escapeHtml(hit.a.text) : 'criterion not found in Requirements'}">${hit ? escapeHtml(hit.a.id) + ' <span class="help-text">(' + escapeHtml(hit.s.id) + ')</span>' : escapeHtml(acId.toUpperCase() || '—')}</td>
+          <td style="font-size:0.76rem;min-width:260px;max-width:380px">${steps}</td>
+          <td style="font-size:0.76rem;min-width:180px;max-width:300px">${escapeHtml(tc.acceptance || '—')}</td>
+          <td style="font-size:0.75rem;white-space:nowrap">${escapeHtml(tc.owner || '—')}</td>
+          <td style="font-size:0.75rem;white-space:nowrap">${tc.startDate ? escapeHtml(fmtNice(tc.startDate) + ' → ' + fmtNice(tc.finishDate)) : '—'}</td>
+          <td style="font-size:0.75rem;white-space:nowrap">${(tc.percentComplete || 0)}% · ${escapeHtml(st.label)}</td>
+        </tr>`;
+      }).join('');
+      html += `<details id="tcListPanel" style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">🧪 Test cases — ${tcAll.length} scheduled${tcAll.length ? ' (' + tcAll.filter(t => (t.percentComplete || 0) >= 100).length + ' executed)' : ''} <span class="help-text" style="font-weight:400">(the on-screen execution sheet — the CSV/Excel exports match it; click a name to open the task)</span></summary>
+        ${tcAll.length
+          ? `<div class="table-wrap" style="margin-top:0.5rem;max-height:460px;overflow:auto"><table>
+              <thead><tr><th>Test case</th><th title="The acceptance criterion this verifies — hover for the Given/When/Then">Verifies</th><th>Steps for the tester</th><th>Pass when</th><th>Owner</th><th>Scheduled window</th><th>Status</th></tr></thead>
+              <tbody>${tcRows}</tbody></table></div>`
+          : '<p class="help-text" style="margin-top:0.5rem">None yet — 🧪 Generate test plan creates one executable test case per UAT-testable acceptance criterion, scheduled under your UAT activities.</p>'}
+      </details>`;
 
       html += `<div id="reqEpicsAnchor" class="toolbar no-print" style="margin:0 0 0.5rem;align-items:center">
         <button class="btn-sm btn-secondary" onclick="reqSetAll(true)" title="Open every story to show its acceptance criteria, NFRs and assumptions">▾ Expand all</button>
