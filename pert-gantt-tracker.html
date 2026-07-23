@@ -5568,6 +5568,9 @@
         ${fatTcs.length ? `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:0.5rem 0.75rem;margin-top:0.5rem;font-size:0.8rem">
           <strong>⏱ ${fatTcs.length} test case(s) look oversized</strong> — each estimated above ~1 hour of execution. A scripted UAT case is a 5–30 minute walkthrough; oversizing inflates the UAT window, the resource peaks and the price.
           <div style="margin-top:0.4rem"><button class="btn-sm btn-primary" onclick="rightSizeTestCases()" title="Sets each oversized test case's O/M/P to ≈10 min likely / ~1 h worst case. Steps, pass criteria, owners and links stay. ↶ Undo reverses.">⏱ Right-size ${fatTcs.length} test case(s)</button></div></div>` : ''}
+        ${(() => { const legacy = tcAll.filter(t => (t.percentComplete || 0) < 100 && (!/→/.test(t.name) || !((t.p || 0) > (t.o || 0)) || !hasRealSteps(t))); return legacy.length ? `<div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:0.5rem 0.75rem;margin-top:0.5rem;font-size:0.8rem">
+          <strong>✍ ${legacy.length} test case(s) need a rewrite</strong> — topic-style name (no action → outcome), flat O=M=P estimate, or missing executable steps. E.g. “attribute agent meeting ownership-duration threshold” describes the FEATURE; the test is “classify a case with multiple sequential agents → only the agent meeting the threshold is attributed”.
+          <div style="margin-top:0.4rem"><button class="btn-sm btn-primary" onclick="generateTestPlan()" title="Heals each one IN PLACE from its acceptance criterion: action → outcome name, numbered steps, pass criterion, real O<M<P spread. Same task, schedule position and links — nothing is duplicated.">🧪 Rewrite ${legacy.length} in place (AI)</button></div></div>` : ''; })()}
         ${tcAll.length
           ? `<div class="table-wrap" style="margin-top:0.5rem;max-height:460px;overflow:auto"><table>
               <thead><tr><th>Test case</th><th title="The acceptance criterion this verifies — hover for the Given/When/Then">Verifies</th><th>Steps for the tester</th><th>Pass when</th><th>Owner</th><th>Scheduled window</th><th>Status</th></tr></thead>
@@ -5844,7 +5847,11 @@ Return ONLY JSON:
       // and a real estimate spread is never touched.
       const work = [];
       let skippedProcess = 0;
-      const brokenTc = x => !hasRealSteps(x) || !((x.p || 0) > (x.o || 0));
+      // broken = no executable steps, a flat O=M=P estimate, or a legacy
+      // topic-style name (the action → outcome contract puts a "→" in every
+      // healthy name: "…: classify a multi-agent case → only the qualifying
+      // agent is attributed")
+      const brokenTc = x => !hasRealSteps(x) || !((x.p || 0) > (x.o || 0)) || !/→/.test(x.name);
       reqs.stories.forEach(s => (s.ac || []).forEach(a => {
         const tcs = testCasesForAC(a.id);
         if (tcs.length && !tcs.every(brokenTc)) return; // a healthy TC exists
@@ -5953,7 +5960,7 @@ Return ONLY JSON (no prose, no fences):
           // verb-first "action → outcome" name and a real O<M<P spread.
           const existing = testCasesForAC(acId)[0];
           if (existing) {
-            const broken = !hasRealSteps(existing) || !((existing.p || 0) > (existing.o || 0));
+            const broken = !hasRealSteps(existing) || !((existing.p || 0) > (existing.o || 0)) || !/→/.test(existing.name);
             if (broken) {
               if (String(tc.steps || '').trim()) existing.description = tcStepLines(String(tc.steps).trim()); // one step per line
               if (String(tc.pass || '').trim()) existing.acceptance = String(tc.pass).trim();
