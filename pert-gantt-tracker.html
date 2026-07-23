@@ -4036,15 +4036,29 @@
         if (ci >= 30) return `Lands on the critical path in ${ci.toFixed(0)}% of simulations — a bad roll here delays the project even though today's plan shows slack. Keep its estimate honest and don't stack more work on ${t.owner || 'its owner'}.`;
         return `Rarely critical (${ci.toFixed(0)}% of simulations) — normal monitoring is enough.`;
       };
+      // Reconcile the two "risk" readings: the banner above measures how
+      // UNCERTAIN the finish date is (distribution spread); criticality
+      // measures which tasks MOVE the date if they slip (leverage). A tight,
+      // serial plan is legitimately both: predictable AND all-critical.
+      const highCritN = mcResult ? risky.filter(t => (t.criticality || 0) >= 0.8).length : 0;
+      const spreadIsCalm = mcResult && mcResult.p50 > 0 && ((mcResult.p90 - mcResult.p50) / mcResult.p50 * 100) < 15;
+      const reconcileNote = (mcResult && spreadIsCalm && highCritN >= 3) ? `
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:0.6rem 0.9rem;margin:0 0 0.6rem;font-size:0.82rem">
+          ℹ️ <b>“Schedule risk: LOW” and lots of “High” rows are NOT a contradiction — they answer different questions.</b>
+          The banner measures how <b>uncertain the finish date</b> is (P50→P90 spread — small here, because estimates are tight).
+          Criticality measures <b>which tasks move the date if they slip</b> — ${highCritN} task(s) sit on the critical path in ≥80% of simulations, meaning the plan runs largely <b>in series with zero slack</b>: predictable, but with no buffer if any single estimate proves wrong.
+          If that fragility bothers you, the fix is <b>parallelism, not tighter estimates</b> — re-sequence or split work so fewer tasks are chained end-to-end (🤖 button below proposes exactly that).
+        </div>` : '';
       const critTable = mcResult ? `
-        <h3 style="margin:1.5rem 0 0.5rem;font-size:1rem">Schedule Risk — Criticality Index
-          <span class="help-text">(% of simulations where the task lands on the critical path — hover any High/Medium chip for why and the fix)</span></h3>
+        <h3 style="margin:1.5rem 0 0.5rem;font-size:1rem">Criticality Index — which tasks control the finish date
+          <span class="help-text">(% of simulations where the task lands on the critical path — leverage if it slips, not likelihood that it slips. Hover any chip for why and the fix)</span></h3>
+        ${reconcileNote}
         <div class="table-wrap"><table>
           <thead><tr><th>Activity</th><th>Owner</th>
             <th title="How often this task sat on the critical path across all simulated outcomes">Criticality</th>
             <th title="Float in today's deterministic plan — a task can show slack here and still be high-criticality, because bad rolls elsewhere pull it onto the critical path">Slack (${u})</th>
             <th title="((P−O)/6)² — how wide/uncertain the task's own estimate is. High criticality + high variance = decompose; high criticality + low variance = re-sequence/parallelize">Variance</th>
-            <th title="What drives your finish date. Hover each chip for the specific reason and remedy">Risk</th><th class="no-print"></th></tr></thead>
+            <th title="LEVERAGE over the finish date — High = this task moves the date if it slips (it is critical in most simulations). It says nothing about how LIKELY a slip is; that is the banner above (spread) and this task's own variance. Hover each chip for the specific reason and remedy">Leverage</th><th class="no-print"></th></tr></thead>
           <tbody>${risky.map(t => {
             const ci = t.criticality * 100;
             const risk = ci >= 80 ? ['High','#fee2e2','#b91c1c'] : ci >= 30 ? ['Medium','#fef3c7','#b45309'] : ['Low','#dcfce7','#15803d'];
