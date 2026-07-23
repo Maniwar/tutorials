@@ -4654,6 +4654,10 @@
       const drawnPairs = new Set();
       const inCount = new Map(); // per visible successor — staggers converging drops
       const leafOrder = leafTasks().slice().sort((a, b) => (isTestCaseTask(a) ? 1 : 0) - (isTestCaseTask(b) ? 1 : 0));
+      // pass 1: resolve edges (rep remap + dedupe) so convergence is known
+      // BEFORE drawing — 3+ links entering one bar merge onto a collector
+      // lane with a SINGLE entry arrow instead of a row of arrowheads
+      const edgeList = [];
       leafOrder.forEach(t0 => {
         effectivePreds(t0).forEach(p => {
           if (redundantEdges.has(t0.id + ':' + p.id)) return;
@@ -4665,6 +4669,19 @@
           if (drawnPairs.has(pairKey)) return;
           drawnPairs.add(pairKey);
           const k = inCount.get(t.id) || 0; inCount.set(t.id, k + 1);
+          edgeList.push({ t0, pt0, t, pt, k });
+        });
+      });
+      const mergeGroups = new Map(); // successor id → collector state
+      edgeList.forEach(e => {
+        const pyC = Y0 + rowIndexOf[e.pt.id] * ROWH + (e.pt.isSummary ? 13 : ROWH / 2);
+        const syC = Y0 + rowIndexOf[e.t.id] * ROWH + (e.t.isSummary ? 13 : ROWH / 2);
+        if (pyC < syC) { // converging from above
+          const g = mergeGroups.get(e.t.id) || { n: 0, cols: [], crit: false, allTc: true };
+          g.n++; mergeGroups.set(e.t.id, g);
+        }
+      });
+      edgeList.forEach(({ t0, pt0, t, pt, k }) => {
           const si = rowIndexOf[t.id], pi = rowIndexOf[pt.id];
           const sX = dateX(t.startDate);
           // summary bars are THIN bars at the TOP of their row — anchor to the
@@ -4684,6 +4701,26 @@
           const mk = crit && !tcLink ? 'g-arrC' : 'g-arr';
           const sw = tcLink ? 0.9 : crit ? 1.7 : 1.2, op = tcLink ? 0.35 : crit ? 0.9 : 0.5;
           const dash = tcLink ? ' stroke-dasharray="3,3"' : '';
+          const grp = mergeGroups.get(t.id);
+          if (grp && grp.n >= 3 && sY > pY) {
+            // convergence: this source only rides down to the collector lane —
+            // ONE trunk arrow (drawn after the loop) enters the bar for the
+            // whole group instead of a row of stacked arrowheads
+            const laneC = Y0 + si * ROWH - 4;
+            const col = pt.milestone ? msAnchorX(pt) : pX + 32 + (k % 3) * 4; // clear of the duration label right of the bar
+            const pRowT2 = Y0 + pi * ROWH;
+            const subL = pRowT2 + ROWH - 3.5; // rail under the label, not through it
+            const pBot = pt.isSummary ? pRowT2 + 18 : pRowT2 + 7 + BAR_H;
+            const d0 = pt.milestone
+              ? `M${col},${pY + 11} L${col},${laneC}`
+              : `M${pX - 4},${pBot} L${pX - 4},${subL} L${col},${subL} L${col},${laneC}`;
+            links += `<path d="${d0}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash}/>`;
+            grp.cols.push(col);
+            grp.crit = grp.crit || (crit && !tcLink);
+            grp.allTc = grp.allTc && tcLink;
+            grp.t = t; grp.si = si; grp.sX = sX; grp.sSpanW = sSpanW;
+            return;
+          }
           const bend = pX + 7;
           if (sX >= bend + 4) {
             // forward link: run along the predecessor's row, drop just BEFORE the
@@ -4772,7 +4809,20 @@
             }
             }
           }
-        });
+      });
+      // convergence trunks: one collector run + one entry arrow per group
+      mergeGroups.forEach(g => {
+        if (!g.t || g.cols.length < 3) return;
+        const t = g.t, sRowTop = Y0 + g.si * ROWH;
+        const laneC = sRowTop - 4;
+        const lo = Math.min(...g.cols), hi = Math.max(...g.cols);
+        const entryX = t.milestone ? msAnchorX(t) : Math.max(g.sX + 5, Math.min(g.sX + g.sSpanW - 5, hi));
+        const entryY = t.milestone ? sRowTop + ROWH / 2 - 11 : t.isSummary ? sRowTop + 9 : sRowTop + 6;
+        const stroke = g.crit ? '#dc2626' : '#94a3b8';
+        const sw = g.crit ? 1.7 : g.allTc ? 0.9 : 1.2, op = g.crit ? 0.9 : g.allTc ? 0.35 : 0.5;
+        const dash = g.allTc ? ' stroke-dasharray="3,3"' : '';
+        links += `<path d="M${Math.min(lo, entryX)},${laneC} L${Math.max(hi, entryX)},${laneC}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash}/>`;
+        links += `<path d="M${entryX},${laneC} L${entryX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${g.crit ? 'g-arrC' : 'g-arr'})"><title>${escapeXml(g.cols.length + ' predecessors converge here — hover the task bar for the full list')}</title></path>`;
       });
       svg += links;
 
