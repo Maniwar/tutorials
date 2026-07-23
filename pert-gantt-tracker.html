@@ -1947,13 +1947,22 @@
       anc.forEach(a => a.predecessors.forEach(p => { const pt = tasks.find(x => x.id === p.id); if (pt) inherited.push({ a, pt }); }));
       const phaseDependents = [];
       anc.forEach(a => tasks.forEach(x => { if (x.predecessors.some(p => p.id === a.id)) phaseDependents.push({ x, a }); }));
-      const total = dependents.length + inherited.length + phaseDependents.length;
+      // transitively-redundant links: flag them right where links are managed
+      const redun = new Set(redundantLinkList().map(r => r.task.id + ':' + r.predId));
+      const ownRedun = (t.predecessors || []).filter(p => redun.has(t.id + ':' + p.id));
+      const redunBadge = `<span class="badge" style="background:#fef3c7;color:#b45309;margin-left:4px" title="Redundant: the chain between these tasks already gates this — removing the link changes NOTHING in the schedule, it only removes an arrow.">↩ redundant</span>`;
+      const total = dependents.length + inherited.length + phaseDependents.length + ownRedun.length;
       if (!total) { ip.innerHTML = ''; return; }
       ip.innerHTML = `<details style="margin-bottom:1rem;background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:.5rem .75rem">
-        <summary style="cursor:pointer;font-size:.8rem;font-weight:600;color:#7e22ce">🕸 Dependency impact (${total}) — everything that waits on this task or pulls on it</summary>
+        <summary style="cursor:pointer;font-size:.8rem;font-weight:600;color:#7e22ce">🕸 Dependency impact (${total}) — everything that waits on this task or pulls on it${redun.size && (ownRedun.length || dependents.some(x => redun.has(x.id + ':' + id))) ? ' <span style="color:#b45309">· ↩ redundant links inside</span>' : ''}</summary>
+        ${ownRedun.length ? `<div style="font-weight:600;font-size:.75rem;margin:.5rem 0 .15rem;color:#b45309">↩ Redundant predecessors of THIS task (${ownRedun.length}) — already implied through the chain, safe to remove:</div>` + ownRedun.map(p => {
+          const pt2 = tasks.find(x => x.id === p.id);
+          return row(`“${pt2 ? nm(pt2) : p.id}” <span class="help-text">(${p.type}${p.lag ? (p.lag > 0 ? '+' : '') + p.lag : ''}) — the tasks between already gate this</span>`,
+            `<button class="btn-sm btn-danger" onclick="impactUnlink(${t.id}, ${p.id})" title="Remove — the schedule is IDENTICAL, the chart loses one arrow. ↶ Undo restores.">🗑 remove</button>`);
+        }).join('') : ''}
         ${dependents.length ? `<div style="font-weight:600;font-size:.75rem;margin:.5rem 0 .15rem">⬅ Waiting on THIS task (${dependents.length}) — unlink here, or open to re-point:</div>` + dependents.slice(0, 15).map(x => {
           const pd = x.predecessors.find(p => p.id === id);
-          return row(`<b>${nm(x)}</b> <span class="help-text">(${pd.type}${pd.lag ? (pd.lag > 0 ? '+' : '') + pd.lag : ''})</span>`,
+          return row(`<b>${nm(x)}</b> <span class="help-text">(${pd.type}${pd.lag ? (pd.lag > 0 ? '+' : '') + pd.lag : ''})</span>${redun.has(x.id + ':' + id) ? redunBadge : ''}`,
             `<button class="btn-sm btn-danger" onclick="impactUnlink(${x.id}, ${id})" title="Remove that task's dependency on this one — it then schedules from its remaining links (↶ Undo restores)">🗑</button>
              <button class="btn-sm btn-secondary" onclick="closeModal();openEditModal(${x.id}, true)" title="Open it to re-point the link at a different predecessor">✎</button>`);
         }).join('') + (dependents.length > 15 ? '<div class="help-text">… and ' + (dependents.length - 15) + ' more</div>' : '') : ''}
