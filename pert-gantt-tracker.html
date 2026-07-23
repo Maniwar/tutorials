@@ -56,7 +56,9 @@
     .btn-danger:hover { background: #fecaca; }
     .btn-success { background: #dcfce7; color: #15803d; }
     .btn-sm { padding: 0.3rem 0.65rem; font-size: 0.8rem; }
-    main { max-width: 1500px; margin: 0 auto; padding: 1.25rem; }
+    main { max-width: 1800px; margin: 0 auto; padding: 1.25rem; }
+    /* row-action buttons stay compact so the activity table fits without clipping */
+    td .btn-sm { padding: 0.28rem 0.5rem; }
     .card {
       background: var(--card); border-radius: 12px; border: 1px solid var(--border);
       box-shadow: 0 1px 3px rgb(0 0 0 / 0.05); margin-bottom: 1.25rem; overflow: hidden;
@@ -185,6 +187,13 @@
     .modal-body { padding: 1.25rem; }
     .modal-footer { padding: 1rem 1.25rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 0.5rem; }
     .form-group { margin-bottom: 1rem; }
+    /* inside modals, grid rows stretch cells to equal height — pin the label to
+       the top and the input to the bottom so a two-line label next to a
+       one-line label never leaves the inputs jagged */
+    .modal .form-group { display: flex; flex-direction: column; align-items: stretch; }
+    .modal .form-group > label { margin-bottom: auto; padding-bottom: 0.3rem; }
+    .modal .form-group > button { align-self: flex-start; } /* "+ Add …" buttons keep their natural width */
+    .modal textarea { resize: vertical; }
     .error { color: #dc2626; font-size: 0.8rem; margin-top: 0.5rem; }
     .legend { display: flex; gap: 1.5rem; flex-wrap: wrap; font-size: 0.8rem; margin-top: 1rem; padding: 0.75rem; background: #f8fafc; border-radius: 8px; }
     .legend-item { display: flex; align-items: center; gap: 0.4rem; }
@@ -900,7 +909,7 @@
 
   <!-- Add / Edit Modal -->
   <div class="modal-overlay" id="modal">
-    <div class="modal">
+    <div class="modal" style="max-width:780px">
       <div class="modal-header">
         <h3 id="modalTitle">Add Activity</h3>
         <button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeModal()">✕</button>
@@ -914,6 +923,7 @@
           <input id="mMilestone" type="checkbox" onchange="toggleMilestoneFields()" />
           <label for="mMilestone">This is a milestone (zero duration marker)</label>
         </div>
+        <div id="mSummaryHint" class="help-text" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:0.5rem 0.75rem;margin:-0.25rem 0 1rem">📦 <b>Roll-up (summary) row</b> — estimates, owner, units and % complete are computed from its children and locked here (the fields show the rolled-up values). Edit the child activities to change them.</div>
         <div id="estFields" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
           <div class="form-group">
             <label>Optimistic (O) * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label>
@@ -947,7 +957,7 @@
             <input id="mFixedCost" type="number" min="0" step="100" value="0" />
           </div>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="attGroup">
           <label>Additional attendees <span class="info-icon" title="For sessions/workshops with several people at once. Each attendee loads their own calendar, cost and billing (client-type resources bill nothing).">i</span></label>
           <div id="attRows"></div>
           <button class="btn-sm btn-secondary" type="button" onclick="addAttRow()">+ Add attendee</button>
@@ -972,16 +982,16 @@
           <div style="padding-top:0.75rem">
             <div class="form-group">
               <label>Description / scope</label>
-              <textarea id="mDesc" rows="2" placeholder="What this element covers"></textarea>
+              <textarea id="mDesc" rows="3" placeholder="What this element covers"></textarea>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
               <div class="form-group">
                 <label>Deliverable / output</label>
-                <input id="mDeliverable" type="text" placeholder="e.g. Signed design doc" />
+                <textarea id="mDeliverable" rows="2" placeholder="e.g. Signed design doc"></textarea>
               </div>
               <div class="form-group">
                 <label>Acceptance criteria</label>
-                <input id="mAcceptance" type="text" placeholder="Definition of done" />
+                <textarea id="mAcceptance" rows="2" placeholder="Definition of done"></textarea>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
@@ -1816,8 +1826,23 @@
     }
 
     // ========================= MODAL =========================
+    // Roll-up (summary) rows compute O/M/P spans, owner, units and % complete
+    // from their children — lock those fields so nothing can be typed here that
+    // the next recompute would silently overwrite. Name, dependencies, WBS
+    // parent, fixed cost, dictionary and actuals stay editable.
+    function applySummaryLock(isSum) {
+      ['mO', 'mM', 'mP', 'mOwner', 'mUnits', 'mPct', 'mMilestone'].forEach(k => {
+        const el = document.getElementById(k);
+        el.disabled = !!isSum;
+        el.style.background = isSum ? '#f1f5f9' : '';
+        el.title = isSum ? 'Rolled up from the children — edit the child activities instead' : '';
+      });
+      const ag = document.getElementById('attGroup'); if (ag) ag.style.display = isSum ? 'none' : '';
+      const sh = document.getElementById('mSummaryHint'); if (sh) sh.style.display = isSum ? '' : 'none';
+    }
     function openAddModal(isMilestone) {
       editingId = null;
+      applySummaryLock(false);
       document.getElementById('modalTitle').textContent = isMilestone ? 'Add Milestone' : 'Add Activity';
       const spClr = document.getElementById('mStoriesPanel'); if (spClr) spClr.innerHTML = '';
       const ipClr = document.getElementById('mImpactPanel'); if (ipClr) ipClr.innerHTML = '';
@@ -1851,13 +1876,16 @@
       const t = tasks.find(x => x.id === id);
       if (!t) return;
       editingId = id;
+      const isSum = isSummaryId(id);
+      applySummaryLock(isSum);
       const dd = document.getElementById('dictDetails');
       if (dd) dd.open = !!expandDict || !!(t.deliverable || t.description || t.acceptance);
-      document.getElementById('modalTitle').textContent = t.milestone ? 'Edit Milestone' : 'Edit Activity';
+      document.getElementById('modalTitle').textContent = t.milestone ? 'Edit Milestone' : isSum ? 'Edit Phase (roll-up)' : 'Edit Activity';
       document.getElementById('mName').value = t.name;
-      document.getElementById('mO').value = t.o;
-      document.getElementById('mM').value = t.m;
-      document.getElementById('mP').value = t.p;
+      // summary rows show the rolled-up spans (read-only) instead of their own 0s
+      document.getElementById('mO').value = isSum ? (t.oUp != null ? +(+t.oUp).toFixed(2) : '') : t.o;
+      document.getElementById('mM').value = isSum ? (t.mUp != null ? +(+t.mUp).toFixed(2) : '') : t.m;
+      document.getElementById('mP').value = isSum ? (t.pUp != null ? +(+t.pUp).toFixed(2) : '') : t.p;
       document.getElementById('mOwner').value = t.owner || '';
       document.getElementById('mUnits').value = (t.units == null ? 100 : t.units);
       document.getElementById('mPct').value = t.percentComplete || 0;
@@ -2069,7 +2097,8 @@
 
       if (!name) return showErr('Activity name is required.');
 
-      if (isMs) { o = m = p = 0; }
+      const isSum = editingId != null && isSummaryId(editingId);
+      if (isMs || isSum) { o = m = p = 0; } // summary: fields are display-only rollups — real values preserved below
       else {
         o = parseFloat(document.getElementById('mO').value);
         m = parseFloat(document.getElementById('mM').value);
@@ -2122,15 +2151,21 @@
 
       const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, actualCost, percentComplete: pct, predecessors: finalPreds,
         parentId, description, deliverable, acceptance, actualStart, actualFinish };
+      // roll-up rows: the locked, computed-from-children fields never save
+      if (isSum) ['o', 'm', 'p', 'milestone', 'owner', 'units', 'attendees', 'percentComplete'].forEach(k => delete fields[k]);
+      let renamedTask = null, renamedFrom = '';
       if (editingId === null) {
         tasks.push(makeTask(Object.assign({ id: nextId++ }, fields)));
       } else {
-        Object.assign(tasks.find(x => x.id === editingId), fields);
+        const cur = tasks.find(x => x.id === editingId);
+        if (cur && cur.name.trim() !== name.trim()) { renamedTask = cur; renamedFrom = cur.name; }
+        Object.assign(cur, fields);
       }
-      if (owner) syncResources();
+      if (owner && !isSum) syncResources();
       closeModal();
       saveLocal();
       refreshAll(); // live: recompute + refresh all views
+      if (renamedTask) syncStoriesAfterRename(renamedTask, renamedFrom);
     }
     function deleteTask(id) {
       if (!confirm('Delete this activity? Any dependents and sub-tasks will be reparented to top level.')) return;
@@ -2256,6 +2291,74 @@
         return nm + suffix;
       }).join(', ');
     }
+    // ---- inline predecessor editing, straight in the activity table ----
+    // Click the Predecessors cell, type "1.2, 2.1SS+1, Design Sign-off", Enter.
+    // Same resolver as the modal (WBS code, task name, or label prefix — the
+    // type-ahead suggestions come from the shared predDatalist). FS with no lag
+    // needs no suffix. Enter/blur saves, Esc cancels; an unmatchable token
+    // turns the editor red and keeps it open instead of guessing.
+    let predEditActive = null;
+    function beginPredEdit(id, td) {
+      if (predEditActive === id) return;
+      cancelPredEdit(); // one cell at a time
+      const t = tasks.find(x => x.id === id);
+      if (!t) return;
+      predEditActive = id;
+      const refMap = buildTaskDatalist('predDatalist', x => x.id !== id);
+      const cur = t.predecessors.map(p => {
+        const pt = tasks.find(x => x.id === p.id);
+        const nm = pt ? (pt.wbs || String(pt.id)) : String(p.id);
+        return nm + ((p.type === 'FS' && !p.lag) ? '' : p.type + (p.lag ? (p.lag > 0 ? '+' + p.lag : String(p.lag)) : ''));
+      }).join(', ');
+      td.dataset.prevHtml = td.innerHTML;
+      td.innerHTML = `<input class="pred-inline" list="predDatalist" value="${escapeHtml(cur)}" placeholder="e.g. 1.2, 2.1SS+1" autocomplete="off" style="width:100%;min-width:150px;padding:0.25rem 0.4rem;font-size:0.8rem" />`;
+      const inp = td.querySelector('input');
+      inp._refMap = refMap;
+      inp.focus();
+      inp.setSelectionRange(inp.value.length, inp.value.length);
+      inp.addEventListener('click', e => e.stopPropagation());
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); commitPredEdit(id, td, inp, false); }
+        else if (e.key === 'Escape') { e.preventDefault(); cancelPredEdit(); }
+      });
+      inp.addEventListener('blur', () => { if (predEditActive === id) commitPredEdit(id, td, inp, true); });
+    }
+    function cancelPredEdit() {
+      if (predEditActive == null) return;
+      const td = document.querySelector('td[data-pred-id="' + predEditActive + '"]');
+      predEditActive = null;
+      if (td && td.dataset.prevHtml != null) { td.innerHTML = td.dataset.prevHtml; delete td.dataset.prevHtml; }
+    }
+    function commitPredEdit(id, td, inp, fromBlur) {
+      if (predEditActive !== id) return;
+      const t = tasks.find(x => x.id === id);
+      if (!t) { predEditActive = null; return; }
+      const refMap = inp._refMap || {};
+      const preds = [], bad = [];
+      inp.value.split(/[,;]+/).map(s => s.trim()).filter(Boolean).forEach(tok => {
+        let type = 'FS', lag = 0, ref = tok;
+        const m = tok.match(/^(.*?)\s*(FS|SS|FF|SF)\s*([+-]\s*\d+(?:\.\d+)?)?\s*$/i);
+        if (m && m[1].trim()) { ref = m[1].trim(); type = m[2].toUpperCase(); lag = m[3] ? parseFloat(m[3].replace(/\s+/g, '')) : 0; }
+        const pid = resolveTaskRef(ref, refMap);
+        if (pid == null || pid === id) { bad.push(tok); return; }
+        preds.push({ id: pid, type, lag });
+      });
+      if (bad.length) {
+        if (fromBlur) { cancelPredEdit(); flashSaved('✕ Predecessor edit discarded — no task matches: ' + bad.join(', ')); return; }
+        inp.style.borderColor = '#dc2626'; inp.style.boxShadow = '0 0 0 3px rgba(220,38,38,0.15)';
+        inp.title = 'No task matches: ' + bad.join(', ') + ' — use a WBS code (e.g. 1.2) or enough of the name to be unique, or pick from the suggestions.';
+        flashSaved('⚠ No task matches “' + bad[0] + '” — fix it or press Esc to cancel');
+        return;
+      }
+      const seen = {}; preds.forEach(p => { seen[p.id] = p; });
+      const before = predLabel(t);
+      predEditActive = null; delete td.dataset.prevHtml;
+      t.predecessors = Object.values(seen);
+      saveLocal();
+      refreshAll();
+      const after = predLabel(t);
+      if (before !== after) flashSaved('🔗 ' + (t.wbs ? t.wbs + ' ' : '') + t.name + ' now waits for: ' + (after === '—' ? 'nothing' : after) + '. ↶ Undo reverses');
+    }
     function predTitle(t) {
       if (!t.predecessors.length) return '';
       return 'Waits for: ' + t.predecessors.map(p => {
@@ -2339,11 +2442,13 @@
           'Late start': 'Scheduled to have started before today but still at 0% — update progress or re-plan.',
           'Not started': 'No progress recorded yet.',
           Summary: 'Phase / summary row: rolls up its children (dates, %, cost). Edit the children, not this row.',
+          '✓ Complete': 'Phase complete — every sub-task in this roll-up is at 100%.',
           Pending: 'Press Calculate & Analyze to compute the schedule.'
         };
         const mkBadge = (cls, label) => `<span class="badge ${cls}" title="${escapeHtml(badgeTips[label] || '')}" style="cursor:help">${label}</span>`;
+        const sumDone = summary && (t.percentComplete || 0) >= 100;
         const statusBadge = !calculated ? mkBadge('badge-slack', 'Pending')
-          : summary ? mkBadge('badge-info', 'Summary')
+          : summary ? (sumDone ? mkBadge('badge-done', '✓ Complete') : mkBadge('badge-info', 'Summary'))
           : (t.percentComplete >= 100) ? mkBadge('badge-done', 'Complete')          // done beats critical
           : (t.isCritical && !t.milestone) ? mkBadge('badge-critical', 'Critical')
           : mkBadge(st.cls, st.label);
@@ -2356,7 +2461,7 @@
           : (t.milestone && effectivePreds(t).length)
             ? `<span class="badge ${t.percentComplete >= 100 ? 'badge-done' : 'badge-notstarted'}" title="Tracked automatically — complete when every predecessor reaches 100%">${t.percentComplete >= 100 ? '✓ auto' : 'auto'}</span>`
             : `<span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap"><input type="checkbox" ${t.percentComplete >= 100 ? 'checked' : ''} onclick="event.stopPropagation()" onchange="updatePct(${t.id}, this.checked ? 100 : 0)" title="Check off = 100% done (uncheck = 0%). Phase and project %s recompute instantly, TE-weighted." style="width:15px;height:15px;cursor:pointer;accent-color:var(--success)" /><input class="mini-inp" type="number" min="0" max="100" value="${t.percentComplete}" onchange="updatePct(${t.id}, this.value)" onclick="event.stopPropagation()" title="Or type a partial %" /></span>`;
-        return `<tr draggable="true" data-task-id="${t.id}" class="${t.isCritical && !t.milestone && !summary ? 'critical' : ''} ${isLate(t) ? 'late' : ''}" style="${summary ? 'font-weight:600;background:#f8fafc' : ''}${selectedTaskIds.has(t.id) ? ';outline:2px solid #a5b4fc;outline-offset:-2px' : ''}">
+        return `<tr draggable="true" data-task-id="${t.id}" class="${t.isCritical && !t.milestone && !summary ? 'critical' : ''} ${isLate(t) ? 'late' : ''}" style="${summary ? 'font-weight:600;background:' + (calculated && sumDone ? '#f0fdf4' : '#f8fafc') : ''}${selectedTaskIds.has(t.id) ? ';outline:2px solid #a5b4fc;outline-offset:-2px' : ''}">
           <td class="no-print"><input type="checkbox" data-selid="${t.id}" ${selectedTaskIds.has(t.id) ? 'checked' : ''} onclick="taskRowCheckClick(event, ${t.id}, this)" title="Select for bulk edit${summary ? ' — includes every sub-task' : ''}. Shift-click selects the whole range from the last box you clicked." style="width:14px;height:14px;cursor:pointer" /></td>
           <td style="cursor:grab;color:var(--muted)" title="Drag to reorder / re-nest">⠿</td>
           <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
@@ -2368,7 +2473,7 @@
           <td${a}>${summary ? rollCell(t.mUp, 'most-likely') : t.milestone ? '—' : t.m}</td>
           <td${a}>${summary ? rollCell(t.pUp, 'pessimistic') : t.milestone ? '—' : t.p}</td>
           <td${a}><strong>${noEst ? '⚠ 0' : teStr}</strong></td>`; })()}
-          <td style="font-size:0.8rem${t.predecessors.length ? ';cursor:help' : ''}" title="${escapeHtml(predTitle(t))}">${summary ? '—' : escapeHtml(predLabel(t))}</td>
+          <td data-pred-id="${t.id}" style="font-size:0.8rem${summary ? '' : ';cursor:text'}" title="${escapeHtml(summary ? predTitle(t) : (predTitle(t) ? predTitle(t) + '\n' : '') + 'Click to edit right here — comma-separated WBS codes or names, optional FS/SS/FF/SF±lag (e.g. “1.2, 2.1SS+1”). Enter saves, Esc cancels.')}"${summary ? '' : ` onclick="beginPredEdit(${t.id}, this)"`}>${summary ? '—' : (t.predecessors.length ? escapeHtml(predLabel(t)) : '<span class="help-text" style="font-style:italic">+ link</span>')}</td>
           <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.startDate) : '—'}</td>
           <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.finishDate) : '—'}</td>
           <td>${slackStr}</td>
@@ -6030,6 +6135,7 @@
       // buttons live inside <summary> — stop the click from toggling the row
       cont.querySelectorAll('[data-story-edit]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); openStoryModal(b.dataset.storyEdit); }));
       cont.querySelectorAll('[data-story-mk]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); createTaskFromStory(b.dataset.storyMk); }));
+      cont.querySelectorAll('[data-story-retc]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); regenStoryTestCases(b.dataset.storyRetc); }));
       cont.querySelectorAll('[data-epic-rm]').forEach(b => b.addEventListener('click', e => {
         e.preventDefault(); e.stopPropagation();
         const eid = b.dataset.epicRm;
@@ -6065,6 +6171,7 @@
             : `<span class="badge badge-blocked" title="No linked WBS activity — this scope is NOT in the plan or the price. Link it in the editor, or create the missing activity from the story.">unlinked</span>
                <button class="btn-sm btn-secondary" data-story-mk="${escapeHtml(s.id)}" title="Create the missing WBS activity from this story: name from 'I want…', dictionary from the story + happy-path AC, nested under the epic's phase. It then needs an O/M/P estimate.">➕</button>`}
             <button class="btn-sm btn-secondary" data-story-edit="${escapeHtml(s.id)}" title="Edit this story">✎</button>
+            ${(s.ac || []).some(a => testCasesForAC(a.id).length) ? `<button class="btn-sm btn-secondary" data-story-retc="${escapeHtml(s.id)}" title="Regenerate this story's test cases from the CURRENT acceptance criteria (AI). Rewritten IN PLACE — id, schedule position and links survive; % complete resets to 0. Use after editing the story or its criteria.">🧪↻</button>` : ''}
           </span>
         </summary>
         <div style="padding:0 0.9rem 0.7rem">
@@ -6274,7 +6381,11 @@ Return ONLY JSON:
     // 🧪 One flow: every story's acceptance criteria → test-case WBS tasks under
     // a Test Execution phase, each depending on the activity it verifies. Batched
     // (guaranteed-complete calls) and idempotent — re-runs only fill gaps.
-    async function generateTestPlan() {
+    async function generateTestPlan(forceAcIds) {
+      // forceAcIds: optional Set of AC ids (lowercase) whose test cases must be
+      // REGENERATED even if healthy — used when a story's criteria change, so
+      // the test case never keeps describing the OLD behaviour
+      const force = forceAcIds instanceof Set ? forceAcIds : null;
       if (!reqs || !Array.isArray(reqs.stories) || !reqs.stories.some(s => (s.ac || []).length)) {
         alert('No acceptance criteria yet — draft the requirements first (🤖 Draft from WBS).'); return;
       }
@@ -6293,7 +6404,8 @@ Return ONLY JSON:
       const brokenTc = x => !hasRealSteps(x) || !((x.p || 0) > (x.o || 0)) || !/→/.test(x.name);
       reqs.stories.forEach(s => (s.ac || []).forEach(a => {
         const tcs = testCasesForAC(a.id);
-        if (tcs.length && !tcs.every(brokenTc)) return; // a healthy TC exists
+        const forced = force && force.has(String(a.id).toLowerCase());
+        if (tcs.length && !tcs.every(brokenTc) && !forced) return; // a healthy TC exists
         if (isProcessStory(s)) { skippedProcess++; return; } // verified by its artifact, not UAT
         work.push({ s, a });
       }));
@@ -6338,10 +6450,14 @@ Return ONLY JSON:
       };
       const hostOf = {}; // story.id → host task (null = new phase needed)
       work.forEach(({ s }) => { if (!(s.id in hostOf)) hostOf[s.id] = hostFor(s); });
-      if (candidates.length) {
+      // the hosting confirm only applies when NEW test-case tasks will be
+      // created — a pure force-regeneration rewrites existing TCs in place
+      // (its own confirm already happened upstream)
+      const needsHosting = work.filter(({ a }) => !testCasesForAC(a.id).length);
+      if (candidates.length && needsHosting.length) {
         const counts = new Map();
-        work.forEach(({ s }) => { const h = hostOf[s.id]; const k = h ? h.name : 'NEW: Test Execution (UAT)'; counts.set(k, (counts.get(k) || 0) + 1); });
-        if (!confirm('Create ' + work.length + ' test case(s) as sub-tasks (WBS decomposition) of:\n' + [...counts].map(([k, n]) => '• ' + k + ' — ' + n + ' TC(s)').join('\n') + '\n\nCancel to abort — the match is by activity name ("UAT", "acceptance test"…); rename the right activity if a wrong home was picked.')) return;
+        needsHosting.forEach(({ s }) => { const h = hostOf[s.id]; const k = h ? h.name : 'NEW: Test Execution (UAT)'; counts.set(k, (counts.get(k) || 0) + 1); });
+        if (!confirm('Create ' + needsHosting.length + ' test case(s) as sub-tasks (WBS decomposition) of:\n' + [...counts].map(([k, n]) => '• ' + k + ' — ' + n + ' TC(s)').join('\n') + '\n\nCancel to abort — the match is by activity name ("UAT", "acceptance test"…); rename the right activity if a wrong home was picked.')) return;
       }
       let fallbackPhase = null;
       const ensureFallback = () => {
@@ -6399,13 +6515,17 @@ Return ONLY JSON (no prose, no fences):
           // verb-first "action → outcome" name and a real O<M<P spread.
           const existing = testCasesForAC(acId)[0];
           if (existing) {
-            const broken = !hasRealSteps(existing) || !((existing.p || 0) > (existing.o || 0)) || !/→/.test(existing.name);
+            const forced = force && force.has(acId.toLowerCase());
+            const broken = forced || !hasRealSteps(existing) || !((existing.p || 0) > (existing.o || 0)) || !/→/.test(existing.name);
             if (broken) {
               if (String(tc.steps || '').trim()) existing.description = tcStepLines(String(tc.steps).trim()); // one step per line
               if (String(tc.pass || '').trim()) existing.acceptance = String(tc.pass).trim();
               if (!existing.deliverable) existing.deliverable = 'Test evidence: pass/fail + defects logged (S1–S4)';
               if (nm.toLowerCase() !== existing.name.trim().toLowerCase()) existing.name = nm; // same "TC <AC-id>" prefix, so every link survives
               const eArr = normOMP(); existing.o = eArr[0]; existing.m = eArr[1]; existing.p = eArr[2];
+              // a forced rewrite means the CRITERION changed — an old pass no
+              // longer proves the new behaviour, so execution status resets
+              if (forced && (existing.percentComplete || 0) > 0) existing.percentComplete = 0;
               respec++;
             }
             return;
@@ -6678,12 +6798,17 @@ Return ONLY JSON (no prose, no fences):
       document.getElementById('storyModal').classList.add('open');
     }
     function closeStoryModal() { document.getElementById('storyModal').classList.remove('open'); }
-    function saveStoryModal() {
+    async function saveStoryModal() {
       const err = document.getElementById('storyModalError');
       const id = document.getElementById('stId').value.trim();
       const want = document.getElementById('stWant').value.trim();
       if (!id || !want) { err.textContent = 'ID and “I want to…” are required.'; err.style.display = 'block'; return; }
       if (reqs.stories.some(s => s.id === id && s.id !== editingStoryId)) { err.textContent = 'A story with that ID already exists.'; err.style.display = 'block'; return; }
+      // snapshot BEFORE the overwrite — the diff below decides whether test
+      // cases (and criteria) went stale and need regeneration
+      const before = editingStoryId != null ? reqs.stories.find(s => s.id === editingStoryId) : null;
+      const beforeAc = before ? (before.ac || []).map(a => ({ id: a.id, type: a.type, text: a.text })) : [];
+      const beforeCore = before ? JSON.stringify([before.persona || '', before.want || '', before.soThat || '']) : null;
       const splitLines = elId => document.getElementById(elId).value.split('\n').map(l => l.trim()).filter(Boolean);
       const acBase = id.replace(/^US/i, 'AC');
       const ac = splitLines('stAc').map((l, i) => {
@@ -6703,13 +6828,154 @@ Return ONLY JSON (no prose, no fences):
       };
       const idx = editingStoryId != null ? reqs.stories.findIndex(s => s.id === editingStoryId) : -1;
       if (idx >= 0) reqs.stories[idx] = story; else reqs.stories.push(story);
+      // story ID changed → existing "TC AC-old.<n> …" tasks would orphan; rename
+      // their prefix so the AC→TC links survive, then diff by the NEW ids
+      if (before && before.id !== id) {
+        const oldBase = before.id.replace(/^US/i, 'AC');
+        const esc = oldBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp('^TC\\s+' + esc + '\\.', 'i');
+        tasks.forEach(t => { if (isTestCaseTask(t) && re.test(t.name.trim())) t.name = t.name.trim().replace(re, 'TC ' + acBase + '.'); });
+        beforeAc.forEach(a => { a.id = String(a.id || '').replace(new RegExp('^' + esc + '\\.', 'i'), acBase + '.'); });
+      }
       saveLocal(); closeStoryModal(); renderReqs();
+      if (!before) return;
+      // ripple the edit down the chain: changed criteria → stale test cases;
+      // changed story sentence with UNTOUCHED criteria → offer an AI re-draft
+      const coreChanged = beforeCore !== JSON.stringify([story.persona, story.want, story.soThat]);
+      const acEdited = beforeAc.length !== ac.length || ac.some((a, i) => !beforeAc[i] || String(beforeAc[i].text || '').trim() !== a.text.trim() || beforeAc[i].type !== a.type);
+      const hasKey = !!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE));
+      if (coreChanged && !acEdited && ac.length && hasKey && !isProcessStory(story)) {
+        if (confirm('You changed the story sentence of ' + story.id + ' but kept its acceptance criteria.\n\nHave AI re-draft the criteria (and NFRs/assumptions) to match the updated story? Stale test cases are then offered for regeneration too.\n\nCancel keeps the criteria exactly as written.')) {
+          await aiRefreshStory(story.id, { includeCore: false, reason: 'the story sentence was just edited — the criteria may still describe the old story' });
+          return; // aiRefreshStory reconciles the test cases itself
+        }
+      }
+      if (acEdited) await reconcileTestCases(story, beforeAc);
     }
     function deleteStoryFromModal() {
       if (editingStoryId == null) return;
-      if (!confirm('Delete ' + editingStoryId + '?')) return;
-      reqs.stories = reqs.stories.filter(s => s.id !== editingStoryId);
+      const sid = editingStoryId;
+      const s = reqs.stories.find(x => x.id === sid);
+      if (!confirm('Delete ' + sid + '?')) return;
+      const orphanTcs = s ? (s.ac || []).flatMap(a => testCasesForAC(a.id)) : [];
+      reqs.stories = reqs.stories.filter(x => x.id !== sid);
       saveLocal(); closeStoryModal(); renderReqs();
+      if (orphanTcs.length && confirm(orphanTcs.length + ' scheduled test case task(s) verify ' + sid + '\'s criteria and are now orphaned:\n' + orphanTcs.map(t => '• ' + t.name).join('\n') + '\n\nDelete them too? (Cancel keeps them in the plan.) ↶ Undo restores.')) {
+        removeTestCaseTasks(orphanTcs, '🗑 ' + orphanTcs.length + ' orphaned test case(s) removed with ' + sid + '. ↶ Undo restores');
+      }
+    }
+    // shared cleanup: drop test-case tasks + any links to them, then refresh
+    function removeTestCaseTasks(list, msg) {
+      const rm = new Set(list.map(t => t.id));
+      tasks = tasks.filter(t => !rm.has(t.id));
+      tasks.forEach(t => { t.predecessors = t.predecessors.filter(p => !rm.has(p.id)); if (rm.has(t.parentId)) t.parentId = null; });
+      rm.forEach(x => { selectedTaskIds.delete(x); collapsedIds.delete(x); });
+      saveLocal(); if (calculated) recompute(); refreshAll(); renderReqs();
+      flashSaved(msg);
+    }
+    // After a story's criteria changed: TCs of removed criteria are offered for
+    // deletion, and TCs whose criterion text/type changed are force-regenerated
+    // so a test never keeps describing the OLD behaviour. Criteria are paired
+    // by position — AC ids are positional (AC-<story>.<n>), so an inserted or
+    // deleted line shifts everything after it, which is exactly a text change
+    // at those positions.
+    async function reconcileTestCases(story, oldAc) {
+      const newAc = story.ac || [];
+      const stale = new Set();   // AC ids (lowercase) whose TC must be rewritten
+      const orphans = [];        // TC tasks whose criterion no longer exists
+      oldAc.forEach((oa, i) => {
+        const tcs = testCasesForAC(oa.id);
+        if (!tcs.length) return;
+        const nu = newAc[i];
+        if (!nu || String(nu.id).toLowerCase() !== String(oa.id).toLowerCase()) { orphans.push(...tcs); return; }
+        if (nu.text.trim() !== String(oa.text || '').trim() || nu.type !== oa.type) stale.add(String(nu.id).toLowerCase());
+      });
+      if (orphans.length && confirm(orphans.length + ' test case(s) verify criteria that no longer exist:\n' + orphans.map(t => '• ' + t.name).join('\n') + '\n\nDelete them? (Cancel keeps them — they will show as unlinked.) ↶ Undo restores.')) {
+        removeTestCaseTasks(orphans, '🗑 ' + orphans.length + ' orphaned test case(s) removed. ↶ Undo restores');
+      }
+      if (stale.size) {
+        if (confirm(stale.size + ' test case(s) still describe the OLD behaviour of ' + story.id + ' — their criteria just changed.\n\nRegenerate them now with AI? Name, steps, pass condition and estimate are rewritten IN PLACE (id, schedule position and links survive) and % complete resets to 0 — an old pass no longer proves the new behaviour.')) {
+          await generateTestPlan(stale);
+        } else {
+          flashSaved('⚠ ' + stale.size + ' test case(s) of ' + story.id + ' may be stale — use the 🧪↻ button on the story card when ready.');
+        }
+      } else {
+        const uncovered = newAc.filter(a => !testCasesForAC(a.id).length).length;
+        if (uncovered && tasks.some(isTestCaseTask) && !isProcessStory(story)) flashSaved('🧪 ' + uncovered + ' criterion(s) of ' + story.id + ' have no test case yet — run 🧪 Generate test plan to cover them.');
+      }
+    }
+    // Single-story AI refresh: re-drafts the acceptance criteria (and, when
+    // includeCore, the story sentence itself) against the CURRENT linked WBS
+    // activity, then reconciles the test cases. Used after a story edit and
+    // after an activity rename — the two moments criteria go stale.
+    async function aiRefreshStory(storyId, opts) {
+      opts = opts || {};
+      const s = ((reqs && reqs.stories) || []).find(x => x.id === storyId);
+      if (!s) return;
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) { alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
+      const act = s.wbsId != null ? tasks.find(t => t.id === s.wbsId) : null;
+      const acBase = s.id.replace(/^US/i, 'AC');
+      const oldAc = (s.ac || []).map(a => ({ id: a.id, type: a.type, text: a.text }));
+      const prompt = `You are a senior business analyst refreshing ONE user story of a billable engagement because ${opts.reason || 'it changed'}.
+PROJECT: ${projName()}
+${act ? 'THE WBS ACTIVITY it traces to (current, authoritative): ' + (act.wbs ? act.wbs + ' ' : '') + act.name + (act.description ? ' | scope: ' + act.description : '') + (act.deliverable ? ' | deliverable: ' + act.deliverable : '') + (act.acceptance ? ' | done-when: ' + act.acceptance : '') : 'No linked WBS activity.'}
+THE STORY${opts.includeCore ? ' (update persona/want/soThat to match the activity above if needed — keep the id)' : ' (already correct — do NOT change persona/want/soThat)'}:
+${JSON.stringify({ id: s.id, persona: s.persona, want: s.want, soThat: s.soThat, verification: s.verification, ac: oldAc, nfrs: s.nfrs || [], assumptions: s.assumptions || [] })}
+Rewrite the acceptance criteria so they describe the CURRENT intended behaviour. Keep criteria that are still correct VERBATIM; rewrite stale ones; drop obsolete ones; add missing error/edge coverage.
+Rules:
+- Each criterion is ONE Given [state] When [action] Then [measurable outcome] — binary pass/fail, observable from outside the system, no implementation detail.
+- Cover the happy path + ≥1 error path + ≥1 edge case; add a perf criterion only with a number AND its measurement condition.
+- BANNED untestable words: fast, quick, responsive, seamless, smooth, intuitive, user-friendly, easy, robust, reliable, scalable, real-time, secure, handle, support, manage — write the number and its measurement condition instead.
+- nfrs carry numbers; assumptions are "A: … — impact if false: …", client dependencies "D: … — if slipped: …".
+- AC ids: "${acBase}.1", "${acBase}.2", … sequential from .1.
+Return ONLY JSON (no prose, no fences):
+{${opts.includeCore ? '"persona":"…","want":"…","soThat":"…",' : ''}"ac":[{"id":"${acBase}.1","type":"happy|error|edge|perf","text":"Given … When … Then …"}],"nfrs":["…"],"assumptions":["…"]}`;
+      const onDelta = streamShow('Re-drafting ' + s.id + (opts.includeCore ? ' (story + criteria)' : ' acceptance criteria'));
+      let res;
+      try {
+        const text = await callAnthropic(prompt, { onDelta });
+        streamHide(true);
+        res = parseAIJsonStrict(text, s.id + ' refresh'); // truncated/stopped → nothing applied
+      } catch (e) { streamHide(false); alert('Story refresh failed: ' + (e.message || e)); return; }
+      if (!Array.isArray(res.ac) || !res.ac.length) { alert('AI returned no acceptance criteria — nothing applied.'); return; }
+      if (opts.includeCore) {
+        if (String(res.persona || '').trim()) s.persona = String(res.persona).trim();
+        if (String(res.want || '').trim()) s.want = String(res.want).trim();
+        if (String(res.soThat || '').trim()) s.soThat = String(res.soThat).trim();
+      }
+      s.ac = res.ac.map((a, i) => ({ id: acBase + '.' + (i + 1), type: /^(happy|error|edge|perf)$/i.test(String(a.type)) ? String(a.type).toLowerCase() : 'happy', text: String(a.text || '').trim() })).filter(a => a.text);
+      if (Array.isArray(res.nfrs)) s.nfrs = res.nfrs.map(x => String(x).trim()).filter(Boolean);
+      if (Array.isArray(res.assumptions)) s.assumptions = res.assumptions.map(x => String(x).trim()).filter(Boolean);
+      saveLocal(); renderReqs();
+      const changed = s.ac.filter((a, i) => !oldAc[i] || String(oldAc[i].text || '').trim() !== a.text.trim()).length;
+      flashSaved('🤖 ' + s.id + ' refreshed — ' + s.ac.length + ' criteria (' + changed + ' changed)' + (opts.includeCore ? ', story sentence updated' : ''));
+      await reconcileTestCases(s, oldAc);
+    }
+    // Per-story force-regeneration — the 🧪↻ button on story cards
+    async function regenStoryTestCases(storyId) {
+      const s = ((reqs && reqs.stories) || []).find(x => x.id === storyId);
+      if (!s) return;
+      const withTc = (s.ac || []).filter(a => testCasesForAC(a.id).length);
+      if (!withTc.length) { alert('No test cases exist for ' + storyId + ' yet — run 🧪 Generate test plan instead.'); return; }
+      if (!confirm('Regenerate ' + withTc.length + ' test case(s) of ' + storyId + ' from its CURRENT acceptance criteria?\n\nName, steps, pass condition and estimate are rewritten IN PLACE — id, schedule position and links survive; % complete resets to 0.')) return;
+      await generateTestPlan(new Set(withTc.map(a => String(a.id).toLowerCase())));
+    }
+    // An activity rename ripples up the requirements chain: linked stories'
+    // wbsName snapshot syncs silently; a substantive rename additionally offers
+    // an AI refresh — the stories, criteria and test cases were written about
+    // the OLD activity and may now describe stale behaviour.
+    function syncStoriesAfterRename(task, oldName) {
+      const linked = ((reqs && reqs.stories) || []).filter(s => s.wbsId === task.id);
+      if (!linked.length) return;
+      linked.forEach(s => { s.wbsName = task.name; });
+      saveLocal();
+      const squash = x => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+      if (squash(oldName) === squash(task.name)) return; // cosmetic rename (case/punctuation)
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) return; // no key — silent sync only
+      setTimeout(async () => {
+        if (!confirm('“' + oldName + '” is now “' + task.name + '”.\n\n' + linked.length + ' user stor' + (linked.length === 1 ? 'y traces' : 'ies trace') + ' to it (' + linked.map(s => s.id).join(', ') + ') and may still describe the OLD activity.\n\nHave AI refresh ' + (linked.length === 1 ? 'it' : 'them') + ' — story sentence, acceptance criteria, NFRs — and then offer regeneration of any stale test cases?\n\nCancel keeps everything as written.')) return;
+        for (const s of linked) await aiRefreshStory(s.id, { includeCore: true, reason: 'its WBS activity was renamed from "' + oldName + '" to "' + task.name + '"' });
+      }, 80);
     }
     // the guide-derived house rules + schema — ONE source of truth used by both
     // single-shot and phase-by-phase drafting
