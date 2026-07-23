@@ -430,6 +430,11 @@
               <button class="btn-primary" id="aiGenerateBtn" onclick="generateWithAI()">✨ Generate Plan</button>
               <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.78rem;cursor:pointer;margin:0" title="After the plan is built, automatically draft the requirements layer too: personas, epics, and INVEST user stories with Given/When/Then acceptance criteria traced to every WBS activity (phase-by-phase on big plans, so nothing truncates). Uncheck to draft later from the Requirements tab.">
                 <input type="checkbox" id="aiAlsoStories" checked style="width:14px;height:14px;cursor:pointer" /> + user stories &amp; ACs</label>
+              <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.78rem;margin:0" title="Rolling (recommended): each deliverable gets a short UAT activity right after it is built, so defects surface while the builder is still on the work; only a short end-to-end regression + sign-off remains before go-live. Single phase: some clients contractually want one consolidated UAT window — all acceptance testing is held in one late phase. This steers plan generation AND the health check (a deliberate single phase is not flagged).">UAT style
+                <select id="uatStyle" onchange="localStorage.setItem('pertGantt.uatStyle', this.value)" style="width:auto;font-size:0.78rem;padding:2px 6px">
+                  <option value="rolling">rolling — verify each deliverable as it lands</option>
+                  <option value="bigbang">single phase — client wants one UAT window</option>
+                </select></label>
               <span id="aiStatus" class="help-text" style="margin:0"></span>
             </div>
             <div id="aiError" class="error" style="display:none"></div>
@@ -4890,7 +4895,14 @@
       computeWbsCodes();
       const u = unitLabel();
       const anyCost = projectCost() > 0;
+      // relationship maps for the dictionary's Links column (↤ waits for, ↦ feeds)
+      const idToW = {}; tasks.forEach(x => { idToW[x.id] = x; });
+      const succOfW = {}; tasks.forEach(x => (x.predecessors || []).forEach(pd => { (succOfW[pd.id] = succOfW[pd.id] || []).push({ t: x, type: pd.type, lag: pd.lag }); }));
+      const lagStr = l => l ? (l > 0 ? '+' : '') + l : '';
       const rows = visibleWbsOrder().map(({ task: t, depth }) => {
+        const predChips = (t.predecessors || []).map(pd => { const pt = idToW[pd.id]; return pt ? `<span style="white-space:nowrap" title="${escapeHtml('Waits for ' + (pt.wbs ? pt.wbs + ' ' : '') + pt.name + ' (' + pd.type + lagStr(pd.lag) + ')')}">↤ ${escapeHtml(pt.wbs || pt.name)}</span>` : ''; }).filter(Boolean);
+        const succChips = (succOfW[t.id] || []).map(s2 => `<span style="white-space:nowrap" title="${escapeHtml('Feeds ' + (s2.t.wbs ? s2.t.wbs + ' ' : '') + s2.t.name + ' (' + s2.type + lagStr(s2.lag) + ')')}">↦ ${escapeHtml(s2.t.wbs || s2.t.name)}</span>`);
+        const linksCell = predChips.concat(succChips).join(' · ') || '<span class="help-text">—</span>';
         const dur = t.milestone ? '◆' : (calculated ? (t.te || 0).toFixed(1) : '—');
         const twisty = t.isSummary
           ? `<button class="wbs-twisty" onclick="toggleCollapse(${t.id})" title="${collapsedIds.has(t.id) ? 'Expand' : 'Collapse'}">${collapsedIds.has(t.id) ? '▸' : '▾'}</button>`
@@ -4907,6 +4919,7 @@
           <td style="font-size:0.8rem">${escapeHtml(t.deliverable || '—')}</td>
           <td style="font-size:0.8rem;max-width:280px">${escapeHtml(t.description || '')}</td>
           <td style="font-size:0.8rem">${escapeHtml(t.acceptance || '')}</td>
+          <td style="font-size:0.72rem;color:var(--muted)">${linksCell}</td>
           <td style="font-size:0.75rem;white-space:nowrap">${(() => { const st = storiesForTask(t.id); return st.length
             ? st.map(s => `<span class="badge badge-info" style="cursor:pointer" onclick="event.stopPropagation();openReqStory('${escapeHtml(s.id)}')" title="${escapeHtml('As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?') + ' — ' + (s.ac || []).length + ' acceptance criteria. Click to jump to this story.')}">${escapeHtml(s.id)}</span>`).join(' ')
             : '<span class="help-text">—</span>'; })()}</td>
@@ -4919,7 +4932,7 @@
           <button class="btn-sm btn-secondary" onclick="setCollapseLevel(Infinity)">Expand all</button>
         </div>
         <div class="table-wrap"><table>
-          <thead><tr><th>WBS</th><th>Element</th><th>Owner</th><th>Dur (${u})</th><th>Start</th><th>Finish</th><th>%</th>${anyCost ? '<th style="text-align:right">Cost</th>' : ''}<th>Deliverable</th><th>Description / scope</th><th>Acceptance</th><th title="User stories traced to this element — hover a chip for the story, click for the Requirements tab">Stories</th></tr></thead>
+          <thead><tr><th>WBS</th><th>Element</th><th>Owner</th><th>Dur (${u})</th><th>Start</th><th>Finish</th><th>%</th>${anyCost ? '<th style="text-align:right">Cost</th>' : ''}<th>Deliverable</th><th>Description / scope</th><th>Acceptance</th><th title="Schedule relationships: ↤ predecessors this element waits for, ↦ successors it feeds — hover for the full name and link type. Full detail in the CSV export (Predecessors + Successors columns).">Links</th><th title="User stories traced to this element — hover a chip for the story, click for the Requirements tab">Stories</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
         <p class="help-text" style="margin-top:0.75rem">Bold rows are summary/phase elements (they roll up children). Use ▸/▾ to drill in, the ⑂ button on the Tasks tab to have AI decompose a task further, and Edit to fill deliverable / scope / acceptance for the dictionary.</p>`;
@@ -6840,8 +6853,10 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     }
     function exportWBSDictionaryCSV() {
       if (!ensureCalc()) return;
-      const rows = [['WBS','Level','Element','Type','Owner','Start','Finish','Duration','% Complete','Deliverable','Description / scope','Acceptance criteria','Predecessors','User stories (trace)','Story acceptance criteria','Verified by (test cases)']];
+      const rows = [['WBS','Level','Element','Type','Owner','Start','Finish','Duration','% Complete','Deliverable','Description / scope','Acceptance criteria','Predecessors','Successors','User stories (trace)','Story acceptance criteria','Verified by (test cases)']];
       const idTo = {}; tasks.forEach(x => { idTo[x.id] = x; });
+      const fmtLink = (x, type, lag) => (x.wbs ? x.wbs + ' ' : '') + x.name + ' (' + type + (lag ? (lag > 0 ? '+' : '') + lag : '') + ')';
+      const succOf = {}; tasks.forEach(x => (x.predecessors || []).forEach(pd => { (succOf[pd.id] = succOf[pd.id] || []).push(fmtLink(x, pd.type, pd.lag)); }));
       tasksInWbsOrder().forEach(({ task: t, depth }) => {
         const st = storiesForTask(t.id);
         const verif = st.flatMap(s => (s.ac || []).flatMap(a => testCasesForAC(a.id).map(tc => tc.name)));
@@ -6850,7 +6865,8 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           t.owner || '', t.startDate?fmtISO(t.startDate):'', t.finishDate?fmtISO(t.finishDate):'',
           t.milestone ? '0' : (t.te||0).toFixed(1), (t.percentComplete||0)+'%',
           t.deliverable||'', t.description||'', t.acceptance||'',
-          (t.predecessors || []).map(pd => { const pt = idTo[pd.id]; return pt ? (pt.wbs ? pt.wbs + ' ' : '') + pt.name + ' (' + pd.type + (pd.lag ? (pd.lag > 0 ? '+' : '') + pd.lag : '') + ')' : ''; }).filter(Boolean).join(' || '),
+          (t.predecessors || []).map(pd => { const pt = idTo[pd.id]; return pt ? fmtLink(pt, pd.type, pd.lag) : ''; }).filter(Boolean).join(' || '),
+          (succOf[t.id] || []).join(' || '),
           st.map(s => s.id + ' — As a ' + (s.persona||'?') + ', I want to ' + (s.want||'?') + ', so that ' + (s.soThat||'?')).join(' || '),
           st.flatMap(s => (s.ac||[]).map(a => a.id + ' (' + a.type + ') ' + a.text)).join(' || '),
           verif.join(' || ') || (st.length && st.every(isProcessStory) ? 'Process — verified by the deliverable/sign-off artifact itself' : '')
@@ -7291,6 +7307,14 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       }, ok ? 500 : 3500);
     }
 
+    // Client's UAT preference: 'rolling' (verify each deliverable as it lands,
+    // recommended) or 'bigbang' (one consolidated UAT window — some contracts
+    // require it). Steers plan generation AND silences the big-bang lint finding.
+    function uatStylePref() {
+      const el = document.getElementById('uatStyle');
+      if (el && el.value) return el.value;
+      try { return localStorage.getItem('pertGantt.uatStyle') || 'rolling'; } catch (e) { return 'rolling'; }
+    }
     function aiSchemaHint() {
       const unit = document.getElementById('durationUnit').value;
       return `Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
@@ -7321,6 +7345,9 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
 Rules:
 - Break the work into concrete, trackable activities (aim for 5–20 unless the input clearly implies more).
 - CALIBRATE TOTAL SIZE to the work described: a single dashboard/report/integration is typically 2–4 weeks elapsed with 1–2 builders — do not gold-plate a small ask into a mega-project. If the notes state a duration/effort budget ("about two weeks", "one developer"), FIT the plan within it and list anything that will not fit as explicitly optional scope. Prefer parallel tracks over one long serial chain: independent work (design vs data vs config) must not be chained end-to-end with FS links it does not need.
+${uatStylePref() === 'bigbang'
+  ? '- UAT STYLE (client preference): the client wants ONE consolidated UAT phase. Hold all acceptance testing in a single late UAT phase with explicit entry criteria (all builds complete, test data loaded, testers trained) and exit criteria (zero open S1, no unaccepted S2). Size it realistically: test cases run in PARALLEL across several client testers, not as one serial chain.'
+  : '- VERIFY AS YOU GO: schedule a short acceptance/UAT activity immediately after EACH deliverable is built (e.g. "UAT — Dashboard" depending on "Configure dashboard"), inside that deliverable\'s workstream — defects must surface while the builder is still on the work. Do NOT park all testing in one big end-of-project UAT phase; the only end-of-project testing is a SHORT consolidated end-to-end regression + business sign-off (typically 2–5 ' + (unit === 'hours' ? 'sessions' : 'days') + ') just before go-live.'}
 - For larger efforts, organise work into a WBS: create phase/deliverable grouping tasks (no durations needed) and set each work item's "parent" to the exact name of its phase. Group tasks reference their parent by name; the parent itself should appear as its own entry with an empty/zero duration and be marked milestone:false.
 - Every duration must satisfy optimistic <= mostLikely <= pessimistic, all >= 0.
 - If the notes give only a single estimate for a task, expand it to a sensible 3-point range (optimistic ~= 0.75x, pessimistic ~= 1.6x, rounded).
@@ -8611,6 +8638,21 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       const dupClones = parallelCloneTasks();
       if (dupClones.length) findings.push({ severity: 'high', area: 'Duplicates', finding: dupClones.length + ' duplicate "(Parallel Track)" task(s) inflate effort and price: ' + dupClones.slice(0, 4).map(t => t.name).join('; ') + (dupClones.length > 4 ? '…' : ''), recommendation: 'Requirements tab ▸ 🧹 Remove the duplicates (one undoable click) — their originals already carry the stories and estimates.', jump: 'req' });
       if (!leaves.some(t => /manag|pm\b|status|govern|coordinat/i.test(t.name))) findings.push({ severity: 'medium', area: 'Missing scope', finding: 'No project-management/governance effort in the plan', recommendation: 'Delivery overhead is typically 10–15% — add a PM workstream or it comes out of margin.' });
+      // big-bang UAT: all acceptance testing parked in one late block instead of
+      // verifying each deliverable right after it is built
+      (() => {
+        if (uatStylePref() === 'bigbang') return; // deliberate client choice — don't nag
+        const uatActRe = /\buat\b|user acceptance|acceptance test|test execution/i;
+        const uatActs = leaves.filter(t => !isTestCaseTask(t) && uatActRe.test(t.name));
+        const buildActs = leaves.filter(t => !isTestCaseTask(t) && !uatActRe.test(t.name));
+        if (!uatActs.length || buildActs.length < 6) return;
+        const topOf = t => { let x = t; while (x.parentId != null) { const p2 = tasks.find(k => k.id === x.parentId); if (!p2) break; x = p2; } return x.id; };
+        const uatTops = new Set(uatActs.map(topOf));
+        const uatStart = Math.min(...uatActs.map(t => t.es || 0));
+        const doneBefore = buildActs.filter(t => (t.ef || 0) <= uatStart + 1e-6).length;
+        if (uatTops.size === 1 && doneBefore >= buildActs.length * 0.7)
+          findings.push({ severity: 'medium', area: 'Sequencing', finding: `Big-bang UAT: all ${uatActs.length} acceptance-testing activit${uatActs.length === 1 ? 'y' : 'ies'} sit in one end block that only starts after ${doneBefore} of ${buildActs.length} build activities finish — defects surface at the most expensive moment (builders have moved on) and every tester-day piles into the same window`, recommendation: 'Verify as you go: add a short "UAT — <deliverable>" activity right after each build task inside its own workstream, and keep only a short end-to-end regression + business sign-off before go-live. 🧪 Generate test plan will then nest each workstream’s test cases under its own UAT activity.' });
+      })();
       if (mcResult) {
         const drivers = leaves.map(t => ({ t, w: (t.criticality || 0) * (t.variance || 0) })).sort((a, b) => b.w - a.w).slice(0, 3).filter(x => x.w > 0);
         if (drivers.length) findings.push({ severity: 'info', area: 'Sensitivity', finding: 'Schedule risk is concentrated in: ' + drivers.map(x => `"${x.t.t ? x.t.t.name : x.t.name}"`).join(', ').replace(/"undefined"/g, ''), recommendation: 'Tighten these estimates first — they drive most of the finish-date variance.' });
@@ -8887,6 +8929,7 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
       loadApiKey();
       loadHistData();
       validateKeyFormat();
+      try { const us = localStorage.getItem('pertGantt.uatStyle'); if (us) document.getElementById('uatStyle').value = us; } catch (e) {}
       document.addEventListener('keydown', e => {
         if (e.key === 'Escape') closeModal();
         if (!(e.ctrlKey || e.metaKey)) return;
