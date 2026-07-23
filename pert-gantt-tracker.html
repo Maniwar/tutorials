@@ -300,7 +300,8 @@
         Import
         <input type="file" accept=".json" onchange="importJSON(event)" style="display:none" />
       </label>
-      <button class="btn-secondary btn-sm" onclick="resetProject()">New Project</button>
+      <button class="btn-ghost btn-sm" id="diskAutoBtn" onclick="setupDiskAutosave()" title="Pick a .json file once — every change then auto-saves to it on your disk (Chrome/Edge)">💾 Auto-save file</button>
+      <button class="btn-secondary btn-sm" onclick="resetProject()" title="Start a fresh plan — the current project stays saved in the 📁 Projects menu">New Project</button>
     </div>
   </header>
 
@@ -607,6 +608,15 @@
           <button class="btn-secondary" onclick="closeDecompModal()">Cancel</button>
           <button class="btn-primary" id="decompRunBtn" onclick="runAiDecompose()">⑂ Decompose</button>
         </div>
+      </div>
+    </div>
+
+    <!-- 🛟 data recovery: every surviving copy, restore any as a new project -->
+    <div class="modal-overlay" id="recoveryModal">
+      <div class="modal" style="max-width:640px">
+        <div class="modal-header"><h3>🛟 Recover data</h3><button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeRecovery()">✕</button></div>
+        <div class="modal-body" id="recoveryBody"></div>
+        <div class="modal-footer"><button class="btn-secondary btn-sm" onclick="closeRecovery()">Close</button></div>
       </div>
     </div>
 
@@ -1090,13 +1100,12 @@
         const bar = m ? `<div class="progress-track" style="height:4px;margin-top:3px"><div class="progress-fill" style="width:${Math.min(100, m.pct || 0)}%;background:${(m.pct || 0) >= 100 ? 'var(--success)' : 'var(--primary)'}"></div></div>` : '';
         return `<div style="display:flex;align-items:center;gap:2px"><button data-proj="${id}" style="flex:1;text-align:left;${id === act ? 'font-weight:700;color:var(--primary)' : ''}" title="${escapeHtml((meta.name || 'Untitled') + ' — last saved ' + (meta.updatedAt || '').slice(0, 16).replace('T', ' '))}">${id === act ? '● ' : ''}${escapeHtml(meta.name || 'Untitled')}<br/>${metaLine}${bar}</button>${id !== act ? `<button data-cmp="${id}" title="Compare with current (what-if)" style="width:auto;padding:0.2rem 0.4rem">⚖</button>` : ''}</div>`;
       }).join('') || '<div class="grp">No saved projects yet</div>';
-      const used = storageUsedMB();
-      el.innerHTML += `<div class="grp" style="margin-top:0.4rem;font-size:0.65rem;color:${used > 4 ? 'var(--critical)' : 'var(--muted)'}" title="Browsers allow roughly 5 MB. Near the limit, saves start failing — export JSON backups and delete finished projects.">💾 storage: ${used.toFixed(1)} MB of ~5 MB${used > 4 ? ' — ⚠ nearly full, export & clean up' : ''}</div>`;
+      el.innerHTML += `<div class="grp" style="margin-top:0.4rem;font-size:0.65rem;color:var(--muted)" title="Projects live in the browser's IndexedDB (disk-backed, effectively unlimited — the old ~5 MB localStorage limit no longer applies). Every meaningful save also keeps one of the last 15 rolling snapshots per project.">💾 IndexedDB storage (no 5 MB limit) · 15-snapshot history${window.showSaveFilePicker ? ' · 💾 file autosave available' : ''} · <a href="#" onclick="event.preventDefault();openRecovery()" style="color:var(--primary)">🛟 Recover data…</a></div>`;
       el.querySelectorAll('[data-proj]').forEach(btn => btn.addEventListener('click', () => switchProject(btn.dataset.proj)));
       el.querySelectorAll('[data-cmp]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); compareProject(btn.dataset.cmp); }));
     }
-    function switchProject(id) {
-      const raw = localStorage.getItem(PROJ_PREFIX + id);
+    async function switchProject(id) {
+      const raw = await projBlobGet(id);
       if (id === activeProjectId()) {
         // Normally a no-op — but if the screen is empty while the stored copy
         // has tasks, this click is a RECOVERY request (e.g. a "New project"
@@ -1114,12 +1123,13 @@
         }
         return;
       }
-      const okSave = saveLocal(); // persist current first
-      if (okSave === false && tasks.length &&
-        !confirm('⚠ The CURRENT project could not be saved (browser storage is full) — switching now loses its unsaved changes.\n\nCancel to stay (then Export ▸ Download JSON and delete an old project to free space), or OK to switch anyway.')) return;
+      saveLocal(); // persist current first
+      const durable = await persistNow();
+      if (!durable && tasks.length &&
+        !confirm('⚠ The CURRENT project could not be saved — switching now loses its unsaved changes.\n\nCancel to stay (then Export ▸ Download JSON as a backup), or OK to switch anyway.')) return;
       if (!raw) {
         // last resort: the legacy single-project slot may hold the latest full save
-        const legacy = localStorage.getItem(STORAGE_KEY);
+        const legacy = (await idbGet('legacy.snapshot')) || localStorage.getItem(STORAGE_KEY);
         if (legacy && confirm('That project has no saved copy of its own (its saves may have failed while storage was full).\n\nA legacy full snapshot exists — load it into this project?')) {
           try { localStorage.setItem(PROJ_ACTIVE_KEY, id); resetUndo(); hydrate(JSON.parse(legacy)); calculated = false; renderTaskTable(); renderWBS(); renderRaid(); if (tasks.length && recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT(); } renderProjectMenu(); switchTab('tasks'); saveLocal(); flashSaved('↻ Recovered from the legacy snapshot'); } catch (e) { alert('Recovery failed: ' + e.message); }
           return;
@@ -1137,13 +1147,14 @@
       switchTab('tasks');
       flashSaved('Switched to "' + (document.getElementById('projectName').value || 'project') + '"');
     }
-    function newProject(fromCurrent) {
-      const okSave = saveLocal();
-      // NEVER wipe the screen unless the current project verifiably persisted —
-      // a full-storage save failure here is how work gets destroyed
-      const persisted = !!localStorage.getItem(PROJ_PREFIX + activeProjectId());
-      if (tasks.length && (okSave === false || !persisted)) {
-        if (!confirm('⚠ The current project could NOT be saved (browser storage looks full).\n\nCreating a new project now would LOSE it.\n\nCancel (recommended): then Export ▸ Download JSON as a backup and delete an old project to free space.\nOK: continue anyway and lose the current plan.')) return;
+    async function newProject(fromCurrent) {
+      saveLocal();
+      // NEVER wipe the screen until the current project is DURABLY saved (in
+      // IndexedDB or the fallback) — verified by awaiting the actual write,
+      // not by assuming it worked
+      const durable = await persistNow();
+      if (tasks.length && !durable) {
+        if (!confirm('⚠ The current project could NOT be saved to browser storage.\n\nCreating a new project now would LOSE it.\n\nCancel (recommended): Export ▸ Download JSON as a backup first.\nOK: continue anyway and lose the current plan.')) return;
       }
       const id = 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
       localStorage.setItem(PROJ_ACTIVE_KEY, id);
@@ -1172,22 +1183,25 @@
       }
       switchTab('tasks');
     }
-    function deleteProject() {
+    async function deleteProject() {
       const idx = projIndex();
       const act = activeProjectId();
       const nm = (idx[act] && idx[act].name) || 'this project';
-      if (!confirm(`Delete "${nm}" permanently? This cannot be undone.`)) return;
+      if (!confirm(`Delete "${nm}" permanently? Its snapshots go too. This cannot be undone.`)) return;
       delete idx[act];
       saveProjIndex(idx);
       localStorage.removeItem(PROJ_PREFIX + act);
+      delete projCache[act];
+      await idbDel(PROJ_PREFIX + act);
+      await idbDel('snap.' + act);
       const remaining = Object.keys(idx);
-      if (remaining.length) { localStorage.removeItem(PROJ_ACTIVE_KEY); switchProjectForce(remaining[0]); }
-      else { localStorage.removeItem(PROJ_ACTIVE_KEY); newProject(false); }
+      if (remaining.length) { localStorage.removeItem(PROJ_ACTIVE_KEY); await switchProjectForce(remaining[0]); }
+      else { localStorage.removeItem(PROJ_ACTIVE_KEY); await newProject(false); }
     }
-    function switchProjectForce(id) {
+    async function switchProjectForce(id) {
       localStorage.setItem(PROJ_ACTIVE_KEY, id);
       resetUndo();
-      const raw = localStorage.getItem(PROJ_PREFIX + id);
+      const raw = await projBlobGet(id);
       if (raw) { try { hydrate(JSON.parse(raw)); } catch (e) {} }
       calculated = false;
       renderTaskTable(); renderWBS(); renderRaid();
@@ -1196,7 +1210,7 @@
     }
 
     // What-if comparison: current live plan vs a saved project/scenario
-    function compareProject(otherId) {
+    async function compareProject(otherId) {
       const idx = projIndex();
       const other = idx[otherId];
       if (!other) return;
@@ -1204,7 +1218,7 @@
       const mine = projIndex()[activeProjectId()] || {};
       let otherTasks = [];
       try {
-        const raw = JSON.parse(localStorage.getItem(PROJ_PREFIX + otherId) || '{}');
+        const raw = JSON.parse((await projBlobGet(otherId)) || '{}');
         const parentIds = new Set((raw.tasks || []).map(t => t.parentId).filter(x => x != null));
         otherTasks = (raw.tasks || []).filter(t => !parentIds.has(t.id)) // leaves only, matching the current side
           .map(t => ({ name: t.name, te: t.milestone ? 0 : +(((+t.o || 0) + 4 * (+t.m || 0) + (+t.p || 0)) / 6).toFixed(2) }));
@@ -1289,11 +1303,245 @@
       flashSaved('↷ Redone');
     }
 
+    // ========== STORAGE ENGINE: IndexedDB primary (GBs, disk-backed) ==========
+    // localStorage (~5 MB) holds only tiny things: the project index, active id,
+    // prefs, API key. Full project payloads live in IndexedDB, with a rolling
+    // snapshot history so no save can permanently destroy an earlier state.
+    const IDB_NAME = 'pertGanttDB', IDB_STORE = 'kv';
+    let _idb = null, _idbFailed = false;
+    function idbOpen() {
+      return new Promise(res => {
+        if (_idb) return res(_idb);
+        if (_idbFailed || !window.indexedDB) return res(null);
+        try {
+          const rq = indexedDB.open(IDB_NAME, 1);
+          rq.onupgradeneeded = () => { rq.result.createObjectStore(IDB_STORE); };
+          rq.onsuccess = () => { _idb = rq.result; res(_idb); };
+          rq.onerror = () => { _idbFailed = true; res(null); };
+        } catch (e) { _idbFailed = true; res(null); }
+      });
+    }
+    function idbSet(key, val) {
+      return idbOpen().then(db => new Promise((res, rej) => {
+        if (!db) return rej(new Error('IndexedDB unavailable'));
+        const tx = db.transaction(IDB_STORE, 'readwrite');
+        tx.objectStore(IDB_STORE).put(val, key);
+        tx.oncomplete = () => res(true);
+        tx.onerror = () => rej(tx.error || new Error('write failed'));
+      }));
+    }
+    function idbGet(key) {
+      return idbOpen().then(db => new Promise(res => {
+        if (!db) return res(null);
+        try {
+          const rq = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(key);
+          rq.onsuccess = () => res(rq.result != null ? rq.result : null);
+          rq.onerror = () => res(null);
+        } catch (e) { res(null); }
+      }));
+    }
+    function idbDel(key) {
+      return idbOpen().then(db => new Promise(res => {
+        if (!db) return res(false);
+        const tx = db.transaction(IDB_STORE, 'readwrite');
+        tx.objectStore(IDB_STORE).delete(key);
+        tx.oncomplete = () => res(true);
+        tx.onerror = () => res(false);
+      }));
+    }
+    function idbKeys() {
+      return idbOpen().then(db => new Promise(res => {
+        if (!db) return res([]);
+        try {
+          const rq = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).getAllKeys();
+          rq.onsuccess = () => res(rq.result || []);
+          rq.onerror = () => res([]);
+        } catch (e) { res([]); }
+      }));
+    }
+    // synchronous read cache: the latest JSON per project id, kept in memory so
+    // switch/new/compare stay snappy; IndexedDB is the durable copy
+    const projCache = {};
+    // awaitable durable save — used before anything destructive (new project,
+    // switching away) so "saved" means ON DISK, not just in memory
+    async function persistNow() {
+      try {
+        const data = serialize();
+        const json = JSON.stringify(data);
+        const id = activeProjectId();
+        projCache[id] = json;
+        try {
+          await idbSet(PROJ_PREFIX + id, json);
+          await snapshotKeep(id, json, (data.tasks || []).length);
+        } catch (e) {
+          localStorage.setItem(PROJ_PREFIX + id, json); // fallback (may throw → false)
+        }
+        return true;
+      } catch (e) { return false; }
+    }
+    async function projBlobGet(id) {
+      if (projCache[id] != null) return projCache[id];
+      const v = await idbGet(PROJ_PREFIX + id);
+      if (v != null) { projCache[id] = v; return v; }
+      return localStorage.getItem(PROJ_PREFIX + id); // pre-migration fallback
+    }
+    // one-time migration: move payloads out of localStorage into IndexedDB and
+    // FREE the ~5 MB quota (the index and prefs stay — they are tiny)
+    async function migrateToIdb() {
+      const db = await idbOpen();
+      if (!db) return false;
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && (k.indexOf(PROJ_PREFIX) === 0 || k === STORAGE_KEY)) keys.push(k); }
+      for (const k of keys) {
+        const v = localStorage.getItem(k);
+        if (v == null) continue;
+        const target = k === STORAGE_KEY ? 'legacy.snapshot' : k;
+        try {
+          const existing = await idbGet(target);
+          // never let a smaller/empty legacy copy overwrite a richer IDB copy
+          if (existing == null || String(existing).length < v.length) await idbSet(target, v);
+          localStorage.removeItem(k);
+        } catch (e) { return false; }
+      }
+      return true;
+    }
+    // rolling snapshot ring — the "time machine": every save with real content
+    // keeps a timestamped copy (last 15 per project), so nothing is ever one
+    // bad save away from gone
+    async function snapshotKeep(id, json, taskCount) {
+      if (!taskCount) return; // empty states are not worth snapshotting
+      try {
+        const key = 'snap.' + id;
+        const ring = JSON.parse((await idbGet(key)) || '[]');
+        const last = ring[ring.length - 1];
+        if (last && last.json === json) return; // unchanged
+        ring.push({ at: new Date().toISOString(), tasks: taskCount, json });
+        while (ring.length > 15) ring.shift();
+        await idbSet(key, JSON.stringify(ring));
+      } catch (e) { /* history is best-effort */ }
+    }
     function storageUsedMB() {
       let n = 0;
       for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); n += k.length + (localStorage.getItem(k) || '').length; }
       return n * 2 / 1048576; // UTF-16 ≈ 2 bytes/char
     }
+    // ——— optional REAL file on disk (File System Access API, Chrome/Edge):
+    // pick a .json once; every change auto-writes to it, debounced ———
+    let diskFileHandle = null, diskTimer = null, diskWarned = false;
+    function diskAutoSave(json) {
+      if (!diskFileHandle) return;
+      clearTimeout(diskTimer);
+      diskTimer = setTimeout(async () => {
+        try {
+          if (diskFileHandle.queryPermission && (await diskFileHandle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+            if (!diskWarned) { diskWarned = true; flashSaved('💾 File autosave paused — click "💾 File: on" in the header to re-authorize'); }
+            return;
+          }
+          const w = await diskFileHandle.createWritable();
+          await w.write(json); await w.close();
+          diskWarned = false;
+        } catch (e) { if (!diskWarned) { diskWarned = true; flashSaved('⚠ File autosave failed: ' + (e.message || e)); } }
+      }, 800);
+    }
+    async function setupDiskAutosave() {
+      if (!window.showSaveFilePicker) { alert('Direct on-disk autosave needs Chrome or Edge. Everything is still saved in the browser database (no 5 MB limit) — and Export ▸ Download JSON works everywhere for manual backups.'); return; }
+      try {
+        if (diskFileHandle) {
+          if ((await diskFileHandle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+            await diskFileHandle.requestPermission({ mode: 'readwrite' }); // re-authorize
+            diskAutoSave(JSON.stringify(serialize()));
+            updateDiskBtn();
+            return;
+          }
+          if (confirm('File autosave is ON → "' + (diskFileHandle.name || 'file') + '". Turn it OFF?')) { diskFileHandle = null; await idbDel('disk.handle'); updateDiskBtn(); }
+          return;
+        }
+        const h = await showSaveFilePicker({ suggestedName: safeName() + '-autosave.json', types: [{ description: 'JSON backup', accept: { 'application/json': ['.json'] } }] });
+        diskFileHandle = h;
+        try { await idbSet('disk.handle', h); } catch (e) {}
+        diskAutoSave(JSON.stringify(serialize()));
+        updateDiskBtn();
+        flashSaved('💾 Auto-saving to "' + h.name + '" after every change — a real file on disk, IMPORT restores from it any time');
+      } catch (e) { /* picker cancelled */ }
+    }
+    async function restoreDiskHandle() {
+      try { const h = await idbGet('disk.handle'); if (h && h.queryPermission) diskFileHandle = h; } catch (e) {}
+      updateDiskBtn();
+    }
+    function updateDiskBtn() {
+      const btn = document.getElementById('diskAutoBtn');
+      if (!btn) return;
+      if (!window.showSaveFilePicker) { btn.style.display = 'none'; return; }
+      btn.textContent = diskFileHandle ? '💾 File: on' : '💾 Auto-save file';
+      btn.title = diskFileHandle
+        ? 'Every change auto-saves to "' + (diskFileHandle.name || 'file') + '" on disk. Click to re-authorize or turn off.'
+        : 'Pick a .json file once — every change then auto-saves to it on your disk (Chrome/Edge). IMPORT restores from it any time.';
+    }
+    // ——— 🛟 recovery: list EVERY surviving copy (projects, snapshots, legacy,
+    // pre-migration localStorage) and restore any of them as a NEW project ———
+    async function openRecovery() {
+      const rows = [];
+      const idx = projIndex();
+      for (const k of await idbKeys()) {
+        const key = String(k);
+        if (key.indexOf('snap.') === 0) {
+          const id = key.slice(5);
+          let ring = []; try { ring = JSON.parse((await idbGet(key)) || '[]'); } catch (e) {}
+          ring.forEach((s, i) => rows.push({ kind: 'snapshot', label: ((idx[id] && idx[id].name) || 'Project') + ' — snapshot ' + String(s.at || '').slice(0, 16).replace('T', ' '), tasks: s.tasks || 0, size: (s.json || '').length, key, ringIdx: i }));
+        } else if (key.indexOf(PROJ_PREFIX) === 0) {
+          const id = key.slice(PROJ_PREFIX.length);
+          const v = await idbGet(key); let tc = 0, nm = (idx[id] && idx[id].name) || 'Project';
+          try { const d = JSON.parse(v); tc = (d.tasks || []).length; nm = d.projectName || nm; } catch (e) {}
+          rows.push({ kind: 'project', label: nm + ' — current saved copy', tasks: tc, size: (v || '').length, key });
+        } else if (key === 'legacy.snapshot') {
+          const v = await idbGet(key); let tc = 0, nm = 'Legacy slot';
+          try { const d = JSON.parse(v); tc = (d.tasks || []).length; nm = (d.projectName || 'Legacy') + ' — legacy slot'; } catch (e) {}
+          rows.push({ kind: 'project', label: nm, tasks: tc, size: (v || '').length, key });
+        }
+      }
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.indexOf(PROJ_PREFIX) === 0 || k === STORAGE_KEY)) {
+          const v = localStorage.getItem(k); let tc = 0, nm = k;
+          try { const d = JSON.parse(v); tc = (d.tasks || []).length; nm = (d.projectName || 'Untitled') + ' — pre-migration copy'; } catch (e) {}
+          rows.push({ kind: 'local', label: nm, tasks: tc, size: (v || '').length, key: k });
+        }
+      }
+      rows.sort((a, b) => (b.tasks - a.tasks) || (b.size - a.size));
+      openRecovery._rows = rows;
+      document.getElementById('recoveryBody').innerHTML = `<p style="font-size:0.82rem;margin:0 0 0.6rem">Every surviving copy in this browser, richest first. Restoring <b>never overwrites anything</b> — it creates a NEW project from the copy. From now on every meaningful save also keeps one of the last 15 snapshots per project.</p>`
+        + (rows.map((r, i) => `<div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;padding:0.35rem 0;border-bottom:1px dashed var(--border);font-size:0.8rem">
+            <div style="flex:1"><b>${escapeHtml(r.label)}</b><br/><span class="help-text">${r.tasks} task(s) · ${(r.size / 1024).toFixed(0)} KB</span></div>
+            <button class="btn-sm btn-primary" onclick="recoverRow(${i})" ${r.tasks ? '' : 'disabled title="empty copy — nothing to restore"'}>⤴ Restore as new project</button>
+          </div>`).join('') || '<p class="help-text">Nothing recoverable found in this browser. If you ever used Export ▸ Download JSON (or 💾 file autosave), use IMPORT with that file.</p>');
+      document.getElementById('recoveryModal').classList.add('open');
+    }
+    async function recoverRow(i) {
+      const r = (openRecovery._rows || [])[i];
+      if (!r) return;
+      let json = null;
+      if (r.kind === 'snapshot') { try { json = (JSON.parse((await idbGet(r.key)) || '[]')[r.ringIdx] || {}).json; } catch (e) {} }
+      else if (r.kind === 'local') json = localStorage.getItem(r.key);
+      else json = await idbGet(r.key);
+      if (!json) { alert('Could not read that copy.'); return; }
+      try {
+        const data = JSON.parse(json);
+        saveLocal(); // keep whatever is on screen under its own id
+        const id = 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+        localStorage.setItem(PROJ_ACTIVE_KEY, id);
+        resetUndo();
+        hydrate(data);
+        document.getElementById('projectName').value = (data.projectName || 'Recovered') + ' (recovered)';
+        calculated = false;
+        saveLocal();
+        renderTaskTable(); renderWBS(); renderRaid(); renderProjectMenu();
+        if (tasks.length && recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT(); }
+        document.getElementById('recoveryModal').classList.remove('open');
+        switchTab('tasks');
+        flashSaved('🛟 Restored "' + (data.projectName || '?') + '" as a new project — ' + tasks.length + ' task(s)');
+      } catch (e) { alert('Restore failed: ' + e.message); }
+    }
+    function closeRecovery() { document.getElementById('recoveryModal').classList.remove('open'); }
     function showStorageBanner() {
       let b = document.getElementById('storageBanner');
       if (!b) {
@@ -1307,13 +1555,22 @@
     function saveLocal() {
       try {
         const data = serialize();
-        trackUndo(JSON.stringify(data));
+        const json = JSON.stringify(data);
+        trackUndo(json);
         const id = activeProjectId();
-        // NOTE: the full payload is stored ONCE per project. (It used to also be
-        // mirrored into the legacy single-project slot, doubling storage use and
-        // making quota exhaustion twice as likely; that slot is now read-only
-        // for migration/recovery.)
-        localStorage.setItem(PROJ_PREFIX + id, JSON.stringify(data));
+        projCache[id] = json; // sync cache: switch/new/compare read this instantly
+        // durable write: IndexedDB (disk-backed, no ~5 MB ceiling). localStorage
+        // no longer holds payloads at all — only the tiny index and prefs.
+        idbSet(PROJ_PREFIX + id, json).then(() => {
+          saveLocal.lastOk = true;
+          const sb = document.getElementById('storageBanner'); if (sb) sb.remove();
+          snapshotKeep(id, json, (data.tasks || []).length); // time machine
+          diskAutoSave(json); // optional real file on disk
+        }).catch(() => {
+          // no IndexedDB (blocked/ancient browser): localStorage fallback
+          try { localStorage.setItem(PROJ_PREFIX + id, json); saveLocal.lastOk = true; }
+          catch (e2) { saveLocal.lastOk = false; showStorageBanner(); }
+        });
         const idx = projIndex();
         idx[id] = { name: data.projectName || 'Untitled', updatedAt: new Date().toISOString(),
           metrics: calculated ? {
@@ -1417,10 +1674,11 @@
       nextId = data.nextId || (Math.max(0, ...tasks.map(t => t.id)) + 1);
       calculated = false;
     }
-    function loadLocal() {
+    async function loadLocal() {
       try {
         const act = localStorage.getItem(PROJ_ACTIVE_KEY);
-        const raw = (act && localStorage.getItem(PROJ_PREFIX + act)) || localStorage.getItem(STORAGE_KEY);
+        let raw = act ? await projBlobGet(act) : null;
+        if (!raw) raw = (await idbGet('legacy.snapshot')) || localStorage.getItem(STORAGE_KEY);
         if (!raw) return false;
         hydrate(JSON.parse(raw));
         return true;
@@ -6614,22 +6872,16 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       if (!document.getElementById('projectStart').value) document.getElementById('projectStart').value = fmtISO(new Date());
       renderTaskTable(); switchTab('tasks'); saveLocal();
     }
-    function resetProject() {
-      if (tasks.length && !confirm('Clear all activities and start fresh?')) return;
-      tasks = []; nextId = 1; calculated = false; mcResult = null; resources = {}; resourceLoad = null; reqs = null; coLog = []; sowBaseline = null; coDraft = '';
-      reserves = { contingency: { value: 0, unit: 'percent' }, management: { value: 0, unit: 'percent' } }; baselineDate = '';
-      collapsedIds = new Set(); levelMode = 'none'; projectBudget = 0; unleveledDuration = null;
-      document.getElementById('projectName').value = 'New Engagement';
-      document.getElementById('holidays').value = '';
-      renderHolidayChips();
-      document.getElementById('summaryGrid').innerHTML = '';
-      document.getElementById('analyticsContent').innerHTML = '<div class="empty-state"><h3>Run Calculate to see analytics</h3></div>';
-      document.getElementById('ganttContainer').innerHTML = '';
-      document.getElementById('resourcesContainer').innerHTML = '';
-      const wc = document.getElementById('wbsContainer'); if (wc) wc.innerHTML = '';
-      const bc = document.getElementById('baselineContainer'); if (bc) bc.innerHTML = '';
-      document.getElementById('pertSvg').innerHTML = '';
-      renderTaskTable(); switchTab('tasks'); saveLocal();
+    // The header "New Project" button. This used to wipe IN PLACE under the
+    // SAME project id — the very next autosave then overwrote the stored copy
+    // with the empty state, silently destroying the plan. It now routes through
+    // the library-aware flow: the current project is saved under its own id and
+    // stays in Projects ▸; the fresh plan gets a NEW id.
+    async function resetProject() {
+      if (tasks.length && !confirm('Start a NEW project?\n\nThe current plan stays saved in the 📁 Projects menu — nothing is deleted. (Use Projects ▸ 🗑 Delete current if you actually want it gone.)')) return;
+      await newProject(false);
+      const empt = document.getElementById('summaryGrid'); if (empt) empt.innerHTML = '';
+      const ac = document.getElementById('analyticsContent'); if (ac) ac.innerHTML = '<div class="empty-state"><h3>Run Calculate to see analytics</h3></div>';
     }
 
     // ========================= AI PLAN BUILDER =========================
@@ -8259,10 +8511,12 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
     }
 
     // ========================= INIT =========================
-    (function init() {
+    (async function init() {
       // default start date = today
       const startInput = document.getElementById('projectStart');
-      const loaded = loadLocal();
+      await migrateToIdb(); // move payloads out of the ~5 MB localStorage into IndexedDB
+      const loaded = await loadLocal();
+      restoreDiskHandle();
       if (!startInput.value) startInput.value = fmtISO(new Date());
       renderHolidayChips();
       renderTaskTable();
