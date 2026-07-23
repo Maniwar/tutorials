@@ -8445,7 +8445,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     }
     function exportRaidEditableCSV() {
       if (!raid.length) { alert('The RAID log is empty — nothing to export yet.'); return; }
-      const rows = [['RAID ID (do not change)', 'Type (Risk/Assumption/Issue/Dependency)', 'Title', 'Description', 'Probability 1-5', 'Impact 1-5', 'Owner', 'Mitigation / next step', 'Status']];
+      const rows = [['RAID ID (do not change)', 'Type (Risk/Assumption/Issue/Decision/Exclusion)', 'Title', 'Description', 'Probability 1-5', 'Impact 1-5', 'Owner', 'Mitigation / next step', 'Status']];
       raid.forEach(r => rows.push([r.id, r.type, r.title, r.description || '', r.probability, r.impact, r.owner || '', r.mitigation || '', r.status || 'Open']));
       dlCsv('-raid-editable.csv', rows);
     }
@@ -8740,14 +8740,14 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       const col = f => csvColIdx(head, f);
       const c = { id: col('raid id'), type: col('type'), title: col('title'), desc: col('description'), prob: col('probability'), imp: col('impact'), owner: col('owner'), mit: col('mitigation'), status: col('status') };
       const rep = { updated: 0, added: 0, rejected: [], notes: [] };
-      const typeOf = v => { const x = String(v || '').trim().toLowerCase(); return x.startsWith('r') ? 'Risk' : x.startsWith('a') ? 'Assumption' : x.startsWith('i') ? 'Issue' : x.startsWith('d') ? 'Dependency' : null; };
+      const typeOf = v => { const x = String(v || '').trim().toLowerCase(); return x.startsWith('r') ? 'Risk' : x.startsWith('a') ? 'Assumption' : x.startsWith('i') ? 'Issue' : x.startsWith('d') ? 'Decision' : (x.startsWith('e') || x.startsWith('x')) ? 'Exclusion' : null; };
       const clamp15 = v => { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.min(5, Math.max(1, n)) : 3; };
       body.forEach((r, ri) => {
         const cell = i => (i >= 0 && i < r.length) ? String(r[i] == null ? '' : r[i]).trim() : '';
         const idRaw = cell(c.id), title = cell(c.title);
         if (!idRaw && !title) return;
         const ty = typeOf(cell(c.type));
-        if (!ty) { rep.rejected.push('row ' + (ri + 2) + ' ("' + (title || idRaw) + '"): Type must be Risk, Assumption, Issue or Dependency'); return; }
+        if (!ty) { rep.rejected.push('row ' + (ri + 2) + ' ("' + (title || idRaw) + '"): Type must be Risk, Assumption, Issue, Decision or Exclusion'); return; }
         let it = idRaw ? raid.find(x => String(x.id) === idRaw) : null;
         if (idRaw && !it) { rep.rejected.push('row ' + (ri + 2) + ' ("' + (title || idRaw) + '"): RAID ID ' + idRaw + ' not in this project — leave it blank to add a new item'); return; }
         if (!it) {
@@ -9038,40 +9038,216 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     // ========================= SAMPLE / RESET =========================
     function loadSample() {
       if (tasks.length && !confirm('Replace current activities with sample engagement?')) return;
-      const mk = (id, name, o, m, p, preds, owner, parentId, deliverable) => makeTask({ id, name, o, m, p, owner, parentId: parentId || null, deliverable: deliverable || '', predecessors: preds.map(normalizePred) });
+      const mk = (id, name, o, m, p, preds, owner, parentId, deliverable, description, acceptance) => makeTask({ id, name, o, m, p, owner, parentId: parentId || null, deliverable: deliverable || '', description: description || '', acceptance: acceptance || '', predecessors: preds.map(normalizePred) });
+      // test-case task: level-4 leaf in MINUTES (days unit — 0.04 ≈ 20 min),
+      // named "TC <AC-id> — action → observable outcome" so traceability links
+      const tc = (id, acId, name, o, m, p, pred, owner, steps, expected) => makeTask({ id, name: 'TC ' + acId + ' — ' + name, o, m, p, owner, units: 50, parentId: 18, predecessors: [normalizePred(pred)], description: steps, acceptance: expected });
       tasks = [
-        // WBS phase summaries
+        // ── level 1: phases
         makeTask({ id: 11, name: 'Phase 1 — Discovery', parentId: null }),
         makeTask({ id: 12, name: 'Phase 2 — Design', parentId: null }),
         makeTask({ id: 13, name: 'Phase 3 — Build & Go-Live', parentId: null }),
-        // work packages
-        mk(1, 'Kick-off & Discovery', 2, 3, 5, [], 'PMO', 11, 'Charter & discovery notes'),
-        mk(2, 'Stakeholder Interviews', 3, 5, 8, [1], 'A. Rivera', 11, 'Interview findings'),
-        (() => { const t = mk(3, 'Requirements Workshop', 2, 3, 4, [1], 'A. Rivera', 11, 'Signed requirements');
+        // ── level 2: work packages (dictionary filled: scope, deliverable, done-when)
+        mk(1, 'Kick-off & Discovery', 2, 3, 5, [], 'PMO', 11, 'Charter & discovery notes',
+          'Confirm scope, governance cadence, decision-makers and success measures with the client sponsor.',
+          'Charter signed by the sponsor; minutes with owners and due dates distributed within 24 hours.'),
+        mk(2, 'Stakeholder Interviews', 3, 5, 8, [1], 'A. Rivera', 11, 'Interview findings',
+          'Interview at least 8 stakeholders across sales, service and marketing on current workflows and pain points.',
+          'Findings pack per function, pain points ranked by frequency, circulated within 2 business days of the last interview.'),
+        (() => { const t = mk(3, 'Requirements Workshop', 2, 3, 4, [1], 'A. Rivera', 11, 'Signed requirements',
+          'Facilitated session converting interview findings into testable, MoSCoW-prioritized requirement statements.',
+          'Requirements register signed by the client within 5 business days of the workshop.');
           t.attendees = [{ name: 'L. Chen', units: 100 }, { name: 'Client SME', units: 100 }]; return t; })(),
-        mk(4, 'Solution Design', 4, 6, 10, [2, 3], 'L. Chen', 12, 'Solution design doc'),
-        mk(5, 'Data Mapping', 3, 4, 7, [2], 'L. Chen', 12, 'Data mapping spec'),
-        mk(6, 'Build / Configure', 8, 12, 18, [4, 5], 'Dev Team', 13, 'Configured system'),
-        mk(7, 'Integration Testing', 3, 5, 8, [6], 'QA', 13, 'Test results'),
-        mk(8, 'UAT & Training', 4, 6, 9, [7], 'A. Rivera', 13, 'UAT sign-off'),
-        mk(9, 'Go-Live & Hypercare', 2, 3, 5, [8], 'PMO', 13, 'Live system'),
-        makeTask({ id: 10, name: 'Project Closed', milestone: true, o:0,m:0,p:0, predecessors: [normalizePred(9)], owner: 'PMO', parentId: 13 })
+        mk(4, 'Solution Design', 4, 6, 10, [2, 3], 'L. Chen', 12, 'Solution design doc',
+          'Map every signed requirement to a configuration decision; flag anything needing custom build with effort and owner.',
+          'Every Must-have requirement traces to a design section; client approves in writing within 5 business days of review.'),
+        mk(5, 'Data Mapping', 3, 4, 7, [2], 'L. Chen', 12, 'Data mapping spec',
+          'Field-level mapping from the legacy CRM: target, transform rule or explicit drop decision for every in-scope field; profiling on sampled rows.',
+          'Client data steward approves the spec; fields failing validation in >2% of sampled rows carry a recorded cleanup decision.'),
+        // Build & UAT are SUMMARIES — estimates roll up from their level-3 children
+        makeTask({ id: 6, name: 'Build / Configure', parentId: 13, predecessors: [] }),
+        mk(7, 'Integration Testing', 3, 5, 8, [6], 'QA', 13, 'Test results',
+          'Execute the integration suite against the configured system; log, fix and retest defects before client testers enter.',
+          '100% of planned cases executed with recorded results; zero open S1/S2 defects at UAT entry.'),
+        makeTask({ id: 8, name: 'UAT & Training', parentId: 13, predecessors: [normalizePred(7)] }),
+        mk(9, 'Go-Live & Hypercare', 2, 3, 5, [8], 'PMO', 13, 'Live system',
+          'Execute the cutover runbook with go/no-go gates, then run a 2-week hypercare rota with daily issue triage.',
+          'Every runbook step completed with a timestamped owner; hypercare daily summary distributed by 9am.'),
+        makeTask({ id: 10, name: 'Project Closed', milestone: true, o:0,m:0,p:0, predecessors: [normalizePred(9)], owner: 'PMO', parentId: 13 }),
+        // ── level 3: Build / Configure decomposed
+        mk(14, 'Data migration build & dry run', 3, 5, 8, [4, 5], 'Dev Team', 6, 'Loaded UAT environment + reconciliation report',
+          'Build extract-transform-load per the mapping spec; dry-run into UAT with per-object reconciliation and an exceptions file.',
+          'Counts reconcile within 0.1% per object; exceptions quarantined with row, rule and suggested fix.'),
+        mk(15, 'Core workflow configuration', 3, 4, 6, [4], 'Dev Team', 6, 'Configured case workflows',
+          'Configure case categories, required fields, queue assignment rules and status flows per the approved design.',
+          'A saved case auto-assigns to its mapped queue within 5 seconds; missing required fields reject the save inline.'),
+        mk(16, 'Access model & queue setup', 1, 2, 3, [4], 'Dev Team', 6, 'Roles, profiles & queue visibility',
+          'Configure role-based access: agents see their own queues, managers see all; access attempts outside role are logged.',
+          'Own-queue visibility verified per role; out-of-queue access attempts recorded with user and timestamp.'),
+        // ── level 3: UAT & Training decomposed (hours-scale activity + TC host + triage)
+        (() => { const t = mk(17, 'Tester training session', 0.5, 1, 1.5, [7], 'A. Rivera', 8, 'Trained tester roster',
+          'Half-day guided session in the loaded UAT environment; each tester runs one case end-to-end; 10-question check.',
+          'Attendance and check score recorded per tester; only testers scoring ≥7/10 execute UAT cases.');
+          t.attendees = [{ name: 'Client UAT Lead', units: 50 }, { name: 'Client SME', units: 50 }]; return t; })(),
+        // 18 hosts the level-4 test cases below — its estimates roll up from them
+        makeTask({ id: 18, name: 'UAT execution — migrated data & workflows', parentId: 8, owner: 'Client UAT Lead', predecessors: [normalizePred(17)] }),
+        (() => { const t = mk(19, 'UAT defect triage & retest', 1, 2, 3, [18], 'A. Rivera', 8, 'Defect log & burn-down',
+          'Daily triage of failed cases: severity, owner, target date; retest after fix; burn-down published to the sponsor.',
+          'Every failure has severity, named owner and target date by end of triage; disputed items escalate after 3 business days.');
+          t.attendees = [{ name: 'Client UAT Lead', units: 50 }]; return t; })(),
+        // ── level 4: executable test cases, estimated in MINUTES, one per AC
+        tc(20, 'AC-6.1', 'happy path: migrated counts reconcile to legacy within 0.1%', 0.02, 0.04, 0.08, 14, 'Client UAT Lead',
+          '1. Open the migration reconciliation report for the latest UAT run.\n2. Compare per-object counts (accounts, contacts, cases) to the legacy extract totals in the mapping spec.\n3. Open the 5 sampled cases listed in UAT workbook tab "Sample-6.1" and check owner, status and activity history.',
+          'Counts within 0.1% per object; all 5 sampled cases show owner, status and full history.'),
+        tc(21, 'AC-6.2', 'error path: invalid legacy record quarantined with stated reason', 0.02, 0.05, 0.1, 20, 'Client UAT Lead',
+          '1. Load the exception seed file uat_bad_records.csv (2 rows: missing owner, malformed date) into the migration dry-run.\n2. Run the dry-run migration.\n3. Open the exceptions file from the run output.',
+          'Both seeded records quarantined with source row, rule violated and suggested fix; the run completes without aborting.'),
+        tc(22, 'AC-6.3', 'edge: 24-month boundary records included, older excluded', 0.02, 0.04, 0.08, 21, 'Client UAT Lead',
+          '1. Locate the 3 boundary records dated exactly 24 months before cutover (workbook tab "Sample-6.3").\n2. Run the extract build.\n3. Check the reconciliation report totals for included vs excluded records.',
+          'Boundary records included; older records excluded; both totals appear on the reconciliation report.'),
+        tc(23, 'AC-6.4', 'performance: p95 case page render ≤ 2 s at 50 concurrent users', 0.04, 0.08, 0.15, 22, 'Client UAT Lead',
+          '1. Start the 50-user load script (load_uat_50.jmx) against the UAT org.\n2. During the 30-minute window, open the timed case page set every 5 minutes.\n3. Export the p95 render timing from the run report.',
+          'p95 case page render is 2 seconds or less across the full 30-minute window at 50 concurrent users.'),
+        tc(24, 'AC-10.1', 'happy path: saved case auto-assigns to mapped queue in 5 s', 0.01, 0.03, 0.06, 15, 'Client SME',
+          '1. Log in as tester uat_agent01.\n2. Create a case with category "Billing dispute" and all required fields (data sheet "Case-A").\n3. Save, then open the case history.',
+          'Case lands in the Billing queue within 5 seconds; the history shows the assignment rule name.'),
+        tc(25, 'AC-10.2', 'error path: save without required field rejected inline', 0.01, 0.02, 0.05, 24, 'Client SME',
+          '1. Log in as uat_agent01.\n2. Create a case leaving "Category" empty.\n3. Attempt to save.',
+          'Save is rejected with the missing field named inline; no partial case record is created.'),
+        tc(26, 'AC-11.1', 'happy path: agent sees own-queue cases only, totals match manager', 0.01, 0.03, 0.06, 16, 'Client SME',
+          '1. Log in as uat_agent02 (billing queue only).\n2. Open the case list.\n3. Compare the queue total to the manager view (uat_mgr01) for the billing queue.',
+          'Only billing-queue cases are listed; the total matches the manager view for that queue.'),
+        tc(27, 'AC-11.2', 'error path: out-of-queue direct link blocked and logged', 0.02, 0.04, 0.08, 26, 'Client SME',
+          '1. As uat_agent02, paste the direct URL of case C-1042 (service queue).\n2. Attempt to open it.\n3. As uat_mgr01, open the access log.',
+          'The case is not displayed; the access log records the attempt with user and timestamp.')
       ];
-      // some in-flight progress so completeness indicators / handoff report show real data
+      // in-flight progress so completeness indicators / handoff report show real data
       const pcts = { 1: 100, 2: 100, 3: 100, 4: 60, 5: 30 };
       tasks.forEach(t => { if (pcts[t.id] != null) t.percentComplete = pcts[t.id]; });
-      nextId = 14;
+      nextId = 28;
+      // roster with ROLES + side — every view (tables, Gantt, SOW, emails) shows who does what
       resources = {
-        'PMO': { capacity: 100, rate: 900, billRate: 1500 }, 'A. Rivera': { capacity: 100, rate: 1200, billRate: 1900 },
-        'L. Chen': { capacity: 100, rate: 1300, billRate: 2100 }, 'Dev Team': { capacity: 300, rate: 1100, billRate: 1750 }, 'QA': { capacity: 100, rate: 950, billRate: 1500 },
-        'Client SME': { capacity: 50, kind: 'client', rate: 0, billRate: 0 }
+        'PMO':       { capacity: 100, rate: 900,  billRate: 1500, kind: 'internal', role: 'Engagement Manager (PMO)' },
+        'A. Rivera': { capacity: 100, rate: 1200, billRate: 1900, kind: 'internal', role: 'Business Analyst & Change Lead' },
+        'L. Chen':   { capacity: 100, rate: 1300, billRate: 2100, kind: 'internal', role: 'CRM Solution Architect' },
+        'Dev Team':  { capacity: 300, rate: 1100, billRate: 1750, kind: 'internal', role: 'CRM Platform Developers (pooled)' },
+        'QA':        { capacity: 100, rate: 950,  billRate: 1500, kind: 'internal', role: 'QA & Test Lead' },
+        'Client SME':      { capacity: 50, kind: 'client', rate: 0, billRate: 0, role: 'Client Operations SME' },
+        'Client UAT Lead': { capacity: 50, kind: 'client', rate: 0, billRate: 0, role: 'Client UAT Coordinator' }
       };
       raid = [
-        { id: 1, type: 'Risk', title: 'Client sandbox access may slip past kickoff', probability: 3, impact: 4, owner: 'PMO', mitigation: 'Escalate access request in week 1; fallback to vendor demo org', description: '', status: 'Open', taskId: 6, createdAt: fmtISO(new Date()) },
-        { id: 2, type: 'Assumption', title: 'Client provides a data steward 2 days/week during mapping', probability: 3, impact: 3, owner: 'A. Rivera', mitigation: 'Named in SOW client obligations', description: '', status: 'Open', taskId: 5, createdAt: fmtISO(new Date()) },
-        { id: 3, type: 'Exclusion', title: 'Historical data older than 24 months is out of scope for migration', probability: 3, impact: 3, owner: '', mitigation: '', description: '', status: 'Open', taskId: null, createdAt: fmtISO(new Date()) }
+        { id: 1, type: 'Risk', title: 'Client sandbox access may slip past kickoff', probability: 3, impact: 4, owner: 'PMO', mitigation: 'Escalate access request in week 1; fallback to vendor demo org', description: 'Provisioning has taken 2–3 weeks at this client before; Build cannot start without it.', status: 'Open', taskId: 6, createdAt: fmtISO(new Date()) },
+        { id: 2, type: 'Assumption', title: 'Client provides a data steward 2 days/week during mapping', probability: 3, impact: 3, owner: 'A. Rivera', mitigation: 'Named in SOW client obligations', description: 'If availability drops, Data Mapping extends day-for-day and Phase 2 sign-off moves.', status: 'Open', taskId: 5, createdAt: fmtISO(new Date()) },
+        { id: 3, type: 'Decision', title: 'Single production org; no per-team sandboxes', probability: 2, impact: 3, owner: 'L. Chen', mitigation: 'Agreed at design review — revisit only via change control', description: 'Keeps licence cost flat; limits parallel experimentation during hypercare.', status: 'Closed', taskId: 4, createdAt: fmtISO(new Date()) },
+        { id: 4, type: 'Exclusion', title: 'Historical data older than 24 months is out of scope for migration', probability: 3, impact: 3, owner: 'PMO', mitigation: 'Stated in SOW exclusions; legacy read-only archive stays available', description: 'Older records stay queryable in the legacy archive; migrating them is a change order.', status: 'Open', taskId: null, createdAt: fmtISO(new Date()) }
       ];
-      nextRaidId = 4; statusHistory = []; sowDraft = ''; statusNarrative = null; healthFindings = null; reqs = null; coLog = []; sowBaseline = null; coDraft = '';
+      nextRaidId = 5;
+      // full requirements layer: personas glossary, epics per phase, one story
+      // per storyable activity — house-style Given/When/Then criteria: every
+      // slot filled, And-clauses, time-bound outcomes, error+edge paths
+      const S = (id, epicId, wbsId, persona, want, soThat, verification, ac, nfrs, assumptions) => ({
+        id, epicId, wbsId, wbsName: (tasks.find(t => t.id === wbsId) || {}).name || '', persona, want, soThat, verification,
+        ac: ac.map((x, i) => ({ id: id.replace(/^US/i, 'AC') + '.' + (i + 1), type: x[0], text: x[1] })), nfrs, assumptions
+      });
+      reqs = {
+        personas: [
+          { name: 'Client Operations Manager', definition: 'Runs the day-to-day case operation; accepts migrated data and configured workflows.' },
+          { name: 'Client Data Steward', definition: 'Owns legacy data quality; approves field mappings and cleanup decisions.' },
+          { name: 'Client Operations SME', definition: 'Front-line process expert; validates that configured flows match real work.' },
+          { name: 'Client UAT Coordinator', definition: 'Schedules client testers and owns UAT evidence and sign-off.' },
+          { name: 'Engagement Manager', definition: 'Delivery-side governance role — responsible for charter, cadence and cutover (process stories).' },
+          { name: 'Business Analyst', definition: 'Delivery-side elicitation role — responsible for interviews and the requirements register (process stories).' },
+          { name: 'Solution Architect', definition: 'Delivery-side design authority — responsible for the approved solution design (process stories).' },
+          { name: 'QA & Test Lead', definition: 'Delivery-side test role — responsible for integration test execution and results (process stories).' }
+        ],
+        epics: [
+          { id: 'EP-1', title: 'Discovery & Alignment', businessNeed: 'Agree scope, stakeholders and testable requirements before anything is designed.', wbsId: 11, wbsName: 'Phase 1 — Discovery' },
+          { id: 'EP-2', title: 'Solution Design & Data Readiness', businessNeed: 'An approved design and mapping so the build is configuration against decisions, not guesses.', wbsId: 12, wbsName: 'Phase 2 — Design' },
+          { id: 'EP-3', title: 'Build, Verify & Adopt', businessNeed: 'A configured, tested system the client staff accept and operate from day one.', wbsId: 13, wbsName: 'Phase 3 — Build & Go-Live' }
+        ],
+        stories: [
+          S('US-1', 'EP-1', 1, 'Engagement Manager', 'run a kickoff that locks scope, governance and decision-makers in the first week', 'delivery starts against an agreed charter instead of assumptions', 'artifact', [
+            ['happy', 'Given the signed SOW And the client\'s named stakeholders, When the kickoff is held within 5 business days of engagement start, Then the charter records scope boundaries, decision cadence and named approvers And minutes with owners and due dates are distributed within 24 hours'],
+            ['error', 'Given a required approver is absent from the kickoff, When minutes are distributed, Then the gap is logged as an open charter item with a named owner And a make-up session is booked within 3 business days'],
+            ['edge', 'Edge — scope surfaces late: Given a stakeholder raises scope not in the SOW during kickoff, When the item is captured, Then it is logged as unpriced scope in the RAID log within 1 business day And routed to change control rather than absorbed silently']
+          ], ['Charter and minutes stored in the shared project workspace with version history kept for the engagement duration'],
+             ['D: client names all approvers before kickoff — if slipped: charter sign-off moves day-for-day', 'A: SOW scope is final at kickoff — impact if false: re-baseline before Phase 2']),
+          S('US-2', 'EP-1', 2, 'Business Analyst', 'interview the operational stakeholders across sales, service and marketing', 'requirements reflect how work is actually done, not just the org chart', 'artifact', [
+            ['happy', 'Given the stakeholder map from kickoff, When interviews complete, Then at least 8 stakeholders across 3 functions are interviewed And findings are written per function with pain points ranked by frequency And the pack is circulated within 2 business days of the last interview'],
+            ['error', 'Given a stakeholder declines or no-shows twice, When rescheduling fails, Then the gap is escalated to the sponsor within 2 business days And the findings pack marks that function\'s coverage as partial'],
+            ['edge', 'Edge — conflicting accounts: Given two stakeholders describe the same process differently, When findings are compiled, Then both versions are recorded verbatim And a resolution session is booked before Solution Design starts']
+          ], ['Interview notes anonymized on request; raw notes visible to the delivery team only'],
+             ['D: client books interview slots within week 2 — if slipped: Phase 1 extends day-for-day']),
+          S('US-3', 'EP-1', 3, 'Business Analyst', 'facilitate a workshop that converts findings into prioritized, signed requirements', 'the build is scoped against agreed statements rather than meeting notes', 'artifact', [
+            ['happy', 'Given the circulated findings pack, When the workshop concludes, Then every requirement is written as a testable statement with a MoSCoW priority And the client signs the requirements register within 5 business days'],
+            ['error', 'Given sign-off is not returned within 5 business days, When the deadline passes, Then the engagement manager escalates to the sponsor And the Phase 2 start is formally moved with the slip recorded in the status report'],
+            ['edge', 'Edge — oversized backlog: Given more Must-have requirements than the priced scope covers, When prioritization ends, Then the overflow is logged as unpriced scope with rough order-of-magnitude sizing And routed to change control']
+          ], ['Requirements register keeps a change history: author, date and prior wording for every edit'],
+             ['D: decision-makers attend the full workshop — if slipped: priorities are provisional and rework risk transfers to the client']),
+          S('US-4', 'EP-2', 4, 'Solution Architect', 'produce a solution design that maps every signed requirement to a configuration decision', 'the client approves exactly what will be built before build starts', 'artifact', [
+            ['happy', 'Given the signed requirements register, When the design review is held, Then every Must-have requirement traces to a design section And the client approves the design in writing within 5 business days of the review'],
+            ['error', 'Given a requirement that cannot be met with configuration alone, When the design identifies custom work, Then the item is flagged with an effort estimate and a decision owner And build on that item is blocked until the decision is recorded'],
+            ['edge', 'Edge — late requirement change: Given a requirement changes after design approval, When the change is raised, Then the impact on effort and dates is written within 3 business days And the change routes through change control before the design is edited']
+          ], ['Design document is versioned; the approved version is the build reference and is never edited in place'],
+             ['A: standard objects cover the core case model — impact if false: +40–80 hours of custom build, re-baseline EP-3']),
+          S('US-5', 'EP-2', 5, 'Client Data Steward', 'review and approve the field-level mapping from the legacy system before migration is built', 'migrated records mean the same thing in the new CRM as they did in the old one', 'artifact', [
+            ['happy', 'Given the legacy schema extract And the target object model, When the mapping spec is complete, Then every in-scope field has a target, a transform rule or an explicit drop decision And I approve the spec within 5 business days'],
+            ['error', 'Given a field whose sampled values violate its stated rule in more than 2% of rows, When profiling runs, Then the field is flagged with concrete examples And a cleanup or transform decision is recorded before the spec is approved'],
+            ['edge', 'Edge — orphaned records: Given legacy records whose parent account no longer exists, When mapping is defined, Then the spec states whether they attach to a holding account or are excluded And the chosen rule appears in the reconciliation report']
+          ], ['Mapping spec lists per-field data ownership; personally identifiable fields are marked for masked display outside production'],
+             ['D: data steward available 2 days/week during mapping — if slipped: Phase 2 extends day-for-day', 'A: legacy extract is complete as of the cutover snapshot — impact if false: a delta migration adds 24–40 hours']),
+          S('US-6', 'EP-3', 14, 'Client Operations Manager', 'work migrated case records with full history in the new CRM', 'my team continues daily operations without reconstructing history by hand', 'uat', [
+            ['happy', 'Given the approved design And the approved mapping spec, When migration into the UAT environment completes, Then record counts reconcile to the legacy source within 0.1% per object And every migrated case shows owner, status and full activity history And a reconciliation report with per-object counts is produced within 24 hours of the run'],
+            ['error', 'Given a legacy record that fails validation (missing owner or malformed date), When the migration runs, Then the record is quarantined to an exceptions file stating source row, rule violated and suggested fix And the run completes without aborting'],
+            ['edge', 'Edge — boundary date: Given records created exactly 24 months before the cutover date, When the extract is built, Then boundary records are included and older records excluded And both totals appear in the reconciliation report'],
+            ['perf', 'Given 50 concurrent users in the UAT environment, When a case page is opened, Then p95 page render completes in 2 seconds or less measured over a 30-minute test window']
+          ], ['p95 case page render ≤ 2 s at 50 concurrent users', 'Audit trail on case status changes retained 24 months'],
+             ['A: legacy system stays read-only during migration windows — impact if false: delta reconciliation adds 16–24 hours per window', 'D: client admin account provisioned by Phase 3 start — if slipped: build starts day-for-day late']),
+          S('US-10', 'EP-3', 15, 'Client Operations SME', 'raise cases that route themselves to the right queue with the fields my process needs', 'agents work from one queue without re-triaging misrouted cases', 'uat', [
+            ['happy', 'Given a new case with a category And all required fields completed, When the case is saved, Then it is assigned to the queue mapped for that category within 5 seconds And the assignment appears in the case history with the rule name'],
+            ['error', 'Given a case missing a required field, When a save is attempted, Then the save is rejected with the missing field named inline And no partial case record is created'],
+            ['edge', 'Edge — unmapped category: Given a case whose category has no queue mapping, When the case is saved, Then it routes to the triage queue And a daily report lists unmapped-category cases with their counts']
+          ], ['Queue assignment decision recorded in case history for every routed case'],
+             ['A: category-to-queue mapping is signed off in the design — impact if false: routing rework during UAT extends the window day-for-day']),
+          S('US-11', 'EP-3', 16, 'Client Operations Manager', 'see queue visibility that matches each person\'s role', 'agents see their own work while I keep oversight across all queues', 'uat', [
+            ['happy', 'Given an agent assigned to the billing queue, When they open the case list, Then only billing-queue cases are listed And the queue total matches the manager view for that queue'],
+            ['error', 'Given an agent opens a direct link to a case outside their queue, When access is evaluated, Then the case is not displayed And the attempt is recorded in the access log with user and timestamp'],
+            ['edge', 'Edge — role change mid-shift: Given an agent is moved to another queue, When their next list refresh occurs, Then the new queue\'s cases appear and the old queue\'s disappear within 15 minutes without a re-login']
+          ], ['Access log retained 12 months and exportable by the manager role'],
+             ['A: role model has two tiers (agent, manager) as designed — impact if false: extra tiers are a change order with re-test of access cases']),
+          S('US-7', 'EP-3', 7, 'QA & Test Lead', 'execute the integration test suite against the configured system and publish the results', 'defects are found and fixed before client testers ever see the system', 'artifact', [
+            ['happy', 'Given the build is configuration-complete, When the integration suite runs, Then 100% of planned cases execute with recorded results And S1/S2 defects are fixed and retested before UAT entry And the summary is published within 1 business day of the final run'],
+            ['error', 'Given an S1 defect is found, When it is logged, Then the fix is verified by re-running the failed case plus its linked cases And UAT entry stays blocked until zero S1 defects remain open'],
+            ['edge', 'Edge — environment drift: Given the UAT and build environments differ in configuration, When the difference is detected, Then execution halts on the affected cases And the environments are reconciled before further results count']
+          ], ['Every executed case links to its requirement and its build item (full trace)'],
+             ['A: the test data set covers every case type in the design — impact if false: coverage gaps are logged as UAT risk']),
+          S('US-12', 'EP-3', 17, 'Client UAT Coordinator', 'have every tester trained in the loaded UAT environment before they execute cases', 'UAT results measure the system, not the testers\' unfamiliarity', 'artifact', [
+            ['happy', 'Given the UAT environment is loaded with migrated sample data, When the training session completes, Then every tester has executed one guided case end-to-end And attendance plus a score of at least 7 of 10 on the check are recorded per tester'],
+            ['error', 'Given a tester scores below 7 of 10 on the check, When results are recorded, Then a repeat session is booked within 2 business days And that tester executes UAT cases only after passing'],
+            ['edge', 'Edge — late joiner: Given a tester joins after the session, When they are onboarded, Then they complete the recorded session and the check before executing any case And the UAT plan notes the late start']
+          ], ['Training attendance and scores recorded per tester and visible to the engagement manager'],
+             ['D: client releases testers for the half-day session — if slipped: UAT execution start moves day-for-day']),
+          S('US-8', 'EP-3', 18, 'Client UAT Coordinator', 'run the scripted UAT cases with evidence captured against each acceptance criterion', 'acceptance is evidenced by our own staff executing real scenarios', 'artifact', [
+            ['happy', 'Given the UAT entry criteria are met And the testers passed training, When the UAT window closes, Then every scripted case has a recorded pass/fail result with evidence attached And sign-off is granted only with zero open S1/S2 defects'],
+            ['error', 'Given a case fails during execution, When the defect is logged, Then the record names the failing step, expected versus actual and a severity And a retest is scheduled within 2 business days of the fix'],
+            ['edge', 'Edge — tester shortfall: Given fewer than the planned testers are available in a UAT week, When the shortfall is known, Then the window is re-planned with the engagement manager within 1 business day And the sign-off date moves visibly in the plan rather than compressing coverage']
+          ], ['Evidence (screenshot or export) attached to every executed case result'],
+             ['D: client provides 4 trained testers for 2 weeks — if slipped: UAT extends day-for-day']),
+          S('US-13', 'EP-3', 19, 'Client UAT Coordinator', 'run a daily triage of failed cases with severities, owners and a published burn-down', 'defects move to closure on a visible clock instead of piling up', 'artifact', [
+            ['happy', 'Given failed UAT cases from the day\'s execution, When the daily triage runs, Then every failure has a severity, a named owner and a target date by end of the triage And the burn-down is published to the sponsor the same day'],
+            ['error', 'Given a defect disputed as works-as-designed, When triage reviews it, Then the decision is recorded against the acceptance criterion the case tests And disputed items older than 3 business days escalate to the engagement manager'],
+            ['edge', 'Edge — repeat failure: Given a fix fails retest twice, When the second failure is logged, Then the defect escalates to review with the architect And the impact on the sign-off date is stated in the next status report']
+          ], ['Burn-down published daily; defect log links each entry to its test case and criterion'],
+             ['A: fixes are retested within 2 business days — impact if false: the UAT window extends and sign-off moves']),
+          S('US-9', 'EP-3', 9, 'Engagement Manager', 'execute the cutover runbook and run a 2-week hypercare rota', 'the first weeks of live operation have named cover and a visible issue burn-down', 'artifact', [
+            ['happy', 'Given UAT sign-off And an approved cutover runbook, When go-live executes, Then every runbook step completes with a timestamped owner And a go/no-go decision is recorded at the final gate And the hypercare rota is published before day 1'],
+            ['error', 'Given a cutover step fails its verification, When the failure is detected, Then the documented rollback for that step executes And the go/no-go gate is re-run before proceeding'],
+            ['edge', 'Edge — issue surge: Given more than 10 issues open on any hypercare day, When the daily review runs, Then a severity triage is published by 9am the next business day And every S1 issue has a named owner within 2 working hours']
+          ], ['Hypercare issue log visible to the client sponsor; daily summary distributed by 9am'],
+             ['A: hypercare is 2 weeks as priced — impact if false: an extension is a change order at the stated weekly rate'])
+        ]
+      };
+      statusHistory = []; sowDraft = ''; statusNarrative = null; healthFindings = null; coLog = []; sowBaseline = null; coDraft = '';
       pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 };
       reserves = { contingency: { value: 10, unit: 'percent' }, management: { value: 5, unit: 'percent' } };
       baselineDate = ''; collapsedIds = new Set(); levelMode = 'none'; projectBudget = 0; calculated = false;
