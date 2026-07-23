@@ -102,7 +102,9 @@
     }
     tr:hover td { background: #f8fafc; }
     tr.critical td { background: var(--critical-bg); }
-    tr.late td { box-shadow: inset 3px 0 0 var(--warn); }
+    /* late = scheduled to have started, still 0% — ONE amber bar on the row's
+       left edge (a bar on every cell read as broken borders between columns) */
+    tr.late td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
     .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.7rem; font-weight: 700; }
     .badge-critical { background: #fee2e2; color: #b91c1c; }
     .badge-ok { background: #dcfce7; color: #15803d; }
@@ -472,7 +474,8 @@
             Enter Optimistic (best case), Most Likely, and Pessimistic (worst case) durations.
             <strong>TE = (O + 4M + P) / 6</strong> &nbsp;•&nbsp; <strong>Variance = ((P − O) / 6)²</strong>.
             Edit <strong>% Complete</strong> inline to track progress.
-            <br/>Status: <span class="badge badge-critical">Critical</span> = zero slack — any delay moves the finish date (shorten it, add people, or re-sequence to fix) • <span class="badge badge-ok">Float&nbsp;n</span> = can slip n days for free • hover any badge for what to do.
+            <br/>Status: <span class="badge badge-critical">Critical</span> = zero slack — any delay moves the finish date (shorten it, add people, or re-sequence to fix) • <span class="badge badge-ok">Float&nbsp;n</span> = can slip n days for free • an <span style="border-left:3px solid var(--warn);padding-left:4px">amber edge</span> = scheduled to have started but still 0% • hover any badge for what to do.
+            <br/>Edit in place: click a task's <b>name</b>, <b>Owner</b>, <b>O/M/P</b>, <b>Predecessors</b>, <b>Start</b> (📌 pin a start-no-earlier-than date) or <b>Finish</b> (⚑ set a deadline — red when the forecast breaches it) and type. Enter saves, Esc cancels.
           </p>
           <div id="bulkBar" class="no-print" style="display:none;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:0.6rem 0.9rem;margin-bottom:0.6rem">
             <div style="display:flex;gap:0.8rem;flex-wrap:wrap;align-items:center;font-size:0.8rem">
@@ -1101,6 +1104,7 @@
       return Object.assign({
         id: 0, name: '', o: 0, m: 0, p: 0, milestone: false,
         owner: '', units: 100, attendees: [], levelDelay: 0, percentComplete: 0, predecessors: [],
+        startNoEarlier: '', deadline: '', autoActualStart: false, autoActualFinish: false,
         parentId: null, description: '', deliverable: '', acceptance: '',
         actualStart: '', actualFinish: '', fixedCost: 0, actualCost: 0,
         baseStart: null, baseFinish: null, baseTe: null, baseCost: null,
@@ -1658,7 +1662,9 @@
           fixedCost: t.fixedCost || 0, actualCost: t.actualCost || 0,
           baseStart: t.baseStart ? fmtISO(new Date(t.baseStart)) : null,
           baseFinish: t.baseFinish ? fmtISO(new Date(t.baseFinish)) : null,
-          baseTe: t.baseTe, baseCost: (t.baseCost == null ? null : t.baseCost)
+          baseTe: t.baseTe, baseCost: (t.baseCost == null ? null : t.baseCost),
+          startNoEarlier: t.startNoEarlier || '', deadline: t.deadline || '',
+          autoActualStart: !!t.autoActualStart, autoActualFinish: !!t.autoActualFinish
         }))
       };
     }
@@ -1679,6 +1685,8 @@
         parentId: (t.parentId == null ? null : t.parentId),
         description: t.description || '', deliverable: t.deliverable || '', acceptance: t.acceptance || '',
         actualStart: t.actualStart || '', actualFinish: t.actualFinish || '',
+        autoActualStart: !!t.autoActualStart, autoActualFinish: !!t.autoActualFinish,
+        startNoEarlier: t.startNoEarlier || '', deadline: t.deadline || '',
         fixedCost: Number(t.fixedCost) || 0, actualCost: Number(t.actualCost) || 0,
         baseStart: t.baseStart ? new Date(t.baseStart + 'T00:00:00') : null,
         baseFinish: t.baseFinish ? new Date(t.baseFinish + 'T00:00:00') : null,
@@ -1790,6 +1798,21 @@
         if (isWorkingDay(d, holidays)) added++;
       }
       return d;
+    }
+    // working days from `start` to `end` (inverse of addWorkingDays: for any n,
+    // workingDaysBetween(start, addWorkingDays(start, n)) === n)
+    function workingDaysBetween(start, end, holidays) {
+      let d = stripTime(start); const e = stripTime(end);
+      while (!isWorkingDay(d, holidays)) d.setDate(d.getDate() + 1);
+      let n = 0;
+      while (d < e) { d.setDate(d.getDate() + 1); if (isWorkingDay(d, holidays)) n++; }
+      return n;
+    }
+    function workingDaysToUnit(wd) {
+      const u = document.getElementById('durationUnit').value;
+      if (u === 'weeks') return wd / 5;
+      if (u === 'hours') return wd * 8;
+      return wd;
     }
     function calDaysBetween(a, b) {
       return Math.round((stripTime(b) - stripTime(a)) / 86400000);
@@ -2159,7 +2182,12 @@
       } else {
         const cur = tasks.find(x => x.id === editingId);
         if (cur && cur.name.trim() !== name.trim()) { renamedTask = cur; renamedFrom = cur.name; }
+        const prevPct = cur ? (cur.percentComplete || 0) : 0;
+        // manual date entry in the modal overrides any auto-stamp
+        if (cur && actualStart !== cur.actualStart) cur.autoActualStart = false;
+        if (cur && actualFinish !== cur.actualFinish) cur.autoActualFinish = false;
         Object.assign(cur, fields);
+        if (!isSum) applyPctActuals(cur, prevPct);
       }
       if (owner && !isSum) syncResources();
       closeModal();
@@ -2189,8 +2217,28 @@
           const pt = tasks.find(x => x.id === p.id);
           return pt && (pt.percentComplete || 0) >= 100;
         });
+        const prev = t.percentComplete || 0;
         t.percentComplete = allDone ? 100 : 0;
+        if (t.percentComplete !== prev) applyPctActuals(t, prev); // milestone achieved/reopened → log/clear its date
       });
+    }
+    // Auto-log actuals from progress: checking work off is the strongest signal
+    // of when it actually happened. First progress stamps actualStart, hitting
+    // 100% stamps actualFinish (today). Auto-stamped dates are TAGGED so they
+    // never overwrite a manually entered date — and un-checking removes only
+    // the auto-stamped ones, never yours.
+    function applyPctActuals(t, prevPct) {
+      if (!t || t.isSummary) return;
+      const today = fmtISO(new Date());
+      const pct = t.percentComplete || 0;
+      prevPct = prevPct || 0;
+      if (pct > 0 && prevPct <= 0 && !t.actualStart) { t.actualStart = today; t.autoActualStart = true; }
+      if (pct >= 100 && prevPct < 100) {
+        if (!t.actualStart) { t.actualStart = today; t.autoActualStart = true; }
+        if (!t.actualFinish) { t.actualFinish = today; t.autoActualFinish = true; }
+      }
+      if (pct < 100 && prevPct >= 100 && t.autoActualFinish) { t.actualFinish = ''; t.autoActualFinish = false; }
+      if (pct <= 0 && prevPct > 0 && t.autoActualStart && !t.actualFinish) { t.actualStart = ''; t.autoActualStart = false; }
     }
     function rollupProgress() {
       updateMilestoneCompletion();
@@ -2205,7 +2253,9 @@
     function updatePct(id, val) {
       const t = tasks.find(x => x.id === id);
       if (!t) return;
+      const prev = t.percentComplete || 0;
       t.percentComplete = Math.min(100, Math.max(0, parseFloat(val) || 0));
+      applyPctActuals(t, prev);
       rollupProgress();
       saveLocal();
       renderTaskTable();
@@ -2291,6 +2341,101 @@
         return nm + suffix;
       }).join(', ');
     }
+    // ---- generic inline cell editing on the activity table ----
+    // One cell edits at a time. Enter/blur commits, Esc cancels; the onCommit
+    // callback returns an error string to keep the editor open (red) or falsy
+    // to apply — commit then saves and refreshes every view.
+    let cellEditTd = null;
+    function beginCellEdit(td, inputHtml, onCommit) {
+      if (cellEditTd === td) return;
+      endCellEdit(true); cancelPredEdit();
+      cellEditTd = td;
+      td.dataset.prevCell = td.innerHTML;
+      td.innerHTML = inputHtml;
+      const inp = td.querySelector('input');
+      inp.focus();
+      if (inp.type === 'text' || inp.type === 'number') { try { inp.select(); } catch (e) {} }
+      inp.addEventListener('click', e => e.stopPropagation());
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); commitCellEdit(td, inp, onCommit, false); }
+        else if (e.key === 'Escape') { e.preventDefault(); endCellEdit(true); }
+      });
+      inp.addEventListener('blur', () => { if (cellEditTd === td) commitCellEdit(td, inp, onCommit, true); });
+    }
+    function endCellEdit(restore) {
+      if (!cellEditTd) return;
+      const td = cellEditTd; cellEditTd = null;
+      if (restore && td.dataset.prevCell != null) td.innerHTML = td.dataset.prevCell;
+      delete td.dataset.prevCell;
+    }
+    function commitCellEdit(td, inp, onCommit, fromBlur) {
+      if (cellEditTd !== td) return;
+      const err = onCommit(inp.value.trim(), fromBlur);
+      if (err) {
+        if (fromBlur) { endCellEdit(true); flashSaved('✕ ' + err + ' — edit discarded'); return; }
+        inp.style.borderColor = '#dc2626'; inp.style.boxShadow = '0 0 0 3px rgba(220,38,38,0.15)'; inp.title = err;
+        flashSaved('⚠ ' + err);
+        return;
+      }
+      cellEditTd = null; delete td.dataset.prevCell;
+      saveLocal();
+      refreshAll();
+    }
+    function beginNameEdit(id, el, ev) {
+      if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+      const t = tasks.find(x => x.id === id); if (!t) return;
+      const td = el.closest('td');
+      beginCellEdit(td, `<input type="text" value="${escapeHtml(t.name)}" style="width:100%;min-width:220px;padding:0.3rem 0.45rem;font-size:0.85rem" />`, v => {
+        if (!v) return 'Name cannot be empty';
+        const old = t.name;
+        if (v === old) return '';
+        t.name = v;
+        syncStoriesAfterRename(t, old); // its own deferred confirm offers the AI story refresh
+        return '';
+      });
+    }
+    function beginOwnerEdit(id, td) {
+      const t = tasks.find(x => x.id === id); if (!t) return;
+      populateOwnerList();
+      beginCellEdit(td, `<input type="text" list="ownerList" value="${escapeHtml(t.owner || '')}" placeholder="(unassigned)" autocomplete="off" style="width:100%;min-width:130px;padding:0.3rem 0.45rem;font-size:0.8rem" />`, v => {
+        if (v === (t.owner || '')) return '';
+        t.owner = v;
+        if (v) syncResources();
+        return '';
+      });
+    }
+    function beginOmpEdit(td, id, f) {
+      const t = tasks.find(x => x.id === id); if (!t) return;
+      beginCellEdit(td, `<input type="number" min="0" step="0.1" value="${t[f]}" style="width:74px;padding:0.3rem 0.4rem;font-size:0.8rem" />`, v => {
+        const n = parseFloat(v);
+        if (isNaN(n) || n < 0) return 'Enter a non-negative number';
+        const trial = { o: t.o, m: t.m, p: t.p }; trial[f] = n;
+        if (trial.o > trial.m || trial.m > trial.p) return 'Must keep O ≤ M ≤ P (' + trial.o + ' / ' + trial.m + ' / ' + trial.p + ') — adjust the other cells too';
+        if (f === 'p' && n <= 0) return 'Pessimistic must be > 0 for a real activity';
+        t[f] = n;
+        return '';
+      });
+    }
+    function beginStartEdit(id, td) {
+      const t = tasks.find(x => x.id === id); if (!t) return;
+      beginCellEdit(td, `<input type="date" value="${t.startNoEarlier || ''}" style="width:150px;padding:0.3rem 0.4rem;font-size:0.8rem" title="Start no earlier than — dependencies can still push the start later. Empty = unpinned (floats with dependencies)." />`, v => {
+        if ((v || '') === (t.startNoEarlier || '')) return '';
+        t.startNoEarlier = v || '';
+        flashSaved(v ? '📌 ' + t.name + ' pinned: starts no earlier than ' + v + ' (dependencies may still push it later). Clear the date to unpin. ↶ Undo reverses'
+                     : '📌 removed — ' + t.name + ' floats with its dependencies again');
+        return '';
+      });
+    }
+    function beginFinishEdit(id, td) {
+      const t = tasks.find(x => x.id === id); if (!t) return;
+      beginCellEdit(td, `<input type="date" value="${t.deadline || ''}" style="width:150px;padding:0.3rem 0.4rem;font-size:0.8rem" title="Deadline (commitment marker). The finish date itself is computed — shorten O/M/P, add people or re-sequence to move it. Empty = no deadline." />`, v => {
+        if ((v || '') === (t.deadline || '')) return '';
+        t.deadline = v || '';
+        flashSaved(v ? '⚑ Deadline ' + v + ' set on ' + t.name + ' — the flag turns red if the forecast finish slips past it. (Finish itself is computed from estimates + dependencies.)'
+                     : '⚑ Deadline removed from ' + t.name);
+        return '';
+      });
+    }
     // ---- inline predecessor editing, straight in the activity table ----
     // Click the Predecessors cell, type "1.2, 2.1SS+1, Design Sign-off", Enter.
     // Same resolver as the modal (WBS code, task name, or label prefix — the
@@ -2300,7 +2445,7 @@
     let predEditActive = null;
     function beginPredEdit(id, td) {
       if (predEditActive === id) return;
-      cancelPredEdit(); // one cell at a time
+      cancelPredEdit(); endCellEdit(true); // one cell at a time
       const t = tasks.find(x => x.id === id);
       if (!t) return;
       predEditActive = id;
@@ -2455,7 +2600,7 @@
         const twisty = summary
           ? `<button class="wbs-twisty" onclick="toggleCollapse(${t.id})" title="${collapsedIds.has(t.id) ? 'Expand' : 'Collapse'}">${collapsedIds.has(t.id) ? '▸' : '▾'}</button>`
           : '<span class="wbs-twisty-spacer"></span>';
-        const nameCell = `<span style="display:inline-flex;align-items:center;padding-left:${depth * 16}px">${twisty}${t.milestone ? '◆ ' : ''}${escapeHtml(t.milestone ? t.name.replace(/^◆\s*/, '') : t.name)}${collapsedIds.has(t.id) ? ` <span class="help-text" style="font-size:0.68rem;margin-left:4px">(${leafDescendants(t.id).length})</span>` : ''}</span>`;
+        const nameCell = `<span style="display:inline-flex;align-items:center;padding-left:${depth * 16}px">${twisty}${t.milestone ? '◆ ' : ''}<span style="cursor:text" onclick="beginNameEdit(${t.id}, this, event)" title="Click to rename right here — everything traced to this activity follows (linked stories are offered an AI refresh)">${escapeHtml(t.milestone ? t.name.replace(/^◆\s*/, '') : t.name)}</span>${collapsedIds.has(t.id) ? ` <span class="help-text" style="font-size:0.68rem;margin-left:4px">(${leafDescendants(t.id).length})</span>` : ''}</span>`;
         const pctCell = summary
           ? `<span title="Rolled up automatically from sub-tasks, weighted by expected duration (TE) — check off the children and this updates itself">${calculated ? (t.percentComplete || 0) + '%' : '—'} <span class="help-text" style="font-size:0.65rem">auto</span></span>`
           : (t.milestone && effectivePreds(t).length)
@@ -2465,17 +2610,21 @@
           <td class="no-print"><input type="checkbox" data-selid="${t.id}" ${selectedTaskIds.has(t.id) ? 'checked' : ''} onclick="taskRowCheckClick(event, ${t.id}, this)" title="Select for bulk edit${summary ? ' — includes every sub-task' : ''}. Shift-click selects the whole range from the last box you clicked." style="width:14px;height:14px;cursor:pointer" /></td>
           <td style="cursor:grab;color:var(--muted)" title="Drag to reorder / re-nest">⠿</td>
           <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
-          <td>${nameCell}</td>
-          <td style="font-size:0.8rem" title="${t.overallocated ? escapeHtml((t.owner||'')+' is over-allocated during this task') : ''}">${t.overallocated ? '<span style="color:var(--critical)" title="over-allocated">⚠ </span>' : ''}${summary ? summaryOwnerCell(t) : escapeHtml(t.owner || '—')}${(!t.milestone && !summary && t.units !== 100) ? ` <span class="help-text" style="font-size:0.68rem">@${t.units}%</span>` : ''}${(t.attendees && t.attendees.length) ? ` <span class="badge badge-info" title="${escapeHtml(t.attendees.map(a => a.name + ' @' + a.units + '%').join(', '))}">+${t.attendees.length}</span>` : ''}</td>
+          <td data-name-id="${t.id}">${nameCell}</td>
+          <td data-owner-id="${t.id}" style="font-size:0.8rem${summary ? '' : ';cursor:text'}" title="${t.overallocated ? escapeHtml((t.owner||'')+' is over-allocated during this task. ') : ''}${summary ? '' : 'Click to reassign right here (type-ahead from the roster).'}"${summary ? '' : ` onclick="beginOwnerEdit(${t.id}, this)"`}>${t.overallocated ? '<span style="color:var(--critical)" title="over-allocated">⚠ </span>' : ''}${summary ? summaryOwnerCell(t) : escapeHtml(t.owner || '—')}${(!t.milestone && !summary && t.units !== 100) ? ` <span class="help-text" style="font-size:0.68rem">@${t.units}%</span>` : ''}${(t.attendees && t.attendees.length) ? ` <span class="badge badge-info" title="${escapeHtml(t.attendees.map(a => a.name + ' @' + a.units + '%').join(', '))}">+${t.attendees.length}</span>` : ''}</td>
           ${(() => { const noEst = !summary && !t.milestone && !(t.p > 0);
-            const a = noEst ? ' style="background:#fee2e2;color:#b91c1c;font-weight:700" title="NO ESTIMATE — this work package contributes nothing to the schedule, the critical path or the price. ✎ Edit and enter O/M/P, or mark it a milestone if it is a zero-duration checkpoint."' : '';
-            return `<td${a}>${summary ? rollCell(t.oUp, 'optimistic') : t.milestone ? '—' : t.o}</td>
-          <td${a}>${summary ? rollCell(t.mUp, 'most-likely') : t.milestone ? '—' : t.m}</td>
-          <td${a}>${summary ? rollCell(t.pUp, 'pessimistic') : t.milestone ? '—' : t.p}</td>
+            const a = noEst ? ' style="background:#fee2e2;color:#b91c1c;font-weight:700" title="NO ESTIMATE — this work package contributes nothing to the schedule, the critical path or the price. Click the cell and type the estimate right here."' : '';
+            const ed = f => (!summary && !t.milestone) ? ` data-omp="${f}" onclick="beginOmpEdit(this, ${t.id}, '${f}')"${noEst ? '' : ' style="cursor:text"'}` : '';
+            return `<td${a}${ed('o')}>${summary ? rollCell(t.oUp, 'optimistic') : t.milestone ? '—' : t.o}</td>
+          <td${a}${ed('m')}>${summary ? rollCell(t.mUp, 'most-likely') : t.milestone ? '—' : t.m}</td>
+          <td${a}${ed('p')}>${summary ? rollCell(t.pUp, 'pessimistic') : t.milestone ? '—' : t.p}</td>
           <td${a}><strong>${noEst ? '⚠ 0' : teStr}</strong></td>`; })()}
           <td data-pred-id="${t.id}" style="font-size:0.8rem${summary ? '' : ';cursor:text'}" title="${escapeHtml(summary ? predTitle(t) : (predTitle(t) ? predTitle(t) + '\n' : '') + 'Click to edit right here — comma-separated WBS codes or names, optional FS/SS/FF/SF±lag (e.g. “1.2, 2.1SS+1”). Enter saves, Esc cancels.')}"${summary ? '' : ` onclick="beginPredEdit(${t.id}, this)"`}>${summary ? '—' : (t.predecessors.length ? escapeHtml(predLabel(t)) : '<span class="help-text" style="font-style:italic">+ link</span>')}</td>
-          <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.startDate) : '—'}</td>
-          <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.finishDate) : '—'}</td>
+          ${(() => { if (summary) return `<td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.startDate) : '—'}</td>
+          <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.finishDate) : '—'}</td>`;
+            const breach = calculated && t.deadline && t.finishDate && fmtISO(t.finishDate) > t.deadline;
+            return `<td data-start-id="${t.id}" style="font-size:0.8rem;white-space:nowrap;cursor:text" onclick="beginStartEdit(${t.id}, this)" title="${t.startNoEarlier ? 'Pinned: starts no earlier than ' + t.startNoEarlier + '. ' : ''}Click to pin a start date (start-no-earlier-than). Dependencies can push the start LATER than the pin, never earlier. Clear the date to unpin.">${t.startNoEarlier ? '📌 ' : ''}${calculated ? fmtNice(t.startDate) : (t.startNoEarlier || '—')}</td>
+          <td data-finish-id="${t.id}" style="font-size:0.8rem;white-space:nowrap;cursor:text" onclick="beginFinishEdit(${t.id}, this)" title="${t.deadline ? 'Deadline ⚑ ' + t.deadline + (breach ? ' — BREACHED by the current forecast. ' : '. ') : ''}Finish is computed from estimates + dependencies. Click to set a deadline (commitment marker) — the ⚑ turns red if the forecast slips past it.">${calculated ? fmtNice(t.finishDate) : '—'}${t.deadline ? ` <span style="color:${breach ? '#dc2626;font-weight:700' : '#64748b'}">⚑</span>` : ''}</td>`; })()}
           <td>${slackStr}</td>
           <td>${pctCell}</td>
           <td>${statusBadge}</td>
@@ -2576,7 +2725,9 @@
       selectedTasks().forEach(t => {
         if (t.isSummary) return; // rolls up
         if (t.milestone && effectivePreds(t).length) return; // auto-tracked
+        const prev = t.percentComplete || 0;
         t.percentComplete = v; n++;
+        applyPctActuals(t, prev);
       });
       rollupProgress();
       bulkApplyDone('✓ ' + n + ' task(s) set to ' + v + '%');
@@ -3008,6 +3159,20 @@
       }
       if (topo.length !== nodes.length) return { ok: false };
 
+      // start-no-earlier-than pins (📌, set by typing a start date in the
+      // table): a working-day floor on ES — dependencies can push a start
+      // LATER than the pin, never earlier than it
+      const snetFloor = {};
+      {
+        const hs = getHolidaySet(), ps = projectStartDate();
+        nodes.forEach(t => {
+          if (!t.startNoEarlier) return;
+          const d = new Date(t.startNoEarlier + 'T00:00:00');
+          if (isNaN(d.getTime())) return;
+          snetFloor[t.id] = workingDaysToUnit(workingDaysBetween(ps, d, hs));
+        });
+      }
+
       // forward pass
       const es = {}, ef = {};
       topo.forEach(id => {
@@ -3025,7 +3190,8 @@
           }
           if (s > start) start = s;
         });
-        if (t.levelDelay && t.levelDelay > start) start = t.levelDelay; // resource-leveling / start-no-earlier-than
+        if (t.levelDelay && t.levelDelay > start) start = t.levelDelay; // resource-leveling delay
+        if (snetFloor[id] != null && snetFloor[id] > start) start = snetFloor[id]; // 📌 user pin
         if (start < 0) start = 0;
         es[id] = start; ef[id] = start + dur;
       });
@@ -5583,6 +5749,9 @@
     function setActual(id, field, val) {
       const t = tasks.find(x => x.id === id); if (!t) return;
       t[field] = val || '';
+      // typed by hand → no longer an auto-stamp; check-off logic must not touch it
+      if (field === 'actualStart') t.autoActualStart = false;
+      if (field === 'actualFinish') t.autoActualFinish = false;
       saveLocal();
       renderBaseline();
       if (document.getElementById('view-gantt').classList.contains('active')) renderGantt();
@@ -5896,6 +6065,12 @@
       }
       if (s.wbsId == null || !tasks.some(t => t.id === s.wbsId)) warns.push('Not linked to a WBS activity — no trace from requirement to schedule/invoice.');
       if (!s.persona || /^(the )?users?$/i.test(String(s.persona).trim())) warns.push('“As a user” is not a persona — name the role (an admin vs end-user story can differ 3× in cost).');
+      // delivery-team persona = story written from the builder's perspective —
+      // the client can't "accept" the team doing its own job
+      const pLow = String(s.persona || '').trim().toLowerCase();
+      const internalRoster = new Set(Object.keys(resources).filter(n => ((resources[n] || {}).kind || '') !== 'client').map(n => n.toLowerCase()));
+      if (pLow && (internalRoster.has(pLow) || /\b(developer|engineer|consultant|implementation specialist|delivery lead)\b/i.test(s.persona)))
+        warns.push('Persona “' + s.persona + '” is the DELIVERY TEAM, not the user — write the story from the perspective of whoever accepts the value (client user/manager/stakeholder). ✨ Fix stories with AI rewrites it.');
       const banned = new Set();
       (s.ac || []).forEach(a => bannedIn(a.text).forEach(w => banned.add(w)));
       if (banned.size) warns.push('Untestable words in ACs (' + [...banned].join(', ') + ') — replace with measurable thresholds, e.g. “p95 ≤ 800 ms at 200 concurrent users”.');
@@ -5932,9 +6107,19 @@
         ${(() => { const tcs = tasks.filter(isTestCaseTask); const shallow = tcs.filter(t => !hasRealSteps(t)).length; return `<div class="stat-card ${shallow ? 'warn' : ''}" style="cursor:pointer" onclick="reqScrollTo('tcListPanel', true)" title="${tcs.length ? 'Click for the full on-screen test-case sheet — steps, pass conditions, owners, schedule' + (shallow ? ' (⚠ ' + shallow + ' shallow — re-run 🧪 Generate test plan)' : '') : 'No test cases yet — 🧪 Generate test plan creates one per UAT-testable criterion'}"><div class="value">🧪 ${tcs.length}</div><div class="label">Test cases</div></div>`; })()}
       </div>`;
       if (reqs.personas && reqs.personas.length) {
-        html += `<details style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">👥 Personas glossary (${reqs.personas.length}) — copy into the SOW; “as a user” stories are unpriceable</summary>
+        // glossary hygiene: personas must be who USES/ACCEPTS the capability —
+        // an entry that is really the delivery roster (or a generic delivery
+        // role) means the stories were written from the builder's perspective
+        const rosterInt = new Set(Object.keys(resources).filter(n => ((resources[n] || {}).kind || '') !== 'client').map(n => n.toLowerCase()));
+        const suspectP = p => rosterInt.has(String(p.name || '').toLowerCase()) || /\b(developer|engineer|consultant|implementation specialist|delivery lead)\b/i.test(String(p.name || ''));
+        const suspects = reqs.personas.filter(suspectP);
+        html += `<details ${suspects.length ? 'open' : ''} style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:${suspects.length ? 'var(--warn)' : 'var(--primary)'}">👥 Personas glossary (${reqs.personas.length}) — copy into the SOW; “as a user” stories are unpriceable${suspects.length ? ' — ⚠ ' + suspects.length + ' look like the delivery team' : ''}</summary>
+          ${suspects.length ? `<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:0.6rem 0.8rem;margin-top:0.5rem;font-size:0.82rem">
+            <strong>⚠ ${suspects.length} glossary entr${suspects.length === 1 ? 'y is' : 'ies are'} delivery-team role${suspects.length === 1 ? '' : 's'}</strong> (${suspects.map(p => escapeHtml(p.name)).join(', ')}) — these are the people <em>building</em> the solution, from the resources roster, not the users who accept it. Stories written “as a developer” cannot be accepted by the client.
+            <button class="btn-sm btn-primary no-print" style="margin-left:0.5rem" onclick="rederivePersonas()" title="AI rewrites the glossary with real client-side personas (keeping any that are already right) and reassigns every affected story to the persona who actually accepts that capability">🤖 Re-derive personas</button>
+          </div>` : ''}
           <div class="table-wrap" style="margin-top:0.5rem"><table><thead><tr><th>Persona</th><th>Definition</th></tr></thead><tbody>
-          ${reqs.personas.map(p => `<tr><td style="white-space:nowrap"><b>${escapeHtml(p.name)}</b></td><td style="font-size:0.85rem">${escapeHtml(p.definition || '')}</td></tr>`).join('')}
+          ${reqs.personas.map(p => `<tr ${suspectP(p) ? 'style="background:#fff7ed"' : ''}><td style="white-space:nowrap"><b>${escapeHtml(p.name)}</b>${suspectP(p) ? ' <span class="risk-tag" style="background:#fef3c7;color:#b45309;cursor:help" title="This is a delivery-team role from the roster — not a persona who accepts value">⚠ delivery</span>' : ''}</td><td style="font-size:0.85rem">${escapeHtml(p.definition || '')}</td></tr>`).join('')}
           </tbody></table></div></details>`;
       }
       if (allWarns) {
@@ -6474,13 +6659,11 @@ Return ONLY JSON:
       const batches = [];
       for (let i = 0; i < work.length; i += 12) batches.push(work.slice(i, i + 12));
       let made = 0, respec = 0;
-      for (let bi = 0; bi < batches.length; bi++) {
-        const batch = batches[bi];
-        const partBar = batches.map((x, i) => i < bi ? '✓' : i === bi ? '▶' : '·').join('');
-        const prompt = `You are a QA lead writing executable UAT test cases from acceptance criteria (each criterion translates directly into one or more test cases).
+      // the contract below is identical for every batch — it rides the prompt
+      // cache (batch 1 writes it, batches 2+ read it at ~10% input cost); only
+      // the per-batch criteria list streams in fresh
+      const tcContract = `You are a QA lead writing executable UAT test cases from acceptance criteria (each criterion translates directly into one or more test cases).
 PROJECT: ${projName()}. Available people: ${roster}. Default test owner: ${qaOwner || '(leave empty)'}.
-ACCEPTANCE CRITERIA NEEDING TEST CASES (story context included):
-${batch.map(({ s, a }) => `- ${a.id} [${a.type}] (from ${s.id}: As a ${s.persona || '?'}, I want to ${s.want || '?'}): ${a.text}`).join('\n')}
 Rules:
 - One test case per criterion minimum; add a second only when the criterion genuinely bundles two scenarios.
 - name MUST start with "TC <AC-id> — " — the tool links TCs to criteria by that prefix. After the dash: the path type, a colon, then WHAT THE TESTER DOES → WHAT THEY MUST SEE, verb-first, with the arrow: "TC AC-3.2 — error path: submit a case with two matching owners → flagged 'unresolved', never auto-assigned", "TC AC-8.4 — perf: run the quartile query on the 10,000-case dataset → completes in ≤5 s". Never a noun-phrase restatement of the criterion ("validate classification accuracy" is a TOPIC, not a test — the action and the observable outcome are what make it executable).
@@ -6491,8 +6674,14 @@ Rules:
 - The SUM of all test cases must fit inside a realistic UAT window for this project's size; test cases run in PARALLEL across testers, they are not a serial chain. Data setup or environment work belongs in its own test case only if a criterion demands it.
 Return ONLY JSON (no prose, no fences):
 {"testCases":[{"name":"TC AC-1.1 — …","ac":"AC-1.1","optimistic":0.02,"mostLikely":0.04,"pessimistic":0.09,"owner":"","steps":"1. … 2. …","pass":"…"}]}`;
+      for (let bi = 0; bi < batches.length; bi++) {
+        const batch = batches[bi];
+        const partBar = batches.map((x, i) => i < bi ? '✓' : i === bi ? '▶' : '·').join('');
+        const prompt = `ACCEPTANCE CRITERIA NEEDING TEST CASES (story context included):
+${batch.map(({ s, a }) => `- ${a.id} [${a.type}] (from ${s.id}: As a ${s.persona || '?'}, I want to ${s.want || '?'}): ${a.text}`).join('\n')}
+Write the test cases for the criteria above, following the contract exactly. Return ONLY the JSON object described.`;
         const onDelta = streamShow('Writing test cases [' + partBar + '] batch ' + (bi + 1) + '/' + batches.length + ' (' + batch.length + ' ACs)');
-        const text = await callAnthropic(prompt, { onDelta });
+        const text = await callAnthropic(prompt, { onDelta, cachePrefix: tcContract });
         streamHide(true);
         const res = parseAIJsonStrict(text, 'test-case batch ' + (bi + 1)); // never keep a partial batch
         (res.testCases || []).forEach(tc => {
@@ -6923,6 +7112,7 @@ THE STORY${opts.includeCore ? ' (update persona/want/soThat to match the activit
 ${JSON.stringify({ id: s.id, persona: s.persona, want: s.want, soThat: s.soThat, verification: s.verification, ac: oldAc, nfrs: s.nfrs || [], assumptions: s.assumptions || [] })}
 Rewrite the acceptance criteria so they describe the CURRENT intended behaviour. Keep criteria that are still correct VERBATIM; rewrite stale ones; drop obsolete ones; add missing error/edge coverage.
 Rules:
+- The persona is WHO ACCEPTS THE VALUE (client-side user/manager/stakeholder) — never the developer/consultant delivering the work.
 - Each criterion is ONE Given [state] When [action] Then [measurable outcome] — binary pass/fail, observable from outside the system, no implementation detail.
 - Cover the happy path + ≥1 error path + ≥1 edge case; add a perf criterion only with a number AND its measurement condition.
 - BANNED untestable words: fast, quick, responsive, seamless, smooth, intuitive, user-friendly, easy, robust, reliable, scalable, real-time, secure, handle, support, manage — write the number and its measurement condition instead.
@@ -6977,14 +7167,53 @@ Return ONLY JSON (no prose, no fences):
         for (const s of linked) await aiRefreshStory(s.id, { includeCore: true, reason: 'its WBS activity was renamed from "' + oldName + '" to "' + task.name + '"' });
       }, 80);
     }
+    // Fix a glossary that was populated from the delivery roster: AI re-derives
+    // CLIENT-SIDE personas from the plan's domain and reassigns every story
+    // whose persona was really the person building the thing.
+    async function rederivePersonas() {
+      if (!reqs || !Array.isArray(reqs.stories) || !reqs.stories.length) { alert('No stories yet.'); return; }
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) { alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
+      computeWbsCodes();
+      const roster = Object.keys(resources).map(n => n + (((resources[n] || {}).kind || '') === 'client' ? ' [client-side]' : ' [delivery team]')).join(', ') || '(none)';
+      const outline = tasksInWbsOrder().filter(({ task }) => !isTestCaseTask(task)).map(({ task: t }) => (t.wbs ? t.wbs + ' ' : '') + t.name).join('\n');
+      const prompt = `You are a senior business analyst fixing the PERSONA GLOSSARY of a requirements set. The current glossary was wrongly populated from the delivery roster — the people BUILDING the solution — instead of the client-side roles who USE and ACCEPT each capability.
+PROJECT: ${projName()}
+WBS (names only, for domain context):
+${outline}
+DELIVERY ROSTER (builders — NOT personas, except for deliverables genuinely consumed by the team itself, like an internal runbook): ${roster}
+CURRENT GLOSSARY: ${JSON.stringify(reqs.personas || [])}
+STORIES (id · current persona · want): ${JSON.stringify(reqs.stories.map(s => ({ id: s.id, persona: s.persona, want: s.want })))}
+Task:
+1. Return a corrected personas[] glossary of client-side user/business roles with crisp one-line definitions. KEEP existing entries that are already genuine client-side personas verbatim. Invent only domain-appropriate roles (think: who runs the operation, who consumes the reports, who sponsors the program, who is measured by it).
+2. Reassign each story whose persona is a delivery-team role to the persona who actually accepts that capability's value. Stories already correct keep their persona.
+Return ONLY JSON (no prose, no fences):
+{"personas":[{"name":"…","definition":"…"}],"assign":[{"id":"US-1","persona":"…"}]}`;
+      const onDelta = streamShow('Re-deriving client-side personas');
+      try {
+        const res = parseAIJsonStrict(await callAnthropic(prompt, { onDelta }), 'the persona glossary');
+        streamHide(true);
+        if (!Array.isArray(res.personas) || !res.personas.length) { alert('AI returned no personas — nothing applied.'); return; }
+        reqs.personas = res.personas.map(p => ({ name: String(p.name || '').trim(), definition: String(p.definition || '').trim() })).filter(p => p.name);
+        let moved = 0;
+        (Array.isArray(res.assign) ? res.assign : []).forEach(a => {
+          const s = reqs.stories.find(x => x.id === a.id);
+          const np = String((a && a.persona) || '').trim();
+          if (s && np && s.persona !== np) { s.persona = np; moved++; }
+        });
+        saveLocal(); renderReqs();
+        flashSaved('👥 Glossary rebuilt — ' + reqs.personas.length + ' client-side persona(s), ' + moved + ' stor' + (moved === 1 ? 'y' : 'ies') + ' reassigned. ↶ Undo reverses');
+      } catch (e) { streamHide(false); alert('Persona re-derivation failed: ' + (e.message || e)); }
+    }
     // the guide-derived house rules + schema — ONE source of truth used by both
     // single-shot and phase-by-phase drafting
     function reqRulesBlock() {
       return `Rules (follow this house style exactly):
-- Every non-milestone LEAF activity gets at least one user story. wbsName MUST be copied character-for-character from the WBS outline above — never paraphrase, retitle or abbreviate it. Phases/summary rows become EPICS, not stories — an epic answers "what business capability?" and maps to an SOW section/milestone. Milestones get no stories.
+- Every non-milestone LEAF activity gets at least one user story. wbsName MUST be copied character-for-character from the WBS outline in this request — never paraphrase, retitle or abbreviate it. Phases/summary rows become EPICS, not stories — an epic answers "what business capability?" and maps to an SOW section/milestone. Milestones get no stories.
 - If you identify necessary scope with NO matching activity in the WBS (a scope gap), still write the story but set wbsName to "" and add an assumption "A: no WBS activity covers this yet — unplanned/unpriced scope" — the tool then offers to create the missing activity from the story.
 - Story format, verbatim structure: As a [role or persona], I want to [perform an action or achieve a goal], so that [I get some specific value or benefit]. Stories must satisfy ALL of INVEST — independent (minimal coupling), negotiable, valuable, estimable, small (fits one sprint — split oversized ones by workflow step, business rule, happy-vs-error path, data type, CRUD or interface), testable (pass/fail is objective; an untestable story cannot be accepted or invoiced).
 - Personas are specific named roles ("as a user" is banned — an admin story and an end-user story with identical wording can differ 3× in cost). Define every persona used in personas[] — the glossary belongs in the SOW.
+- The persona is WHO RECEIVES AND ACCEPTS THE VALUE — a client-side user, manager or stakeholder — NEVER the person delivering the work. Delivery-team roles (developer, engineer, consultant, implementation specialist, QA/tester as builder) are BANNED as personas for build/design/configure activities: "As a Sprinklr Developer, I want to configure the data model" is a to-do item, not a user story, and the client cannot accept it. Write the beneficiary instead: "As an operations manager, I want agent NPS aggregated on accurate case data, so that quartile rankings reflect true performance." A delivery-side persona is acceptable ONLY when the deliverable's direct consumer genuinely is the delivery team (e.g. an internal runbook).
+- personas[] is the glossary of those CLIENT-SIDE user/business roles, each with a one-line definition for the SOW. The WBS outline's "owner:" labels are the DELIVERY ROSTER — never copy roster names into personas[]; derive personas from the domain and who consumes each capability (e.g. operations manager, team lead, frontline agent, program sponsor, compliance reviewer).
 - Acceptance criteria per story, each ONE criterion in Given [initial state/context] When [specific action or trigger] Then [measurable, observable outcome] form (multiple "And" clauses are fine; a second "When" means split the criterion). Cover ALL THREE path types: the happy path, at least one ERROR path (invalid input / dependency failure rejected gracefully) and at least one EDGE case (boundaries, empty states, maximums, concurrency, timeouts, dependency failure). Add a perf criterion whenever a measurable threshold applies. Happy-path-only stories get estimated at 40–60% of true cost — never produce one. No implementation detail in the Then ("behaviour, not the database table"); binary pass/fail; observable from outside the system.
 - BANNED words in criteria (untestable — every one is a future argument): fast, quick, responsive, seamless, smooth, intuitive, user-friendly, easy, robust, reliable, scalable, real-time, secure, handle, support, manage, best practices, industry standard, etc./and so on/including but not limited to. Always write the number AND its measurement condition instead (e.g. "p95 response ≤ 800 ms under 200 concurrent users", "99.9% monthly availability measured as …", "passes OWASP ASVS Level 2 verification", "90% of test participants complete the task unaided in ≤ 3 minutes").
 - nfrs: run the NFR checklist per story (performance, throughput, availability, recovery RTO/RPO, security standard, authN/authZ, data residency, privacy/compliance, auditability, accessibility, localization, browser/device, observability, retention, interoperability, migration) and attach the applicable ones WITH numbers. A story with no NFRs attached is not estimable — omit the array only if truly none apply.
@@ -6998,6 +7227,12 @@ Return ONLY JSON (no prose, no fences):
  "stories":[{"id":"US-1","epicId":"EP-1","wbsName":"EXACT leaf activity name","persona":"…","want":"…","soThat":"…","verification":"uat|artifact",
    "ac":[{"id":"AC-1.1","type":"happy|error|edge|perf","text":"Given … When … Then …"}],
    "nfrs":["…"],"assumptions":["A: … — impact if false: …","D: … — if slipped: …"]}]}`;
+    }
+    // the rules as a CACHED prompt prefix: identical across single-shot,
+    // chunked and gap-fill drafting, so call 2 onward reads it from the prompt
+    // cache instead of re-billing ~1.5k tokens of house style every time
+    function reqRulesPrefix() {
+      return 'HOUSE RULES for drafting the requirements layer — they govern the task described below:\n' + reqRulesBlock();
     }
     // shared builders so single-shot and chunked drafting use identical style rules
     function reqOutlineFor(entries) {
@@ -7020,17 +7255,16 @@ Return ONLY JSON (no prose, no fences):
       const existing = (reqs && reqs.stories && reqs.stories.length)
         ? `\nEXISTING REQUIREMENTS — keep every existing ID stable, improve weak spots (missing error/edge ACs, vague personas, untestable words) and ADD stories for uncovered activities. Return the COMPLETE set:\n${JSON.stringify({ personas: reqs.personas, epics: reqs.epics, stories: reqs.stories.map(s => ({ id: s.id, epicId: s.epicId, wbsName: (tasks.find(t => t.id === s.wbsId) || {}).name || '', persona: s.persona, want: s.want, soThat: s.soThat, ac: s.ac, nfrs: s.nfrs, assumptions: s.assumptions })) })}\n`
         : '';
-      const prompt = `You are a senior business analyst and delivery lead writing the requirements layer for a billable engagement. Stories and acceptance criteria are the billing checklist: what is not testable cannot be accepted or invoiced.
+      const prompt = `You are a senior business analyst and delivery lead writing the requirements layer for a billable engagement, following the house rules above. Stories and acceptance criteria are the billing checklist: what is not testable cannot be accepted or invoiced.
 
 PROJECT: ${projName()}
 WORK BREAKDOWN STRUCTURE (wbs code | name | details):
 ${outline}
-${existing}
-${reqRulesBlock()}`;
+${existing}`;
       const onDelta = streamShow('Drafting requirements & user stories');
       flashSaved('⏳ AI drafting requirements…');
       try {
-        const text = await callAnthropic(prompt, { onDelta });
+        const text = await callAnthropic(prompt, { onDelta, cachePrefix: reqRulesPrefix() });
         streamHide(true);
         let incomplete = text.indexOf('/*TRUNCATED*/') >= 0, res = null;
         if (!incomplete) { res = parseAIJson(text); incomplete = parseAIJson.repaired; }
@@ -7073,10 +7307,9 @@ ${reqOutlineFor(entries)}
 
 KNOWN PERSONAS — reuse these exact names wherever they fit, only add genuinely new ones: ${(reqs.personas || []).map(p => p.name).join(', ') || '(none yet)'}
 EPICS ALREADY DEFINED — reuse by id when an activity belongs to one: ${(reqs.epics || []).map(e => e.id + ' ' + (e.title || '')).join('; ') || '(none)'}
-STORY IDs ALREADY TAKEN — never reuse: ${reqs.stories.map(s => s.id).join(', ') || '(none)'}
-${reqRulesBlock()}`;
+STORY IDs ALREADY TAKEN — never reuse: ${reqs.stories.map(s => s.id).join(', ') || '(none)'}`;
           const onDelta = streamShow('Filling story gaps [' + partBar + '] batch ' + (bi + 1) + '/' + batches.length + ' (' + batch.length + ' activities)');
-          const text = await callAnthropic(prompt, { onDelta });
+          const text = await callAnthropic(prompt, { onDelta, cachePrefix: reqRulesPrefix() });
           streamHide(true);
           const res = parseAIJsonStrict(text, 'story-gap batch ' + (bi + 1)); // complete or nothing
           mergeReqsChunk(res, ids);
@@ -7117,11 +7350,10 @@ ${reqOutlineFor(entries)}
 KNOWN PERSONAS — reuse these exact names wherever they fit, only add genuinely new ones: ${(reqs.personas || []).map(p => p.name).join(', ') || '(none yet)'}
 STORY IDs ALREADY TAKEN — never reuse: ${reqs.stories.map(s => s.id).join(', ') || '(none)'}
 EPICS ALREADY DEFINED — reuse by id when this branch belongs to one: ${(reqs.epics || []).map(e => e.id + ' ' + (e.title || '')).join('; ') || '(none)'}
-${existingBatch.length ? 'EXISTING STORIES FOR THIS BRANCH — keep their IDs, improve weak spots, add what is missing:\n' + JSON.stringify(existingBatch.map(s => ({ id: s.id, epicId: s.epicId, wbsName: s.wbsName, persona: s.persona, want: s.want, soThat: s.soThat, ac: s.ac, nfrs: s.nfrs, assumptions: s.assumptions }))) + '\n' : ''}
-${reqRulesBlock()}`;
+${existingBatch.length ? 'EXISTING STORIES FOR THIS BRANCH — keep their IDs, improve weak spots, add what is missing:\n' + JSON.stringify(existingBatch.map(s => ({ id: s.id, epicId: s.epicId, wbsName: s.wbsName, persona: s.persona, want: s.want, soThat: s.soThat, ac: s.ac, nfrs: s.nfrs, assumptions: s.assumptions }))) + '\n' : ''}`;
         const partBar = batches.map((x, i) => i < done - 1 ? '✓' : i === done - 1 ? '▶' : '·').join('');
         const onDelta = streamShow('Drafting requirements [' + partBar + '] part ' + done + '/' + batches.length + ': ' + b.name.slice(0, 30));
-        const text = await callAnthropic(prompt, { onDelta });
+        const text = await callAnthropic(prompt, { onDelta, cachePrefix: reqRulesPrefix() });
         streamHide(true);
         const res = parseAIJsonStrict(text, 'requirements part ' + done + ' (' + b.name + ')'); // a branch is small; if even this truncates, stop loudly
         mergeReqsChunk(res, b.ids);
@@ -8220,6 +8452,23 @@ Rules:
       // (observed ~2 min in the field), so the no-first-token cutoff is 4 min;
       // a mid-stream token gap of 3 min aborts. Either way the caller
       // auto-retries once before giving up.
+      // Prompt caching: opts.cachePrefix (string or array of strings) becomes
+      // leading text blocks marked cache_control — Anthropic caches the request
+      // prefix at each mark (5-min TTL, refreshed on every hit; cached reads
+      // bill ~10% of normal input and start faster). Prefixes must LEAD the
+      // request: caching matches identical prefixes only. Blocks below the
+      // model's minimum cacheable size are ignored harmlessly. Flows pass the
+      // STATIC part (rules contracts, benchmarks) here and keep the varying
+      // part (criteria batches, notes, plan JSON) in userContent.
+      const cacheBlocks = (Array.isArray(opts.cachePrefix) ? opts.cachePrefix : opts.cachePrefix ? [opts.cachePrefix] : [])
+        .map(s => String(s || '')).filter(s => s.trim())
+        .map(s => ({ type: 'text', text: s, cache_control: { type: 'ephemeral' } }));
+      const userMsg = markTail => {
+        if (!cacheBlocks.length && !markTail) return userContent; // wire-identical to the pre-caching shape
+        const tail = { type: 'text', text: userContent };
+        if (markTail) tail.cache_control = { type: 'ephemeral' }; // continuation rounds re-send the identical prompt — cache it once, read it every later round
+        return cacheBlocks.concat([tail]);
+      };
       let lastData = Date.now(), lastText = Date.now(), gotText = false, stalled = false;
       const watchdog = setInterval(() => {
         const quietText = Date.now() - lastText;
@@ -8298,8 +8547,8 @@ Rules:
         for (let round = 0; round < 8; round++) {
           const prefill = full.replace(/\s+$/, ''); // API rejects trailing whitespace in prefills
           const messages = prefill
-            ? [{ role: 'user', content: userContent }, { role: 'assistant', content: prefill }]
-            : [{ role: 'user', content: userContent }];
+            ? [{ role: 'user', content: userMsg(true) }, { role: 'assistant', content: prefill }]
+            : [{ role: 'user', content: userMsg(false) }];
           if (prefill) full = prefill;
           const r = await once(messages, full);
           full += r.text;
@@ -8369,27 +8618,28 @@ Rules:
       }
 
       if (mode === 'progress') { return updateProgressFromNotes(notes, btn, status, errEl); }
-      let prompt;
+      let prompt, cachePrefix;
       if (mode === 'merge' && tasks.length) {
         const current = { projectName: document.getElementById('projectName').value, durationUnit: document.getElementById('durationUnit').value,
           tasks: tasks.map(t => ({ name: t.name, optimistic: t.o, mostLikely: t.m, pessimistic: t.p, milestone: t.milestone, owner: t.owner, units: t.units,
             parent: (tasks.find(x => x.id === t.parentId) || {}).name || '',
             dependsOn: t.predecessors.map(p => (tasks.find(x => x.id === p.id) || {}).name).filter(Boolean) })),
           resources: Object.keys(resources).map(n => ({ name: n, capacityPercent: getCapacity(n) })) };
-        prompt = `You are a project planning assistant for engagement/project managers.
-Here is the CURRENT project plan as JSON:
+        // static-first for the prompt cache: benchmarks + delta schema lead as
+        // cached blocks (identical across iterative "update existing" rounds —
+        // and the benchmarks block is shared with every other AI flow), the
+        // changing plan JSON + request stream in fresh
+        cachePrefix = [histPromptBlock(), `You are a project planning assistant for engagement/project managers.
+${aiDeltaSchemaHint()}`];
+        prompt = `Here is the CURRENT project plan as JSON:
 ${JSON.stringify(current, null, 2)}
-${histPromptBlock()}
-Apply the following change request:
-"""${notes}"""
-
-${aiDeltaSchemaHint()}`;
+Apply the following change request to it, following the delta schema and rules above:
+"""${notes}"""`;
       } else {
-        prompt = `You are a project planning assistant for engagement/project managers.
-Read the following notes/description and turn it into a structured, estimated project plan.
-"""${notes}"""
-${histPromptBlock()}
-${aiSchemaHint()}`;
+        cachePrefix = [histPromptBlock(), `You are a project planning assistant for engagement/project managers.
+${aiSchemaHint()}`];
+        prompt = `Read the following notes/description and turn it into a structured, estimated project plan, following the schema and rules above.
+"""${notes}"""`;
       }
 
       btn.disabled = true;
@@ -8398,7 +8648,7 @@ ${aiSchemaHint()}`;
       status.textContent = 'Contacting Claude…';
       const onDelta = streamShow(mode === 'merge' ? 'Updating plan (delta — only the changes stream in)' : 'Generating plan');
       try {
-        const text = await callAnthropic(prompt, { onDelta });
+        const text = await callAnthropic(prompt, { onDelta, cachePrefix });
         const plan = parseAIJsonStrict(text, 'the plan'); // partial plans are never applied
         const stats = applyAIPlan(plan, mode);
         streamHide(true);
@@ -8740,7 +8990,7 @@ Rules: only include tasks the notes actually mention or whose table row has a fi
 Project: ${document.getElementById('projectName').value} (durations in ${unit}).
 TASK TO DECOMPOSE: "${t.name}" — O=${t.o}, M=${t.m}, P=${t.p} ${unit}${t.owner ? ', owner ' + t.owner : ''}${t.description ? ', scope: ' + t.description : ''}${t.deliverable ? ', deliverable: ' + t.deliverable : ''}.
 Other tasks in the plan for context: ${siblings || '(none)'}.
-${reqBlock}${guidance ? `USER GUIDANCE — follow it exactly; it overrides the default split rules below:\n"""${guidance}"""\n` : ''}${histPromptBlock()}
+${reqBlock}${guidance ? `USER GUIDANCE — follow it exactly; it overrides the default split rules below:\n"""${guidance}"""\n` : ''}
 Return ONLY a JSON object (no prose, no fences):
 {"subtasks":[{"name":"...","optimistic":n,"mostLikely":n,"pessimistic":n,"owner":"","units":100,"deliverable":"","description":"","acceptance":"","dependsOn":["names among these subtasks only"]}]}
 Rules:
@@ -8755,7 +9005,7 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
       flashSaved('⏳ Decomposing "' + t.name.slice(0, 24) + '"…');
       const onDelta = streamShow('Decomposing "' + t.name.slice(0, 30) + '"');
       try {
-        const text = await callAnthropic(prompt, { onDelta });
+        const text = await callAnthropic(prompt, { onDelta, cachePrefix: [histPromptBlock()] });
         streamHide(true);
         const res = parseAIJsonStrict(text, 'the decomposition'); // never apply a partial split
         if (!res || !Array.isArray(res.subtasks) || !res.subtasks.length) throw new Error('AI returned no subtasks.');
@@ -8891,13 +9141,12 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
 Project: ${document.getElementById('projectName').value}
 Plan:\n${planSummary}
 Existing RAID entries (do NOT duplicate): ${existing}
-${histPromptBlock()}
 Return ONLY JSON: {"entries":[{"type":"Risk|Assumption|Issue|Decision|Exclusion","title":"...","probability":1-5,"impact":1-5,"owner":"","mitigation":"one-line response/detail","task":"exact task name or empty"}]}
 Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, integration unknowns, resourcing), key assumptions the estimates rely on, and scope exclusions worth stating in a SOW. Concrete, not generic boilerplate.`;
       flashSaved('⏳ Drafting RAID…');
       const onDelta = streamShow('Drafting RAID entries (risks, assumptions, exclusions)');
       try {
-        const res = parseAIJson(await callAnthropic(prompt, { onDelta }));
+        const res = parseAIJson(await callAnthropic(prompt, { onDelta, cachePrefix: [histPromptBlock()] }));
         streamHide(true);
         if (!res || !Array.isArray(res.entries)) throw new Error('No entries returned.');
         let added = 0;
@@ -9241,10 +9490,9 @@ Project: ${d.name}. Timeline ${d.start} → ${d.finish}. Milestones: ${d.milesto
 Scope items: ${d.scope.filter(x => !x.summary).map(x => x.name + (x.deliverable ? ' → ' + x.deliverable : '')).join('; ')}.
 Assumptions: ${d.assumptions.join('; ') || 'none recorded'}. Exclusions: ${d.exclusions.join('; ') || 'none recorded'}.
 ${d.price ? 'Commercials: ' + d.price.model + ' ' + d.price.amount + '.' : ''}
-${histPromptBlock()}
 Return ONLY JSON: {"overview":"2-3 sentence engagement overview & objectives","scopeNarrative":"2-3 sentences framing the scope table","outOfScope":"1-2 sentences if exclusions are empty","paymentTerms":"one sentence proposing milestone-based payment","acceptanceProcess":"2-3 sentence acceptance clause","changeControl":"2-3 sentence change-control clause"}
 Professional, client-ready, no hype, no invented facts.`;
-          narrative = parseAIJson(await callAnthropic(prompt, { onDelta: sowDelta }));
+          narrative = parseAIJson(await callAnthropic(prompt, { onDelta: sowDelta, cachePrefix: [histPromptBlock()] }));
           Object.keys(narrative || {}).forEach(k => { narrative[k] = escapeHtml(String(narrative[k] || '')); });
         } catch (e) { alert('AI narrative failed (' + (e.message || e) + ') — generating the structured skeleton instead.'); }
       }
@@ -9489,6 +9737,11 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         if (!t.owner) findings.push({ severity: 'low', area: 'Ownership', finding: `"${t.name}" has no owner`, recommendation: 'Assign a resource so workload and accountability are tracked.' });
         if (!t.deliverable && !t.description) findings.push({ severity: 'low', area: 'WBS dictionary', finding: `"${t.name}" has no deliverable/scope note`, recommendation: 'Fill the dictionary — it feeds the SOW and handoffs.' });
       });
+      // ⚑ deadline commitments vs the current forecast
+      const breached = tasks.filter(t => t.deadline && t.finishDate && fmtISO(t.finishDate) > t.deadline);
+      if (breached.length) findings.push({ severity: 'high', area: 'Commitments',
+        finding: breached.length + ' task(s) forecast PAST their ⚑ deadline: ' + breached.slice(0, 4).map(t => `"${t.name}" (${fmtNice(t.finishDate)} vs ⚑ ${t.deadline})`).join('; ') + (breached.length > 4 ? ' …' : ''),
+        recommendation: 'Shorten or decompose the work, add capacity, or re-sequence to protect the date; if the commitment truly moved, update the deadline and communicate the slip.' });
       const noPreds = leaves.filter(t => !effectivePreds(t).length);
       if (noPreds.length > Math.max(2, leaves.length * 0.3)) findings.push({ severity: 'high', area: 'Dependencies', finding: `${noPreds.length} of ${leaves.length} tasks have no predecessors — the network is probably under-linked`, recommendation: 'Link the real sequence or the critical path (and every forecast) is understated.' });
       if (!tasks.some(t => t.milestone)) findings.push({ severity: 'medium', area: 'Milestones', finding: 'No milestones defined', recommendation: 'Add sign-off / go-live checkpoints — they anchor the SOW payment schedule and status reporting.' });
@@ -9560,14 +9813,18 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       if (hasKey) {
         flashSaved('⏳ AI reviewing the plan…');
         try {
-          const planSummary = tasksInWbsOrder().map(({ task: t, depth }) => `${'  '.repeat(depth)}${t.wbs} ${t.name}${t.milestone ? ' [MS]' : ''} O/M/P=${t.o}/${t.m}/${t.p} ${t.owner || ''} ${t.description ? '— ' + t.description : ''}`).join('\n');
+          // summary rows: print the COMPUTED roll-up, never the stored O/M/P —
+          // the scheduler ignores a parent's own numbers entirely (children
+          // carry the effort), and showing leftovers like 0.042 on a parent
+          // row used to make the reviewer report a phantom "never rolled up"
+          const planSummary = tasksInWbsOrder().map(({ task: t, depth }) => `${'  '.repeat(depth)}${t.wbs} ${t.name}${t.milestone ? ' [MS]' : ''} ${isSummaryId(t.id) ? '[ROLL-UP: span ' + (t.te || 0).toFixed(1) + ' ' + unitLabel() + ' computed from children — its own stored O/M/P is ignored by the scheduler]' : 'O/M/P=' + t.o + '/' + t.m + '/' + t.p} ${t.owner || ''} ${t.description ? '— ' + t.description : ''}`).join('\n');
           const prompt = `You are a hard-nosed delivery reviewer. Critique this project plan for an engagement manager.
 Plan:\n${planSummary}
-${histPromptBlock()}
 Return ONLY JSON: {"findings":[{"severity":"high|medium|low","area":"Missing scope|Estimate realism|Sequencing|Risk|Other","finding":"specific observation","recommendation":"concrete action"}]}
-Focus on: scope that is obviously missing for this type of work; estimates that contradict the historical data; sequencing that looks wrong; single points of failure. 3-8 findings, concrete, no generic advice.`;
+Focus on: scope that is obviously missing for this type of work; estimates that contradict the historical data; sequencing that looks wrong; single points of failure. 3-8 findings, concrete, no generic advice.
+IMPORTANT: rows marked [ROLL-UP] are WBS summary rows — the tool schedules and prices ONLY leaf tasks and computes parents from their children. Never flag a parent row's own estimate as missing, flat, or "not rolled up"; that number is display-only legacy data the engine ignores.`;
           const onDelta = streamShow('AI plan review');
-          const res = parseAIJson(await callAnthropic(prompt, { onDelta }));
+          const res = parseAIJson(await callAnthropic(prompt, { onDelta, cachePrefix: [histPromptBlock()] }));
           streamHide(true);
           if (res && Array.isArray(res.findings)) {
             res.findings.forEach(fd => findings.push({ severity: ['high','medium','low'].includes(fd.severity) ? fd.severity : 'medium', area: '🤖 ' + String(fd.area || 'AI review'), finding: String(fd.finding || ''), recommendation: String(fd.recommendation || '') }));
@@ -9584,12 +9841,32 @@ Focus on: scope that is obviously missing for this type of work; estimates that 
       const trend = `<h3 style="font-size:0.95rem;margin:0 0 0.5rem">Forecast trend</h3>${trendChartSvg()}`;
       if (!healthFindings) { cont.innerHTML = trend + '<p class="help-text" style="margin-top:0.75rem">Run the health check to lint estimate quality and (with an API key) get an AI plan review calibrated to your historical data.</p>'; return; }
       const sevCol = { high: ['#fee2e2', '#b91c1c'], medium: ['#fef3c7', '#b45309'], low: ['#e2e8f0', '#475569'], info: ['#dbeafe', '#1e40af'] };
+      // drill-in: task names ("…" or '…') and WBS codes (4.2, 4.2.31) inside a
+      // finding become links straight into the task editor
+      computeWbsCodes();
+      const byWbs = {}; tasks.forEach(t => { if (t.wbs) byWbs[t.wbs] = t; });
+      const nameSorted = tasks.slice().sort((a, b) => b.name.length - a.name.length);
+      const linkify = text => {
+        let html = escapeHtml(String(text || ''));
+        nameSorted.forEach(t => {
+          if (!t.name) return;
+          const link = `<a href="#" style="font-weight:600;color:var(--primary);text-decoration:underline dotted" onclick="event.preventDefault();openEditModal(${t.id}, true)" title="Open ${escapeHtml(t.wbs || '')} ${escapeHtml(t.name)} in the editor">`;
+          ['&quot;', '&#039;', '“', '‘'].forEach((q, qi) => {
+            const close = ['&quot;', '&#039;', '”', '’'][qi];
+            const needle = q + escapeHtml(t.name) + close;
+            if (html.indexOf(needle) >= 0) html = html.split(needle).join(link + '“' + escapeHtml(t.name) + '”</a>');
+          });
+        });
+        html = html.replace(/(^|[\s(;:])(\d+(?:\.\d+)+)(?=$|[\s)<.,;:'’])/g, (m, pre, code) =>
+          byWbs[code] ? `${pre}<a href="#" style="font-weight:600;color:var(--primary);text-decoration:underline dotted" onclick="event.preventDefault();openEditModal(${byWbs[code].id}, true)" title="Open ${code} ${escapeHtml(byWbs[code].name)} in the editor">${code}</a>` : m);
+        return html;
+      };
       const rows = healthFindings.findings.map((fd, fi) => {
         const c = sevCol[fd.severity] || sevCol.info;
         return `<tr><td><span class="risk-tag" style="background:${c[0]};color:${c[1]}">${fd.severity}</span></td>
           <td style="font-size:0.8rem;white-space:nowrap">${escapeHtml(fd.area)}</td>
-          <td style="font-size:0.85rem">${escapeHtml(fd.finding)}</td>
-          <td style="font-size:0.85rem;color:var(--muted)">${escapeHtml(fd.recommendation)}</td>
+          <td style="font-size:0.85rem">${linkify(fd.finding)}</td>
+          <td style="font-size:0.85rem;color:var(--muted)">${linkify(fd.recommendation)}</td>
           <td class="no-print">${fd.relink ? `<button class="btn-sm btn-secondary" onclick="repairOrphanStories()" title="Re-attach stories to tasks by their remembered task name">🔗 Relink</button>`
             : fd.jump ? `<button class="btn-sm btn-secondary" onclick="switchTab('${fd.jump}')" title="Open the tab where this is fixed">→ ${fd.jump === 'resources' ? 'Resources' : 'Requirements'}</button>`
             : fd.recommendation && fd.severity !== 'info' ? `<button class="btn-sm btn-secondary" onclick="aiFixFindings(${fi})" title="AI applies just this recommendation">🔧 Fix</button>` : ''}</td></tr>`;
@@ -9690,16 +9967,15 @@ Focus on: scope that is obviously missing for this type of work; estimates that 
           deliverable: t.deliverable, description: t.description, acceptance: t.acceptance,
           dependsOn: t.predecessors.map(p => (tasks.find(x => x.id === p.id) || {}).name).filter(Boolean) })),
         resources: Object.keys(resources).map(n => ({ name: n, capacityPercent: getCapacity(n), kind: getKind(n) })) };
-      const prompt = `You are improving a project plan based on a health-check review.
-CURRENT PLAN:\n${JSON.stringify(current, null, 2)}
-${histPromptBlock()}
-APPLY THESE FIXES (change only what each fix requires; keep everything else identical — same names, estimates, owners, structure):\n${instructions}
-When a fix needs an owner assigned or reassigned, prefer people already listed in "resources" (matching skills implied by their other tasks) before inventing anyone new. When a fix needs missing O/M/P estimates, size them relative to comparable tasks in this plan and the historical data.
-${aiDeltaSchemaHint()}`;
+      const fixPrefix = [histPromptBlock(), `You are improving a project plan based on a health-check review.
+${aiDeltaSchemaHint()}`];
+      const prompt = `CURRENT PLAN:\n${JSON.stringify(current, null, 2)}
+APPLY THESE FIXES (change only what each fix requires; keep everything else identical — same names, estimates, owners, structure), following the delta schema and rules above:\n${instructions}
+When a fix needs an owner assigned or reassigned, prefer people already listed in "resources" (matching skills implied by their other tasks) before inventing anyone new. When a fix needs missing O/M/P estimates, size them relative to comparable tasks in this plan and the historical data.`;
       const onDelta = streamShow('Applying health-check fixes (delta — only the changes stream in)');
       flashSaved('⏳ AI is applying ' + list.length + ' fix(es)…');
       try {
-        const plan = parseAIJsonStrict(await callAnthropic(prompt, { onDelta }), 'the fixes'); // a repaired/partial delta is never applied
+        const plan = parseAIJsonStrict(await callAnthropic(prompt, { onDelta, cachePrefix: fixPrefix }), 'the fixes'); // a repaired/partial delta is never applied
         const stats = applyAIPlan(plan, 'merge');
         streamHide(true);
         healthFindings = { date: fmtISO(new Date()), findings: lintPlan() }; // fresh deterministic lint after fixes
