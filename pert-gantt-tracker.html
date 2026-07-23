@@ -574,33 +574,34 @@
 
     <!-- story editor modal -->
     <div class="modal-overlay" id="storyModal" style="z-index:130">
-      <div class="modal" style="max-width:760px">
+      <div class="modal" style="max-width:940px">
         <div class="modal-header"><h3 id="storyModalTitle">Edit user story</h3><button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeStoryModal()">✕</button></div>
         <div class="modal-body">
-          <div style="display:grid;grid-template-columns:110px 1fr 1fr;gap:0.75rem">
-            <div class="form-group"><label>ID</label><input id="stId" type="text" placeholder="US-1" /></div>
-            <div class="form-group"><label>Epic</label><select id="stEpic"></select></div>
-            <div class="form-group"><label>WBS activity (traces to) <span class="info-icon" title="The plan task that builds this story — status and completeness roll up from it">i</span></label><select id="stWbs"></select></div>
+          <div style="display:grid;grid-template-columns:110px 1fr 1.35fr;gap:0.75rem">
+            <div class="form-group" style="margin-bottom:0"><label>ID</label><input id="stId" type="text" placeholder="US-1" /></div>
+            <div class="form-group" style="margin-bottom:0"><label>Epic</label><select id="stEpic"></select></div>
+            <div class="form-group" style="margin-bottom:0"><label>WBS activity (traces to) <span class="info-icon" title="The plan task that builds this story — status and completeness roll up from it">i</span></label><select id="stWbs"></select></div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;margin-top:0.6rem">
-            <div><label>As a… (persona)</label><input id="stPersona" type="text" placeholder="billing administrator" /></div>
-            <div><label>I want to…</label><input id="stWant" type="text" placeholder="export monthly metrics to CSV" /></div>
-            <div><label>So that…</label><input id="stSoThat" type="text" placeholder="I can report in our BI tool" /></div>
-          </div>
-          <div class="form-group" style="margin-top:0.6rem"><label>Verified by <span class="info-icon" title="UAT test cases = a tester executes steps against the built product (features, data rules, dashboards, access control). Artifact = acceptance is evidenced by the deliverable or record itself (meetings, requirements docs, design approvals, documentation, training, QA/UAT execution) — real acceptance criteria for billing, but 🧪 Generate test plan will NOT create test tasks for it.">i</span></label>
-            <select id="stVerif" style="max-width:340px">
+          <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:0.75rem;margin-top:0.7rem">
+            <div class="form-group" style="margin-bottom:0"><label>As a… (persona) <span class="info-icon" title="WHO accepts the value — a client-side user, manager or stakeholder. Delivery-team roles are flagged by the lint on product stories.">i</span></label><input id="stPersona" type="text" placeholder="billing administrator" oninput="updateStoryPreview()" /></div>
+            <div class="form-group" style="margin-bottom:0"><label>Verified by <span class="info-icon" title="UAT test cases = a tester executes steps against the built product (features, data rules, dashboards, access control). Artifact = acceptance is evidenced by the deliverable or record itself (meetings, requirements docs, design approvals, documentation, training, QA/UAT execution) — real acceptance criteria for billing, but 🧪 Generate test plan will NOT create test tasks for it.">i</span></label>
+            <select id="stVerif">
               <option value="">Auto (classified from the activity name)</option>
               <option value="uat">UAT test cases — tester executes steps against the product</option>
               <option value="artifact">Artifact / sign-off — the deliverable itself is the evidence</option>
             </select></div>
-          <div class="form-group" style="margin-top:0.6rem"><label>Acceptance criteria — one per line, prefix with the path type <span class="info-icon" title="Cover all three: happy = it works; error = user/system does something invalid and it fails gracefully; edge = boundaries, empty states, timeouts, capacity. perf = measurable thresholds. Use Given / When / Then.">i</span></label>
-            <textarea id="stAc" rows="6" placeholder="[happy] Given an admin on the Analytics page, When they export a ≤24-month range, Then a CSV downloads within 5s at p95
+          </div>
+          <div class="form-group" style="margin-top:0.7rem;margin-bottom:0"><label>I want to…</label><textarea id="stWant" rows="2" placeholder="export monthly metrics to CSV" oninput="autoGrowTA(this);updateStoryPreview()"></textarea></div>
+          <div class="form-group" style="margin-top:0.7rem;margin-bottom:0"><label>So that…</label><textarea id="stSoThat" rows="2" placeholder="I can report in our BI tool" oninput="autoGrowTA(this);updateStoryPreview()"></textarea></div>
+          <div id="stPreview" class="help-text" style="margin-top:0.55rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:0.5rem 0.7rem;font-size:0.82rem;line-height:1.5"></div>
+          <div class="form-group" style="margin-top:0.7rem;margin-bottom:0"><label>Acceptance criteria — one per line, prefix with the path type <span class="info-icon" title="Cover all three: happy = it works; error = user/system does something invalid and it fails gracefully; edge = boundaries, empty states, timeouts, capacity. perf = measurable thresholds. Use Given / When / Then.">i</span></label>
+            <textarea id="stAc" rows="8" oninput="autoGrowTA(this)" placeholder="[happy] Given an admin on the Analytics page, When they export a ≤24-month range, Then a CSV downloads within 5s at p95
 [error] Given a user without the admin role, When they call the export endpoint, Then it returns 403 with no data
 [edge]  Given a range with no records, When they export, Then 'No records found' is shown and no file downloads
 [perf]  Given 100,000 rows, When exported, Then the file completes within 5 s at p95"></textarea></div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-top:0.6rem">
-            <div class="form-group"><label>NFRs (one per line) <span class="info-icon" title="Non-functional requirements: performance, availability, security, accessibility, audit… The most under-scoped and most expensive category in an SOW.">i</span></label><textarea id="stNfr" rows="3" placeholder="p95 export ≤ 5 s at 100k rows&#10;WCAG 2.2 AA on the export control"></textarea></div>
-            <div class="form-group"><label>Assumptions &amp; client dependencies (one per line) <span class="info-icon" title="Each assumption should state the impact if false; each client dependency the consequence of a slip — that's what makes the estimate defensible and re-priceable.">i</span></label><textarea id="stAssume" rows="3" placeholder="A: Sentiment API exists as documented — if false +120-200h&#10;D: Client provides labeled data by Sprint 2 — slip = day-for-day extension"></textarea></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-top:0.7rem">
+            <div class="form-group"><label>NFRs (one per line) <span class="info-icon" title="Non-functional requirements: performance, availability, security, accessibility, audit… The most under-scoped and most expensive category in an SOW.">i</span></label><textarea id="stNfr" rows="4" oninput="autoGrowTA(this)" placeholder="p95 export ≤ 5 s at 100k rows&#10;WCAG 2.2 AA on the export control"></textarea></div>
+            <div class="form-group"><label>Assumptions &amp; client dependencies (one per line) <span class="info-icon" title="Each assumption should state the impact if false; each client dependency the consequence of a slip — that's what makes the estimate defensible and re-priceable.">i</span></label><textarea id="stAssume" rows="4" oninput="autoGrowTA(this)" placeholder="A: Sentiment API exists as documented — if false +120-200h&#10;D: Client provides labeled data by Sprint 2 — slip = day-for-day extension"></textarea></div>
           </div>
           <div id="storyModalError" class="error" style="display:none;margin-top:0.6rem"></div>
         </div>
@@ -7171,6 +7172,28 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       document.getElementById('stDeleteBtn').style.display = s ? '' : 'none';
       document.getElementById('storyModalError').style.display = 'none';
       document.getElementById('storyModal').classList.add('open');
+      // fit every textarea to its content and compose the live sentence — the
+      // whole story reads without expanding or scrolling anything
+      storyModalAutosize();
+      updateStoryPreview();
+    }
+    function autoGrowTA(el) {
+      if (!el || el.tagName !== 'TEXTAREA') return;
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight + 2, 420) + 'px'; // cap so a huge AC list scrolls inside its box, not the page
+    }
+    function storyModalAutosize() {
+      ['stWant', 'stSoThat', 'stAc', 'stNfr', 'stAssume'].forEach(x => autoGrowTA(document.getElementById(x)));
+    }
+    function updateStoryPreview() {
+      const el = document.getElementById('stPreview');
+      if (!el) return;
+      const v = id => (document.getElementById(id) || { value: '' }).value.trim();
+      const p = v('stPersona'), w = v('stWant'), s = v('stSoThat');
+      el.style.display = (p || w || s) ? '' : 'none';
+      el.innerHTML = '📖 <b>As a</b> ' + (p ? escapeHtml(p) : '<span style="color:#94a3b8">…persona…</span>')
+        + ', <b>I want to</b> ' + (w ? escapeHtml(w) : '<span style="color:#94a3b8">…action/goal…</span>')
+        + ', <b>so that</b> ' + (s ? escapeHtml(s) : '<span style="color:#94a3b8">…the value…</span>') + '.';
     }
     function closeStoryModal() { document.getElementById('storyModal').classList.remove('open'); }
     async function saveStoryModal() {
