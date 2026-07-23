@@ -4885,9 +4885,15 @@
           let bg = '#f8fafc';
           if (isPto) bg = load > 0 ? '#dc2626' : '#e9d5ff';
           else if (load > 0) bg = ratio <= 1 ? `rgba(37,99,235,${(0.2 + 0.55 * ratio).toFixed(3)})` : '#dc2626';
-          const tnames = day ? day.tasks.map(id => { const t = tasks.find(x => x.id === id); return t ? t.name : ''; }).filter(Boolean).join(', ') : '';
-          const tip = `${name} — ${dd.toLocaleDateString()}: ${isPto ? 'PTO' + (load > 0 ? ' but ' + Math.round(load) + '% assigned!' : '') : Math.round(load) + '% of ' + R.capacity + '% capacity'}${tnames ? ' | ' + tnames : ''}`;
-          cells += `<div class="rl-cell${load > R.capacity + 1e-6 ? ' over' : ''}" style="left:${i * cellW}px;width:${cellW}px;background:${bg}" title="${escapeHtml(tip)}"></div>`;
+          // hover = the actual collision: every task on this person that day,
+          // with units and size — the overlap IS the issue, so show it in place
+          const dayTasks = day ? day.tasks.map(id => tasks.find(x => x.id === id)).filter(Boolean) : [];
+          const isOver = load > R.capacity + 1e-6;
+          const tip = `${name} — ${dd.toLocaleDateString()}: ${isPto ? 'PTO' + (load > 0 ? ' but ' + Math.round(load) + '% assigned!' : '') : Math.round(load) + '% of ' + R.capacity + '% capacity'}`
+            + (dayTasks.length > 1 ? `\n${dayTasks.length} tasks OVERLAP on this day:` : dayTasks.length === 1 ? '\nWorking on:' : '')
+            + dayTasks.map(t => `\n• @${t.units || 100}%  ${t.name}  (${t.milestone ? '◆ milestone' : fmtDurText(t.te)})`).join('')
+            + (isOver ? '\n\n⚠ Over capacity — click this cell to jump to the fix suggestions below.' : '');
+          cells += `<div class="rl-cell${isOver ? ' over' : ''}" style="left:${i * cellW}px;width:${cellW}px;background:${bg}${isOver ? ';cursor:pointer' : ''}" title="${escapeHtml(tip)}"${isOver ? ` onclick="(function(){var el=document.getElementById('rlconf-${names.indexOf(name)}');if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.style.boxShadow='0 0 0 3px #fca5a5';setTimeout(function(){el.style.boxShadow='';},1600);}})()"` : ''}></div>`;
         });
         const over = R.overDays.length;
         rows += `<div class="rl-row">
@@ -4932,7 +4938,7 @@
             : movable.length
               ? `Move a non-critical task within its slack — e.g. delay <strong>${escapeHtml(movable[0].name)}</strong> (has ${movable[0].slack.toFixed(1)} ${u} of float). Try <em>Level within slack</em> above.`
               : `The overlapping tasks have little or no float. Mend it by <strong>adding capacity</strong> (buttons below), <strong>reducing Units %</strong>, <strong>reassigning</strong> a task, or <strong>Level &amp; extend timeline</strong> to accept a later finish.`;
-          summary += `<div class="conflict-card">
+          summary += `<div class="conflict-card" id="rlconf-${names.indexOf(name)}" style="transition:box-shadow 0.3s">
             <div style="font-weight:700;margin-bottom:0.25rem">${escapeHtml(name)} — peak ${Math.round(R.peak)}% vs ${R.capacity}% capacity <span class="help-text" style="font-weight:400">(over on: ${ranges})</span></div>
             <div class="table-wrap"><table><thead><tr><th>Overlapping task</th><th title="Expected work (TE) — the number that actually adds up to the overload. Slack is how far a task can slip, NOT how big it is.">Effort</th><th>Units</th><th>Window</th><th>Slack</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
             <p class="help-text" style="margin-top:0.5rem">💡 ${advice}</p>
