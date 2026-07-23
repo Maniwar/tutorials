@@ -221,6 +221,10 @@
     .export-panel button:hover { background: #f1f5f9; }
     .export-panel .grp { font-size: 0.68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 0.4rem 0.6rem 0.15rem; font-weight: 700; }
     .risk-tag { display:inline-block; padding: 0.1rem 0.45rem; border-radius: 6px; font-size: 0.7rem; font-weight:700; }
+    /* light chip buttons for inside tinted info panels (stories/impact) —
+       dark pill buttons read as heavy blobs mid-sentence there */
+    .btn-lite { background:#fff; border:1px solid #93c5fd; color:#1d4ed8; border-radius:6px; padding:0.16rem 0.55rem; font-size:0.72rem; font-weight:600; cursor:pointer; white-space:nowrap; line-height:1.3; }
+    .btn-lite:hover { background:#eff6ff; border-color:#2563eb; }
     /* ⓘ hover-help badge — used beside labels/headers everywhere */
     .info-icon { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%; background:#e2e8f0; color:#475569; font-size:10px; font-style:italic; font-weight:700; font-family:Georgia,'Times New Roman',serif; line-height:1; cursor:help; vertical-align:middle; margin-left:3px; user-select:none; flex:none; }
     .info-icon:hover { background:var(--primary); color:#fff; }
@@ -1924,20 +1928,26 @@
             ${acHit ? `<div style="margin-bottom:0.4rem"><b>Acceptance criterion:</b><br/>${gwtLines(acHit.text).split('\n').map(escapeHtml).join('<br/>')}</div>` : ''}
             ${hasRealSteps(t) ? `<div><b>Steps for the tester:</b><ol style="margin:0.2rem 0 0.45rem;padding-left:1.25rem">${steps.map(sx => `<li>${escapeHtml(sx.replace(/^\d+\.\s*/, ''))}</li>`).join('')}</ol></div>` : `<div style="color:#b45309;margin-bottom:0.35rem">⚠ This test case has no real numbered steps yet${t.description ? ' (only: “' + escapeHtml(t.description.slice(0, 90)) + (t.description.length > 90 ? '…' : '') + '”)' : ''} — run 🧪 Generate test plan on the Requirements tab; it now rewrites shallow test cases in place with executable steps.</div>`}
             ${t.acceptance ? `<div style="background:#dcfce7;border-radius:6px;padding:0.35rem 0.55rem"><b>✅ Pass when:</b> ${gwtLines(t.acceptance).split('\n').map(escapeHtml).join('<br/>')}</div>` : ''}
-            ${stHit ? `<div class="help-text" style="margin-top:0.4rem">From <b>${escapeHtml(stHit.id)}</b> — As a ${escapeHtml(stHit.persona || '?')}, I want to ${escapeHtml(stHit.want || '?')} <button class="btn-sm btn-secondary no-print" style="margin-left:0.4rem" onclick="openStoryModal('${escapeHtml(stHit.id)}')" title="Edit the story (and this criterion) right here — opens on top, saving refreshes this panel">✎ Edit</button> <button class="btn-sm btn-secondary no-print" onclick="closeModal();openReqStory('${escapeHtml(stHit.id)}')">Open story →</button></div>` : ''}
+            ${stHit ? `<div class="help-text" style="margin-top:0.4rem">From <b>${escapeHtml(stHit.id)}</b> — As a ${escapeHtml(stHit.persona || '?')}, I want to ${escapeHtml(stHit.want || '?')} <button class="btn-lite no-print" style="margin-left:0.4rem" onclick="openStoryModal('${escapeHtml(stHit.id)}')" title="Edit the story (and this criterion) right here — opens on top, saving refreshes this panel">✎ Edit</button> <button class="btn-lite no-print" onclick="closeModal();openReqStory('${escapeHtml(stHit.id)}')">Open story →</button></div>` : ''}
           </div>`;
         }
         sp.innerHTML = tcSpec + (st.length
           ? `<details open style="margin-bottom:1rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:0.5rem 0.75rem">
               <summary style="cursor:pointer;font-size:0.8rem;font-weight:600;color:#0369a1">📖 User stories traced to this activity (${st.length}) — the acceptance criteria that define “done” for billing</summary>
-              ${st.map(s => `<div style="margin:0.5rem 0;font-size:0.8rem;line-height:1.45">
-                <b>${escapeHtml(s.id)}</b> — As a <b>${escapeHtml(s.persona || '?')}</b>, I want to ${escapeHtml(s.want || '?')}, so that ${escapeHtml(s.soThat || '?')} <button class="btn-sm btn-secondary no-print" style="margin-left:0.35rem" onclick="openStoryModal('${escapeHtml(s.id)}')" title="Edit ${escapeHtml(s.id)} right here — persona, acceptance criteria, NFRs, assumptions. The story editor opens ON TOP of this one; saving refreshes this panel and your unsaved activity fields stay put. Criteria edits still offer test-case regeneration.">✎ Edit</button>
+              ${st.map(s => `<div style="margin:0.6rem 0 0.75rem;font-size:0.8rem;line-height:1.45">
+                <div style="display:flex;gap:0.6rem;align-items:flex-start">
+                  <span style="flex:1;min-width:0"><b>${escapeHtml(s.id)}</b> — As a <b>${escapeHtml(s.persona || '?')}</b>, I want to ${escapeHtml(s.want || '?')}, so that ${escapeHtml(s.soThat || '?')}</span>
+                  <button class="btn-lite no-print" onclick="openStoryModal('${escapeHtml(s.id)}')" title="Edit ${escapeHtml(s.id)} right here — persona, acceptance criteria, NFRs, assumptions. The story editor opens ON TOP of this one; saving refreshes this panel and your unsaved activity fields stay put. Criteria edits still offer test-case regeneration.">✎ Edit</button>
+                </div>
                 ${(s.ac || []).length ? `<ul style="list-style:none;margin:0.25rem 0 0;padding-left:0.5rem">${s.ac.map(a => `<li>${typeIcon[a.type] || '•'} <span style="color:#475569">${escapeHtml(a.id)}</span> ${escapeHtml(a.text)}</li>`).join('')}</ul>` : ''}
               </div>`).join('')}
-              <button class="btn-sm btn-secondary no-print" onclick="closeModal();openReqStory('${escapeHtml(st[0].id)}')" title="Jump straight to ${escapeHtml(st[0].id)} on the Requirements tab — edit, lint, traceability matrix">Open in Requirements →</button>
+              <button class="btn-lite no-print" onclick="addStoryForTask(${id})" title="Add ANOTHER story for this activity — the editor opens on top, pre-linked to this task (its phase's epic preselected); saving refreshes this panel">＋ Add story</button>
+              <button class="btn-lite no-print" onclick="closeModal();openReqStory('${escapeHtml(st[0].id)}')" title="Jump straight to ${escapeHtml(st[0].id)} on the Requirements tab — edit, lint, traceability matrix">Open in Requirements →</button>
             </details>`
-          : (reqs && Array.isArray(reqs.stories) && reqs.stories.length && !isSummaryId(id) && !t.milestone && !isTestCaseTask(t)
-            ? `<p class="help-text" style="margin-bottom:0.75rem">No user story traces to this activity yet — Requirements tab ▸ 🤖 Draft from WBS fills the gaps.</p>` : ''));
+          : (!isSummaryId(id) && !t.milestone && !isTestCaseTask(t)
+            ? `<div style="margin-bottom:0.75rem;display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap"><span class="help-text" style="margin:0">No user story traces to this activity yet — untraced work has no acceptance criteria to bill against.</span>
+               <button class="btn-lite no-print" onclick="addStoryForTask(${id})" title="Write the story right here — the editor opens on top, pre-linked to this activity; saving shows it in this panel">＋ Add story</button>
+               ${reqs && Array.isArray(reqs.stories) && reqs.stories.length ? '<span class="help-text" style="margin:0">(or Requirements ▸ 🤖 Draft from WBS fills every gap at once)</span>' : ''}</div>` : ''));
     }
     function openEditModal(id, expandDict) {
       const t = tasks.find(x => x.id === id);
@@ -7158,7 +7168,10 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       epicSel.innerHTML = '<option value="">(no epic)</option>' + (reqs.epics || []).map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.id + ' — ' + (e.title || ''))}</option>`).join('');
       computeWbsCodes();
       const wbsSel = document.getElementById('stWbs');
-      wbsSel.innerHTML = '<option value="">(not linked)</option>' + tasksInWbsOrder().filter(({ task: t }) => !isSummaryId(t.id) && !t.milestone).map(({ task: t, depth }) => `<option value="${t.id}">${' '.repeat(depth * 3)}${escapeHtml(t.wbs + ' ' + t.name)}</option>`).join('');
+      // an activity hosting test-case sub-tasks is still a REAL activity a
+      // story traces to (🧪 nests TCs under it, which makes it LOOK like a
+      // summary) — excluding those silently dropped the trace on save
+      wbsSel.innerHTML = '<option value="">(not linked)</option>' + tasksInWbsOrder().filter(({ task: t }) => !t.milestone && !isTestCaseTask(t) && (!isSummaryId(t.id) || leafDescendants(t.id).every(isTestCaseTask) || (s && s.wbsId === t.id))).map(({ task: t, depth }) => `<option value="${t.id}">${' '.repeat(depth * 3)}${escapeHtml(t.wbs + ' ' + t.name)}</option>`).join('');
       document.getElementById('stId').value = s ? s.id : nextStoryId();
       epicSel.value = s ? (s.epicId || '') : '';
       wbsSel.value = s && s.wbsId != null ? String(s.wbsId) : '';
@@ -7194,6 +7207,24 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       el.innerHTML = '📖 <b>As a</b> ' + (p ? escapeHtml(p) : '<span style="color:#94a3b8">…persona…</span>')
         + ', <b>I want to</b> ' + (w ? escapeHtml(w) : '<span style="color:#94a3b8">…action/goal…</span>')
         + ', <b>so that</b> ' + (s ? escapeHtml(s) : '<span style="color:#94a3b8">…the value…</span>') + '.';
+    }
+    // "+ Add story" from inside the activity editor: opens the story editor
+    // STACKED, already linked to this task, with its phase's epic preselected
+    function addStoryForTask(taskId) {
+      openStoryModal(null);
+      const sel = document.getElementById('stWbs');
+      if (sel) sel.value = String(taskId);
+      let cur = tasks.find(x => x.id === taskId), root = cur;
+      let guard = 0;
+      while (cur && cur.parentId != null && guard++ < 50) { cur = tasks.find(x => x.id === cur.parentId); if (cur) root = cur; }
+      if (root && reqs && Array.isArray(reqs.epics)) {
+        // ingested epics carry wbsId (applyReqsFromAI resolves the phase name);
+        // hand-made ones may still carry wbsName — match either
+        const ep = reqs.epics.find(e => e.wbsId === root.id)
+          || reqs.epics.find(e => String(e.wbsName || '').trim().toLowerCase() === root.name.trim().toLowerCase());
+        if (ep) document.getElementById('stEpic').value = ep.id;
+      }
+      updateStoryPreview();
     }
     function closeStoryModal() { document.getElementById('storyModal').classList.remove('open'); }
     async function saveStoryModal() {
