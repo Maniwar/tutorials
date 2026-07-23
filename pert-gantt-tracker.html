@@ -2199,7 +2199,20 @@
     // summary-row O/M/P display: rolled-up schedule spans from the extra passes
     function rollCell(v, kind) {
       if (!calculated || v == null) return '—';
-      return `<span class="help-text" style="cursor:help;font-style:italic" title="Rolled up automatically from the sub-tasks: elapsed span through their dependency network if every one hits its ${kind} estimate. Parallel branches overlap, so this matches how TE rolls up (span), not a simple sum of effort.">${(+v).toFixed(1)}</span>`;
+      return `<span class="help-text" style="cursor:help;font-style:italic" title="Rolled up automatically from the sub-tasks: elapsed span through their dependency network if every one hits its ${kind} estimate. Parallel branches overlap (and staggered starts count as span), so this can differ from a simple sum of effort — and an optimistic span can even exceed a pessimistic one when compression staggers the start times.">${fmtDur(+v)}</span>`;
+    }
+    // Who actually does the work under a summary/phase row — the phase's own
+    // owner label does no scheduled work; the sub-tasks carry the effort.
+    function summaryOwnerCell(t) {
+      const counts = new Map();
+      leafDescendants(t.id).forEach(x => { const o2 = (x.owner || '').trim(); if (o2) counts.set(o2, (counts.get(o2) || 0) + 1); });
+      const list = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+      if (!list.length) return escapeHtml(t.owner || '—');
+      const mismatch = (t.owner || '').trim() && !counts.has((t.owner || '').trim());
+      const label = list[0][0] + (list.length > 1 ? ' +' + (list.length - 1) : '');
+      const title = 'Who does the work in this phase (rolled up from sub-tasks): ' + list.map(([n, c]) => n + ' ×' + c).join(', ')
+        + (mismatch ? '. ⚠ The phase row itself is labeled "' + (t.owner || '').trim() + '" but owns no scheduled work — sub-tasks carry all the effort. Reassign the sub-tasks (bulk-select or ⚖ Spread test cases) if the wrong people ended up doing it.' : '');
+      return `<span style="cursor:help${mismatch ? ';color:#b45309' : ''}" title="${escapeHtml(title)}">${mismatch ? '⚠ ' : ''}${escapeHtml(label)} <span class="help-text" style="font-size:0.65rem">does the work</span></span>`;
     }
     function renderTaskTable() {
       const tbody = document.getElementById('taskBody');
@@ -2236,7 +2249,14 @@
           <td></td>
         </tr>`;
       }
-      tbody.innerHTML = totalRow + visibleWbsOrder().map(({ task: t, depth }) => {
+      // zero-estimate work packages are silently $0 / 0 days — alarm at the top
+      // of the table, not just inside the health check
+      const noEstLeaves = leafTasks().filter(t => !t.milestone && !(t.p > 0));
+      const alarmRow = noEstLeaves.length ? `<tr class="no-print"><td colspan="99" style="background:#fef2f2;border-left:4px solid var(--critical);font-size:0.8rem;padding:0.5rem 0.75rem">
+        <strong style="color:var(--critical)">⚠ ${noEstLeaves.length} work package(s) have NO estimate</strong> — O/M/P are zero, so they add nothing to the schedule, the critical path or the price:
+        ${noEstLeaves.slice(0, 5).map(t => `<span class="badge badge-critical" style="cursor:pointer" onclick="openEditModal(${t.id}, true)" title="Click to open and estimate">${escapeHtml((t.wbs ? t.wbs + ' ' : '') + (t.name.length > 40 ? t.name.slice(0, 38) + '…' : t.name))}</span>`).join(' ')}${noEstLeaves.length > 5 ? ' +' + (noEstLeaves.length - 5) + ' more' : ''}
+        — click one to estimate it, or make it a milestone if it is a zero-duration checkpoint.</td></tr>` : '';
+      tbody.innerHTML = totalRow + alarmRow + visibleWbsOrder().map(({ task: t, depth }) => {
         const summary = t.isSummary;
         const teStr = t.milestone ? '◆' : (calculated ? fmtDur(t.te) : '—');
         const slackStr = calculated ? (Math.abs(t.slack) < 0.05 ? '0.0' : t.slack.toFixed(1)) : '—';
@@ -2270,11 +2290,13 @@
           <td style="cursor:grab;color:var(--muted)" title="Drag to reorder / re-nest">⠿</td>
           <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
           <td>${nameCell}</td>
-          <td style="font-size:0.8rem" title="${t.overallocated ? escapeHtml((t.owner||'')+' is over-allocated during this task') : ''}">${t.overallocated ? '<span style="color:var(--critical)" title="over-allocated">⚠ </span>' : ''}${escapeHtml(t.owner || '—')}${(!t.milestone && !summary && t.units !== 100) ? ` <span class="help-text" style="font-size:0.68rem">@${t.units}%</span>` : ''}${(t.attendees && t.attendees.length) ? ` <span class="badge badge-info" title="${escapeHtml(t.attendees.map(a => a.name + ' @' + a.units + '%').join(', '))}">+${t.attendees.length}</span>` : ''}</td>
-          <td>${summary ? rollCell(t.oUp, 'optimistic') : t.milestone ? '—' : t.o}</td>
-          <td>${summary ? rollCell(t.mUp, 'most-likely') : t.milestone ? '—' : t.m}</td>
-          <td>${summary ? rollCell(t.pUp, 'pessimistic') : t.milestone ? '—' : t.p}</td>
-          <td><strong>${teStr}</strong></td>
+          <td style="font-size:0.8rem" title="${t.overallocated ? escapeHtml((t.owner||'')+' is over-allocated during this task') : ''}">${t.overallocated ? '<span style="color:var(--critical)" title="over-allocated">⚠ </span>' : ''}${summary ? summaryOwnerCell(t) : escapeHtml(t.owner || '—')}${(!t.milestone && !summary && t.units !== 100) ? ` <span class="help-text" style="font-size:0.68rem">@${t.units}%</span>` : ''}${(t.attendees && t.attendees.length) ? ` <span class="badge badge-info" title="${escapeHtml(t.attendees.map(a => a.name + ' @' + a.units + '%').join(', '))}">+${t.attendees.length}</span>` : ''}</td>
+          ${(() => { const noEst = !summary && !t.milestone && !(t.p > 0);
+            const a = noEst ? ' style="background:#fee2e2;color:#b91c1c;font-weight:700" title="NO ESTIMATE — this work package contributes nothing to the schedule, the critical path or the price. ✎ Edit and enter O/M/P, or mark it a milestone if it is a zero-duration checkpoint."' : '';
+            return `<td${a}>${summary ? rollCell(t.oUp, 'optimistic') : t.milestone ? '—' : t.o}</td>
+          <td${a}>${summary ? rollCell(t.mUp, 'most-likely') : t.milestone ? '—' : t.m}</td>
+          <td${a}>${summary ? rollCell(t.pUp, 'pessimistic') : t.milestone ? '—' : t.p}</td>
+          <td${a}><strong>${noEst ? '⚠ 0' : teStr}</strong></td>`; })()}
           <td style="font-size:0.8rem">${summary ? '—' : escapeHtml(predLabel(t))}</td>
           <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.startDate) : '—'}</td>
           <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.finishDate) : '—'}</td>
@@ -4930,7 +4952,7 @@
         return `<tr data-wbsrow="${t.id}" style="cursor:pointer;${t.isSummary ? 'font-weight:700;background:#f8fafc' : ''}" ondblclick="openEditModal(${t.id}, true)" title="Double-click to edit">
           <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
           <td style="padding-left:${8 + depth * 18}px"><span style="display:inline-flex;align-items:center">${twisty}${t.milestone ? '◆ ' : ''}${escapeHtml(t.name)}${collapsedIds.has(t.id) ? ` <span class="help-text" style="font-size:0.68rem;margin-left:4px">(+${leafDescendants(t.id).length})</span>` : ''}</span></td>
-          <td style="font-size:0.8rem">${escapeHtml(t.owner || '—')}</td>
+          <td style="font-size:0.8rem">${t.isSummary ? summaryOwnerCell(t) : escapeHtml(t.owner || '—')}</td>
           <td>${dur}</td>
           <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.startDate) : '—'}</td>
           <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.finishDate) : '—'}</td>
@@ -5815,14 +5837,17 @@ Return ONLY JSON:
         alert('No acceptance criteria yet — draft the requirements first (🤖 Draft from WBS).'); return;
       }
       if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) { alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
-      // ACs with no test case yet, PLUS ACs whose test cases are shallow (a
-      // one-line summary instead of numbered steps) — those get re-specified in
-      // place. Re-runs stay idempotent: a TC with real steps is never touched.
+      // ACs with no test case yet, PLUS ACs whose test cases are broken — shallow
+      // (a one-line summary instead of numbered steps) or carrying a degenerate
+      // flat O=M=P estimate (e.g. the 1h ÷ 24 = 0.042 calendar-day mistake).
+      // Those get healed in place. Re-runs stay idempotent: a TC with real steps
+      // and a real estimate spread is never touched.
       const work = [];
       let skippedProcess = 0;
+      const brokenTc = x => !hasRealSteps(x) || !((x.p || 0) > (x.o || 0));
       reqs.stories.forEach(s => (s.ac || []).forEach(a => {
         const tcs = testCasesForAC(a.id);
-        if (tcs.length && !tcs.every(x => !hasRealSteps(x))) return; // real TC exists
+        if (tcs.length && !tcs.every(brokenTc)) return; // a healthy TC exists
         if (isProcessStory(s)) { skippedProcess++; return; } // verified by its artifact, not UAT
         work.push({ s, a });
       }));
@@ -5896,12 +5921,14 @@ ACCEPTANCE CRITERIA NEEDING TEST CASES (story context included):
 ${batch.map(({ s, a }) => `- ${a.id} [${a.type}] (from ${s.id}: As a ${s.persona || '?'}, I want to ${s.want || '?'}): ${a.text}`).join('\n')}
 Rules:
 - One test case per criterion minimum; add a second only when the criterion genuinely bundles two scenarios.
-- name MUST start with "TC <AC-id> — " — the tool links TCs to criteria by that prefix. After the dash: the path type, a colon, then a SHORT VERB-FIRST action naming what the tester does (e.g. "TC AC-3.2 — error path: attempt export without admin role", "TC AC-1.1 — happy path: verify sponsor signs off all three documents in 5 days"). Never a noun-phrase restatement of the criterion.
+- name MUST start with "TC <AC-id> — " — the tool links TCs to criteria by that prefix. After the dash: the path type, a colon, then WHAT THE TESTER DOES → WHAT THEY MUST SEE, verb-first, with the arrow: "TC AC-3.2 — error path: submit a case with two matching owners → flagged 'unresolved', never auto-assigned", "TC AC-8.4 — perf: run the quartile query on the 10,000-case dataset → completes in ≤5 s". Never a noun-phrase restatement of the criterion ("validate classification accuracy" is a TOPIC, not a test — the action and the observable outcome are what make it executable).
 - steps: MINIMUM 3 numbered steps derived from the Given/When/Then (Given → setup, When → action, Then → observation), executable by a client UAT tester without asking questions — name the exact test data or account in the setup. "1. Log in as billing admin (test user uat_billing01). 2. Open Analytics ▸ Export and select Jan–Mar 2026. 3. Click Export CSV and time the download." — that level of concreteness.
 - pass: the EXPECTED RESULT — the observable behaviour that means PASS, copied faithfully from the criterion's Then (keep every number and its measurement condition). Never restate the steps here.
-- Durations in ${document.getElementById('durationUnit').value}: executing ONE scripted test case takes 5–30 MINUTES (0.01–0.06 days) — a UAT case is a scripted walkthrough with evidence capture, not exploratory testing. Reserve up to 1 hour (0.12 days) ONLY for genuinely long scenarios (performance timing runs, multi-role end-to-end flows). The SUM of all test cases must fit inside a realistic UAT window for this project's size; test cases run in PARALLEL across testers, they are not a serial chain. Data setup or environment work belongs in its own test case only if a criterion demands it.
+- Durations in ${document.getElementById('durationUnit').value}: executing ONE scripted test case takes 5–30 MINUTES — a UAT case is a scripted walkthrough with evidence capture, not exploratory testing. Reserve up to 1 hour ONLY for genuinely long scenarios (performance timing runs, multi-role end-to-end flows). CONVERSION — a day is 8 WORKING hours, never 24: 15 min = 0.03 days, 30 min = 0.06, 1 h = 0.12, 2 h = 0.25. Dividing by 24 (e.g. 1 h → 0.042) is ALWAYS wrong.
+- optimistic < mostLikely < pessimistic for EVERY test case — identical values are invalid. Pessimistic covers the realistic bad run: environment hiccup, one failed attempt, retest (typically ~2–3× optimistic, e.g. 0.02/0.04/0.09).
+- The SUM of all test cases must fit inside a realistic UAT window for this project's size; test cases run in PARALLEL across testers, they are not a serial chain. Data setup or environment work belongs in its own test case only if a criterion demands it.
 Return ONLY JSON (no prose, no fences):
-{"testCases":[{"name":"TC AC-1.1 — …","ac":"AC-1.1","optimistic":0.1,"mostLikely":0.25,"pessimistic":0.5,"owner":"","steps":"1. … 2. …","pass":"…"}]}`;
+{"testCases":[{"name":"TC AC-1.1 — …","ac":"AC-1.1","optimistic":0.02,"mostLikely":0.04,"pessimistic":0.09,"owner":"","steps":"1. … 2. …","pass":"…"}]}`;
         const onDelta = streamShow('Writing test cases [' + partBar + '] batch ' + (bi + 1) + '/' + batches.length + ' (' + batch.length + ' ACs)');
         const text = await callAnthropic(prompt, { onDelta });
         streamHide(true);
@@ -5911,28 +5938,43 @@ Return ONLY JSON (no prose, no fences):
           if (!nm || !/^tc\s/i.test(nm)) return;
           const acId = String(tc.ac || (nm.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').trim();
           const wa = work.find(w => w.a.id.toLowerCase() === acId.toLowerCase());
-          // an existing shallow TC for this criterion is re-specified IN PLACE —
-          // same task, id, schedule and links; it just gains real steps
+          // normalize the AI's estimate: sorted, non-degenerate (a flat O=M=P —
+          // like the 1h/24 = 0.042 calendar-day mistake — gets a real spread)
+          const normOMP = () => {
+            let o = Number(tc.optimistic), m = Number(tc.mostLikely), pv = Number(tc.pessimistic);
+            if (!(pv > 0)) { o = 0.02; m = 0.06; pv = 0.12; }
+            const arr = [o, m, pv].sort((x, y) => x - y);
+            if (!(arr[2] > arr[0])) { const mid = arr[1] || 0.04; arr[0] = Math.max(0.01, +(mid * 0.6).toFixed(2)); arr[2] = +(mid * 2).toFixed(2); }
+            return arr;
+          };
+          // an existing TC for this criterion is healed IN PLACE — same task id,
+          // schedule position and links. Broken = no executable steps OR a
+          // degenerate flat estimate; it gets the fresh steps, pass criterion,
+          // verb-first "action → outcome" name and a real O<M<P spread.
           const existing = testCasesForAC(acId)[0];
           if (existing) {
-            if (!hasRealSteps(existing)) {
+            const broken = !hasRealSteps(existing) || !((existing.p || 0) > (existing.o || 0));
+            if (broken) {
               if (String(tc.steps || '').trim()) existing.description = tcStepLines(String(tc.steps).trim()); // one step per line
               if (String(tc.pass || '').trim()) existing.acceptance = String(tc.pass).trim();
               if (!existing.deliverable) existing.deliverable = 'Test evidence: pass/fail + defects logged (S1–S4)';
+              if (nm.toLowerCase() !== existing.name.trim().toLowerCase()) existing.name = nm; // same "TC <AC-id>" prefix, so every link survives
+              const eArr = normOMP(); existing.o = eArr[0]; existing.m = eArr[1]; existing.p = eArr[2];
               respec++;
             }
             return;
           }
           if (tasks.some(t => t.name.trim().toLowerCase() === nm.toLowerCase())) return; // dedupe
-          let o = Number(tc.optimistic), m = Number(tc.mostLikely), pv = Number(tc.pessimistic);
-          if (!(pv > 0)) { o = 0.1; m = 0.25; pv = 0.5; }
-          const arr = [o, m, pv].sort((x, y) => x - y);
+          const arr = normOMP();
           const host = (wa ? hostOf[wa.s.id] : null) || globalHost || ensureFallback();
           // no self-dependency: skip the FS pred when the verified activity IS
           // the host (or one of its ancestors) — the WBS nesting already scopes it
           const hostAnc = new Set(parentChain(host.id)); hostAnc.add(host.id);
           const nt = makeTask({ id: nextId++, name: nm, o: arr[0], m: arr[1], p: arr[2], milestone: false,
-            owner: String(tc.owner || '').trim() || qaOwner, units: 100, parentId: host.id,
+            // owner inheritance: the UAT activity's own owner first (that's who
+            // the plan says executes this testing — e.g. Client Stakeholder),
+            // then a QA-ish roster match as fallback
+            owner: String(tc.owner || '').trim() || (host.owner || '').trim() || qaOwner, units: 100, parentId: host.id,
             predecessors: (wa && wa.s.wbsId != null && tasks.some(t => t.id === wa.s.wbsId) && !hostAnc.has(wa.s.wbsId)) ? [{ id: wa.s.wbsId, type: 'FS', lag: 0 }] : [],
             description: tcStepLines(String(tc.steps || '').trim()), // stored with one numbered step per line
             deliverable: 'Test evidence: pass/fail + defects logged (S1–S4)',
@@ -5947,7 +5989,7 @@ Return ONLY JSON (no prose, no fences):
       renderReqs();
       const uncovered = [];
       reqs.stories.forEach(s => (s.ac || []).forEach(a => { if (!testCasesForAC(a.id).length && !isProcessStory(s)) uncovered.push(a.id); }));
-      flashSaved('🧪 ' + made + ' test case(s) created' + (respec ? ' · ' + respec + ' shallow one(s) re-specified with real steps' : '') + (skippedProcess ? ' · ' + skippedProcess + ' PM/governance process criteria skipped (verified by their artifacts)' : '') + (usedHosts.size ? ' — nested under ' + [...usedHosts].map(n => '"' + n + '"').join(', ') : '') + (uncovered.length ? ' — ⚠ still uncovered: ' + uncovered.slice(0, 6).join(', ') + ' (re-run to fill)' : ' — every UAT-testable AC covered. Export ⬇ Test plan (.md)'));
+      flashSaved('🧪 ' + made + ' test case(s) created' + (respec ? ' · ' + respec + ' broken one(s) healed in place (steps, action → outcome name, real O<M<P spread)' : '') + (skippedProcess ? ' · ' + skippedProcess + ' PM/governance process criteria skipped (verified by their artifacts)' : '') + (usedHosts.size ? ' — nested under ' + [...usedHosts].map(n => '"' + n + '"').join(', ') : '') + (uncovered.length ? ' — ⚠ still uncovered: ' + uncovered.slice(0, 6).join(', ') + ' (re-run to fill)' : ' — every UAT-testable AC covered. Export ⬇ Test plan (.md)'));
     }
     // Test plan document: strategy + gates from the estimation guide + AC→TC traceability
     function exportTestPlanMarkdown() {
