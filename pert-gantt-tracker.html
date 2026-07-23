@@ -5353,6 +5353,16 @@
             <button class="btn-sm btn-primary" onclick="createTasksFromUnlinked()" title="One new WBS activity per unlinked story, dictionary pre-filled, then a pre-filled AI request to estimate them">➕ Create WBS activities for the rest</button>
           </div></div>`;
       }
+      // duplicate "(Parallel Track)" clones from the old risk-fix: they inflate
+      // effort/price and would otherwise nag for stories their originals own
+      const clones = parallelCloneTasks();
+      if (clones.length) {
+        html += `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
+          <strong>⚠ ${clones.length} duplicate “(Parallel Track)” task(s) detected:</strong>
+          ${clones.slice(0, 6).map(t => escapeHtml(t.name)).join(' • ')}${clones.length > 6 ? ' …' : ''} —
+          clones created by an earlier AI risk-fix that duplicated work instead of splitting it (fixed since). They inflate effort and price; their originals already carry the stories, so they are excluded from coverage here.
+          <div style="margin-top:0.4rem"><button class="btn-sm btn-danger" onclick="cleanupParallelClones()" title="Deletes only the clone tasks; originals, stories and links untouched. One ↶ undo reverses.">🧹 Remove the duplicates</button></div></div>`;
+      }
       // leftovers from the fixed story↔TC cycle bug: stories drafted FOR test
       // cases. Stories describe scope; test cases verify it — these are noise.
       const tcTaskIds = new Set(tasks.filter(isTestCaseTask).map(t => t.id));
@@ -5404,7 +5414,19 @@
         </tr>`;
         acsList.forEach((a, i) => matrixRows.push(cells(a, i === 0)));
       });
-      html += `<details id="traceMatrix" style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">▦ Traceability matrix — ${matrixRows.length} rows: epic → story → acceptance criterion → WBS activity → status <span class="help-text" style="font-weight:400">(this is the audit view; the CSV export matches it)</span></summary>
+      // GAP ROWS: activities that are in the plan (and the price) but have no
+      // story — a complete audit view shows them right in the matrix
+      uncovered.forEach(t => {
+        matrixRows.push(`<tr style="background:#fffbeb">
+          <td style="font-size:0.75rem;color:#b45309">—</td><td style="font-size:0.75rem;color:#b45309">—</td>
+          <td style="font-size:0.78rem;color:#b45309;min-width:220px">⚠ <b>No story yet</b> — scoped &amp; priced work with no agreed acceptance criteria. Use “🤖 Draft the missing stories” in the coverage banner.</td>
+          <td style="font-size:0.75rem;color:#b45309">—</td><td></td><td style="font-size:0.78rem;color:#b45309"><i>none</i></td><td></td>
+          <td style="font-size:0.75rem;white-space:nowrap;cursor:pointer;color:var(--primary)" onclick="openEditModal(${t.id}, true)" title="Open ${escapeHtml(t.wbs + ' ' + t.name)}">${escapeHtml(t.wbs + ' ' + (t.name.length > 24 ? t.name.slice(0, 22) + '…' : t.name))}</td>
+          <td style="font-size:0.75rem">${escapeHtml(t.owner || '—')}</td>
+          <td style="font-size:0.75rem;white-space:nowrap">${(t.percentComplete || 0)}% · ${escapeHtml(taskStatus(t).label)}</td>
+        </tr>`);
+      });
+      html += `<details id="traceMatrix" style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">▦ Traceability matrix — ${matrixRows.length} rows: epic → story → acceptance criterion → WBS activity → status${uncovered.length ? ` · <span style="color:#b45309">⚠ incl. ${uncovered.length} activit${uncovered.length === 1 ? 'y' : 'ies'} with no story</span>` : ''} <span class="help-text" style="font-weight:400">(this is the audit view; the CSV export matches it)</span></summary>
         <div class="table-wrap" style="margin-top:0.5rem;max-height:420px;overflow:auto"><table>
           <thead><tr><th>Epic</th><th>Story</th><th>User story</th><th>AC</th><th title="happy / error / edge / perf path">Type</th><th>Acceptance criterion</th><th title="WBS tasks named 'TC <AC-id> — …' that verify this criterion (⑂ decompose your UAT task to test-case level to generate them)">Test cases</th><th title="Click to open the activity">WBS trace</th><th>Owner</th><th>Status</th></tr></thead>
           <tbody>${matrixRows.join('')}</tbody></table></div></details>`;
@@ -5563,8 +5585,34 @@
       }
       return false;
     }
+    // "(Parallel Track)" clones — created by an early AI risk-fix that duplicated
+    // work instead of splitting it. Their ORIGINALS carry the stories/estimates;
+    // the clones only inflate effort, price and coverage gaps.
+    function isParallelCloneTask(t) {
+      const m = String((t && t.name) || '').match(/^(.*?)\s*\((?:parallel track|parallel)\)\s*$/i);
+      if (!m) return false;
+      const base = m[1].trim().toLowerCase();
+      return tasks.some(x => x.id !== t.id && x.name.trim().toLowerCase() === base);
+    }
+    function parallelCloneTasks() { return tasks.filter(isParallelCloneTask); }
+    function cleanupParallelClones() {
+      const list = parallelCloneTasks();
+      if (!list.length) { flashSaved('✓ No duplicate "(Parallel Track)" tasks.'); return; }
+      if (!confirm('Remove ' + list.length + ' duplicate "(Parallel Track)" task(s)?\n\nThese are clones from an earlier AI risk-fix that duplicated work instead of splitting it — they inflate effort and price, and their originals already carry the stories and estimates.\n\n↶ Undo reverses.')) return;
+      const rm = new Set(list.map(t => t.id));
+      const parentOf = {}; tasks.forEach(t => { parentOf[t.id] = t.parentId; });
+      const climb = pid => { while (pid != null && rm.has(pid)) pid = parentOf[pid]; return pid == null ? null : pid; };
+      tasks.forEach(t => { if (!rm.has(t.id)) t.parentId = climb(t.parentId); });
+      tasks = tasks.filter(t => !rm.has(t.id));
+      tasks.forEach(t => { t.predecessors = t.predecessors.filter(p => !rm.has(p.id)); });
+      rm.forEach(id => { selectedTaskIds.delete(id); collapsedIds.delete(id); });
+      saveLocal();
+      if (calculated) recompute();
+      refreshAll(); renderReqs();
+      flashSaved('🧹 ' + list.length + ' duplicate task(s) removed — effort, price and coverage now reflect the real plan. ↶ Undo restores');
+    }
     // leaf activities that legitimately need a user story
-    function storyableLeaves() { return leafTasks().filter(t => !t.milestone && !isTestCaseTask(t)); }
+    function storyableLeaves() { return leafTasks().filter(t => !t.milestone && !isTestCaseTask(t) && !isParallelCloneTask(t)); }
     function testCasesForAC(acId) {
       if (!acId) return [];
       const needle = String(acId).trim().toLowerCase();
@@ -6359,6 +6407,12 @@ ${reqRulesBlock()}`;
         if (!(s.ac || []).length) rows.push([...base, '', '', '', '', ...tail]);
         (s.ac || []).forEach(a => rows.push([...base, a.id, a.type, gwtLines(a.text),
           testCasesForAC(a.id).map(tc => tc.name + ' (' + (tc.percentComplete || 0) + '%)').join('\n') || (isProcessStory(s) ? '📋 process — verified by its artifact' : ''), ...tail]));
+      });
+      // gap rows: WBS activities with no story — the audit view must show them
+      const covered = new Set(reqs.stories.map(s => s.wbsId).filter(x => x != null));
+      storyableLeaves().filter(t => !covered.has(t.id)).forEach(t => {
+        rows.push(['', '', '⚠ NO STORY YET — scoped & priced work with no agreed acceptance criteria', '', '', '', '', '',
+          t.wbs, t.name, t.owner || '', (t.percentComplete || 0) + '%', taskStatus(t).label]);
       });
       return rows;
     }
@@ -8514,6 +8568,8 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       const noPreds = leaves.filter(t => !effectivePreds(t).length);
       if (noPreds.length > Math.max(2, leaves.length * 0.3)) findings.push({ severity: 'high', area: 'Dependencies', finding: `${noPreds.length} of ${leaves.length} tasks have no predecessors — the network is probably under-linked`, recommendation: 'Link the real sequence or the critical path (and every forecast) is understated.' });
       if (!tasks.some(t => t.milestone)) findings.push({ severity: 'medium', area: 'Milestones', finding: 'No milestones defined', recommendation: 'Add sign-off / go-live checkpoints — they anchor the SOW payment schedule and status reporting.' });
+      const dupClones = parallelCloneTasks();
+      if (dupClones.length) findings.push({ severity: 'high', area: 'Duplicates', finding: dupClones.length + ' duplicate "(Parallel Track)" task(s) inflate effort and price: ' + dupClones.slice(0, 4).map(t => t.name).join('; ') + (dupClones.length > 4 ? '…' : ''), recommendation: 'Requirements tab ▸ 🧹 Remove the duplicates (one undoable click) — their originals already carry the stories and estimates.', jump: 'req' });
       if (!leaves.some(t => /manag|pm\b|status|govern|coordinat/i.test(t.name))) findings.push({ severity: 'medium', area: 'Missing scope', finding: 'No project-management/governance effort in the plan', recommendation: 'Delivery overhead is typically 10–15% — add a PM workstream or it comes out of margin.' });
       if (mcResult) {
         const drivers = leaves.map(t => ({ t, w: (t.criticality || 0) * (t.variance || 0) })).sort((a, b) => b.w - a.w).slice(0, 3).filter(x => x.w > 0);
