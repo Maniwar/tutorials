@@ -4654,6 +4654,11 @@
         // horizontal entries land on a bar's left edge — or a diamond's left tip
         // (milestones anchor at the END of their day: they mark completion)
         const sEdge = t.milestone ? msAnchorX(t) - 11 : sX;
+        // "verified by" plumbing: links INTO test cases (or into a collapsed
+        // summary standing in for its test cases) are informational — a real
+        // plan has dozens converging on the same UAT window, and at full
+        // strength they read as a cable bundle. Draw them faint and dashed.
+        const tcChildPredIds = t.isSummary ? new Set(leafDescendants(t.id).filter(isTestCaseTask).flatMap(c => (c.predecessors || []).map(pp => pp.id))) : null;
         effectivePreds(t).forEach((p, k) => {
           if (redundantEdges.has(t.id + ':' + p.id)) return;
           const pt = tasks.find(x => x.id === p.id);
@@ -4663,15 +4668,18 @@
           const pX = dateX(pt.startDate) + spanW;
           const pY = Y0 + pi * ROWH + ROWH / 2;
           const crit = t.isCritical && pt.isCritical;
-          const stroke = crit ? '#dc2626' : '#94a3b8';
-          const mk = crit ? 'g-arrC' : 'g-arr';
-          const sw = crit ? 1.7 : 1.2, op = crit ? 0.9 : 0.5;
+          const tcLink = (isTestCaseTask(t) && !isTestCaseTask(pt)) || (tcChildPredIds && tcChildPredIds.has(p.id));
+          const stroke = crit && !tcLink ? '#dc2626' : '#94a3b8';
+          const mk = crit && !tcLink ? 'g-arrC' : 'g-arr';
+          const sw = tcLink ? 0.9 : crit ? 1.7 : 1.2, op = tcLink ? 0.35 : crit ? 0.9 : 0.5;
+          const dash = tcLink ? ' stroke-dasharray="3,3"' : '';
           const bend = pX + 7;
           if (sX >= bend + 4) {
             // forward link: run along the predecessor's row, drop just BEFORE the
             // successor — a drop right after the pred stabs through any bar in
-            // the rows between (multiple preds also converge into one column)
-            const dropX = sEdge - 9; // 9px final approach — always longer than the 6.5px arrowhead
+            // the rows between. Converging predecessors STAGGER into separate
+            // drop columns so they don't fuse into one heavy line
+            const dropX = sEdge - 9 - (k % 6) * 5; // ≥9px final approach — always longer than the 6.5px arrowhead
             if (pt.milestone) {
               // a milestone's date label sits right of the diamond at mid-height —
               // exit the diamond's bottom (or top) tip and travel the row
@@ -4680,16 +4688,16 @@
               const below2 = sY > pY;
               const exitX2 = msAnchorX(pt);
               const lane2 = below2 ? pRowT + ROWH - 2 : pRowT + 2;
-              links += `<path d="M${exitX2},${below2 ? pY + 11 : pY - 11} L${exitX2},${lane2} L${dropX},${lane2} L${dropX},${sY} L${sEdge - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+              links += `<path d="M${exitX2},${below2 ? pY + 11 : pY - 11} L${exitX2},${lane2} L${dropX},${lane2} L${dropX},${sY} L${sEdge - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${mk})"/>`;
             } else if (dropX - pX > dayW * 2.2) {
               // LONG run: a mid-row horizontal would cut through the slack hatch
               // and labels for weeks — hop into this row's edge gap right after
               // the bar end and travel there instead
               const pRowT = Y0 + pi * ROWH;
               const prLane = sY > pY ? pRowT + ROWH - 1.5 : pRowT + 1.5;
-              links += `<path d="M${pX},${pY} L${pX + 5},${pY} L${pX + 5},${prLane} L${dropX},${prLane} L${dropX},${sY} L${sEdge - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+              links += `<path d="M${pX},${pY} L${pX + 5},${pY} L${pX + 5},${prLane} L${dropX},${prLane} L${dropX},${sY} L${sEdge - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${mk})"/>`;
             } else
-            links += `<path d="M${pX},${pY} L${dropX},${pY} L${dropX},${sY} L${sEdge - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+            links += `<path d="M${pX},${pY} L${dropX},${pY} L${dropX},${sY} L${sEdge - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${mk})"/>`;
           } else {
             // successor starts at/before the predecessor's right edge (typical for
             // sub-day tasks that each fill a whole day cell). The link EMITS from
@@ -4720,10 +4728,10 @@
               const tipY = below ? pY + 11 : pY - 11;
               const dX = t.milestone ? msAnchorX(t) : Math.max(sX + 5, Math.min(sX + sSpanW - 5, pCx));
               if (Math.abs(dX - pCx) < 3) {
-                links += `<path d="M${pCx},${tipY} L${pCx},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+                links += `<path d="M${pCx},${tipY} L${pCx},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${mk})"/>`;
               } else {
                 const laneM = below ? sRowTop - 4 : sRowTop + ROWH + 4;
-                links += `<path d="M${pCx},${tipY} L${pCx},${laneM} L${dX},${laneM} L${dX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+                links += `<path d="M${pCx},${tipY} L${pCx},${laneM} L${dX},${laneM} L${dX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${mk})"/>`;
               }
             } else {
             // aim the drop column 6px PAST the predecessor's end — the link
@@ -4732,16 +4740,16 @@
             const desiredX = t.milestone ? msAnchorX(t)
               : Math.max(sX + 5, Math.min(sX + sSpanW - 5, pX + 6 - k * 7));
             if (desiredX >= pX - 0.5) {
-              links += `<path d="M${pX},${pY}${desiredX - pX > 0.5 ? ` L${desiredX},${pY}` : ''} L${desiredX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+              links += `<path d="M${pX},${pY}${desiredX - pX > 0.5 ? ` L${desiredX},${pY}` : ''} L${desiredX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${mk})"/>`;
             } else if (desiredX >= dateX(pt.startDate) + 2) {
               // entry column passes under (or over) the predecessor itself —
               // one straight vertical from its edge; a lane here would hug the
               // bar's bottom and read as an underline
               const pEdgeY = below ? (Y0 + pi * ROWH + 7 + BAR_H) : (Y0 + pi * ROWH + 7);
-              links += `<path d="M${desiredX},${pEdgeY} L${desiredX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+              links += `<path d="M${desiredX},${pEdgeY} L${desiredX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${mk})"/>`;
             } else {
               const lane = below ? sRowTop - 4 : sRowTop + ROWH + 4;
-              links += `<path d="M${pX},${pY} L${pX},${lane} L${desiredX},${lane} L${desiredX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+              links += `<path d="M${pX},${pY} L${pX},${lane} L${desiredX},${lane} L${desiredX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}"${dash} marker-end="url(#${mk})"/>`;
             }
             }
           }
@@ -4861,7 +4869,6 @@
         const reason = (firstCritLeaf.levelDelay || 0) > 0
           ? 'The first zero-slack activity ("' + firstCritLeaf.name + '") is pinned by RESOURCE LEVELING (start pushed +' + firstCritLeaf.levelDelay.toFixed(1) + ' ' + unitLabel() + ' to resolve an over-allocation). Clear or change leveling on the Resources tab and the dependency-driven path will reach further back.'
           : 'Everything to the left of this point carries float — those activities can slip (by their slack numbers) WITHOUT moving the finish date. The finish is driven only from "' + firstCritLeaf.name + '" onward, so focus compression there.';
-        svg += `<path d="M${X0},${y0c} L${x0c - 18},${y0c}" fill="none" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="2,5" opacity="0.45"/>`;
         svg += `<g data-cpwhy="1" style="cursor:help"><circle cx="${x0c - 17}" cy="${y0c}" r="8" fill="#fff" stroke="#dc2626" stroke-width="1.6"/><text x="${x0c - 17}" y="${y0c + 3.5}" font-family="${FF}" font-size="10" font-weight="800" fill="#dc2626" text-anchor="middle">?</text>
           <title>${escapeXml('Why does the critical path start HERE, not at day one?\n' + reason)}</title></g>`;
       }
