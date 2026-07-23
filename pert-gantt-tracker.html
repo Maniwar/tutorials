@@ -4068,6 +4068,7 @@
         if (!resources[rn]) resources[rn] = { capacity: 100 };
         resources[rn].rate = +card.roles[ri].cost || 0;
         resources[rn].billRate = Math.round((+card.roles[ri].bill || 0) * disc);
+        resources[rn].rateUnit = 'day'; // rate cards are per-day
         resources[rn].role = card.roles[ri].role;
         applied++;
       });
@@ -4260,9 +4261,23 @@
     }
 
     // ========================= COST / BUDGET =========================
+    // Rates can be entered per DAY or per HOUR (rateUnit on the roster row —
+    // one unit covers both the cost and bill rate). Every computation keeps
+    // reading getRate/getBillRate, which always return the PER-DAY figure
+    // (1 day = 8 h, same conversion the sub-day durations use).
+    function resRateUnit(name) { return ((resources[name] || {}).rateUnit === 'hour') ? 'hour' : 'day'; }
+    function rawRate(name) { const r = resources[name]; return (r && Number.isFinite(+r.rate)) ? +r.rate : 0; }
+    function rawBillRate(name) { const r = resources[name]; return (r && Number.isFinite(+r.billRate)) ? +r.billRate : 0; }
+    function rateUnitSuffix(name) { return resRateUnit(name) === 'hour' ? '/hr' : '/day'; }
+    function setRateUnit(name, val) {
+      if (!resources[name]) resources[name] = { capacity: 100 };
+      resources[name].rateUnit = val === 'hour' ? 'hour' : 'day';
+      saveLocal();
+      if (calculated && document.getElementById('view-analytics').classList.contains('active')) renderAnalytics();
+      renderResources();
+    }
     function getRate(name) {
-      const r = resources[name];
-      return (r && Number.isFinite(+r.rate)) ? +r.rate : 0; // cost per working day at 100%
+      return rawRate(name) * (resRateUnit(name) === 'hour' ? 8 : 1); // cost per working day at 100%
     }
     function setRate(name, val) {
       if (!resources[name]) resources[name] = { capacity: 100 };
@@ -4352,7 +4367,7 @@
     function exportBillingCSV() {
       if (!ensureCalc()) return;
       const d = billingData();
-      const rows = [['Person / role','Status','Kind','Cost rate/day','Bill rate/day','Effort (days)','Tasks','Test cases','Cost $','Billed $']];
+      const rows = [['Person / role','Status','Kind','Cost rate ($/day equiv)','Bill rate ($/day equiv)','Effort (days)','Tasks','Test cases','Cost $','Billed $']];
       d.rows.forEach(r => rows.push([r.nm, r.statusText, r.client ? 'client' : 'internal', r.client ? '' : r.rate, r.client ? '' : r.bill,
         r.rec.days.toFixed(2), r.rec.tasks, r.rec.tcs, r.cost.toFixed(0), r.billed.toFixed(0)]));
       if (d.fixedTotal) rows.push(['Fixed costs (licenses, travel…)', 'billed', '', '', '', '', '', '', d.fixedTotal.toFixed(0), d.fixedTotal.toFixed(0)]);
@@ -5591,8 +5606,11 @@
             <option value="client" ${isClient ? 'selected' : ''}>Client</option></select></td>
           <td><input class="mini-inp rl-role" data-ri="${ri}" type="text" value="${escapeHtml((resources[name] || {}).role || '')}" placeholder="e.g. Platform Developer" title="What they do on this engagement — the AI captures it from your notes ('Marcus Webb — CRM Platform Developer'); applying a rate card also fills it. Shows on owner hovers so a roster of names still tells you who does what." style="width:150px" /></td>
           <td><input class="mini-inp rl-cap" data-ri="${ri}" type="number" min="1" step="10" value="${R.capacity}" title="Capacity % — 100 = 1 full-time person, 300 = a 3-person team" /></td>
-          <td>${isClient ? '<span class="help-text">n/a</span>' : `<input class="mini-inp rl-rate" data-ri="${ri}" type="number" min="0" step="50" value="${getRate(name)}" title="COST per working day at 100% (feeds the budget layer)" />`}</td>
-          <td>${isClient ? '<span class="help-text">n/a</span>' : `<input class="mini-inp rl-bill" data-ri="${ri}" type="number" min="0" step="50" value="${getBillRate(name)}" title="BILL rate per day (client-facing — feeds pricing & SOW)" />`}</td>
+          <td>${isClient ? '<span class="help-text">n/a</span>' : `<input class="mini-inp rl-rate" data-ri="${ri}" type="number" min="0" step="${resRateUnit(name) === 'hour' ? 5 : 50}" value="${rawRate(name)}" title="COST rate at 100%, in the unit on the right (feeds the budget layer — hourly × 8 = the daily figure the math uses)" />`}</td>
+          <td>${isClient ? '<span class="help-text">n/a</span>' : `<input class="mini-inp rl-bill" data-ri="${ri}" type="number" min="0" step="${resRateUnit(name) === 'hour' ? 5 : 50}" value="${rawBillRate(name)}" title="BILL rate, in the unit on the right (client-facing — feeds pricing & SOW)" />`}</td>
+          <td>${isClient ? '' : `<select class="mini-inp rl-runit" data-ri="${ri}" style="width:auto" title="Enter this person's rates per day or per hour — one unit covers both columns. Hourly converts at 1 day = 8 h everywhere the math runs (billing, pricing, SOW).">
+            <option value="day" ${resRateUnit(name) !== 'hour' ? 'selected' : ''}>$/day</option>
+            <option value="hour" ${resRateUnit(name) === 'hour' ? 'selected' : ''}>$/hr</option></select>`}</td>
           <td style="max-width:230px">
             <span data-pto-cell="${ri}">${ptoParts(name).map((pt, pi) => `<span class="pto-chip" title="Unavailable — work scheduled on these days is flagged">${escapeHtml(ptoChipLabel(pt))}<button data-pto-del="${ri}:${pi}" title="Remove">×</button></span>`).join('')}
             <button class="btn-sm btn-secondary" data-pto-add="${ri}" title="Add vacation / unavailable dates with a date picker">+ PTO</button></span>
@@ -5626,7 +5644,7 @@
           <button class="btn-sm btn-primary no-print" onclick="addResourcePrompt()">➕ Add resource</button></span>
         </div>
         <div class="table-wrap" style="margin-bottom:1rem"><table>
-          <thead><tr><th title="Person, role or team">Resource</th><th title="Internal = yours (costed & billed). Client = their people: tracked for workload/PTO but never costed or billed">Type</th><th title="Job on the engagement — filled by the AI from your notes, editable, also set when a rate card is applied">Role</th><th title="100 = one full-time person; 300 = a 3-person team; 50 = someone available half-time">Capacity %</th><th title="What they cost YOU per working day — drives the cost & EVM layer">Cost $/d</th><th title="What you charge the client per day — drives pricing, margin and the SOW">Bill $/d</th><th title="Vacation / unavailable dates. Scheduled work on these days is flagged as a conflict">PTO / unavailable</th><th title="Tasks they participate in (incl. as attendee)">Tasks</th><th title="Total planned working days × their allocation">Planned effort</th><th title="Busiest single day as % of capacity">Peak load</th><th title="OK = within capacity every day; over ×N = N conflict days to resolve">Status</th><th></th></tr></thead>
+          <thead><tr><th title="Person, role or team">Resource</th><th title="Internal = yours (costed & billed). Client = their people: tracked for workload/PTO but never costed or billed">Type</th><th title="Job on the engagement — filled by the AI from your notes, editable, also set when a rate card is applied">Role</th><th title="100 = one full-time person; 300 = a 3-person team; 50 = someone available half-time">Capacity %</th><th title="What they cost YOU — in the unit chosen in the next column; drives the cost & EVM layer">Cost rate</th><th title="What you charge the client — drives pricing, margin and the SOW">Bill rate</th><th title="Rates entered per day or per hour (1 day = 8 h — hourly people convert automatically everywhere)">Unit</th><th title="Vacation / unavailable dates. Scheduled work on these days is flagged as a conflict">PTO / unavailable</th><th title="Tasks they participate in (incl. as attendee)">Tasks</th><th title="Total planned working days × their allocation">Planned effort</th><th title="Busiest single day as % of capacity">Peak load</th><th title="OK = within capacity every day; over ×N = N conflict days to resolve">Status</th><th></th></tr></thead>
           <tbody>${rosterRows}</tbody>
         </table></div>`;
       const holidays = getHolidaySet();
@@ -5819,6 +5837,9 @@
       });
       cont.querySelectorAll('input.rl-bill').forEach(inp => {
         inp.addEventListener('change', () => setBillRate(names[Number(inp.dataset.ri)], inp.value));
+      });
+      cont.querySelectorAll('select.rl-runit').forEach(sel => {
+        sel.addEventListener('change', () => setRateUnit(names[Number(sel.dataset.ri)], sel.value));
       });
       cont.querySelectorAll('[data-pto-add]').forEach(btn => btn.addEventListener('click', () => {
         cont.querySelector(`[data-pto-cell="${btn.dataset.ptoAdd}"]`).style.display = 'none';
@@ -8860,12 +8881,13 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     function exportResourcesCSV() {
       if (!Object.keys(resources).length && !tasks.some(t => t.owner)) { alert('No resources yet.'); return; }
       syncResources();
-      const rows = [['Resource','Type','Role (rate card)','Capacity %','Cost $/day','Bill $/day','PTO / unavailable dates','Assigned tasks','Planned effort (days)']];
+      const rows = [['Resource','Type','Role (rate card)','Capacity %','Cost rate','Bill rate','Rate unit','PTO / unavailable dates','Assigned tasks','Planned effort (days)']];
       Object.keys(resources).forEach(n => {
         const assigned = tasks.filter(t => !t.isSummary && !t.milestone && taskParticipants(t).some(pr => pr.name === n));
         const effort = assigned.reduce((sx, t) => { const pr = taskParticipants(t).find(x => x.name === n); return sx + unitToWorkingDays(t.te || 0) * ((pr ? pr.units : 0) / 100); }, 0);
         rows.push([n, getKind(n), (resources[n] && resources[n].role) || '', getCapacity(n),
-          isClientResource(n) ? '' : getRate(n), isClientResource(n) ? '' : getBillRate(n),
+          isClientResource(n) ? '' : rawRate(n), isClientResource(n) ? '' : rawBillRate(n),
+          isClientResource(n) ? '' : ('$/' + (resRateUnit(n) === 'hour' ? 'hr' : 'day')),
           (resources[n] && resources[n].pto) || '', assigned.map(t => t.name).join('; '), effort.toFixed(1)]);
       });
       download(safeName() + '-resources.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
@@ -9199,7 +9221,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         'A. Rivera': { capacity: 100, rate: 1200, billRate: 1900, kind: 'internal', role: 'Business Analyst & Change Lead' },
         'L. Chen':   { capacity: 100, rate: 1300, billRate: 2100, kind: 'internal', role: 'CRM Solution Architect' },
         'Dev Team':  { capacity: 300, rate: 1100, billRate: 1750, kind: 'internal', role: 'CRM Platform Developers (pooled)' },
-        'QA':        { capacity: 100, rate: 950,  billRate: 1500, kind: 'internal', role: 'QA & Test Lead' },
+        'QA':        { capacity: 100, rate: 120,  billRate: 190, rateUnit: 'hour', kind: 'internal', role: 'QA & Test Lead' }, // hourly example — ×8 = $960/$1,520 per day
         'Client SME':      { capacity: 50, kind: 'client', rate: 0, billRate: 0, role: 'Client Operations SME' },
         'Client UAT Lead': { capacity: 50, kind: 'client', rate: 0, billRate: 0, role: 'Client UAT Coordinator' }
       };
@@ -10355,8 +10377,7 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
 
     // ========================= PRICING & MARGIN =========================
     function getBillRate(name) {
-      const r = resources[name];
-      return (r && Number.isFinite(+r.billRate)) ? +r.billRate : 0;
+      return rawBillRate(name) * (resRateUnit(name) === 'hour' ? 8 : 1); // bill per working day
     }
     function setBillRate(name, val) {
       if (!resources[name]) resources[name] = { capacity: 100 };
@@ -10502,7 +10523,7 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           return out;
         })(),
         milestones: tasks.filter(t => t.milestone).map(t => ({ name: t.name, date: fmtNice(t.finishDate) })),
-        team: Object.keys(resources).filter(n => !isClientResource(n)).map(n => ({ role: (resources[n] && resources[n].role) ? n + ' — ' + resources[n].role : n, capacity: getCapacity(n), billRate: getBillRate(n) })).filter(r => tasks.some(t => taskParticipants(t).some(pr => pr.name === r.role))),
+        team: Object.keys(resources).filter(n => !isClientResource(n)).map(n => ({ name: n, role: (resources[n] && resources[n].role) ? n + ' — ' + resources[n].role : n, capacity: getCapacity(n), billRate: getBillRate(n), billText: rawBillRate(n) ? fmtMoney(rawBillRate(n)) + rateUnitSuffix(n) : '' })).filter(r => tasks.some(t => taskParticipants(t).some(pr => pr.name === r.name))),
         clientTeam: Object.keys(resources).filter(isClientResource).map(n => ({
           role: (resources[n] && resources[n].role) ? n + ' — ' + resources[n].role : n,
           duties: tasks.filter(t => !t.isSummary && taskParticipants(t).some(pr => pr.name === n)).map(t => t.name)
@@ -10542,8 +10563,8 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         <table style="border-collapse:collapse"><tr><th style="${th}">Milestone</th><th style="${th}">Target date</th></tr>
         ${d.milestones.map(m => `<tr><td style="${td}">◆ ${h(m.name)}</td><td style="${td}">${h(m.date)}</td></tr>`).join('') || `<tr><td style="${td}" colspan="2"><em>No milestones defined</em></td></tr>`}</table>
         <h2 style="font-size:16px;margin:16px 0 6px">5. Team &amp; Rates</h2>
-        <table style="border-collapse:collapse"><tr><th style="${th}">Role / resource</th><th style="${th}">Allocation</th>${showRates ? `<th style="${th}">Rate (per day)</th>` : ''}</tr>
-        ${d.team.map(t => `<tr><td style="${td}">${h(t.role)}</td><td style="${td}">${t.capacity}%</td>${showRates ? `<td style="${td}">${t.billRate ? fmtMoney(t.billRate) : '—'}</td>` : ''}</tr>`).join('')}</table>
+        <table style="border-collapse:collapse"><tr><th style="${th}">Role / resource</th><th style="${th}">Allocation</th>${showRates ? `<th style="${th}">Rate</th>` : ''}</tr>
+        ${d.team.map(t => `<tr><td style="${td}">${h(t.role)}</td><td style="${td}">${t.capacity}%</td>${showRates ? `<td style="${td}">${t.billText || '—'}</td>` : ''}</tr>`).join('')}</table>
         ${d.clientSafe ? `<p style="font-size:11px;color:#94a3b8">Client-safe mode: per-task effort and rate columns omitted.</p>` : ''}
         ${d.clientTeam && d.clientTeam.length ? `<h3 style="font-size:14px;margin:10px 0 4px">Client team &amp; responsibilities</h3>
         <p style="font-size:12.5px;color:#475569">The client will make the following resources available; timely participation is a dependency of the schedule and pricing above.</p>
