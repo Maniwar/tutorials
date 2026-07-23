@@ -4426,7 +4426,9 @@
 
     // ========================= GANTT (SVG) =========================
     const FF = 'Segoe UI, system-ui, sans-serif';
-    const GANTT_ZOOMS = [3, 4, 6, 9, 13, 18, 24, 30];
+    // short projects (a week or two) need day cells wide enough to read —
+    // the ladder tops out at 120px/day, not 30
+    const GANTT_ZOOMS = [3, 4, 6, 9, 13, 18, 24, 30, 40, 54, 72, 94, 120];
     function ganttZoom(delta) {
       if (delta === 0) { ganttDayW = null; renderGantt(); return; }
       const cur = ganttDayW || (renderGantt._lastAutoDayW || 13);
@@ -4585,7 +4587,8 @@
         if (!visibleIds.has(t.id)) return;
         const si = rowIndexOf[t.id];
         const sX = dateX(t.startDate), sY = Y0 + si * ROWH + ROWH / 2;
-        effectivePreds(t).forEach(p => {
+        const sSpanW = t.milestone ? 12 : Math.max(dayW, (calDaysBetween(t.startDate, t.finishDate) + 1) * dayW);
+        effectivePreds(t).forEach((p, k) => {
           const pt = tasks.find(x => x.id === p.id);
           if (!pt || !visibleIds.has(p.id)) return;
           const pi = rowIndexOf[p.id];
@@ -4595,12 +4598,25 @@
           const crit = t.isCritical && pt.isCritical;
           const stroke = crit ? '#dc2626' : '#94a3b8';
           const mk = crit ? 'g-arrC' : 'g-arr';
+          const sw = crit ? 2 : 1.3, op = crit ? 0.95 : 0.55;
           const bend = pX + 7;
           if (sX >= bend + 4) {
-            links += `<path d="M${pX},${pY} L${bend},${pY} L${bend},${sY} L${sX - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${crit ? 2 : 1.3}" opacity="${crit ? 0.95 : 0.55}" marker-end="url(#${mk})"/>`;
-          } else { // S-route when successor starts before pred ends visually
-            const midY = pY + (sY > pY ? ROWH / 2 : -ROWH / 2);
-            links += `<path d="M${pX},${pY} L${bend},${pY} L${bend},${midY} L${sX - 8},${midY} L${sX - 8},${sY} L${sX - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${crit ? 2 : 1.3}" opacity="${crit ? 0.95 : 0.55}" marker-end="url(#${mk})"/>`;
+            // clean case: elbow right of the predecessor, into the successor's left edge
+            links += `<path d="M${pX},${pY} L${bend},${pY} L${bend},${sY} L${sX - 1},${sY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
+          } else {
+            // successor starts at/before the predecessor's right edge (typical for
+            // sub-day tasks that each fill a whole day cell). The old 8px zigzag
+            // wrapped BACK around the successor bar and plowed through neighbours.
+            // MS-Project style instead: travel along the clear lane between rows
+            // and drop INTO the successor's top (or rise into its bottom).
+            const sRowTop = Y0 + si * ROWH;
+            const below = sY > pY; // successor drawn below the predecessor
+            const lane = below ? sRowTop + 2.5 : sRowTop + ROWH - 2.5;
+            const entryX = Math.min(sX + (t.milestone ? 6 : 9) + k * 7, sX + Math.max(6, sSpanW - 5));
+            const entryY = t.milestone
+              ? (below ? sY - 11 : sY + 11)
+              : (below ? sRowTop + 6 : sRowTop + 8 + BAR_H);
+            links += `<path d="M${pX},${pY} L${bend},${pY} L${bend},${lane} L${entryX},${lane} L${entryX},${entryY}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${op}" marker-end="url(#${mk})"/>`;
           }
         });
       });
@@ -4733,8 +4749,10 @@
       }
       svg += `</g>`; // end clipped chart layer
       if (todayOff >= 0 && todayOff <= totalDays) {
+        // pill sits at the BOTTOM of the today line — at the top it covered the
+        // month/date headers whenever today is near the project start
         const x = Math.max(X0 + 20, X0 + todayOff * dayW);
-        svg += `<rect x="${x - 20}" y="${PAD + TITLE_H + 1}" width="40" height="15" rx="7" fill="#ef4444"/><text x="${x}" y="${PAD + TITLE_H + 12}" font-family="${FF}" font-size="9" font-weight="700" fill="white" text-anchor="middle">TODAY</text>`;
+        svg += `<rect x="${x - 20}" y="${Y0 + bodyH + 2}" width="40" height="15" rx="7" fill="#ef4444"/><text x="${x}" y="${Y0 + bodyH + 13}" font-family="${FF}" font-size="9" font-weight="700" fill="white" text-anchor="middle">TODAY</text>`;
       }
 
       // legend (baked into the export)
