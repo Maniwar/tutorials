@@ -5429,6 +5429,44 @@
           <td style="font-size:0.75rem;white-space:nowrap">${(tc.percentComplete || 0)}% · ${escapeHtml(st.label)}</td>
         </tr>`;
       }).join('');
+      // 📏 consolidated non-functional requirements — the same aggregation the
+      // SOW §6 prints, but live on screen with story drill-ins
+      const nfrMap = new Map();
+      stories.forEach(s => (s.nfrs || []).forEach(nf => { const k = String(nf).trim(); if (!k) return; const e = nfrMap.get(k) || []; e.push(s.id); nfrMap.set(k, e); }));
+      const nfrRows = [...nfrMap.entries()].map(([text, refs]) => ({ cat: (text.match(/^([A-Za-z /-]{3,28}):/) || [])[1] || 'Other', text, refs }));
+      nfrRows.sort((a, b) => a.cat.localeCompare(b.cat) || a.text.localeCompare(b.text));
+      html += `<details id="nfrPanel" style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">📏 Non-functional requirements — ${nfrRows.length} distinct across ${stories.filter(s => (s.nfrs || []).length).length} stor${stories.filter(s => (s.nfrs || []).length).length === 1 ? 'y' : 'ies'} <span class="help-text" style="font-weight:400">(drafted per story from the guide's NFR checklist; this is the exact list SOW §6 prints — edit them on the story via ✎)</span></summary>
+        ${nfrRows.length
+          ? `<div class="table-wrap" style="margin-top:0.5rem;max-height:420px;overflow:auto"><table>
+              <thead><tr><th style="white-space:nowrap">Category</th><th>Requirement</th><th style="white-space:nowrap">Applies to</th></tr></thead>
+              <tbody>${nfrRows.map(r => `<tr>
+                <td style="font-size:0.75rem;white-space:nowrap;font-weight:600">${escapeHtml(r.cat)}</td>
+                <td style="font-size:0.78rem;min-width:280px">${escapeHtml(r.text)}</td>
+                <td style="font-size:0.75rem;white-space:nowrap">${r.refs.map(id => `<a href="#" onclick="event.preventDefault();openReqStory('${escapeHtml(id)}')" style="color:var(--primary)" title="Open ${escapeHtml(id)}">${escapeHtml(id)}</a>`).join(', ')}</td>
+              </tr>`).join('')}</tbody></table></div>`
+          : '<p class="help-text" style="margin-top:0.5rem">None yet — NFRs are attached per story when drafting (🤖 Draft from WBS) or by hand in the story editor (✎), one per line with a number: “Performance: p95 load ≤ 2 s at 50 users”.</p>'}
+      </details>`;
+      // 🤝 consolidated assumptions (A:) & client dependencies (D:) — what SOW §7/§9 print
+      const adRows = [];
+      stories.forEach(s => (s.assumptions || []).forEach(x => {
+        const str = String(x).trim();
+        if (/^D:/i.test(str)) adRows.push({ kind: 'D', text: str.replace(/^D:\s*/i, ''), ref: s.id });
+        else if (/^A:/i.test(str)) adRows.push({ kind: 'A', text: str.replace(/^A:\s*/i, ''), ref: s.id });
+      }));
+      adRows.sort((a, b) => a.kind.localeCompare(b.kind) || a.ref.localeCompare(b.ref, undefined, { numeric: true }));
+      const depN = adRows.filter(r => r.kind === 'D').length;
+      html += `<details id="depPanel" style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">🤝 Assumptions &amp; client dependencies — ${depN} client dependenc${depN === 1 ? 'y' : 'ies'}, ${adRows.length - depN} assumption${adRows.length - depN === 1 ? '' : 's'} <span class="help-text" style="font-weight:400">(drafted per story: every D: names the slip consequence, every A: the impact if false — exactly what SOW §7 and §9 print; edit on the story via ✎)</span></summary>
+        ${adRows.length
+          ? `<div class="table-wrap" style="margin-top:0.5rem;max-height:420px;overflow:auto"><table>
+              <thead><tr><th style="white-space:nowrap" title="D = client dependency (schedule protection); A = assumption (pricing protection)">Type</th><th>Statement (with consequence)</th><th style="white-space:nowrap">Story</th></tr></thead>
+              <tbody>${adRows.map(r => `<tr>
+                <td style="font-size:0.75rem;white-space:nowrap"><span class="badge ${r.kind === 'D' ? 'badge-prog' : 'badge-info'}" title="${r.kind === 'D' ? 'Client dependency — if the client slips this, the stated consequence applies' : 'Assumption — if this proves false, the stated impact applies'}">${r.kind === 'D' ? '🤝 D — client' : 'A — assumption'}</span></td>
+                <td style="font-size:0.78rem;min-width:300px">${escapeHtml(r.text)}</td>
+                <td style="font-size:0.75rem;white-space:nowrap"><a href="#" onclick="event.preventDefault();openReqStory('${escapeHtml(r.ref)}')" style="color:var(--primary)">${escapeHtml(r.ref)}</a></td>
+              </tr>`).join('')}</tbody></table></div>
+            <p class="help-text" style="margin-top:0.4rem">Project-level risks/assumptions live in the RAID tab; these story-level ones are contract armor — the D: rows become §7 “Client Responsibilities &amp; Dependencies” in the SOW.</p>`
+          : '<p class="help-text" style="margin-top:0.5rem">None yet — added per story when drafting, or by hand in the story editor: “A: … — impact if false: …” / “D: … — if slipped: …”.</p>'}
+      </details>`;
       html += `<details id="tcListPanel" style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">🧪 Test cases — ${tcAll.length} scheduled${tcAll.length ? ' (' + tcAll.filter(t => (t.percentComplete || 0) >= 100).length + ' executed)' : ''} <span class="help-text" style="font-weight:400">(the on-screen execution sheet — the CSV/Excel exports match it; click a name to open the task)</span></summary>
         ${tcAll.length
           ? `<div class="table-wrap" style="margin-top:0.5rem;max-height:460px;overflow:auto"><table>
