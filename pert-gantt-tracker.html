@@ -2194,14 +2194,24 @@
     }
 
     // ========================= RENDER TABLE =========================
+    // Predecessors display: WBS codes, never internal task ids — ids happen to
+    // match row numbers on a fresh flat plan, but the moment rows are dragged
+    // or tasks inserted they diverge and the column reads like nonsense.
     function predLabel(t) {
       if (!t.predecessors.length) return '—';
       return t.predecessors.map(p => {
         const pt = tasks.find(x => x.id === p.id);
-        const nm = pt ? pt.id : p.id;
+        const nm = pt ? (pt.wbs || pt.id) : p.id;
         const suffix = (p.type === 'FS' && !p.lag) ? '' : ` ${p.type}${p.lag ? (p.lag > 0 ? '+' + p.lag : p.lag) : ''}`;
         return nm + suffix;
       }).join(', ');
+    }
+    function predTitle(t) {
+      if (!t.predecessors.length) return '';
+      return 'Waits for: ' + t.predecessors.map(p => {
+        const pt = tasks.find(x => x.id === p.id);
+        return pt ? (pt.wbs ? pt.wbs + ' ' : '') + pt.name + ' (' + p.type + (p.lag ? (p.lag > 0 ? '+' + p.lag : p.lag) : '') + ')' : '?';
+      }).join(' · ');
     }
     // summary-row O/M/P display: rolled-up schedule spans from the extra passes
     function rollCell(v, kind) {
@@ -2304,7 +2314,7 @@
           <td${a}>${summary ? rollCell(t.mUp, 'most-likely') : t.milestone ? '—' : t.m}</td>
           <td${a}>${summary ? rollCell(t.pUp, 'pessimistic') : t.milestone ? '—' : t.p}</td>
           <td${a}><strong>${noEst ? '⚠ 0' : teStr}</strong></td>`; })()}
-          <td style="font-size:0.8rem">${summary ? '—' : escapeHtml(predLabel(t))}</td>
+          <td style="font-size:0.8rem${t.predecessors.length ? ';cursor:help' : ''}" title="${escapeHtml(predTitle(t))}">${summary ? '—' : escapeHtml(predLabel(t))}</td>
           <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.startDate) : '—'}</td>
           <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.finishDate) : '—'}</td>
           <td>${slackStr}</td>
