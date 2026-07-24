@@ -301,3 +301,27 @@ The catalog itself is worth reading before choosing, and raw.githubusercontent i
 often reachable when the rest of GitHub is not:
 
     curl -fsSL https://raw.githubusercontent.com/rhasspy/piper/master/VOICES.md
+
+
+### Kokoro: the best offline voice, and why it survives a locked-down network
+
+Kokoro v1.0 (82M params, 54 voices) sounds clearly better than Piper and needs no
+API key. Crucially its weights are published as **GitHub release assets**, not on
+HuggingFace:
+
+    pip install kokoro-onnx soundfile
+    B=https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0
+    curl -fsSL -O $B/kokoro-v1.0.onnx    # ~311 MB
+    curl -fsSL -O $B/voices-v1.0.bin     # ~27 MB
+
+    "tts": {"backend": "kokoro", "voice": "af_heart", "kokoro_dir": "/abs/dir"}
+
+Once those two files exist the renderer needs no network at all. Good narrator
+voices: `af_heart`, `af_bella`, `af_nicole`; `am_michael`, `am_adam` (male);
+`bf_emma`, `bm_george` (British). `Kokoro(model, voices).get_voices()` lists all 54.
+
+**The general lesson.** Where a model's weights are *hosted* matters more than how
+good the model is. In a restricted network, prefer projects that publish weights to
+GitHub releases (reachable via `objects.githubusercontent.com`) over those that only
+publish to HuggingFace. Before concluding a voice is unobtainable, check the
+project's release page — several otherwise-blocked models are one `curl` away.
