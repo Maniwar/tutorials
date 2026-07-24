@@ -516,6 +516,9 @@
     .story-sentence .sc-id { font-size: 0.72rem; color: var(--muted); font-weight: 700; letter-spacing: 0.02em; }
     .story-sentence .sc-lead { color: var(--muted); font-weight: 700; font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 0.3rem; }
     .story-sentence .sc-muted { color: var(--muted); }
+    /* audience filter toggle (Stories / Test cases) */
+    .aud-filter { background: #fff; border: 1px solid var(--border); color: var(--muted); }
+    .aud-filter.active { background: var(--primary); border-color: var(--primary); color: #fff; }
     /* API key: a masked TEXT field, not a password field — browsers offer to
        "save password" on real password inputs (and then the key is viewable in
        the password manager). -webkit-text-security masks it on screen in
@@ -971,9 +974,10 @@
       <div class="modal" style="max-width:940px" role="dialog" aria-modal="true" aria-labelledby="storyModalTitle">
         <div class="modal-header"><h3 id="storyModalTitle">Edit user story</h3><button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeStoryModal()" aria-label="Close dialog">✕</button></div>
         <div class="modal-body">
-          <div style="display:grid;grid-template-columns:110px 1fr;gap:0.75rem">
+          <div style="display:grid;grid-template-columns:110px 1fr 1fr;gap:0.75rem">
             <div class="form-group" style="margin-bottom:0"><label for="stId">ID</label><input id="stId" type="text" placeholder="US-1" /></div>
             <div class="form-group" style="margin-bottom:0"><label for="stEpic">Epic</label><select id="stEpic"></select></div>
+            <div class="form-group" style="margin-bottom:0"><span class="fg-head"><label for="stAudience">Audience</label><button type="button" class="info-icon" aria-label="About audience" data-help="Client-facing = a product outcome the client accepts and is billed for. Internal = delivery-side process work (kickoff, our own test execution). Internal stories are filtered separately and kept out of the client SOW. Auto infers it from the persona.">i</button></span><select id="stAudience"><option value="">Auto (from persona)</option><option value="client">Client-facing</option><option value="internal">Internal / delivery</option></select></div>
           </div>
           <div class="form-group" style="margin:0.7rem 0 0">
             <span class="fg-head"><label for="stWbsInput">WBS activities (traces to)</label><button type="button" class="info-icon" aria-label="About WBS activities" data-help="Every plan activity this story builds. A story can trace to several — status and completeness roll up from all of them. Type a name or WBS code and pick to link; ✕ removes a link. The first is the primary.">i</button></span>
@@ -7398,8 +7402,9 @@
         const steps = hasRealSteps(tc)
           ? `<ol style="margin:0;padding-left:1.1rem">${tcStepLines(tc.description).split('\n').filter(Boolean).map(sx => `<li>${escapeHtml(sx.replace(/^\d+\.\s*/, ''))}</li>`).join('')}</ol>`
           : `<span style="color:#b45309">⚠ no executable steps — re-run 🧪 Generate test plan</span>${tc.description ? `<div class="help-text">${escapeHtml(tc.description.slice(0, 120))}</div>` : ''}`;
-        return `<tr class="row-edit" style="cursor:pointer" onclick="openEditModal(${tc.id}, true)" title="Click to edit this test case — steps, pass-when, owner, schedule, % complete">
-          <td style="font-size:0.78rem;min-width:180px;max-width:260px;color:var(--primary)">${escapeHtml(tc.name)}${jiraChip(tc.jira)}</td>
+        const tcAud = testCaseAudience(tc);
+        return `<tr class="row-edit" data-audience="${tcAud}" style="cursor:pointer" onclick="openEditModal(${tc.id}, true)" title="Click to edit this test case — steps, pass-when, owner, schedule, % complete">
+          <td style="font-size:0.78rem;min-width:180px;max-width:260px;color:var(--primary)">${tcAud === 'internal' ? '<span class="badge" style="background:#ede9fe;color:#6d28d9" title="Internal / delivery-side test — verifies a process story, not a client-facing outcome. Excluded from the client SOW.">🛠</span> ' : ''}${escapeHtml(tc.name)}${jiraChip(tc.jira)}</td>
           <td style="font-size:0.75rem;white-space:nowrap" title="${hit ? escapeHtml(hit.a.text) : 'criterion not found in Requirements'}">${hit ? escapeHtml(hit.a.id) + ' <span class="help-text">(' + escapeHtml(hit.s.id) + ')</span>' : escapeHtml(acId.toUpperCase() || '—')}</td>
           <td style="font-size:0.76rem;min-width:260px;max-width:380px">${steps}</td>
           <td style="font-size:0.76rem;min-width:180px;max-width:300px">${escapeHtml(tc.acceptance || '—')}</td>
@@ -7470,6 +7475,12 @@
           <button type="button" class="req-back" onclick="reqCloseView('tc')">← Back to stories</button>
           <h3>Test-case execution sheet</h3>
           <span class="muted">${tcAll.length} scheduled${tcAll.length ? ` · ${tcAll.filter(t => (t.percentComplete || 0) >= 100).length} executed` : ''}</span>
+          <span style="margin-left:auto;display:inline-flex;gap:0.25rem;align-items:center" role="group" aria-label="Audience filter">
+            <span class="help-text" style="margin:0">Show:</span>
+            <button class="btn-sm aud-filter" data-aud="all" onclick="setStoryAudienceFilter('all')">All</button>
+            <button class="btn-sm aud-filter" data-aud="client" onclick="setStoryAudienceFilter('client')" title="Client-facing tests only">👤 Client</button>
+            <button class="btn-sm aud-filter" data-aud="internal" onclick="setStoryAudienceFilter('internal')" title="Internal / delivery tests only">🛠 Internal</button>
+          </span>
         </div>
         ${fatTcs.length ? `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:0.5rem 0.75rem;margin-top:0.5rem;font-size:0.8rem">
           <strong>⏱ ${fatTcs.length} test case(s) look oversized</strong> — each estimated above ~1 hour of execution. A scripted UAT case is a 5–30 minute walkthrough; oversizing inflates the UAT window, the resource peaks and the price.
@@ -7486,9 +7497,16 @@
       </div>`;
       html += `<section class="refx" aria-label="Reference & audit"><div class="refx-cap">Reference &amp; audit</div>${rowPersonas}${rowNfr}${rowDep}${rowTrace}${rowTc}</section>`;
 
-      html += `<div id="reqEpicsAnchor" class="toolbar no-print" style="margin:0 0 0.5rem;align-items:center">
+      const intCount = stories.filter(isInternalStory).length;
+      html += `<div id="reqEpicsAnchor" class="toolbar no-print" style="margin:0 0 0.5rem;align-items:center;gap:0.4rem;flex-wrap:wrap">
         <button class="btn-sm btn-secondary" onclick="reqSetAll(true)" title="Open every story to show its acceptance criteria, NFRs and assumptions">▾ Expand all</button>
         <button class="btn-sm btn-secondary" onclick="reqSetAll(false)" title="One line per story — ID, sentence, AC mix, trace and status">▸ Collapse all</button>
+        <span style="margin-left:0.4rem;display:inline-flex;gap:0.25rem;align-items:center" role="group" aria-label="Audience filter">
+          <span class="help-text" style="margin:0">Show:</span>
+          <button class="btn-sm aud-filter" data-aud="all" onclick="setStoryAudienceFilter('all')">All ${stories.length}</button>
+          <button class="btn-sm aud-filter" data-aud="client" onclick="setStoryAudienceFilter('client')" title="Client-facing product outcomes only">👤 Client ${stories.length - intCount}</button>
+          <button class="btn-sm aud-filter" data-aud="internal" onclick="setStoryAudienceFilter('internal')" title="Internal / delivery-side process stories only">🛠 Internal ${intCount}</button>
+        </span>
         <span class="help-text">click a story row to expand it — stories with lint findings start expanded</span>
       </div>`;
       const rendered = new Set();
@@ -7513,6 +7531,7 @@
         + `<div id="reqStoriesView" class="req-view${reqView === 'stories' ? ' active' : ''}" data-view="stories" role="region" aria-label="Stories workflow">`
         + html + `</div>`
         + traceView + tcView;
+      applyStoryAudienceFilter();   // keep the audience filter across re-renders
       // buttons live inside <summary> — stop the click from toggling the row
       cont.querySelectorAll('[data-story-edit]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); openStoryModal(b.dataset.storyEdit); }));
       cont.querySelectorAll('[data-story-mk]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); createTaskFromStory(b.dataset.storyMk); }));
@@ -7542,10 +7561,15 @@
       const nAc = k => (s.ac || []).filter(a => a.type === k).length;
       const mix = `✅${nAc('happy')} ⚠️${nAc('error')} 🧪${nAc('edge')}${nAc('perf') ? ' 📏' + nAc('perf') : ''}`;
       const sentence = `<span class="story-sentence"><b class="sc-id">${escapeHtml(s.id)}</b><span class="sc-clause"><span class="sc-lead">As a</span> <b>${escapeHtml(s.persona || '?')}</b></span><span class="sc-clause"><span class="sc-lead">I want to</span> ${escapeHtml(s.want || '?')}</span><span class="sc-clause sc-muted"><span class="sc-lead">so that</span> ${escapeHtml(s.soThat || '?')}</span></span>`;
-      return `<details class="story-card" id="story-card-${escapeHtml(s.id)}" ${warns.length ? 'open' : ''} style="background:#fff;border:1px solid var(--border);border-left:4px solid ${warns.length ? 'var(--warn)' : 'transparent'};border-radius:10px;margin-bottom:0.5rem">
+      const audience = storyAudience(s);
+      const audienceBadge = audience === 'internal'
+        ? `<span class="badge" style="background:#ede9fe;color:#6d28d9;cursor:help" title="Internal / delivery-side story — process work (our team), not a client-facing product outcome. Excluded from the client SOW and the client filter. Set the audience in the editor.">🛠 internal</span>`
+        : `<span class="badge" style="background:#ecfeff;color:#0e7490;cursor:help" title="Client-facing story — a product outcome the client accepts and is billed for.">👤 client-facing</span>`;
+      return `<details class="story-card" data-audience="${audience}" id="story-card-${escapeHtml(s.id)}" ${warns.length ? 'open' : ''} style="background:#fff;border:1px solid var(--border);border-left:4px solid ${warns.length ? 'var(--warn)' : 'transparent'};border-radius:10px;margin-bottom:0.5rem">
         <summary style="list-style:none;cursor:pointer;display:flex;justify-content:space-between;gap:0.6rem;align-items:center;flex-wrap:wrap;padding:0.5rem 1rem">
           <span style="flex:1;min-width:240px;font-size:0.85rem">${sentence}</span>
           <span style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap">
+            ${audienceBadge}
             <span class="story-chip" style="cursor:help" title="Acceptance-criteria mix: ${nAc('happy')} happy path · ${nAc('error')} error path · ${nAc('edge')} edge case${nAc('perf') ? ' · ' + nAc('perf') + ' performance' : ''}${(s.nfrs || []).length ? ' — plus ' + s.nfrs.length + ' NFR(s)' : ''}. Click the row to expand.">AC ${(s.ac || []).length}</span>
             ${jiraChip(s.jira)}
             ${warns.length ? `<span class="risk-tag" style="background:#fef3c7;color:#b45309;cursor:help" title="${escapeHtml(warns.join('\n'))}">${warns.length} lint</span>` : ''}
@@ -7662,6 +7686,24 @@
     }
     function storiesForTask(taskId) {
       return (reqs && Array.isArray(reqs.stories)) ? reqs.stories.filter(s => storyLinksTask(s, taskId)) : [];
+    }
+    // ---- audience: is a story CLIENT-facing (a product outcome the client accepts
+    // and is billed for) or INTERNAL (delivery-side process work — kickoff,
+    // interviews, our own test execution)? This reuses the app's existing
+    // process/product classification (isProcessStory: verification 'artifact' =
+    // process/internal, 'uat' = product/client), so it stays consistent with what
+    // the AI already tags. An explicit `audience` on the story overrides it.
+    // Internal stories/TCs can be filtered out and kept out of the client SOW.
+    function storyAudience(s) {
+      if (s && (s.audience === 'internal' || s.audience === 'client')) return s.audience;
+      return isProcessStory(s) ? 'internal' : 'client';
+    }
+    function isInternalStory(s) { return storyAudience(s) === 'internal'; }
+    // a test case's audience follows the story of the AC it verifies
+    function testCaseAudience(tc) {
+      const acId = ((tc.name.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').toLowerCase();
+      const s = ((reqs && reqs.stories) || []).find(x => (x.ac || []).some(a => a.id.toLowerCase() === acId));
+      return s ? storyAudience(s) : 'client';
     }
     function storyTraceText(taskId, withAc) {
       return storiesForTask(taskId).map(s =>
@@ -8176,7 +8218,15 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       refreshAll(); renderReqs();
       flashSaved('🧹 ' + junk.length + ' story(ies) + ' + junkTcs.length + ' derived test case(s) removed — ↶ Undo restores them');
     }
-    function reqSetAll(open) { document.querySelectorAll('#reqContainer details.story-card').forEach(d => { d.open = open; }); }
+    function reqSetAll(open) { document.querySelectorAll('#reqContainer details.story-card').forEach(d => { if (d.style.display !== 'none') d.open = open; }); }
+    let reqAudienceFilter = 'all';
+    function setStoryAudienceFilter(f) { reqAudienceFilter = (f === 'client' || f === 'internal') ? f : 'all'; applyStoryAudienceFilter(); }
+    function applyStoryAudienceFilter() {
+      const show = a => reqAudienceFilter === 'all' || reqAudienceFilter === (a || 'client');
+      document.querySelectorAll('#reqContainer details.story-card').forEach(d => { d.style.display = show(d.getAttribute('data-audience')) ? '' : 'none'; });
+      document.querySelectorAll('#tcListPanel tbody tr[data-audience]').forEach(tr => { tr.style.display = show(tr.getAttribute('data-audience')) ? '' : 'none'; });
+      document.querySelectorAll('.aud-filter').forEach(b => b.classList.toggle('active', b.dataset.aud === reqAudienceFilter));
+    }
     // The Requirements tab has three sibling views under the persistent stat
     // tiles: the primary Stories workflow, and two promoted full-width audit
     // views (Traceability, Test cases). The tiles + two ledger launchers switch
@@ -8349,6 +8399,7 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       ensureStoryWbsSuggest();
       document.getElementById('stId').value = s ? s.id : nextStoryId();
       epicSel.value = s ? (s.epicId || '') : '';
+      document.getElementById('stAudience').value = s && (s.audience === 'client' || s.audience === 'internal') ? s.audience : '';
       document.getElementById('stPersona').value = s ? (s.persona || '') : '';
       document.getElementById('stJira').value = s ? (s.jira || '') : '';
       document.getElementById('stWant').value = s ? (s.want || '') : '';
@@ -8430,6 +8481,7 @@ Write the test cases for the criteria above, following the contract exactly. Ret
         persona: document.getElementById('stPersona').value.trim(),
         want, soThat: document.getElementById('stSoThat').value.trim(),
         verification: document.getElementById('stVerif').value || null,
+        audience: (v => (v === 'client' || v === 'internal') ? v : null)(document.getElementById('stAudience').value),
         ac, nfrs: splitLines('stNfr'), assumptions: stAssumeEntries(),
         jira: document.getElementById('stJira').value.trim()
       };
@@ -8682,7 +8734,7 @@ Return ONLY JSON (no prose, no fences):
 - nfrs: run the NFR checklist per story (performance, throughput, availability, recovery RTO/RPO, security standard, authN/authZ, data residency, privacy/compliance, auditability, accessibility, localization, browser/device, observability, retention, interoperability, migration) and attach the applicable ones WITH numbers. A story with no NFRs attached is not estimable — omit the array only if truly none apply.
 - assumptions: strings prefixed "A:" for assumptions — each MUST state the impact if false (e.g. "A: the sentiment service exposes a documented REST endpoint ≤200 ms p95 — impact if false: +120–200 hours, re-baseline the epic"); and "D:" for client dependencies — each MUST state the consequence of a slip (e.g. "D: 1,000 labeled conversations by end of Sprint 2 — if slipped: validation cannot start, day-for-day schedule extension").
 - For AI/probabilistic features, write the outcome in statistical form against a defined evaluation dataset (size, labeling method, inter-annotator agreement), with precision/recall floors, latency at stated concurrency, fallback behaviour on timeout/low confidence, and drift monitoring — never deterministic pass/fail on a probabilistic output.
-- verification: classify how each story's acceptance is verified. "uat" = behaviour a tester can EXECUTE against the built product (features, calculations, data rules, dashboards, integrations, access control, performance) — these get UAT test cases. "artifact" = acceptance is evidenced by the deliverable or a record itself (kickoff/meetings/workshops, requirements elicitation, design/wireframe approvals, documentation, training delivery, the QA/UAT execution activities themselves, PM/governance, sign-offs) — still real acceptance criteria for billing, but verified by the artifact, never by a scheduled test case.
+- verification: classify how each story's acceptance is verified. "uat" = behaviour a tester can EXECUTE against the built product (features, calculations, data rules, dashboards, integrations, access control, performance) — these get UAT test cases. "artifact" = acceptance is evidenced by the deliverable or a record itself (kickoff/meetings/workshops, requirements elicitation, design/wireframe approvals, documentation, training delivery, the QA/UAT execution activities themselves, PM/governance, sign-offs) — still real acceptance criteria for billing, but verified by the artifact, never by a scheduled test case. FAVOUR "uat" client-facing product stories: write them from a CLIENT persona (a role that USES or ACCEPTS the product), and reserve "artifact" for genuine delivery-side process work. Keep "artifact"/process stories LEAN — one concise story per process activity with just the acceptance criteria needed to bill it, not an expanded happy/error/edge set — so the requirements read as client value, not internal ceremony.
 - IDs: epics EP-1…, stories US-1…, criteria AC-<storyNo>.<n>. IDs must match ^[A-Za-z0-9_.-]+$.
 Return ONLY JSON (no prose, no fences):
 {"personas":[{"name":"…","definition":"…"}],
@@ -11643,9 +11695,9 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         return `<h2 style="font-size:16px;margin:16px 0 6px">Appendix — User Stories (summary)</h2>
           <p style="font-size:12.5px;color:#475569">One line per story; the full Given/When/Then acceptance criteria live in the project's traceability matrix and are available on request (or regenerate this SOW with “Stories: full ACs”).</p>
           <table style="border-collapse:collapse;width:100%"><tr><th style="${th};width:60px">ID</th><th style="${th}">Story</th><th style="${th};width:60px">ACs</th><th style="${th};width:160px">WBS trace</th></tr>
-          ${reqs.stories.map(s => { const t = s.wbsId != null ? idToTask[s.wbsId] : null;
+          ${reqs.stories.filter(s => storyAudience(s) === 'client').map(s => { const t = s.wbsId != null ? idToTask[s.wbsId] : null;
             return `<tr><td style="${td}">${h(s.id)}</td><td style="${td}">As a <b>${h(s.persona)}</b>, I want to ${h(s.want)}, so that ${h(s.soThat)}.</td><td style="${td};text-align:center">${(s.ac || []).length}</td><td style="${td}">${t ? h(t.wbs + ' ' + t.name) : '—'}</td></tr>`; }).join('')}
-          </table>`;
+          </table>${reqs.stories.some(s => storyAudience(s) === 'internal') ? `<p style="font-size:11.5px;color:#64748b;margin:4px 0 0">Internal delivery-side stories are managed in the project plan and omitted from this client appendix.</p>` : ''}`;
       }
       let out = `<h2 style="font-size:16px;margin:16px 0 6px">Appendix — User Stories &amp; Acceptance Criteria</h2>
         <p style="font-size:12.5px;color:#475569">Each story is accepted when its acceptance criteria pass in the designated environment. Criteria marked <i>error</i>/<i>edge</i> define graceful failure behaviour and boundary handling and are part of the committed scope.</p>`;
@@ -11665,13 +11717,14 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           }).join('')}</table>`;
       };
       let body = '';
-      (reqs.epics || []).forEach(ep => { body += block(ep.id + ' — ' + (ep.title || ''), reqs.stories.filter(s => (s.epicId || '—') === ep.id)); });
-      body += block('Other stories', reqs.stories.filter(s => !rendered.has(s.id)));
-      // completeness receipt: stories are grouped by EPIC, so one added later
-      // (e.g. US-17 into EP-3) appears mid-document — this line proves nothing
-      // was cut off even when the last table doesn't end on the highest ID
-      const ids = reqs.stories.map(s => s.id);
-      body += `<p style="font-size:11.5px;color:#64748b;margin:8px 0 0">This appendix lists all <b>${reqs.stories.length}</b> user stories (${escapeHtml(ids[0] || '')} … ${escapeHtml(ids[ids.length - 1] || '')}), grouped by epic — stories added later appear under their epic, not in ID order.</p>`;
+      // client SOW = client-facing stories only; internal/delivery process stories
+      // stay in the plan, not this client document
+      const clientStories = reqs.stories.filter(s => storyAudience(s) === 'client');
+      const internalCount = reqs.stories.length - clientStories.length;
+      (reqs.epics || []).forEach(ep => { body += block(ep.id + ' — ' + (ep.title || ''), clientStories.filter(s => (s.epicId || '—') === ep.id)); });
+      body += block('Other stories', clientStories.filter(s => !rendered.has(s.id)));
+      const ids = clientStories.map(s => s.id);
+      body += `<p style="font-size:11.5px;color:#64748b;margin:8px 0 0">This appendix lists the <b>${clientStories.length}</b> client-facing user stories${ids.length ? ' (' + escapeHtml(ids[0] || '') + ' … ' + escapeHtml(ids[ids.length - 1] || '') + ')' : ''}, grouped by epic.${internalCount ? ' ' + internalCount + ' internal delivery-side stor' + (internalCount === 1 ? 'y is' : 'ies are') + ' tracked in the project plan and omitted here.' : ''}</p>`;
       return body ? out + body : '';
     }
     async function svgMarkupToPngDataUrl(markup, scale) {
