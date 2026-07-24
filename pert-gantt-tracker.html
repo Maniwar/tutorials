@@ -495,6 +495,51 @@
     .fg-head { display: flex; align-items: center; gap: 0.3rem; min-height: 1.4rem; margin-bottom: 0.3rem; }
     .fg-head > label { margin: 0; padding: 0; display: inline-block; }
     .fg-head > .info-icon { flex: none; }
+    /* ===== Progress & actuals panel (activity editor) =====
+       One block holding % complete, time spent, actual dates and actual cost,
+       plus a live estimate-vs-actual readout. Replaces the % cell that used to
+       sit in the metric row and the four actuals fields that hid inside the
+       collapsed WBS-dictionary disclosure two sections lower. */
+    .pa-panel { border: 1px solid var(--primary-200); border-left: 3px solid var(--primary); border-radius: 10px; background: var(--primary-50); padding: 0.6rem 0.8rem 0.7rem; margin: 0 0 1rem; }
+    .pa-panel[data-mode="rollup"] { border-left-color: var(--slack); background: #f8fafc; }
+    .pa-head { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+    .pa-title { font-size: var(--t-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary-700); }
+    .pa-head #paDoneBtn { margin-left: auto; }
+    .pa-lock { font-size: var(--t-md); color: var(--muted); background: #eff6ff; border: 1px solid var(--primary-200); border-radius: 8px; padding: 0.4rem 0.6rem; margin-bottom: 0.55rem; }
+    .pa-grid { display: grid; gap: 0.6rem; }
+    .pa-grid-a { grid-template-columns: 0.75fr 1fr 1fr; }
+    .pa-grid-b { grid-template-columns: 1fr 1fr; margin-top: 0.5rem; }
+    .pa-panel .form-group { margin-bottom: 0; }
+    .pa-panel input { padding: 0.4rem 0.5rem; background: #fff; }
+    .pa-chip { font-size: var(--t-xs); font-weight: 700; padding: 0.05rem 0.35rem; border-radius: 999px; background: #dcfce7; color: #15803d; }
+    .pa-note { font-size: var(--t-xs); margin-top: 0.4rem; line-height: 1.45; }
+    /* estimate → actual readout */
+    .pa-read { margin-top: 0.6rem; padding-top: 0.55rem; border-top: 1px dashed var(--primary-200); font-size: var(--t-md); font-variant-numeric: tabular-nums; }
+    .pa-verdict { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.4rem; }
+    .pa-why { flex: 1 1 14rem; font-size: var(--t-xs); color: var(--muted); line-height: 1.4; }
+    .pa-row { display: grid; grid-template-columns: 2.4rem minmax(7.5rem, auto) 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 0.25rem; }
+    .pa-k { font-size: var(--t-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+    .pa-nums { white-space: nowrap; color: var(--muted); }
+    .pa-nums b { color: var(--text); }
+    .pa-ar { color: var(--slack); margin: 0 0.25rem; }
+    .pa-bar { position: relative; height: 8px; border-radius: 999px; background: #e2e8f0; min-width: 3rem; }
+    .pa-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 999px; background: var(--success); transition: width 0.2s var(--easeo), background 0.2s var(--easeo); }
+    .pa-row.b-on .pa-fill { background: var(--primary); }
+    .pa-row.b-warn .pa-fill { background: var(--warn); }
+    .pa-row.b-over .pa-fill { background: var(--critical); }
+    .pa-tick { position: absolute; top: -3px; width: 2px; height: 14px; border-radius: 1px; background: var(--header); transition: left 0.2s var(--easeo); }
+    .pa-d { font-size: var(--t-sm); font-weight: 700; white-space: nowrap; }
+    .pa-costwhy { font-size: var(--t-xs); color: var(--muted); min-width: 0; }
+    @keyframes paFlash { 0% { background: #fef9c3 } 100% { background: transparent } }
+    .pa-flash { animation: paFlash 0.6s var(--easeo); border-radius: 6px; }
+    @media (prefers-reduced-motion: reduce) { .pa-flash { animation: none } .pa-fill, .pa-tick { transition: none } }
+    /* the phone rule further down matches INLINE grid styles only, so these
+       class-based grids need their own breakpoint */
+    @media (max-width: 640px) {
+      .pa-grid-a, .pa-grid-b { grid-template-columns: 1fr 1fr; }
+      .pa-row { grid-template-columns: 2.4rem 1fr auto; }
+      .pa-row .pa-bar { grid-column: 1 / -1; }
+    }
     /* task-backed table rows that open the editor on a single click/tap */
     tr.row-edit { transition: background .1s ease; }
     @media (hover: hover) { tr.row-edit:hover > td { background: #eff6ff; } }
@@ -1413,7 +1458,7 @@
           </div>
         </div>
         <div id="ompHint" class="help-text" style="display:none;margin:-0.4rem 0 0.8rem"></div>
-        <div class="metric-row" style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:0.75rem">
+        <div class="metric-row" style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:0.75rem">
           <div class="form-group">
             <span class="fg-head"><label for="mOwner">Owner / resource</label></span>
             <input id="mOwner" type="text" placeholder="e.g. A. Rivera" autocomplete="off" oninput="updateOwnerRoleHint();refreshAutoActualCost()" onchange="updateOwnerRoleHint();refreshAutoActualCost()" />
@@ -1423,10 +1468,6 @@
           <div class="form-group">
             <span class="fg-head"><label for="mUnits">Units %</label><button type="button" class="info-icon" aria-label="About Units %" data-help="How much of the resource this task consumes while active. 100 = full-time. Two 100% tasks at once for one person = over-allocated.">i</button></span>
             <input id="mUnits" type="number" min="0" step="5" value="100" oninput="refreshAutoActualCost()" />
-          </div>
-          <div class="form-group">
-            <span class="fg-head"><label for="mPct">% Complete</label></span>
-            <input id="mPct" type="number" min="0" max="100" step="1" value="0" />
           </div>
           <div class="form-group">
             <span class="fg-head"><label for="mFixedCost">Fixed cost $</label><button type="button" class="info-icon" aria-label="About Fixed cost $" data-help="One-off cost (licences, travel, vendor fee). Labor cost comes from the owner's day rate on the Resources tab.">i</button></span>
@@ -1445,6 +1486,64 @@
           </div>
           <button class="btn-sm btn-secondary" type="button" onclick="addAttRow()">+ Add attendee</button>
         </div>
+        <!-- ===== Progress & actuals ==========================================
+             Status and time entry in ONE always-visible block, sitting directly
+             below owner / units / fixed cost / attendees because all four feed
+             the cost this panel shows. Ids are the same ones the rest of the app
+             already reads and writes. -->
+        <section id="paPanel" class="pa-panel" data-mode="task" aria-labelledby="paTitle">
+          <div class="pa-head">
+            <span class="pa-title" id="paTitle">Progress &amp; actuals</span>
+            <button type="button" class="info-icon" aria-label="About progress and actuals" data-help="What actually happened, all in one place. Typing time spent fills in the actual start date; setting 100% fills in the actual finish. Both stay editable — a date you type is never overwritten. The readout underneath compares the estimate against the actuals so you can see at a glance whether you are ahead or over.">i</button>
+            <span class="badge badge-notstarted" id="paStatus">Not started</span>
+            <button type="button" class="btn-lite" id="paDoneBtn" onclick="paMarkDone()" title="Set 100% and stamp today as the finish date">✓ Mark done</button>
+          </div>
+          <div class="pa-lock" id="paLock" style="display:none"></div>
+          <div class="pa-grid pa-grid-a">
+            <div class="form-group">
+              <span class="fg-head"><label for="mPct">% complete</label></span>
+              <input id="mPct" type="number" min="0" max="100" step="1" value="0" oninput="paOnPctInput()" onchange="paOnPctCommit()" />
+            </div>
+            <div class="form-group">
+              <span class="fg-head"><label for="mActualEffort">Time spent</label><button type="button" class="info-icon" aria-label="About time spent" data-help="The REAL effort this took — the number that tells you how good your estimates are. Any resolution: 20m, 90m, 1.5h, 2d, or '1d 4h'. Effort, not elapsed time: open for a week but worked three hours = 3h. Enter it PER PARTICIPANT, not as a team total — each person on the activity is costed for this same duration. Typing here fills in the actual start date if it is blank.">i</button></span>
+              <input id="mActualEffort" type="text" inputmode="text" placeholder="20m · 1.5h · 2d" oninput="paOnEffortInput()" onchange="paOnEffortCommit()" />
+            </div>
+            <div class="form-group">
+              <span class="fg-head"><label for="mActualCost">Actual cost $</label><button type="button" class="info-icon" aria-label="About actual cost" data-help="What the work actually cost: time spent × each participant's day rate (client-kind people are never billed, so they add $0) + fixed cost. Recalculates as you type. Use ✎ override to type your own figure; ↺ returns to calculated. Feeds CPI / EAC and the historical archive.">i</button></span>
+              <input id="mActualCost" type="text" inputmode="decimal" value="$0" readonly oninput="refreshProgressPanel()" title="Calculated from the time spent — use ✎ override to type your own figure" />
+            </div>
+          </div>
+          <div class="pa-grid pa-grid-b">
+            <div class="form-group">
+              <span class="fg-head"><label for="mActualStart">Actual start</label><span class="pa-chip" id="paChipStart" style="display:none" title="Filled in for you — edit freely">auto</span></span>
+              <input id="mActualStart" type="date" onchange="paOnDateEdit('start')" />
+            </div>
+            <div class="form-group">
+              <span class="fg-head"><label for="mActualFinish">Actual finish</label><span class="pa-chip" id="paChipFinish" style="display:none" title="Filled in for you — edit freely">auto</span></span>
+              <input id="mActualFinish" type="date" onchange="paOnDateEdit('finish')" />
+            </div>
+          </div>
+          <div class="help-text pa-note" id="paNote" style="display:none"></div>
+          <div class="pa-read" aria-live="polite">
+            <div class="pa-verdict">
+              <span class="badge badge-notstarted" id="paVerdictBadge">—</span>
+              <span class="pa-why" id="paVerdictWhy">Log the time spent and set a % — this fills in as you type.</span>
+            </div>
+            <div class="pa-row" id="paRowTime">
+              <span class="pa-k">Time</span>
+              <span class="pa-nums"><span id="paEstTime">—</span><span class="pa-ar">→</span><b id="paActTime">—</b></span>
+              <span class="pa-bar" id="paBarTime"><i class="pa-fill" id="paFillTime"></i><i class="pa-tick" id="paTickTime" style="display:none"></i></span>
+              <span class="pa-d" id="paDeltaTime"></span>
+            </div>
+            <div class="pa-row" id="paRowCost">
+              <span class="pa-k">Cost</span>
+              <span class="pa-nums"><span id="paEstCost">—</span><span class="pa-ar">→</span><b id="paActCost">—</b></span>
+              <span class="pa-costwhy" id="paCostWhy"></span>
+              <span class="pa-d" id="paDeltaCost"></span>
+            </div>
+          </div>
+          <div class="help-text pa-note" id="mActualCostHint"></div>
+        </section>
         <div class="form-group">
           <label>Dependencies (predecessors)</label>
           <div class="dep-block">
@@ -1464,7 +1563,7 @@
         <div id="mStoriesPanel"></div>
         <div id="mImpactPanel"></div>
         <details id="dictDetails" style="margin-bottom:1rem">
-          <summary style="cursor:pointer;font-size:0.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">WBS dictionary &amp; actuals</summary>
+          <summary style="cursor:pointer;font-size:0.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">WBS dictionary</summary>
           <div style="padding-top:0.75rem">
             <div class="form-group">
               <label>Description / scope</label>
@@ -1478,26 +1577,6 @@
               <div class="form-group">
                 <label>Acceptance criteria</label>
                 <textarea id="mAcceptance" rows="2" placeholder="Definition of done"></textarea>
-              </div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:0.75rem">
-              <div class="form-group">
-                <label>Actual start (if begun)</label>
-                <input id="mActualStart" type="date" onchange="refreshAutoActualCost()" />
-              </div>
-              <div class="form-group">
-                <label>Actual finish (if done)</label>
-                <input id="mActualFinish" type="date" onchange="refreshAutoActualCost()" />
-              </div>
-              <div class="form-group">
-                <span class="fg-head"><label for="mActualEffort">Actual time spent</label><button type="button" class="info-icon" aria-label="About actual time spent" data-help="The REAL effort this took — the number that tells you how good your estimates are. Type a duration at any resolution: 20m, 90m, 1.5h, 2d, or '1d 4h'. This is effort, not elapsed time: a task open for a week but worked on for three hours is 3h. Leave empty and the tool falls back to the span between the actual dates, which is far cruder.">i</button></span>
-                <input id="mActualEffort" type="text" inputmode="text" placeholder="e.g. 20m, 1.5h, 2d" oninput="refreshAutoActualCost()" />
-                <div id="mActualEffortHint" class="help-text" style="font-size:var(--t-xs);margin-top:2px"></div>
-              </div>
-              <div class="form-group">
-                <span class="fg-head"><label for="mActualCost">Actual cost $</label><button type="button" class="info-icon" aria-label="About Actual cost $" data-help="What the work actually cost. Auto-derived from the actual time spent — actual working days between the dates above × the participants' day-rates (client-kind people $0) + fixed cost. Type a number to override; ↺ returns to auto. Feeds CPI / EAC and the historical archive.">i</button></span>
-                <input id="mActualCost" type="text" inputmode="decimal" value="$0" readonly oninput="refreshAutoActualCost()" title="Calculated from the actual time spent — use ✎ override to type your own figure" />
-                <div id="mActualCostHint" class="help-text" style="font-size:var(--t-xs);margin-top:2px"></div>
               </div>
             </div>
             <div class="form-group" style="margin-bottom:0">
@@ -1617,6 +1696,7 @@
       const parts = ['mO', 'mM', 'mP'].map(id => durExprEcho(document.getElementById(id).value)).filter(Boolean);
       el.textContent = parts.join('  \u00b7  ');
       el.style.display = parts.length ? 'block' : 'none';
+      if (typeof refreshProgressPanel === 'function') refreshProgressPanel(); // estimate half of the readout stays live while O/M/P are typed
     }
     // Auto-scaling duration display: the MATH stays in the project unit (one
     // canonical unit, no mixed-unit scheduling), but sub-day values READ as
@@ -2486,13 +2566,322 @@
     // whether the user has typed a value this session; when auto, the field mirrors
     // the cost computed from the actual dates + the modal's current people/rates.
     let mActualCostManual = false;
-    function modalActualParticipants() {
-      const out = [], seen = new Set();
-      const add = (name, units) => { name = (name || '').trim(); if (!name || seen.has(name.toLowerCase())) return; seen.add(name.toLowerCase()); out.push({ name, units: Number.isFinite(+units) ? +units : 100 }); };
-      add(document.getElementById('mOwner').value, parseFloat(document.getElementById('mUnits').value));
-      const owner = (document.getElementById('mOwner').value || '').trim();
-      document.querySelectorAll('#attRows .dep-row').forEach(r => { const nm = (r.querySelector('.att-name').value || '').trim(); if (nm && nm !== owner) add(nm, parseFloat(r.querySelector('.att-units').value)); });
-      return out;
+    let mAutoStamp = { start: false, finish: false };  // dates THIS session filled in for the user
+    let mLastEstUnits = null;   // last VALID PERT TE, held while O/M/P are mid-typing
+    let mLastAutoCost = null;   // last auto-written cost (drives the flash + the stale-value fix)
+    let mOpenActualCost = '';   // the cost string the modal opened with
+    let mPaFrame = 0;           // rAF handle — one repaint per frame, not per keystroke
+
+    function paV(id) { const e = document.getElementById(id); return ((e && e.value) || '').trim(); }
+    // Live PERT TE from the modal's own O/M/P, in project units. While any leg is
+    // mid-typing ("1.", "2d ") the last good value is held so the readout holds
+    // steady instead of flickering to "no estimate".
+    function modalTeUnits(isMs) {
+      if (isMs) return 0;
+      const o = parseDurExpr(paV('mO')), m = parseDurExpr(paV('mM')), p = parseDurExpr(paV('mP'));
+      if (![o, m, p].every(v => Number.isFinite(v) && v >= 0)) return mLastEstUnits;
+      return (mLastEstUnits = (o + 4 * m + p) / 6);
+    }
+    // A plain task-shaped object built from the LIVE modal fields. Everything the
+    // panel shows is then computed by the app's own taskParticipants / taskCost /
+    // computedActualCost, so the editor and the tables can never disagree.
+    function modalShadowTask() {
+      const isMs = document.getElementById('mMilestone').checked;
+      const aeRaw = paV('mActualEffort'), ae = parseDurExpr(aeRaw);
+      const units = parseFloat(paV('mUnits'));
+      return {
+        isSummary: false,
+        te: modalTeUnits(isMs) || 0,
+        owner: paV('mOwner'),
+        units: Number.isFinite(units) ? units : 100,
+        attendees: [...document.querySelectorAll('#attRows .dep-row')].map(r => {
+          const u = parseFloat(r.querySelector('.att-units').value);
+          return { name: (r.querySelector('.att-name').value || '').trim(), units: Number.isFinite(u) ? u : 100 };
+        }).filter(a => a.name),
+        fixedCost: Math.max(0, parseFloat(paV('mFixedCost')) || 0),
+        actualEffort: (aeRaw && Number.isFinite(ae) && ae >= 0) ? ae : null,
+        actualStart: paV('mActualStart'), actualFinish: paV('mActualFinish')
+      };
+    }
+    function modalActualParticipants() { return taskParticipants(modalShadowTask()); }
+
+    // ---- auto-stamping the actual dates ----------------------------------
+    // Additive stamps fire on input (instant feedback); CLEARING only ever fires
+    // on change/blur, so backspacing "100" mid-edit can never wipe a real date.
+    function paSetChip(which, on) {
+      mAutoStamp[which] = !!on;
+      paSyncChips();
+    }
+    // "auto" means "this date was filled in for you" — meaningless on an empty
+    // field, so the chip tracks the flag AND the value actually being there
+    function paSyncChips() {
+      [['start', 'paChipStart', 'mActualStart'], ['finish', 'paChipFinish', 'mActualFinish']].forEach(([k, chipId, inpId]) => {
+        const c = document.getElementById(chipId), i = document.getElementById(inpId);
+        if (c) c.style.display = (mAutoStamp[k] && i && i.value) ? '' : 'none';
+      });
+    }
+    function paFlash(el) { if (!el) return; el.classList.remove('pa-flash'); void el.offsetWidth; el.classList.add('pa-flash'); }
+    function paNote(msg) {
+      const n = document.getElementById('paNote'); if (!n) return;
+      n.innerHTML = msg || ''; n.style.display = msg ? '' : 'none';
+    }
+    function paStamp(which, why) {
+      const el = document.getElementById(which === 'start' ? 'mActualStart' : 'mActualFinish');
+      if (!el || el.value || el.disabled) return false;   // never overwrite anything already there
+      el.value = fmtISO(new Date());
+      paSetChip(which, true); paFlash(el);
+      paNote(why + ' — <b>actual ' + which + '</b> set to today. Editable, or <a href="#" onclick="event.preventDefault();paUndoStamp(\'' + which + '\')">undo</a>.');
+      return true;
+    }
+    function paUndoStamp(which) {
+      const el = document.getElementById(which === 'start' ? 'mActualStart' : 'mActualFinish');
+      if (el) el.value = '';
+      paSetChip(which, false); paNote(''); refreshProgressPanel();
+    }
+    function paOnDateEdit(which) { paSetChip(which, false); paNote(''); refreshProgressPanel(); }
+    // Typing real effort means the work started.
+    function paOnEffortInput() {
+      const raw = paV('mActualEffort'), n = parseDurExpr(raw);
+      if (raw && Number.isFinite(n) && n > 0) paStamp('start', 'Time logged');
+      refreshProgressPanel();
+    }
+    function paOnEffortCommit() {   // symmetric undo — only a stamp we made, only while still 0%
+      const raw = paV('mActualEffort');
+      if (!raw && mAutoStamp.start && (parseFloat(paV('mPct')) || 0) <= 0 && !paV('mActualFinish')) paUndoStamp('start');
+      else refreshProgressPanel();
+    }
+    // 100% means it finished today. Mirrors applyPctActuals in DOM space.
+    function paOnPctInput() {
+      const el = document.getElementById('mPct');
+      if (el.value === '') return refreshProgressPanel();   // mid-edit: do nothing destructive
+      const pct = Math.min(100, Math.max(0, parseFloat(el.value) || 0));
+      if (String(pct) !== el.value) el.value = pct;
+      if (pct > 0) paStamp('start', 'Progress logged');
+      if (pct >= 100) paStamp('finish', '100% complete');
+      refreshProgressPanel();
+    }
+    function paOnPctCommit() {
+      const el = document.getElementById('mPct');
+      const pct = Math.min(100, Math.max(0, parseFloat(el.value) || 0));
+      el.value = pct;
+      const f = document.getElementById('mActualFinish'), s = document.getElementById('mActualStart');
+      if (pct < 100 && mAutoStamp.finish && f.value) { f.value = ''; paSetChip('finish', false); paNote('Actual finish cleared — it was auto-stamped, not typed.'); paFlash(f); }
+      if (pct <= 0 && mAutoStamp.start && s.value && !f.value) { s.value = ''; paSetChip('start', false); paNote('Actual start cleared — it was auto-stamped, not typed.'); paFlash(s); }
+      refreshProgressPanel();
+    }
+    function paMarkDone() { const el = document.getElementById('mPct'); el.value = 100; paOnPctInput(); paOnPctCommit(); }
+
+    // ---- derivation + live cost ------------------------------------------
+    function paDerive() {
+      const isSum = editingId != null && isSummaryId(editingId);
+      const cur = editingId != null ? tasks.find(x => x.id === editingId) : null;
+      if (isSum && cur) {
+        const lv = leafDescendants(cur.id);
+        const ds = lv.map(actualEffortDays).filter(d => d != null);
+        return {
+          isSum: true, leaves: lv.length,
+          // Σ leaf TE = effort. A summary's own te is a schedule SPAN, not effort.
+          estTime: lv.reduce((s, x) => s + (+x.te || 0), 0),
+          actTime: ds.length ? workingDaysToUnit(ds.reduce((a, b) => a + b, 0)) : null,
+          estCost: taskCost(cur), actCost: actualCostOf(cur), autoCost: null, days: null, fixed: 0,
+          basis: ds.length ? 'rolled up from ' + ds.length + ' sub-task' + (ds.length === 1 ? '' : 's') : null,
+          crew: [], pct: cur.percentComplete || 0
+        };
+      }
+      const sh = modalShadowTask();
+      const days = actualEffortDays(sh);   // logged effort first, date span second
+      const crew = taskParticipants(sh).map(p => ({ name: p.name, units: p.units, client: isClientResource(p.name), rate: getRate(p.name) }));
+      const typed = parseFloat(String(document.getElementById('mActualCost').value).replace(/[^0-9.\-]/g, '')) || 0;
+      const auto = computedActualCost(sh);   // null when there is no basis at all
+      return {
+        isSum: false, leaves: 0,
+        estTime: sh.te, actTime: days == null ? null : workingDaysToUnit(days),
+        estCost: Math.round(taskCost(sh)),
+        actCost: mActualCostManual ? typed : auto,
+        autoCost: auto, days, crew, fixed: sh.fixedCost,
+        basis: days == null ? null : (sh.actualEffort != null ? 'logged effort' : 'elapsed span'),
+        pct: Math.min(100, Math.max(0, parseFloat(paV('mPct')) || 0))
+      };
+    }
+    // Paints the cost field AND the line that says WHERE the figure came from.
+    // A $0 that is correct (everyone on the activity is client-billed) has to read
+    // differently from a $0 that means "you forgot a day rate" — same number, very
+    // different action, and the number alone can't tell them apart.
+    function paPaintCost(d) {
+      const inp = document.getElementById('mActualCost'), hint = document.getElementById('mActualCostHint');
+      if (!inp) return;
+      if (!mActualCostManual) {
+        if (d.autoCost != null) {
+          const nv = fmtMoney(d.autoCost);
+          if (inp.value !== nv) { inp.value = nv; paFlash(inp); }
+          mLastAutoCost = d.autoCost;
+        } else if (mLastAutoCost !== null) {
+          // basis went away (effort cleared) — restore what we opened with rather
+          // than leaving a stale computed figure that save would then persist
+          inp.value = mOpenActualCost; mLastAutoCost = null; paFlash(inp);
+        }
+      }
+      if (!hint) return;
+      const over = ' <a href="#" onclick="event.preventDefault();setActualCostManual(true)">✎ override</a>';
+      const back = ' <a href="#" onclick="event.preventDefault();setActualCostManual(false)">↺ back to calculated</a>';
+      let html;
+      if (d.isSum) html = `Rolled up from ${d.leaves} sub-task${d.leaves === 1 ? '' : 's'} — a figure typed on a phase is not counted.`;
+      else if (mActualCostManual) html = `<b>Manual figure.</b> Calculated would be <b>${fmtMoney(d.autoCost || 0)}</b>.` + back;
+      else if (d.days == null) html = `Calculated — log the time spent above and this fills in from time × rates.` + over;
+      else {
+        const dayTxt = d.days < 1 ? Math.round(d.days * 480) + ' min' : (Math.round(d.days * 100) / 100) + ' working day' + (d.days === 1 ? '' : 's');
+        const billable = d.crew.filter(c => !c.client && c.rate > 0);
+        const unrated = d.crew.filter(c => !c.client && !(c.rate > 0));
+        let why = '';
+        if (!d.crew.length) why = `<span class="badge badge-warn">No owner</span> Nobody is assigned, so there is no labour to cost. `;
+        else if (d.crew.every(c => c.client)) why = `<span class="badge badge-info">Client-billed</span> ${escapeHtml(d.crew.map(c => c.name).join(', '))} ${d.crew.length > 1 ? 'are' : 'is'} client-side — their time costs you nothing. <b>This $0 is correct, not missing.</b> `;
+        else if (unrated.length) why = `<span class="badge badge-warn">No day rate</span> ${escapeHtml(unrated.map(c => c.name).join(', '))} ha${unrated.length > 1 ? 've' : 's'} no rate on the 👥 Team tab, so that time counts as $0. `;
+        const math = billable.map(c => escapeHtml(c.name) + ' ' + fmtMoney(c.rate) + '/day' + (c.units !== 100 ? ' @' + c.units + '%' : '')).join(' + ');
+        html = why + `${dayTxt} (${escapeHtml(d.basis)})` + (math ? ' × ' + math : '')
+          + (d.fixed ? ' + ' + fmtMoney(d.fixed) + ' fixed' : '')
+          + ` = <b>${fmtMoney(d.autoCost || 0)}</b>` + over;
+      }
+      if (hint.innerHTML !== html) { hint.innerHTML = html; paFlash(hint); }
+    }
+
+    // ---- the estimate-vs-actual readout ----------------------------------
+    // The denominator is the crux: comparing actual-to-date against the FULL
+    // estimate makes every in-flight task read green until it suddenly doesn't.
+    // Pace — act ÷ (est × pct/100) — is the honest comparison, and it is gated
+    // below 25% where a percent guess makes any projection meaningless.
+    function paBand(r) {
+      if (!Number.isFinite(r)) return { cls: 'badge-slack', mod: '' };
+      if (r <= 0.90) return { cls: 'badge-done', mod: '' };
+      if (r <= 1.10) return { cls: 'badge-ok', mod: 'b-on' };
+      if (r <= 1.25) return { cls: 'badge-warn', mod: 'b-warn' };
+      return { cls: 'badge-critical', mod: 'b-over' };
+    }
+    function paPct(v) { return (v >= 0 ? '+' : '−') + Math.abs(Math.round(v * 100)) + '%'; }
+    function paBandColor(cls) {
+      return cls === 'badge-done' ? 'var(--success)' : cls === 'badge-ok' ? 'var(--primary)'
+        : cls === 'badge-warn' ? 'var(--warn)' : cls === 'badge-critical' ? 'var(--critical)' : 'var(--muted)';
+    }
+    function refreshProgressPanel() {
+      if (mPaFrame) cancelAnimationFrame(mPaFrame);
+      mPaFrame = requestAnimationFrame(paPaint);
+    }
+    function paPaint() {
+      mPaFrame = 0;
+      const panel = document.getElementById('paPanel'); if (!panel) return;
+      const d = paDerive();
+      const isMs = document.getElementById('mMilestone').checked;
+      panel.dataset.mode = d.isSum ? 'rollup' : isMs ? 'milestone' : 'task';
+      paPaintCost(d);
+      paPaintModes(d, isMs);
+      paSyncChips();
+
+      const st = document.getElementById('paStatus');
+      const started = d.pct > 0 || !!paV('mActualStart') || (d.actTime > 0);
+      st.className = 'badge ' + (d.pct >= 100 ? 'badge-done' : started ? 'badge-prog' : 'badge-notstarted');
+      st.textContent = d.pct >= 100 ? 'Complete' : started ? 'In progress · ' + Math.round(d.pct) + '%' : 'Not started';
+
+      // TIME row — numbers, burn bar, progress tick
+      document.getElementById('paEstTime').textContent = d.estTime > 0 ? fmtDurCell(d.estTime) : 'no estimate';
+      document.getElementById('paActTime').textContent = d.actTime == null ? '—' : fmtDurCell(d.actTime);
+      const rowT = document.getElementById('paRowTime');
+      rowT.classList.remove('b-on', 'b-warn', 'b-over');
+      const rT = (d.estTime > 0 && d.actTime != null) ? d.actTime / d.estTime : null;
+      document.getElementById('paFillTime').style.width = rT == null ? '0%' : Math.min(100, rT * 100) + '%';
+      const tick = document.getElementById('paTickTime');
+      tick.style.display = d.pct > 0 && d.pct < 100 ? '' : 'none';
+      tick.style.left = Math.min(100, d.pct) + '%';
+      const dT = document.getElementById('paDeltaTime');
+      if (rT == null) { dT.textContent = ''; }
+      else {
+        const paceT = d.pct >= 100 ? rT : (d.pct >= 25 ? rT / (d.pct / 100) : null);
+        const b = paBand(paceT == null ? rT : paceT);
+        if (paceT != null && b.mod) rowT.classList.add(b.mod); // '' = the green default, already the base style
+        // mid-flight, a signed delta against the FULL estimate reads backwards
+        // ("−5%" in red); consumption-so-far is the unambiguous phrasing, and the
+        // signed over/under only becomes meaningful once the work is finished
+        dT.textContent = d.pct >= 100 ? paPct(rT - 1) + ' vs estimate' : Math.round(rT * 100) + '% of estimate used';
+        dT.style.color = paceT == null ? 'var(--muted)' : paBandColor(b.cls);
+      }
+      rowT.title = (d.estTime > 0 && d.actTime != null)
+        ? fmtDurCell(d.actTime) + ' of a ' + fmtDurCell(d.estTime) + ' estimate — the tick marks ' + Math.round(d.pct) + '% complete'
+        : 'No estimate to compare against';
+
+      // COST row — money, reason, delta. No second bar: with a fixed crew the cost
+      // ratio IS the time ratio, so a second bar would be a rescaled copy of the
+      // first pretending to be independent evidence.
+      document.getElementById('paEstCost').textContent = fmtMoney(d.estCost || 0);
+      document.getElementById('paActCost').textContent = d.actCost == null ? '—' : fmtMoney(d.actCost);
+      const cw = document.getElementById('paCostWhy'), dC = document.getElementById('paDeltaCost');
+      const noCost = (d.estCost || 0) <= 0 && (d.actCost || 0) <= 0;
+      const allClient = !d.isSum && d.crew.length > 0 && d.crew.every(c => c.client);
+      if (noCost) {
+        dC.textContent = '';
+        cw.innerHTML = allClient ? '<span class="badge badge-info">Client-billed — $0 by design</span>'
+          : (d.crew.some(c => !c.client && !(c.rate > 0)) ? '<span class="badge badge-warn">No day rate set</span>'
+            : '<span class="badge badge-slack">No cost on this activity</span>');
+      } else {
+        cw.textContent = mActualCostManual ? 'manual figure' : '';
+        if (d.estCost > 0 && d.actCost != null) {
+          const rC = d.actCost / d.estCost;
+          const paceC = d.pct >= 100 ? rC : (d.pct >= 25 ? rC / (d.pct / 100) : null);
+          const b = paBand(paceC == null ? rC : paceC);
+          dC.textContent = d.pct >= 100 ? paPct(rC - 1) + ' vs budget' : Math.round(rC * 100) + '% of budget used';
+          dC.style.color = paceC == null ? 'var(--muted)' : paBandColor(b.cls);
+        } else dC.textContent = '';
+      }
+
+      const v = paVerdictOf(d, isMs, allClient);
+      const vb = document.getElementById('paVerdictBadge');
+      vb.className = 'badge ' + v.cls; vb.textContent = v.word;
+      document.getElementById('paVerdictWhy').textContent = v.why;
+    }
+    function paVerdictOf(d, isMs, allClient) {
+      const est = d.estTime, act = d.actTime, f = fmtDurCell;
+      if (d.isSum) return { cls: 'badge-info', word: 'Roll-up', why: `${d.leaves} sub-task${d.leaves === 1 ? '' : 's'} — ${est > 0 ? f(est) : 'no'} estimated, ${act == null ? 'nothing' : f(act)} logged. Open a child to record progress.` };
+      if (!(est > 0)) return { cls: 'badge-slack', word: 'No estimate', why: isMs ? 'A milestone is a date, not a duration — there is no effort to compare.' : 'Fill in O / M / P above and this compares the estimate against the actuals.' };
+      if (act == null) return { cls: 'badge-notstarted', word: 'Nothing logged', why: `Estimated ${f(est)}${d.estCost > 0 ? ' / ' + fmtMoney(d.estCost) : ''}. Type the time spent and this fills in.` };
+      if (d.pct >= 100) {
+        const r = act / est, b = paBand(r);
+        return {
+          cls: b.cls, word: r <= 0.90 ? 'Under' : 'Done',
+          why: r <= 0.90 ? `Done, ${f(est - act)} under the estimate (${Math.round((1 - r) * 100)}% cheaper than planned).`
+            : r <= 1.10 ? `Done, right on the ${f(est)} estimate — that estimate was good.`
+              : `Done, but it took ${f(act - est)} more than the ${f(est)} estimate (${r.toFixed(2)}×). Worth remembering when you size work like this.`
+        };
+      }
+      if (d.pct <= 0) return { cls: 'badge-warn', word: '0%', why: `${f(act)} logged but still 0% complete — set a % so ahead/behind can be read.` };
+      if (d.pct < 25) return { cls: 'badge-info', word: 'Too early', why: `${f(act)} of a ${f(est)} estimate at ${Math.round(d.pct)}% — too early to project a finish.` };
+      const proj = act / (d.pct / 100), r = proj / est, b = paBand(r);
+      return {
+        cls: b.cls, word: r <= 0.90 ? 'Ahead' : r <= 1.10 ? 'On track' : r <= 1.25 ? 'Watch' : 'Over',
+        why: r <= 1.10 ? `${Math.round(d.pct)}% done on ${Math.round(act / est * 100)}% of the estimate — on pace for ${f(proj)}${allClient ? '' : ', ' + fmtMoney(d.estCost * r || 0)}.`
+          : `${Math.round(d.pct)}% done on ${Math.round(act / est * 100)}% of the estimate — at this pace it lands at ${f(proj)}, ${r.toFixed(2)}× the ${f(est)} estimate.`
+      };
+    }
+    // Roll-ups and auto-tracked milestones own their own % — say so rather than
+    // offering a field the next recompute would silently overwrite.
+    function paDepCount() {
+      return [...document.querySelectorAll('#depRows .dep-id-input')].filter(i => i.value.trim() && resolveTaskRef(i.value, modalRefMap) != null).length;
+    }
+    function paPaintModes(d, isMs) {
+      const lock = document.getElementById('paLock');
+      const cur = editingId != null ? tasks.find(x => x.id === editingId) : null;
+      const autoMs = isMs && !d.isSum && (paDepCount() > 0 || (cur && !isSummaryId(cur.id) && effectivePreds(cur).length > 0));
+      ['mPct', 'paDoneBtn'].forEach(id => { const e = document.getElementById(id); if (e) e.disabled = !!(d.isSum || autoMs); });
+      // a phase's own effort/cost are ignored by taskCost/actualCostOf — read-only,
+      // not deleted, so an inherited figure stays visible and auditable
+      ['mActualEffort', 'mActualCost'].forEach(id => {
+        const e = document.getElementById(id); if (!e) return;
+        const ro = d.isSum || (id === 'mActualCost' && !mActualCostManual);
+        e.readOnly = !!ro; e.style.background = ro ? '#f8fafc' : '';
+      });
+      if (d.isSum) {
+        lock.style.display = '';
+        lock.innerHTML = `📦 <b>Roll-up</b> — % complete, time and cost are computed from the ${d.leaves} sub-task${d.leaves === 1 ? '' : 's'}. The actual <b>dates</b> below are still yours: they drive the baseline variance view.`;
+      } else if (autoMs) {
+        lock.style.display = '';
+        lock.innerHTML = `🎯 <b>Auto-tracked milestone</b> — it flips to 100% when every predecessor is done, so % complete is locked here.`;
+      } else lock.style.display = 'none';
     }
     function setActualCostManual(on) {
       mActualCostManual = !!on;
@@ -2505,41 +2894,9 @@
       }
       refreshAutoActualCost();
     }
-    function refreshAutoActualCost() {
-      const inp = document.getElementById('mActualCost'); const hint = document.getElementById('mActualCostHint');
-      if (!inp) return;
-      // prefer logged EFFORT (minute-resolution); fall back to the date span
-      let days = null, basis = '';
-      const eff = parseDurExpr(document.getElementById('mActualEffort').value.trim());
-      const eh = document.getElementById('mActualEffortHint');
-      if (!isNaN(eff) && eff >= 0) { days = unitToWorkingDays(eff); basis = 'logged effort'; }
-      if (eh) {
-        const estM = parseDurExpr(document.getElementById('mM').value);
-        eh.textContent = (!isNaN(eff) && eff >= 0)
-          ? fmtDurCell(eff) + ' logged' + (Number.isFinite(estM) && estM > 0 ? ' — vs ' + fmtDurCell(estM) + ' most likely (' + (eff / estM).toFixed(2) + '× estimate)' : '')
-          : 'Real effort, any resolution: 20m · 1.5h · 2d. Drives actual cost and estimate accuracy.';
-      }
-      const sV = document.getElementById('mActualStart').value, fV = document.getElementById('mActualFinish').value;
-      if (days == null && /^\d{4}-\d{2}-\d{2}$/.test(sV) && /^\d{4}-\d{2}-\d{2}$/.test(fV)) {
-        const start = new Date(sV + 'T00:00:00'), fin = new Date(fV + 'T00:00:00');
-        if (fin >= start) { days = workingDaysBetween(start, fin, getHolidaySet()) + 1; basis = 'elapsed span (log actual time spent for a truer figure)'; }
-      }
-      inp.readOnly = !mActualCostManual;
-      inp.style.background = mActualCostManual ? '' : '#f8fafc';
-      if (days == null) {
-        if (hint) hint.innerHTML = mActualCostManual
-          ? `<b>Manual figure.</b> Log actual time spent and it can calculate instead. <a href="#" onclick="event.preventDefault();setActualCostManual(false)">↺ back to calculated</a>`
-          : `Calculated — log actual time spent (or the actual dates) above and this fills from time × rates. <a href="#" onclick="event.preventDefault();setActualCostManual(true)">✎ override</a>`;
-        return;
-      }
-      const labor = modalActualParticipants().reduce((sx, p) => sx + (isClientResource(p.name) ? 0 : getRate(p.name) * days * p.units / 100), 0);
-      const auto = Math.round(labor + (Math.max(0, parseFloat(document.getElementById('mFixedCost').value) || 0)));
-      if (!mActualCostManual) inp.value = fmtMoney(auto);
-      const dayTxt = days < 1 ? (Math.round(days * 480) + ' min') : (Math.round(days * 100) / 100 + ' working day' + (days === 1 ? '' : 's'));
-      if (hint) hint.innerHTML = mActualCostManual
-        ? `<b>Manual figure.</b> Calculated would be $${auto.toLocaleString()} from ${dayTxt} (${escapeHtml(basis)}) × rates. <a href="#" onclick="event.preventDefault();setActualCostManual(false)">↺ back to calculated</a>`
-        : `Calculated: ${dayTxt} (${escapeHtml(basis)}) × rates + fixed = <b>$${auto.toLocaleString()}</b>. <a href="#" onclick="event.preventDefault();setActualCostManual(true)">✎ override</a>`;
-    }
+    // kept as the name every owner/units/fixed-cost/attendee handler already calls —
+    // the whole panel (cost field, hints, readout, locks) repaints as one unit
+    function refreshAutoActualCost() { refreshProgressPanel(); }
     function openAddModal(isMilestone) {
       editingId = null;
       applySummaryLock(false);
@@ -2568,7 +2925,11 @@
       document.getElementById('mActualFinish').value = '';
       document.getElementById('mActualEffort').value = '';
       document.getElementById('mActualCost').value = fmtMoney(0);
-      mActualCostManual = false; refreshAutoActualCost();
+      mActualCostManual = false;
+      mAutoStamp = { start: false, finish: false }; mLastEstUnits = null; mLastAutoCost = null;
+      mOpenActualCost = fmtMoney(0);
+      paSetChip('start', false); paSetChip('finish', false); paNote('');
+      refreshAutoActualCost();
       document.getElementById('mAudience').value = '';
       populateOwnerList();
       modalRefMap = buildTaskDatalist('predDatalist', t => true);
@@ -2673,7 +3034,15 @@
       document.getElementById('mActualFinish').value = t.actualFinish || '';
       document.getElementById('mActualEffort').value = (t.actualEffort == null ? '' : fmtDurCell(t.actualEffort));
       document.getElementById('mActualCost').value = (t.autoActualCost === false) ? String(t.actualCost || 0) : fmtMoney(t.actualCost || 0);
-      mActualCostManual = (t.autoActualCost === false); refreshAutoActualCost();
+      mActualCostManual = (t.autoActualCost === false);
+      // Seeding the auto-stamp flags from the STORED ones is load-bearing: without
+      // it, dropping a 100% task to 60% leaves the finish date on screen while
+      // applyPctActuals silently wipes it after save — two answers, one field.
+      mAutoStamp = { start: !!t.autoActualStart, finish: !!t.autoActualFinish };
+      mLastEstUnits = null; mLastAutoCost = null;
+      mOpenActualCost = document.getElementById('mActualCost').value;
+      paSetChip('start', mAutoStamp.start); paSetChip('finish', mAutoStamp.finish); paNote('');
+      refreshAutoActualCost();
       document.getElementById('mAudience').value = (t.audience === 'client' || t.audience === 'internal') ? t.audience : '';
       document.getElementById('mJira').value = t.jira || '';
       populateOwnerList();
@@ -2773,6 +3142,7 @@
     function toggleMilestoneFields() {
       const ms = document.getElementById('mMilestone').checked;
       document.getElementById('estFields').style.display = ms ? 'none' : 'grid';
+      refreshProgressPanel();
     }
     function populateOwnerList() {
       const dl = document.getElementById('ownerList');
@@ -2947,7 +3317,10 @@
       const finalPreds = Object.values(seen).filter(pr => pr.id !== editingId);
 
       const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, actualCost, actualEffort, autoActualCost: !mActualCostManual, audience: (v => (v === 'client' || v === 'internal') ? v : null)(document.getElementById('mAudience').value), percentComplete: pct, predecessors: finalPreds, jira: document.getElementById('mJira').value.trim(),
-        parentId, description, deliverable, acceptance, actualStart, actualFinish };
+        parentId, description, deliverable, acceptance, actualStart, actualFinish,
+        // the panel owns these: a date IT filled in stays flagged auto (so dropping
+        // below 100% can still clear it), a date the user typed or edited is manual
+        autoActualStart: !!mAutoStamp.start, autoActualFinish: !!mAutoStamp.finish };
       // roll-up rows: the locked, computed-from-children fields never save
       if (isSum) ['o', 'm', 'p', 'milestone', 'owner', 'units', 'attendees', 'percentComplete'].forEach(k => delete fields[k]);
       let renamedTask = null, renamedFrom = '';
@@ -2959,9 +3332,6 @@
         const cur = tasks.find(x => x.id === editingId);
         if (cur && cur.name.trim() !== name.trim()) { renamedTask = cur; renamedFrom = cur.name; }
         const prevPct = cur ? (cur.percentComplete || 0) : 0;
-        // manual date entry in the modal overrides any auto-stamp
-        if (cur && actualStart !== cur.actualStart) cur.autoActualStart = false;
-        if (cur && actualFinish !== cur.actualFinish) cur.autoActualFinish = false;
         Object.assign(cur, fields);
         if (!isSum) applyPctActuals(cur, prevPct);
       }
@@ -10577,12 +10947,52 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           'The case routes to the triage queue, and the daily report lists the unmapped category with the case reference.'),
         tc(29, 'AC-11.3', 'edge: role change mid-shift swaps the visible queue within 15 min', 0.02, 0.04, 0.08, 28, 'Client SME',
           '1. As uat_mgr01, move uat_agent02 from the billing queue to the service queue.\n2. As uat_agent02, refresh the case list and start a 15-minute timer.\n3. Compare the visible cases before and after the refresh.',
-          'Service-queue cases appear and billing-queue cases disappear within 15 minutes, with no re-login required.')
+          'Service-queue cases appear and billing-queue cases disappear within 15 minutes, with no re-login required.'),
+        // ── evidence checks for the artifact-verified stories (US-5, US-12, US-8, US-13).
+        // Same TC shape, but what they exercise is a RECORD rather than a screen:
+        // open the named artifact, reconcile it against its source, and state the
+        // exception count. Each one chains off the activity whose output it audits.
+        tc(30, 'AC-5.1', 'happy path: every in-scope field keyed to a decision in the spec → steward approves v1.3 within 5 business days', 0.04, 0.08, 0.15, 5, 'Client SME',
+          '1. Open data_mapping_spec_v1.3.xlsx (project workspace › 02-Design › Data Mapping) and the legacy schema extract legacy_crm_schema_v4.xlsx alongside it.\n2. In the schema extract, filter to Scope = Yes, copy the resulting object.field keys and note the filtered total.\n3. On the spec\'s "Field mapping" tab, look up each key and check the Decision cell reads Target, Transform or Drop AND the adjacent Rule / Reason cell is non-blank; list every key that is missing from the tab, blank in Decision, or blank in Rule / Reason.\n4. Open the spec\'s "Approvals" tab: confirm the approved version is v1.3, confirm the approver is the named client data steward, and count business days from the Issued date to the Approved date.\n5. Export the "Field mapping" and "Approvals" tabs to the evidence pack (project workspace › 06-Acceptance) as AC-5.1_mapping-spec-approval.pdf.',
+          'Step 3 lists zero exceptions — every in-scope key from the schema extract appears on the "Field mapping" tab with a Decision of Target, Transform or Drop and a non-blank Rule / Reason; the "Approvals" tab shows v1.3 approved by the named client data steward no more than 5 business days after the Issued date; AC-5.1_mapping-spec-approval.pdf is saved in 06-Acceptance.'),
+        tc(31, 'AC-5.2', 'error path: cross-check the profiling run against the spec → every field over 2% exampled and decided before approval', 0.03, 0.07, 0.13, 30, 'Client SME',
+          '1. Open profiling_run_03.csv, the run named in the header of the spec\'s "Profiling-2pct" tab, and list every field whose Violation % is strictly greater than 2.0% of sampled rows (a field at exactly 2.0% is out of scope for this check).\n2. On the spec\'s "Profiling-2pct" tab, confirm every field on that list appears; record any field present in the run output but absent from the tab.\n3. For each listed field, check its tab row carries at least 3 example offending values with their legacy record ids, plus a Cleanup or Transform decision naming a decision owner and carrying a Recorded date.\n4. For one example record id per listed field, look the record up in the legacy data extract legacy_crm_export.csv and confirm the stored value really breaks that field\'s stated rule.\n5. Compare each decision\'s Recorded date with the steward\'s Approved date on the spec\'s "Approvals" tab, then export the "Profiling-2pct" tab to the evidence pack as AC-5.2_profiling-decisions.pdf.',
+          'Every field above 2.0% in profiling_run_03.csv appears on the "Profiling-2pct" tab (zero missing at step 2), each carrying at least 3 example values with legacy record ids and a cleanup or transform decision that names an owner and is dated on or before the steward\'s approval date; each record spot-checked at step 4 genuinely violates its field\'s stated rule; AC-5.2_profiling-decisions.pdf is saved in 06-Acceptance.'),
+        tc(32, 'AC-5.3', 'edge: follow rule ORPHAN-01 from spec to dry run → one stated outcome and counts that reconcile', 0.02, 0.05, 0.1, 31, 'Client SME',
+          '1. Open the spec\'s "Exceptions & rules" tab and read rule ORPHAN-01, covering legacy records whose parent account no longer exists.\n2. Confirm ORPHAN-01 records exactly one outcome and names the person who chose it: if attach, the rule names the holding account (ZZ-Orphaned Records); if exclude, it names where those records stay readable.\n3. Open the migration reconciliation report for the latest dry run, find the line labelled ORPHAN-01, and note its stated outcome and orphan record count.\n4. Open the exceptions file from that same run, count the rows whose Rule column reads ORPHAN-01, and compare that total with the report\'s count.\n5. Where the outcome is attach, open ZZ-Orphaned Records in the loaded UAT environment and compare its child record count with the same number; export the ORPHAN-01 rule text and the report line to the evidence pack as AC-5.3_orphan-rule-trace.pdf.',
+          'ORPHAN-01 records exactly one outcome and a named decision owner; the reconciliation report carries an ORPHAN-01 line stating that same outcome, and its orphan record count equals the ORPHAN-01 row count in the run\'s exceptions file — and, where the outcome is attach, equals the child record count on ZZ-Orphaned Records in UAT; AC-5.3_orphan-rule-trace.pdf is saved in 06-Acceptance.'),
+        tc(33, 'AC-12.1', 'happy path: reconcile Training-Log to the UAT org → attendance, a real guided case and a score per tester', 0.03, 0.06, 0.11, 17, 'Client UAT Lead',
+          '1. Open uat_workbook_v2.4.xlsx tab "Training-Log" and the trained tester roster v1.2 (uat_tester_roster_v1.2.xlsx, 05-UAT).\n2. Confirm the log holds a row for every tester named in UAT Plan v2.1 section 4 "Tester readiness", and that each row carries an attendance mark, the guided case reference that tester created end-to-end, and a first-attempt score out of 10 on UAT readiness check v1.0 — no blanks.\n3. Pick any 2 of the recorded case references, open them in the UAT org, and confirm each case exists, was created by that tester\'s own UAT login, and reached a closed status on the session date.\n4. Confirm the log header names the UAT org and the migration dry-run build id, and that the same build id appears on the reconciliation report from that dry run.\n5. Compare the cleared-to-execute list on roster v1.2 with the scores recorded on tab "Training-Log".',
+          'Every tester named in UAT Plan v2.1 section 4 has a Training-Log row with an attendance mark, a guided case reference and a first-attempt score out of 10, with no blanks; both spot-checked cases exist in the UAT org, created by that tester\'s own login and closed on the session date; the build id in the log header matches the one on the dry-run reconciliation report; and the cleared-to-execute list on roster v1.2 contains exactly those testers holding a score of at least 7 of 10, first attempt or recorded re-check.'),
+        tc(34, 'AC-12.2', 'error path: trace every sub-7 scorer → repeat session inside 2 business days, no execution before a pass', 0.02, 0.04, 0.09, 33, 'Client UAT Lead',
+          '1. Open uat_workbook_v2.4.xlsx tab "Training-Log" and list every tester whose first-attempt score on UAT readiness check v1.0 is below 7 of 10, plus any tester whose first-attempt score is blank.\n2. For each tester listed, open their repeat-session entry in the training calendar and count business days from the date their first-attempt result was recorded to the booked repeat-session date.\n3. For each tester listed, open workbook tab "Execution-Log" and compare the earliest execution date recorded against their name with the date of their re-check score of at least 7 of 10 on tab "Training-Log".\n4. If no tester scored below 7 of 10 and no first-attempt score is blank, record AC-12.2 as not triggered on this check and attach the completed check v1.0 scoring sheet showing all four first-attempt scores by name.',
+          'Every tester scoring below 7 of 10 has a repeat session booked no more than 2 business days after their first-attempt result was recorded, and none has an Execution-Log entry dated before their re-check score of at least 7 of 10; no first-attempt score is blank; or, where no tester scored below 7 of 10, the check v1.0 scoring sheet listing all four first-attempt scores is attached and AC-12.2 is recorded as not triggered.'),
+        tc(35, 'AC-12.3', 'edge: check late joiners against roster v1.2 → recording and re-check dated before their first case', 0.02, 0.04, 0.08, 34, 'Client UAT Lead',
+          '1. Open trained tester roster v1.2 and list every tester whose Added-To-Roster date is later than the training session date recorded on workbook tab "Training-Log".\n2. For each late joiner, confirm the roster row shows a completion timestamp against the training recording link and their "Training-Log" row shows a score of at least 7 of 10 on UAT readiness check v1.0.\n3. For each late joiner, open workbook tab "Execution-Log" and confirm their earliest execution date falls after both the recording completion timestamp and the check score date.\n4. Open UAT Plan v2.1 section 4 "Tester readiness" and confirm each late joiner is named with their start date and the stated effect on planned coverage.\n5. If the roster shows no tester added after the session date, record AC-12.3 as not triggered on this check, citing roster v1.2 and its four session-date entries.',
+          'Every late joiner shows a recording completion timestamp and a check score of at least 7 of 10, both dated before their earliest Execution-Log entry, and is named in UAT Plan v2.1 section 4 with a start date and a stated coverage impact; or, where roster v1.2 shows all four testers added on the session date, AC-12.3 is recorded as not triggered against that roster version.'),
+        tc(36, 'AC-8.1', 'happy path: audit the closed UAT workbook → 10 scripted cases evidenced, zero open S1/S2 at sign-off', 0.04, 0.08, 0.15, 29, 'Client UAT Lead',
+          '1. Open uat_workbook_v2.4.xlsx (project workspace › 05-UAT) tab "Results" and compare the count of rows carrying a pass/fail Result with the 10 scripted cases listed in UAT Plan v2.1 section 5 "Scripted cases" (TC AC-6.1 through TC AC-11.3).\n2. Filter tab "Results" for a blank Result or a blank Evidence link and count the rows returned.\n3. Open the evidence on the first 3 passed and the first 3 failed rows by Case-Ref; check each file opens and its capture date falls inside the UAT window dates in UAT Plan v2.1 section 3.\n4. For every row on tab "Results", check the Executed-By initials appear on tab "Training-Log" with a score of at least 7 of 10, first attempt or recorded re-check.\n5. Open uat_defect_log.xlsx tab "Triage-Log", filter Status = Open with Severity S1 or S2, then open UAT_Signoff_v1.0.pdf (06-Acceptance) and compare its signature date with the latest Executed-On date on tab "Results".',
+          'Tab "Results" holds 10 rows with a pass/fail result, one per scripted case in UAT Plan v2.1 section 5; the blank-result/blank-evidence filter returns 0 rows; all 6 sampled evidence files open and carry a capture date inside the UAT window; every executor on tab "Results" appears on tab "Training-Log" with a score of at least 7 of 10; the S1/S2 Open filter on tab "Triage-Log" returns 0 rows; and the UAT_Signoff_v1.0.pdf signature date is on or after the last recorded Executed-On date.'),
+        tc(37, 'AC-8.2', 'error path: inspect defects raised in the UAT window → failing step, expected vs actual, severity, retest ≤ 2 days', 0.02, 0.05, 0.1, 36, 'Client UAT Lead',
+          '1. Open uat_defect_log.xlsx tab "Triage-Log" and filter to Source = "UAT execution" with a Raised-On date inside the UAT window dates in UAT Plan v2.1 section 3.\n2. On the filtered rows, count any blank across the four required columns: Failing-Step, Expected, Actual and Severity (S1–S4).\n3. Filter the same rows to Status = Fixed or Retest scheduled and count business days from each row\'s Fix-Date to its Retest-Date.\n4. Take the first S1 and the first S2 defect by Raised-On, open the scripted case named in their Case-Ref on workbook tab "Results", and check the recorded Failing-Step number exists as a numbered step in that case\'s script.',
+          'The blank count across Failing-Step, Expected, Actual and Severity is 0 for every defect raised in the window; no fixed defect has a Retest-Date more than 2 business days after its Fix-Date; and both sampled defects cite a failing step number that exists in the linked scripted case.'),
+        tc(38, 'AC-8.3', 'edge: read the two-week attendance grid → any shortfall re-planned, sign-off date visibly moved', 0.02, 0.04, 0.09, 37, 'Client UAT Lead',
+          '1. Open uat_workbook_v2.4.xlsx tab "Attendance" and read the daily grid for both UAT weeks; list any day showing fewer than the 4 planned testers and note the date the shortfall was first recorded.\n2. If no day shows fewer than 4 testers, record "no shortfall — 4 testers every day" on this check and stop; the attendance grid is the evidence. Otherwise continue.\n3. Open the re-plan minute for that week (UAT_replan_wk1.docx or UAT_replan_wk2.docx in 05-UAT); compare its date with the shortfall date and check the attendee list names the engagement manager (PMO).\n4. In the plan\'s baseline-vs-current view, read the baseline finish and the current finish of activity 8 "UAT & Training" — the UAT sign-off date.\n5. Compare the scripted-case count stated in the re-plan minute with the 10 scripted cases in UAT Plan v2.1 section 5.',
+          'Either tab "Attendance" shows 4 available testers on every day of both UAT weeks and no re-plan is required; or a re-plan minute exists dated no more than 1 business day after the shortfall was recorded, names the engagement manager (PMO) as an attendee, the current finish of activity 8 is later than its baseline finish, and the minute still lists all 10 scripted cases.'),
+        tc(39, 'AC-13.1', 'happy path: sample 3 execution days → every failure triaged with owner and target, burn-down sent same day', 0.03, 0.06, 0.12, 38, 'Client UAT Lead',
+          '1. Pick 3 execution days from the UAT window — the first, the day with the most failures and the last — and write the 3 dates on this check.\n2. For each date, open uat_workbook_v2.4.xlsx tab "Results" and count the rows with Result = Fail and Executed-On = that date.\n3. For each date, open uat_defect_log.xlsx tab "Triage-Log", filter Raised-On = that date, and compare the row count with the Fail count from step 2; then check every filtered row has a Severity (S1–S4), an Owner naming an individual (a pooled entry such as Dev Team must name the person, e.g. "Dev Team (M. Osei)") and a Target-Date, with a Triaged-At stamp no later than the triage end time recorded in that date\'s entry of uat_triage_minutes.docx.\n4. Open 05-UAT › Burndown › uat_burndown_<date>.pdf for each of the 3 dates and read its "as at" date and open-defect total.\n5. Open 05-UAT › Burndown › send_log.csv and find the sponsor send entry for each of the 3 burn-downs, checking the send timestamp falls on the same calendar date as the execution day.',
+          'For all 3 sampled days: the Triage-Log rows raised that day equal the day\'s Fail count on tab "Results"; every row carries a severity, a named individual owner and a target date, all stamped at or before that day\'s triage end time; and a burn-down dated that day, whose open total equals the day\'s Triage-Log open count, has a send entry to the sponsor on the same calendar date. Any unlogged failure, blank field, late stamp or next-day send fails the check.'),
+        tc(40, 'AC-13.2', 'error path: pull the disputed items → each cites its AC id and escalates to the engagement manager in 3 days', 0.02, 0.05, 0.1, 39, 'Client UAT Lead',
+          '1. Open uat_defect_log.xlsx tab "Triage-Log", filter Status = "Disputed — works as designed", and list every row\'s defect reference and Disputed-On date.\n2. For each row, read the Test-Case column (e.g. "TC AC-10.2 — error path: save without required field rejected inline") and the Criterion column, and check the AC id in Criterion matches the AC id in the linked test case name character for character, and that Decision-By names an individual and Decision-On is filled.\n3. For each row, open uat_triage_minutes.docx for its Decision-On date and confirm the defect reference appears under "Disputed items" with the same decision wording — this is the copy circulated to the client.\n4. For each row, count business days from Disputed-On to Escalated-On; where Escalated-On is blank, count to today and write today\'s date on this check.\n5. For every row over 3 business days, open the RAID log filtered to Type = Issue and Owner = PMO and find an entry naming that defect reference with a dated engagement-manager response.',
+          'Every disputed row cites the same AC id as the test case it is linked to, names a decision maker with a decision date, and appears under "Disputed items" in that date\'s triage minutes; and no row reaches 4 business days from Disputed-On without an Escalated-On date and a PMO-owned RAID Issue naming that defect reference. One mismatched AC id, one missing minutes entry or one item unescalated at 4+ business days fails the check. If nothing is disputed, record the filtered count of 0 against the total Triage-Log row count.'),
+        tc(41, 'AC-13.3', 'edge: list twice-failed retests → architect review held and sign-off impact stated in the next status report', 0.02, 0.04, 0.09, 40, 'Client UAT Lead',
+          '1. Open uat_defect_log.xlsx tab "Retest-History" and list every defect with 2 or more rows where Retest-Result = Fail; note each defect reference and the date of its second failure.\n2. For each, open that second failure row and check Status = "Escalated — architect review", Escalated-To = L. Chen (CRM Solution Architect) and a Review-Date is recorded.\n3. Open uat_triage_minutes.docx for that Review-Date and confirm the review was actually held: attendees include L. Chen and a dated decision or next step is recorded against the defect reference.\n4. Open the first weekly status report issued after the second failure (project workspace › 07-Status › status_report_<YYYY-MM-DD>.docx) and read its "UAT" section.\n5. Check that section names the defect reference and states either a revised UAT sign-off date or an explicit "UAT sign-off date unchanged"; if no defect reached 2 failed retests, record that outcome on this check with the total Retest-History row count.',
+          'Every defect with 2 failed retests is flagged for architect review with L. Chen named and a review date, that review appears in the triage minutes for that date with L. Chen present and a dated outcome, and the first status report after the second failure names the defect and gives either a new UAT sign-off date or an explicit statement that it is unchanged. A booked-but-unheld review, a silent status report, or a report naming the defect without a sign-off position all fail. With no twice-failed defect in the window, the recorded retest total is the result.')
       ];
       // in-flight progress so completeness indicators / handoff report show real data
       const pcts = { 1: 100, 2: 100, 3: 100, 4: 60, 5: 30 };
       tasks.forEach(t => { if (pcts[t.id] != null) t.percentComplete = pcts[t.id]; });
-      nextId = 28;
+      nextId = 42;
       // roster with ROLES + side — every view (tables, Gantt, SOW, emails) shows who does what
       resources = {
         'PMO':       { capacity: 100, rate: 900,  billRate: 1500, kind: 'internal', role: 'Engagement Manager (PMO)' },
