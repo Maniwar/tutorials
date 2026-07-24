@@ -44,7 +44,7 @@
       align-items: center;
       gap: 1rem;
     }
-    header h1 { font-size: var(--t-lg); font-weight: 600; letter-spacing: -0.01em; }
+    header h1 { font-size: var(--t-xl); font-weight: 700; letter-spacing: -0.01em; }
     .header-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
     button, .btn {
       cursor: pointer; border: none; border-radius: 8px; padding: 0.5rem 1rem; font-family: inherit;
@@ -252,6 +252,7 @@
     .wbs-twisty:hover { color: var(--primary); }
     .wbs-twisty-spacer { display:inline-block; width:18px; }
     .chart-toolbar { display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center; }
+    @media (max-width: 640px) { .chart-toolbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; } .chart-toolbar::-webkit-scrollbar { display: none; } }
     .chart-toolbar .sep { width:1px; height:20px; background:var(--border); margin:0 0.25rem; }
     @keyframes blink { 50% { opacity: 0; } }
     /* AI stream box floats above the page when triggered from a non-Tasks tab */
@@ -356,7 +357,7 @@
     td .btn-sm.btn-secondary:hover, .story-card summary .btn-sm.btn-secondary:hover {
       background: #f1f5f9; color: var(--text); border-color: var(--border);
     }
-    td .btn-sm.btn-danger { background: transparent; color: #94a3b8; }
+    td .btn-sm.btn-danger { background: transparent; color: #64748b; }
     td .btn-sm.btn-danger:hover { background: #fee2e2; color: #b91c1c; }
     td button.btn-sm:hover:not(:disabled):not(.tab), td button.btn-sm:active:not(:disabled):not(.tab) { transform: none; box-shadow: none; }
     /* W3c: owner clamp + column widths + row rhythm */
@@ -433,8 +434,8 @@
     @media (min-width: 641px) and (max-width: 1024px) { .config-grid { grid-template-columns: 1fr 1fr; } }
     /* W9a: no iOS focus-zoom */
     @media (max-width: 768px), (pointer: coarse) {
-      input, select, textarea { font-size: 16px; }
-      .mini-inp { font-size: 16px; width: 72px; }
+      input, select, textarea { font-size: 16px !important; }
+      .mini-inp { font-size: 16px !important; width: 72px; }
     }
     /* W9b: frozen identity column + sticky nav on phones */
     @media (max-width: 768px) {
@@ -485,12 +486,12 @@
 <body>
   <header>
     <div>
-      <h1>Engagement PERT &amp; Gantt Tracker</h1>
+      <div style="display:flex;align-items:center;gap:.6rem"><span aria-hidden="true" style="width:28px;height:28px;border-radius:7px;background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;font-weight:800;font-size:14px;display:inline-flex;align-items:center;justify-content:center;letter-spacing:-.02em;flex:none">EP</span><h1>Engagement PERT &amp; Gantt Tracker</h1></div>
     </div>
     <div class="header-actions">
       <span id="savedIndicator" class="saved-dot"></span>
-      <button id="undoBtn" class="btn-ghost btn-sm" onclick="doUndo()" disabled title="Undo the last change (Ctrl/Cmd+Z outside a text box). Covers every plan edit: tasks, estimates, %s, resources, stories, reserves…">↶ Undo</button>
-      <button id="redoBtn" class="btn-ghost btn-sm" onclick="doRedo()" disabled title="Redo (Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z)">↷ Redo</button>
+      <button id="undoBtn" class="btn-ghost btn-sm" onclick="doUndo()" disabled aria-label="Undo" title="Undo the last change (Ctrl/Cmd+Z outside a text box). Covers every plan edit: tasks, estimates, %s, resources, stories, reserves…">↶</button>
+      <button id="redoBtn" class="btn-ghost btn-sm" onclick="doRedo()" disabled aria-label="Redo" title="Redo (Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z)">↷</button>
       <details class="export-menu">
         <summary class="btn-ghost btn-sm" style="list-style:none"><span class="ico" aria-hidden="true">📂</span> Projects ▾</summary>
         <div class="export-panel">
@@ -557,7 +558,7 @@
           <div>
             <label for="durationUnit">Duration unit</label>
             <select id="durationUnit" onchange="markDirty(); refreshAll()">
-              <option value="days">Working Days</option>
+              <option value="days">Working days</option>
               <option value="weeks">Weeks</option>
               <option value="hours">Hours</option>
             </select>
@@ -598,7 +599,7 @@
       <!-- AI ASSISTANT -->
       <div class="card" style="border-color:#bfdbfe">
         <div class="card-header" style="background:linear-gradient(135deg,#eff6ff,#f1f5f9)">
-          <h2>🤖 AI Plan Builder <span class="help-text" style="font-weight:400">Paste notes → get a costed plan. No manual entry.</span></h2>
+          <h2><span class="ico" aria-hidden="true">🤖</span> AI Plan Builder <span class="help-text" style="font-weight:400">Paste notes → get a costed plan. No manual entry.</span></h2>
           <button class="btn-sm btn-secondary no-print" onclick="toggleAiSettings()" id="aiSettingsToggle">⚙ API Key</button>
         </div>
         <div class="card-body">
@@ -614,12 +615,12 @@
             </div>
             <div style="display:grid;grid-template-columns:2fr 1fr auto auto;gap:0.75rem;align-items:end">
               <div>
-                <label>Anthropic API Key</label>
+                <label for="aiKey">Anthropic API Key</label>
                 <input id="aiKey" type="password" placeholder="sk-ant-api03-..." autocomplete="off" oninput="validateKeyFormat()" />
                 <div id="aiKeyHint" class="help-text" style="min-height:1em"></div>
               </div>
               <div>
-                <label>Model</label>
+                <label for="aiModel">Model</label>
                 <select id="aiModel">
                   <option value="claude-sonnet-5">Sonnet 5 (recommended)</option>
                   <option value="claude-opus-4-8">Opus 4.8 (highest quality)</option>
@@ -634,7 +635,7 @@
 
           <!-- historical data knowledge base -->
           <details id="histPanel" style="margin-bottom:0.9rem">
-            <summary style="cursor:pointer;font-size:0.85rem;font-weight:600;color:var(--primary)">📚 Historical estimation data <span id="histBadge" class="help-text" style="font-weight:400"></span></summary>
+            <summary style="cursor:pointer;font-size:0.85rem;font-weight:600;color:var(--primary)"><span class="ico" aria-hidden="true">📚</span> Historical estimation data <span id="histBadge" class="help-text" style="font-weight:400"></span></summary>
             <div style="background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:0.9rem;margin-top:0.5rem">
               <p class="help-text" style="margin:0 0 0.6rem">Give the AI your past-project numbers so estimates are calibrated to <em>your</em> delivery history — e.g. “CRM rollout, 2 integrations: build took 14d”, “Type-B migration: UAT typically 1.5× the estimate”. Paste notes below or load a file (.md, .txt, .csv, .json). Used in every Generate / Update / Decompose call.</p>
               <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem">
@@ -691,8 +692,8 @@
             <button class="btn-secondary btn-sm" onclick="scanAndRepair()" title="Find gaps — missing estimates, owners, rates, or story links — and fix each one."><span class="ico" aria-hidden="true">🩺</span> Scan &amp; repair</button>
             <button class="btn-secondary btn-sm" onclick="copyUpdateRequest()" title="Copy an email-ready status table, one row per owner. Paste the filled reply into the AI box (Update progress) to apply it."><span class="ico" aria-hidden="true">📮</span> Copy update request</button>
             <button class="btn-secondary btn-sm" onclick="copyEstimateRequest()" title="Copy an estimate-review table, one row per owner. Paste the filled reply into the AI box to apply corrections."><span class="ico" aria-hidden="true">📐</span> Copy estimate request</button>
-            <button class="btn-secondary btn-sm" onclick="aiHealDependencies()" title="AI proposes missing predecessor links — for the ticked rows, or for every task that has none when nothing is selected (e.g. test cases whose looping links were dropped during a move). Every suggestion is cycle-checked before it applies; one ↶ undo reverses the batch."><span class="ico" aria-hidden="true">🔗</span> AI link repair</button>
-            <button class="btn-secondary btn-sm" onclick="openAddModal(true)">+ Milestone</button>
+            <button class="btn-secondary btn-sm" onclick="aiHealDependencies()" title="AI proposes missing predecessor links — for the ticked rows, or for every task that has none when nothing is selected (e.g. test cases whose looping links were dropped during a move). Every suggestion is cycle-checked before it applies; one ↶ undo reverses the batch."><span class="ico" aria-hidden="true">🔗</span> Repair links</button>
+            <button class="btn-secondary btn-sm" onclick="openAddModal(true)">+ Add milestone</button>
             <button class="btn-primary btn-sm" onclick="openAddModal(false)">+ Add activity</button>
           </div>
         </div>
@@ -782,7 +783,7 @@
     <div id="view-req" role="tabpanel" class="view">
       <div class="card">
         <div class="card-header">
-          <h2>Requirements &amp; User Stories <button type="button" class="info-icon" aria-label="More about this" data-help="Epics → user stories → Given/When/Then acceptance criteria, each traced to a WBS work item. The estimation unit for SOWs: a story that isn't testable can't be accepted or invoiced.">i</button></h2>
+          <h2>Requirements &amp; user stories <button type="button" class="info-icon" aria-label="More about this" data-help="Epics → user stories → Given/When/Then acceptance criteria, each traced to a WBS work item. The estimation unit for SOWs: a story that isn't testable can't be accepted or invoiced.">i</button></h2>
           <div class="toolbar no-print">
             <button class="btn-primary btn-sm" onclick="draftRequirements()" title="AI drafts personas, epics and INVEST user stories with happy/error/edge acceptance criteria for every WBS work item — or fills the gaps if some already exist">🤖 Draft from WBS</button>
             <button class="btn-secondary btn-sm" onclick="openStoryModal(null)" title="Write a story by hand">+ Add story</button>
@@ -808,17 +809,17 @@
 
     <!-- story editor modal -->
     <div class="modal-overlay" id="storyModal" style="z-index:130">
-      <div class="modal" style="max-width:940px">
+      <div class="modal" style="max-width:940px" role="dialog" aria-modal="true" aria-labelledby="storyModalTitle">
         <div class="modal-header"><h3 id="storyModalTitle">Edit user story</h3><button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeStoryModal()" aria-label="Close dialog">✕</button></div>
         <div class="modal-body">
           <div style="display:grid;grid-template-columns:110px 1fr 1.35fr;gap:0.75rem">
-            <div class="form-group" style="margin-bottom:0"><label>ID</label><input id="stId" type="text" placeholder="US-1" /></div>
-            <div class="form-group" style="margin-bottom:0"><label>Epic</label><select id="stEpic"></select></div>
+            <div class="form-group" style="margin-bottom:0"><label for="stId">ID</label><input id="stId" type="text" placeholder="US-1" /></div>
+            <div class="form-group" style="margin-bottom:0"><label for="stEpic">Epic</label><select id="stEpic"></select></div>
             <div class="form-group" style="margin-bottom:0"><label for="stWbs">WBS activity (traces to)</label><button type="button" class="info-icon" aria-label="About WBS activity (traces to)" data-help="The plan task that builds this story — status and completeness roll up from it">i</button><select id="stWbs"></select></div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1.35fr 0.85fr;gap:0.75rem;margin-top:0.7rem">
             <div class="form-group" style="margin-bottom:0"><label for="stPersona">As a… (persona)</label><button type="button" class="info-icon" aria-label="About As a… (persona)" data-help="WHO accepts the value — a client-side user, manager or stakeholder. Delivery-team roles are flagged by the lint on product stories.">i</button><input id="stPersona" type="text" placeholder="billing administrator" oninput="updateStoryPreview()" /></div>
-            <div class="form-group" style="margin-bottom:0"><label>Verified by</label><button type="button" class="info-icon" aria-label="About Verified by" data-help="UAT test cases = a tester executes steps against the built product (features, data rules, dashboards, access control). Artifact = acceptance is evidenced by the deliverable or record itself (meetings, requirements docs, design approvals, documentation, training, QA/UAT execution) — real acceptance criteria for billing, but 🧪 Generate test plan will NOT create test tasks for it.">i</button>
+            <div class="form-group" style="margin-bottom:0"><label for="stVerif">Verified by</label><button type="button" class="info-icon" aria-label="About Verified by" data-help="UAT test cases = a tester executes steps against the built product (features, data rules, dashboards, access control). Artifact = acceptance is evidenced by the deliverable or record itself (meetings, requirements docs, design approvals, documentation, training, QA/UAT execution) — real acceptance criteria for billing, but 🧪 Generate test plan will NOT create test tasks for it.">i</button>
             <select id="stVerif">
               <option value="">Auto (classified from the activity name)</option>
               <option value="uat">UAT test cases — tester executes steps against the product</option>
@@ -850,7 +851,7 @@
 
     <!-- AI decompose modal -->
     <div class="modal-overlay" id="decompModal">
-      <div class="modal" style="max-width:640px">
+      <div class="modal" style="max-width:640px" role="dialog" aria-modal="true" aria-labelledby="decompTitle">
         <div class="modal-header"><h3 id="decompTitle">⑂ AI decompose</h3><button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeDecompModal()" aria-label="Close dialog">✕</button></div>
         <div class="modal-body">
           <p class="help-text" id="decompMeta" style="margin:0 0 0.75rem"></p>
@@ -874,8 +875,8 @@
 
     <!-- 🛟 data recovery: every surviving copy, restore any as a new project -->
     <div class="modal-overlay" id="recoveryModal">
-      <div class="modal" style="max-width:640px">
-        <div class="modal-header"><h3>🛟 Recover data</h3><button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeRecovery()" aria-label="Close dialog">✕</button></div>
+      <div class="modal" style="max-width:640px" role="dialog" aria-modal="true" aria-labelledby="recoveryTitle">
+        <div class="modal-header"><h3 id="recoveryTitle">🛟 Recover data</h3><button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeRecovery()" aria-label="Close dialog">✕</button></div>
         <div class="modal-body" id="recoveryBody"></div>
         <div class="modal-footer"><button class="btn-secondary btn-sm" onclick="closeRecovery()">Close</button></div>
       </div>
@@ -883,8 +884,8 @@
 
     <!-- dependency fix wizard: opens whenever the schedule has a loop -->
     <div class="modal-overlay" id="depFixModal">
-      <div class="modal" style="max-width:700px">
-        <div class="modal-header"><h3>🔗 Dependency fix wizard — the schedule has a loop</h3><button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeDepFixWizard()" aria-label="Close dialog">✕</button></div>
+      <div class="modal" style="max-width:700px" role="dialog" aria-modal="true" aria-labelledby="depFixTitle">
+        <div class="modal-header"><h3 id="depFixTitle">🔗 Dependency fix wizard — the schedule has a loop</h3><button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeDepFixWizard()" aria-label="Close dialog">✕</button></div>
         <div class="modal-body" id="depFixBody"></div>
         <div class="modal-footer" style="display:flex;gap:0.5rem;justify-content:space-between;flex-wrap:wrap">
           <button class="btn-primary btn-sm" onclick="depFixAI()" title="Removes ONLY the backwards link(s) in the loop (everything else stays), then the AI re-points those tasks at their correct predecessors — each suggestion is cycle-checked before it applies, and ↶ Undo reverses the whole thing">🤖 Fix loop with AI — re-point the backwards link</button>
@@ -897,7 +898,7 @@
     <div id="view-pert" role="tabpanel" class="view">
       <div class="card">
         <div class="card-header">
-          <h2>PERT Network Diagram (Activity-on-Node)</h2>
+          <h2>PERT network diagram (activity-on-node)</h2>
           <div class="chart-toolbar no-print">
             <button class="btn-sm btn-secondary" onclick="copyChartImage('pert')" title="Copy diagram as image"><span class="ico" aria-hidden="true">📋</span> Copy image</button>
             <button class="btn-sm btn-secondary" onclick="downloadChartPNG('pert')">PNG</button>
@@ -988,7 +989,7 @@
     <div id="view-resources" role="tabpanel" class="view">
       <div class="card">
         <div class="card-header">
-          <h2>Resource Workload &amp; Over-allocation</h2>
+          <h2>Resource workload &amp; over-allocation</h2>
           <div class="toolbar no-print">
             <button id="levelSlackBtn" class="btn-primary btn-sm" onclick="autoLevel()" title="Delay non-critical tasks within their slack — finish date stays fixed">⚖ Level within slack</button>
             <button id="levelExtendBtn" class="btn-sm" style="background:#fef3c7;color:#b45309" onclick="autoLevelExtend()" title="Resolve every conflict even if the finish date must move out — use when you can't add people"><span class="ico" aria-hidden="true">📅</span> Level &amp; extend timeline</button>
@@ -1011,7 +1012,7 @@
     <div id="view-baseline" role="tabpanel" class="view">
       <div class="card">
         <div class="card-header">
-          <h2>Baseline vs Actual / Forecast</h2>
+          <h2>Baseline vs actual / forecast</h2>
           <div class="toolbar no-print">
             <button class="btn-primary btn-sm" onclick="setBaseline()">📌 Set / update baseline</button>
             <button class="btn-secondary btn-sm" onclick="clearBaseline()">Clear baseline</button>
@@ -1027,7 +1028,7 @@
     <div id="view-raid" role="tabpanel" class="view">
       <div class="card">
         <div class="card-header">
-          <h2>RAID Log — Risks, Assumptions, Issues, Decisions &amp; Exclusions</h2>
+          <h2>RAID log — risks, assumptions, issues, decisions &amp; exclusions</h2>
           <div class="toolbar no-print">
             <button class="btn-primary btn-sm" onclick="openRaidForm()">+ Add entry</button>
             <button class="btn-secondary btn-sm" onclick="aiDraftRaid()" title="AI reviews the plan and drafts risks & assumptions"><span class="ico" aria-hidden="true">✨</span> AI draft RAID</button>
@@ -1037,17 +1038,17 @@
         <div class="card-body">
           <div id="raidForm" style="display:none;background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:1rem">
             <div style="display:grid;grid-template-columns:1fr 3fr;gap:0.75rem;margin-bottom:0.75rem">
-              <div><label>Type</label><select id="rType">
+              <div><label for="rType">Type</label><select id="rType">
                 <option>Risk</option><option>Assumption</option><option>Issue</option><option>Decision</option><option>Exclusion</option></select></div>
-              <div><label>Title *</label><input id="rTitle" type="text" placeholder="e.g. Client sandbox access may be delayed" /></div>
+              <div><label for="rTitle">Title *</label><input id="rTitle" type="text" placeholder="e.g. Client sandbox access may be delayed" /></div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr 2fr;gap:0.75rem;margin-bottom:0.75rem">
-              <div><label>Probability (1–5)</label><input id="rProb" type="number" min="1" max="5" value="3" /></div>
-              <div><label>Impact (1–5)</label><input id="rImpact" type="number" min="1" max="5" value="3" /></div>
+              <div><label for="rProb">Probability (1–5)</label><input id="rProb" type="number" min="1" max="5" value="3" /></div>
+              <div><label for="rImpact">Impact (1–5)</label><input id="rImpact" type="number" min="1" max="5" value="3" /></div>
               <div><label for="rOwner">Owner</label><input id="rOwner" type="text" list="ownerList" /></div>
-              <div><label>Related task</label><select id="rTask"><option value="">—</option></select></div>
+              <div><label for="rTask">Related task</label><select id="rTask"><option value="">—</option></select></div>
             </div>
-            <div class="form-group"><label>Mitigation / response / detail</label><textarea id="rMitigation" rows="2"></textarea></div>
+            <div class="form-group"><label for="rMitigation">Mitigation / response / detail</label><textarea id="rMitigation" rows="2"></textarea></div>
             <div style="display:flex;gap:0.5rem;justify-content:flex-end">
               <button class="btn-secondary btn-sm" onclick="closeRaidForm()">Cancel</button>
               <button class="btn-primary btn-sm" id="raidSaveBtn" onclick="saveRaidEntry()">Save entry</button>
@@ -1059,7 +1060,7 @@
 
       <div class="card">
         <div class="card-header">
-          <h2>Pricing &amp; Margin</h2>
+          <h2>Pricing &amp; margin</h2>
           <span class="help-text">Bill rates set on the Resources tab • cost from day rates &amp; fixed costs</span>
         </div>
         <div class="card-body"><div id="pricingContainer"></div></div>
@@ -1067,7 +1068,7 @@
 
       <div class="card">
         <div class="card-header">
-          <h2>Statement of Work (SOW) Draft</h2>
+          <h2>Statement of Work (SOW) draft</h2>
           <div class="toolbar no-print">
             <select id="sowDepth" class="mini-inp" style="width:auto" onchange="pricing.sowDepth=this.value;saveLocal()" title="How deep the §2 scope table goes. L1 = phases only (executive SOW), L2 = phases + work packages, L3 = one more level, Full = every leaf task. Milestones always appear regardless.">
               <option value="1">Scope: L1 (phases)</option>
@@ -1103,17 +1104,17 @@
       <div class="summary-grid" id="summaryGrid"></div>
       <div class="card">
         <div class="card-header">
-          <h2>🩺 Plan Health Check &amp; Trend</h2>
+          <h2><span class="ico" aria-hidden="true">🩺</span> Plan Health Check &amp; Trend</h2>
           <div class="toolbar no-print">
             <button class="btn-primary btn-sm" onclick="runHealthCheck()">Run health check</button>
-            <button class="btn-secondary btn-sm" onclick="takeStatusSnapshot(true)" title="Record today's forecast for the trend chart">📸 Snapshot status</button>
+            <button class="btn-secondary btn-sm" onclick="takeStatusSnapshot(true)" title="Record today's forecast for the trend chart"><span class="ico" aria-hidden="true">📸</span> Snapshot status</button>
           </div>
         </div>
         <div class="card-body"><div id="healthContainer"><p class="help-text">Run the health check to lint estimate quality (ranges too narrow, tasks too big, missing scope, top schedule drivers) — with an API key the AI also reviews the plan against your notes and historical data. Status snapshots build the forecast-trend chart here.</p></div></div>
       </div>
       <div class="card">
         <div class="card-header">
-          <h2>Monte Carlo Forecast &amp; Target Date</h2>
+          <h2>Monte Carlo forecast &amp; target date</h2>
           <div class="toolbar no-print">
             <label style="margin:0;text-transform:none;letter-spacing:0">Target date</label>
             <input id="targetDate" type="date" style="width:auto" onchange="renderAnalytics()" />
@@ -1144,7 +1145,7 @@
 
   <!-- Add / Edit Modal -->
   <div class="modal-overlay" id="modal">
-    <div class="modal" style="max-width:780px">
+    <div class="modal" style="max-width:780px" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal-header">
         <h3 id="modalTitle">Add activity</h3>
         <button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeModal()" aria-label="Close dialog">✕</button>
@@ -1241,12 +1242,12 @@
                 <input id="mActualFinish" type="date" />
               </div>
               <div class="form-group">
-                <label>Actual cost $</label><button type="button" class="info-icon" aria-label="About Actual cost $" data-help="Cost actually incurred so far — feeds CPI / EAC forecasting.">i</button>
+                <label for="mActualCost">Actual cost $</label><button type="button" class="info-icon" aria-label="About Actual cost $" data-help="Cost actually incurred so far — feeds CPI / EAC forecasting.">i</button>
                 <input id="mActualCost" type="number" min="0" step="100" value="0" />
               </div>
             </div>
             <div class="form-group" style="margin-bottom:0">
-              <label>Jira / evidence link</label><button type="button" class="info-icon" aria-label="About Jira / evidence link" data-help="The build team's ticket for this work — or, on a test case, the link that EVIDENCES the result (the Jira where the run/defect lives). Renders as a 🔗 chip in the test-case views, survives the editable-workbook round trip, and lets the ⬆ Jira export UPDATE the linked ticket instead of creating a duplicate.">i</button>
+              <label for="mJira">Jira / evidence link</label><button type="button" class="info-icon" aria-label="About Jira / evidence link" data-help="The build team's ticket for this work — or, on a test case, the link that EVIDENCES the result (the Jira where the run/defect lives). Renders as a 🔗 chip in the test-case views, survives the editable-workbook round trip, and lets the ⬆ Jira export UPDATE the linked ticket instead of creating a duplicate.">i</button>
               <input id="mJira" type="text" placeholder="https://yourteam.atlassian.net/browse/HLX-142 (or just HLX-142)" />
             </div>
           </div>
@@ -4384,9 +4385,9 @@
         const c = rc[rcEditingId];
         editor = `<div style="background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:0.9rem;margin-top:0.6rem">
           <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:0.6rem;margin-bottom:0.5rem">
-            <div><label>Card name</label><input id="rcName" value="${escapeHtml(c.name)}" /></div>
-            <div><label>Bill discount %</label><input id="rcDisc" type="number" min="0" max="90" value="${c.discountPct || 0}" /></div>
-            <div><label>Currency label</label><input id="rcCur" value="${escapeHtml(c.currency || 'USD')}" /></div>
+            <div><label for="rcName">Card name</label><input id="rcName" value="${escapeHtml(c.name)}" /></div>
+            <div><label for="rcDisc">Bill discount %</label><input id="rcDisc" type="number" min="0" max="90" value="${c.discountPct || 0}" /></div>
+            <div><label for="rcCur">Currency label</label><input id="rcCur" value="${escapeHtml(c.currency || 'USD')}" /></div>
           </div>
           <table><thead><tr><th>Role</th><th>Cost $/d</th><th>Bill $/d</th><th></th></tr></thead><tbody id="rcRows">
             ${c.roles.map((r, i) => `<tr>
@@ -11607,10 +11608,16 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
         const r = ic.getBoundingClientRect();
         pop.style.top = Math.min(innerHeight - pop.offsetHeight - 8, r.bottom + 6) + 'px';
         pop.style.left = Math.max(8, Math.min(innerWidth - pop.offsetWidth - 8, r.left - 8)) + 'px';
-      } else if (!e.target.closest('#helpPop')) pop.hidden = true;
+        ic.setAttribute('aria-expanded', 'true');
+        ic.setAttribute('aria-describedby', 'helpPop');
+        pop._trigger = ic;
+      } else if (!e.target.closest('#helpPop')) {
+        pop.hidden = true;
+        if (pop._trigger) { pop._trigger.removeAttribute('aria-expanded'); pop._trigger.removeAttribute('aria-describedby'); pop._trigger = null; }
+      }
     });
     document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') { const p = document.getElementById('helpPop'); if (p) p.hidden = true; }
+      if (e.key === 'Escape') { const p = document.getElementById('helpPop'); if (p && !p.hidden) { p.hidden = true; if (p._trigger) { p._trigger.removeAttribute('aria-expanded'); p._trigger.removeAttribute('aria-describedby'); p._trigger.focus(); p._trigger = null; } } }
       // W22: Alt+Arrow reorders the focused row's task among its siblings
       if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         const h = document.activeElement && document.activeElement.closest && document.activeElement.closest('.drag-handle');
@@ -11631,18 +11638,53 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
 
     // ================= POLISH: reactive behaviors =================
     function motionOK() { return !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches); }
+    // dialog a11y: set inert on everything that is NOT an ancestor/descendant of the open modal,
+    // so screen readers and Tab can't reach the page behind it. Restored on close.
+    function setBackgroundInert(overlay, on) {
+      let node = overlay;
+      while (node && node !== document.body) {
+        const parent = node.parentElement;
+        if (parent) Array.from(parent.children).forEach(sib => {
+          if (sib !== node) { if (on) sib.setAttribute('inert', ''); else sib.removeAttribute('inert'); }
+        });
+        node = parent;
+      }
+    }
+    function trapTab(e) {
+      if (e.key !== 'Tab') return;
+      const modal = e.currentTarget;
+      const f = modal.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])');
+      const vis = Array.from(f).filter(el => el.getClientRects().length > 0 || el === document.activeElement);
+      if (!vis.length) return;
+      const first = vis[0], last = vis[vis.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
     function closeOverlay(id) {
       const m = document.getElementById(id);
       if (!m || !m.classList.contains('open')) return;
-      if (!motionOK()) { m.classList.remove('open'); return; }
+      const finish = () => { setBackgroundInert(m, false); if (m._returnTo && m._returnTo.focus) { try { m._returnTo.focus(); } catch (e) {} } m._returnTo = null; };
+      m.removeEventListener('keydown', trapTab, true);
+      if (!motionOK()) { m.classList.remove('open'); finish(); return; }
       m.classList.add('closing');
       clearTimeout(m._closeT);
       m._closeT = setTimeout(() => { if (m.classList.contains('closing')) m.classList.remove('open', 'closing'); }, 160);
+      finish();
     }
     function openOverlay(el) { // reopening mid-exit must win over the pending close
       clearTimeout(el._closeT);
       el.classList.remove('closing');
+      const already = el.classList.contains('open');
       el.classList.add('open');
+      if (!already) el._returnTo = document.activeElement;
+      setBackgroundInert(el, true);
+      el.addEventListener('keydown', trapTab, true);
+      // focus the first real field (skip the ✕ close button so the form is reachable immediately)
+      requestAnimationFrame(() => {
+        const modal = el.querySelector('.modal') || el;
+        const f = modal.querySelector('input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled])');
+        (f || modal.querySelector('button:not([disabled])') || modal).focus && (f || modal.querySelector('button:not([disabled])') || modal).focus();
+      });
     }
     function switchTabAnimated(name) { switchTab(name); }
     // sliding pill under the active tab
@@ -11842,6 +11884,6 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
       if (modelSel) modelSel.addEventListener('change', () => { try { localStorage.setItem(AI_MODEL_STORE, modelSel.value); } catch (e) {} });
     })();
   </script>
-  <div id="helpPop" role="note" hidden></div>
+  <div id="helpPop" role="tooltip" tabindex="-1" hidden></div>
 </body>
 </html>
