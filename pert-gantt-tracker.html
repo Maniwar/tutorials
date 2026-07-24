@@ -545,11 +545,15 @@
     .ac-text { font-size: 0.8rem; line-height: 1.5; }
     /* test cases shown under an acceptance criterion (story card + story editor) */
     .ac-tcs { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.3rem 0 0; }
-    .ac-tc { display: inline-flex; align-items: center; gap: 0.3rem; background: #f0fdf4; border: 1px solid #86efac; color: #166534; border-radius: 999px; padding: 0.05rem 0.5rem; font-size: 0.72rem; line-height: 1.6; cursor: pointer; max-width: 100%; }
-    .ac-tc:hover { background: #dcfce7; }
-    .ac-tc-dot { width: 6px; height: 6px; border-radius: 50%; background: #cbd5e1; flex: none; }
-    .ac-tc-dot.prog { background: var(--primary); }
-    .ac-tc-dot.done { background: #16a34a; }
+    /* a test case reads as one unit: its name, then its own status pill */
+    .ac-tc { display: inline-flex; align-items: stretch; border: 1px solid var(--border); border-radius: 999px; overflow: hidden;
+             font-size: 0.72rem; line-height: 1.7; cursor: pointer; max-width: 100%; background: #fff; }
+    .ac-tc:hover { border-color: var(--primary); box-shadow: 0 1px 3px rgba(15,23,42,.10); }
+    .ac-tc-name { padding: 0.05rem 0.55rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ac-tc-state { padding: 0.05rem 0.55rem; font-weight: 700; white-space: nowrap; border-left: 1px solid var(--border); flex: none; }
+    .ac-tc-state.s-none { background: #f1f5f9; color: #64748b; }
+    .ac-tc-state.s-prog { background: #dbeafe; color: #1d4ed8; }
+    .ac-tc-state.s-done { background: #dcfce7; color: #15803d; }
     .st-tc-row { padding: 0.3rem 0 0.35rem; border-bottom: 1px solid var(--border); }
     .st-tc-row:last-of-type { border-bottom: none; }
     .st-tc-ac { font-size: 0.76rem; margin-bottom: 0.15rem; }
@@ -7632,7 +7636,7 @@
       const acHtml = (s.ac || []).map(a => {
         const bw = bannedIn(a.text);
         const tcs = testCasesForAC(a.id);
-        return `<li class="ac-item t-${escapeHtml(a.type || '')}"><div class="ac-head"><span title="${escapeHtml(typeTip[a.type] || '')}" style="cursor:help">${typeIcon[a.type] || '•'}</span><span class="ac-id">${escapeHtml(a.id || '')}</span></div><div class="ac-text">${escapeHtml(a.text)}</div>${tcs.length ? `<div class="ac-tcs">${tcs.map(tc => { const st = taskStatus(tc); const pc = tc.percentComplete || 0; return `<span class="ac-tc" onclick="event.preventDefault();event.stopPropagation();openEditModal(${tc.id}, true)" title="${escapeHtml('Open this test case — steps, pass-when, owner, schedule. ' + tc.name)}"><span class="ac-tc-dot ${pc >= 100 ? 'done' : pc > 0 ? 'prog' : ''}"></span>🧪 ${escapeHtml(tc.name.replace(/^TC\s+[A-Za-z0-9_.-]+\s*[—-]\s*/i, ''))} <span class="help-text">${pc >= 100 ? 'passed' : pc > 0 ? pc + '%' : escapeHtml(st.label)}</span></span>`; }).join('')}</div>` : '<div class="ac-tcs"><span class="help-text" style="font-size:0.7rem">no test case yet</span></div>'}${bw.length ? ` <span class="risk-tag" style="background:#fee2e2;color:#b91c1c;cursor:help" title="Untestable word(s) — cannot be accepted or invoiced. Replace with a number and its measurement condition.">${escapeHtml(bw.join(', '))}</span>` : ''}</li>`;
+        return `<li class="ac-item t-${escapeHtml(a.type || '')}"><div class="ac-head"><span title="${escapeHtml(typeTip[a.type] || '')}" style="cursor:help">${typeIcon[a.type] || '•'}</span><span class="ac-id">${escapeHtml(a.id || '')}</span></div><div class="ac-text">${escapeHtml(a.text)}</div>${tcs.length ? `<div class="ac-tcs">${tcs.map(tc => { const pc = tc.percentComplete || 0; const cls = pc >= 100 ? 's-done' : pc > 0 ? 's-prog' : 's-none'; const lbl = pc >= 100 ? '✓ passed' : pc > 0 ? pc + '%' : 'not run'; return `<span class="ac-tc" onclick="event.preventDefault();event.stopPropagation();openEditModal(${tc.id}, true)" title="${escapeHtml('Open this test case — steps, pass-when, owner, schedule. ' + tc.name)}"><span class="ac-tc-name">🧪 ${escapeHtml(tc.name.replace(/^TC\s+[A-Za-z0-9_.-]+\s*[—-]\s*/i, ''))}</span><span class="ac-tc-state ${cls}">${lbl}</span></span>`; }).join('')}</div>` : '<div class="ac-tcs"><span class="help-text" style="font-size:0.7rem">no test case yet</span></div>'}${bw.length ? ` <span class="risk-tag" style="background:#fee2e2;color:#b91c1c;cursor:help" title="Untestable word(s) — cannot be accepted or invoiced. Replace with a number and its measurement condition.">${escapeHtml(bw.join(', '))}</span>` : ''}</li>`;
       }).join('');
       const nAc = k => (s.ac || []).filter(a => a.type === k).length;
       const mix = `✅${nAc('happy')} ⚠️${nAc('error')} 🧪${nAc('edge')}${nAc('perf') ? ' 📏' + nAc('perf') : ''}`;
@@ -8490,7 +8494,7 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       list.innerHTML = rows.map(({ a, tcs }) => `<div class="st-tc-row">
           <div class="st-tc-ac"><b>${escapeHtml(a.id)}</b> <span class="help-text">${escapeHtml((a.text || '').slice(0, 90))}${(a.text || '').length > 90 ? '…' : ''}</span></div>
           ${tcs.length
-            ? tcs.map(tc => { const pc = tc.percentComplete || 0; return `<span class="ac-tc" onclick="event.preventDefault();closeStoryModal();openEditModal(${tc.id}, true)" title="${escapeHtml('Open ' + tc.name)}"><span class="ac-tc-dot ${pc >= 100 ? 'done' : pc > 0 ? 'prog' : ''}"></span>🧪 ${escapeHtml((tc.wbs ? tc.wbs + ' · ' : '') + tc.name.replace(/^TC\s+[A-Za-z0-9_.-]+\s*[—-]\s*/i, ''))} <span class="help-text">${pc >= 100 ? 'passed' : pc > 0 ? pc + '%' : 'not run'}</span></span>`; }).join('')
+            ? tcs.map(tc => { const pc = tc.percentComplete || 0; const cls = pc >= 100 ? 's-done' : pc > 0 ? 's-prog' : 's-none'; const lbl = pc >= 100 ? '✓ passed' : pc > 0 ? pc + '%' : 'not run'; return `<span class="ac-tc" onclick="event.preventDefault();closeStoryModal();openEditModal(${tc.id}, true)" title="${escapeHtml('Open ' + tc.name)}"><span class="ac-tc-name">🧪 ${escapeHtml((tc.wbs ? tc.wbs + ' · ' : '') + tc.name.replace(/^TC\s+[A-Za-z0-9_.-]+\s*[—-]\s*/i, ''))}</span><span class="ac-tc-state ${cls}">${lbl}</span></span>`; }).join('')
             : `<span class="help-text" style="font-size:0.72rem">${artifact ? 'verified by the deliverable — no test case needed' : 'no test case yet — run 🧪 Generate test plan'}</span>`}
         </div>`).join('')
         + `<p class="help-text" style="margin:0.35rem 0 0;font-size:0.72rem">${total} test case${total === 1 ? '' : 's'} across ${acs.length} criteri${acs.length === 1 ? 'on' : 'a'}${artifact ? ' · this story is artifact-verified' : ''}.</p>`;
