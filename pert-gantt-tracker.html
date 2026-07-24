@@ -545,6 +545,9 @@
     .ac-text { font-size: 0.8rem; line-height: 1.5; }
     /* test cases shown under an acceptance criterion (story card + story editor) */
     .ac-tcs { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.3rem 0 0; }
+    .src-story > summary::-webkit-details-marker { display: none; }
+    .src-story[open] > summary .help-text:last-child::after { content: ''; }
+    .src-story[open] > summary .help-text:last-child { visibility: hidden; }
     /* linked activities inside an expanded story: full name + jump actions */
     .story-links { border: 1px solid var(--border); border-radius: 8px; padding: 0.4rem 0.55rem; margin-bottom: 0.5rem; background: #f8fafc; }
     .story-links-cap { font-size: 0.64rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 0.25rem; }
@@ -2580,15 +2583,17 @@
             ${t.acceptance ? `<div style="background:#dcfce7;border-radius:6px;padding:0.35rem 0.55rem"><b>✅ Pass when:</b> ${gwtLines(t.acceptance).split('\n').map(escapeHtml).join('<br/>')}</div>` : ''}
             ${t.jira ? `<div style="margin-top:0.4rem"><b>\ud83d\udd17 Jira / evidence:</b>${jiraChip(t.jira)}</div>` : ''}
           </div>${stHit ? `
-          <div style="margin:-0.4rem 0 1rem;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:0.55rem 0.75rem;font-size:0.8rem;line-height:1.5">
-            <div style="font-weight:700;color:#334155;margin-bottom:0.35rem"><span class="ico" aria-hidden="true">📖</span> Source story · ${escapeHtml(stHit.id)}${stHit.epicId ? ` <span class="help-text" style="font-weight:400">(${escapeHtml(stHit.epicId)})</span>` : ''}</div>
+          <details class="src-story" style="margin:-0.4rem 0 1rem;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:0.55rem 0.75rem;font-size:0.8rem;line-height:1.5">
+            <summary style="font-weight:700;color:#334155;cursor:pointer;list-style:none;display:flex;align-items:center;gap:0.4rem"><span class="ico" aria-hidden="true">📖</span> Source story · ${escapeHtml(stHit.id)}${stHit.epicId ? ` <span class="help-text" style="font-weight:400">(${escapeHtml(stHit.epicId)})</span>` : ''} <span class="help-text" style="font-weight:400;margin-left:auto">${(stHit.ac || []).length} criteria · show</span></summary>
+            <div style="margin-top:0.4rem">
             <div style="margin-bottom:0.4rem">As a <b>${escapeHtml(stHit.persona || '?')}</b>, I want to ${escapeHtml(stHit.want || '?')}, so that ${escapeHtml(stHit.soThat || '?')}.</div>
             ${(stHit.ac || []).length ? `<div style="margin-bottom:0.35rem"><b>Acceptance criteria (${stHit.ac.length}):</b><ul style="list-style:none;margin:0.2rem 0 0;padding-left:0.25rem">${stHit.ac.map(a => `<li style="margin-bottom:0.15rem${a.id === (acHit && acHit.id) ? ';background:#fef9c3;border-radius:4px;padding:1px 4px' : ''}">${typeIcon[a.type] || '•'} <span style="color:#475569">${escapeHtml(a.id)}</span> ${escapeHtml(a.text)}${a.id === (acHit && acHit.id) ? ' <span class="help-text">← this test verifies this one</span>' : ''}</li>`).join('')}</ul></div>` : ''}
             <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.5rem">
               <button class="btn-sm btn-secondary no-print" onclick="openStoryModal('${escapeHtml(stHit.id)}')" title="Edit ${escapeHtml(stHit.id)} — persona, acceptance criteria, NFRs, assumptions. Opens on top; saving refreshes this panel.">✎ Edit story</button>
               <button class="btn-sm btn-secondary no-print" onclick="closeModal();openReqStory('${escapeHtml(stHit.id)}')" title="Jump to ${escapeHtml(stHit.id)} on the Requirements tab">Open story →</button>
             </div>
-          </div>` : ''}`;
+            </div>
+          </details>` : ''}`;
         }
         sp.innerHTML = tcSpec + (st.length
           ? `<details open style="margin-bottom:1rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:0.5rem 0.75rem">
