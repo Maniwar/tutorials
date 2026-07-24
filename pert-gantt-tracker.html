@@ -2866,7 +2866,13 @@
           // pointerdown fires for BOTH mouse and touch (mousedown alone is
           // unreliable on phones — the tap can blur-commit before it lands);
           // preventDefault keeps focus so the pick wins over the blur handler.
-          el.addEventListener('click', () => pick(+el.dataset.i));   // click = a tap without a scroll; lets the list scroll freely on touch
+          // mousedown is synthesized only on a genuine TAP (never during a
+          // scroll drag) and preventDefault keeps the input focused — so tapping
+          // an item never blurs it → no keyboard dismiss, no layout shift, and no
+          // blur-timer race that would close the popup before the pick lands.
+          // The list still scrolls natively because mousedown doesn't fire on a
+          // scroll. (Touch → the browser fires mousedown after touchend.)
+          el.addEventListener('mousedown', e => { e.preventDefault(); pick(+el.dataset.i); });
           el.addEventListener('mouseenter', () => highlight(+el.dataset.i));
         });
       };
