@@ -1364,6 +1364,10 @@
             <input id="mFixedCost" type="number" min="0" step="100" value="0" />
           </div>
         </div>
+        <div class="form-group" style="max-width:26rem">
+          <span class="fg-head"><label for="mAudience">Activity type</label><button type="button" class="info-icon" aria-label="About activity type" data-help="Client-facing = builds a capability the client accepts and is billed for; it should trace to a user story, so it counts toward coverage. Internal / process = delivery-side work (kickoff, PM, our own test execution) — real, billable effort, but it needs no client story, so traceability never flags it as a gap. Auto infers it from the activity name.">i</button></span>
+          <select id="mAudience"><option value="">Auto (from activity name)</option><option value="client">Client-facing (needs a story)</option><option value="internal">Internal / process (no story needed)</option></select>
+        </div>
         <div class="form-group" id="attGroup">
           <label>Additional attendees</label><button type="button" class="info-icon" aria-label="About Additional attendees" data-help="For sessions/workshops with several people at once. Each attendee loads their own calendar, cost and billing (client-type resources bill nothing).">i</button>
           <div class="att-block">
@@ -1576,7 +1580,7 @@
         owner: '', units: 100, attendees: [], levelDelay: 0, percentComplete: 0, predecessors: [],
         startNoEarlier: '', deadline: '', jira: '', autoActualStart: false, autoActualFinish: false,
         parentId: null, description: '', deliverable: '', acceptance: '',
-        actualStart: '', actualFinish: '', fixedCost: 0, actualCost: 0, autoActualCost: true,
+        actualStart: '', actualFinish: '', fixedCost: 0, actualCost: 0, autoActualCost: true, audience: null,
         baseStart: null, baseFinish: null, baseTe: null, baseCost: null,
         te: 0, variance: 0, es: 0, ef: 0, ls: 0, lf: 0, slack: 0, wbs: '', isSummary: false,
         isCritical: false, criticality: 0, startDate: null, finishDate: null, overallocated: false
@@ -2132,7 +2136,7 @@
           percentComplete: t.percentComplete, predecessors: t.predecessors,
           parentId: t.parentId, description: t.description, deliverable: t.deliverable,
           acceptance: t.acceptance, actualStart: t.actualStart, actualFinish: t.actualFinish,
-          fixedCost: t.fixedCost || 0, actualCost: t.actualCost || 0, autoActualCost: t.autoActualCost !== false,
+          fixedCost: t.fixedCost || 0, actualCost: t.actualCost || 0, autoActualCost: t.autoActualCost !== false, audience: t.audience || null,
           baseStart: t.baseStart ? fmtISO(new Date(t.baseStart)) : null,
           baseFinish: t.baseFinish ? fmtISO(new Date(t.baseFinish)) : null,
           baseTe: t.baseTe, baseCost: (t.baseCost == null ? null : t.baseCost),
@@ -2167,7 +2171,7 @@
         startNoEarlier: /^\d{4}-\d{2}-\d{2}$/.test(t.startNoEarlier || '') ? t.startNoEarlier : '',
         jira: String(t.jira || '').trim(),
         deadline: /^\d{4}-\d{2}-\d{2}$/.test(t.deadline || '') ? t.deadline : '',
-        fixedCost: Number(t.fixedCost) || 0, actualCost: Number(t.actualCost) || 0, autoActualCost: t.autoActualCost !== false,
+        fixedCost: Number(t.fixedCost) || 0, actualCost: Number(t.actualCost) || 0, autoActualCost: t.autoActualCost !== false, audience: (t.audience === 'client' || t.audience === 'internal') ? t.audience : null,
         baseStart: t.baseStart ? new Date(t.baseStart + 'T00:00:00') : null,
         baseFinish: t.baseFinish ? new Date(t.baseFinish + 'T00:00:00') : null,
         baseTe: (t.baseTe == null ? null : Number(t.baseTe)),
@@ -2461,6 +2465,7 @@
       document.getElementById('mActualFinish').value = '';
       document.getElementById('mActualCost').value = 0;
       mActualCostManual = false; refreshAutoActualCost();
+      document.getElementById('mAudience').value = '';
       populateOwnerList();
       modalRefMap = buildTaskDatalist('predDatalist', t => true);
       buildTaskDatalist('parentDatalist', t => !t.milestone);
@@ -2562,6 +2567,7 @@
       document.getElementById('mActualFinish').value = t.actualFinish || '';
       document.getElementById('mActualCost').value = t.actualCost || 0;
       mActualCostManual = (t.autoActualCost === false); refreshAutoActualCost();
+      document.getElementById('mAudience').value = (t.audience === 'client' || t.audience === 'internal') ? t.audience : '';
       document.getElementById('mJira').value = t.jira || '';
       populateOwnerList();
       // only offer predecessors that can validly come before this task: not itself,
@@ -2822,7 +2828,7 @@
       }
       const finalPreds = Object.values(seen).filter(pr => pr.id !== editingId);
 
-      const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, actualCost, autoActualCost: !mActualCostManual, percentComplete: pct, predecessors: finalPreds, jira: document.getElementById('mJira').value.trim(),
+      const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, actualCost, autoActualCost: !mActualCostManual, audience: (v => (v === 'client' || v === 'internal') ? v : null)(document.getElementById('mAudience').value), percentComplete: pct, predecessors: finalPreds, jira: document.getElementById('mJira').value.trim(),
         parentId, description, deliverable, acceptance, actualStart, actualFinish };
       // roll-up rows: the locked, computed-from-children fields never save
       if (isSum) ['o', 'm', 'p', 'milestone', 'owner', 'units', 'attendees', 'percentComplete'].forEach(k => delete fields[k]);
@@ -3377,6 +3383,9 @@
     // even though the leaf itself has no direct link. Descendants of anything that
     // comes after id are pulled in too.
     function predCycleSet(id) {
+      // the schedule-order guard below needs dates; compute them if the plan
+      // hasn't been calculated yet so the picker is sane from the first open
+      if (!calculated) { try { ensureCalculated(); } catch (e) {} }
       const byId = {}; tasks.forEach(t => byId[t.id] = t);
       const ancestorsOf = t => { const out = []; let c = t && byId[t.parentId], g = 0; while (c && g++ < 60) { out.push(c.id); c = byId[c.parentId]; } return out; };
       // effective predecessors = own + every ancestor's predecessors
@@ -3396,6 +3405,23 @@
       const addDesc = tid => tasks.forEach(x => { if (x.parentId === tid && !bad.has(x.id)) { bad.add(x.id); addDesc(x.id); } });
       addDesc(id);                                       // id's own descendants
       ancestorsOf(byId[id]).forEach(aid => bad.add(aid)); // id's own ancestors (not their other children)
+      // Schedule sanity: some nonsense links form no cycle at all — e.g. "Project
+      // Closed" as a predecessor of "Kick-off" (closure has no path back to
+      // kick-off, so the graph looks fine) but it is scheduled far LATER. Once a
+      // schedule exists, exclude anything that doesn't already finish by the time
+      // this task starts: a predecessor must precede. Milestones included.
+      const me = byId[id];
+      if (me && me.startDate) {
+        const myStart = stripTime(me.startDate).getTime();
+        tasks.forEach(x => {
+          if (bad.has(x.id) || x.id === id) return;
+          const f = x.finishDate || x.startDate;
+          if (f && stripTime(f).getTime() > myStart) bad.add(x.id);
+        });
+      } else if (Number.isFinite(me && me.es)) {
+        // no dates yet — fall back to the CPM early-start ordering
+        tasks.forEach(x => { if (!bad.has(x.id) && x.id !== id && Number.isFinite(x.ef) && x.ef > me.es) bad.add(x.id); });
+      }
       return bad;
     }
     function cancelPredEdit() {
@@ -7226,16 +7252,20 @@
       }
       const idToTask = {}; tasks.forEach(t => idToTask[t.id] = t);
       const stories = reqs.stories, epics = reqs.epics || [];
-      const leaves = storyableLeaves(); // test cases verify ACs — they never need stories themselves
+      // coverage is about CLIENT-facing scope: an internal/delivery activity
+      // (kickoff, PM, our own test execution) legitimately needs no client story,
+      // so it's never counted as a gap. Test cases verify ACs, never covered here.
+      const leaves = storyableLeaves().filter(t => !isInternalActivity(t));
       const covered = new Set(stories.flatMap(storyWbsIds));
       const uncovered = leaves.filter(t => !covered.has(t.id));
+      const internalLeafCount = storyableLeaves().filter(isInternalActivity).length;
       const allWarns = stories.reduce((n, s) => n + storyLint(s).length, 0);
       const acCount = stories.reduce((n, s) => n + (s.ac || []).length, 0);
       const tiles = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:0.75rem;margin-bottom:1rem">
         <div class="stat-card" style="cursor:pointer" onclick="reqScrollTo('reqEpicsAnchor')" title="Click to jump to the epic groupings below"><div class="value">${epics.length}</div><div class="label">Epics</div></div>
         <div class="stat-card" style="cursor:pointer" onclick="reqScrollTo('reqEpicsAnchor')" title="Click to jump to the story cards — each shows its ACs, NFRs, trace and lint findings"><div class="value">${stories.length}</div><div class="label">User stories</div></div>
         <div class="stat-card" style="cursor:pointer" onclick="reqScrollTo('traceMatrix', true)" title="Click to open the traceability matrix — one row per criterion with its test cases and status"><div class="value">${acCount}</div><div class="label">Acceptance criteria</div></div>
-        <div class="stat-card ${uncovered.length ? 'warn' : 'success'}" style="cursor:pointer" onclick="${uncovered.length ? `reqScrollTo('covBanner')` : `reqScrollTo('traceMatrix', true)`}" title="${uncovered.length ? 'Activities without a story: ' + escapeHtml(uncovered.slice(0, 8).map(t => t.name).join(', ')) + (uncovered.length > 8 ? '…' : '') + ' — click for the gap list & targeted draft button' : 'Every non-milestone activity has at least one story — click for the matrix'}"><div class="value">${leaves.length - uncovered.length}/${leaves.length}</div><div class="label">WBS coverage</div></div>
+        <div class="stat-card ${uncovered.length ? 'warn' : 'success'}" style="cursor:pointer" onclick="${uncovered.length ? `reqScrollTo('covBanner')` : `reqScrollTo('traceMatrix', true)`}" title="${uncovered.length ? 'Client-facing activities without a story: ' + escapeHtml(uncovered.slice(0, 8).map(t => t.name).join(', ')) + (uncovered.length > 8 ? '…' : '') + ' — click for the gap list & targeted draft button' : 'Every client-facing activity has a story — click for the matrix'}${internalLeafCount ? ' · ' + internalLeafCount + ' internal/process activit' + (internalLeafCount === 1 ? 'y' : 'ies') + ' excluded (need no client story)' : ''}"><div class="value">${leaves.length - uncovered.length}/${leaves.length}</div><div class="label">Client-facing coverage</div></div>
         <div class="stat-card ${allWarns ? 'critical' : 'success'}" style="cursor:pointer" onclick="${allWarns ? `reqScrollTo('lintBanner')` : `void(0)`}" title="${allWarns ? 'Click for the lint findings and the one-click AI repair' : 'INVEST/testability lint is clean: every story has error/edge paths, real personas, measurable criteria'}"><div class="value">${allWarns}</div><div class="label">Lint warnings</div></div>
         ${(() => { const tcs = tasks.filter(isTestCaseTask); const shallow = tcs.filter(t => !hasRealSteps(t)).length; return `<div class="stat-card ${shallow ? 'warn' : ''}" style="cursor:pointer" onclick="reqScrollTo('tcListPanel', true)" title="${tcs.length ? 'Click for the full on-screen test-case sheet — steps, pass conditions, owners, schedule' + (shallow ? ' (⚠ ' + shallow + ' shallow — re-run 🧪 Generate test plan)' : '') : 'No test cases yet — 🧪 Generate test plan creates one per UAT-testable criterion'}"><div class="value">🧪 ${tcs.length}</div><div class="label">Test cases</div></div>`; })()}
       </div>`;
@@ -7330,8 +7360,9 @@
       }
       if (uncovered.length) {
         html += `<div id="covBanner" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
-          <strong>⚠ ${uncovered.length} WBS activit${uncovered.length === 1 ? 'y has' : 'ies have'} no story:</strong>
+          <strong>⚠ ${uncovered.length} client-facing activit${uncovered.length === 1 ? 'y has' : 'ies have'} no story:</strong>
           ${uncovered.slice(0, 12).map(t => escapeHtml(t.wbs + ' ' + t.name)).join(' • ')}${uncovered.length > 12 ? ' …' : ''}
+          <div class="help-text" style="margin-top:0.25rem">Internal / delivery-side activities are excluded — tag an activity's audience in its editor to move it either way.</div>
           <div style="margin-top:0.4rem"><button class="btn-sm btn-primary" onclick="draftMissingStories()" title="Sends ONLY these uncovered activities (in small batches with a progress tracker); every one must come back with a story, and you get an explicit report if any are still uncovered afterwards. Existing stories are never touched.">🤖 Draft the missing stories (targeted — keeps existing ones)</button></div></div>`;
       }
       const typeIcon = { happy: '✅', error: '⚠️', edge: '🧪', perf: '📏' };
@@ -7602,20 +7633,30 @@
     // signed document, the sent report, the log entry — NOT by a scheduled UAT
     // test case. A story counts as process work when its activity (or any
     // ancestor) is project-management/governance work.
+    // activity/story names that read as delivery-side PROCESS work (not a
+    // client-facing product capability). Shared by the story and activity classifiers.
+    const PROCESS_NAME_RE = /project management|governance|pmo\b|status report|steering committee|raid log|change control|kick[\s-]?off|meeting|workshop|interview|elicit|gather.*requirement|requirements? gather|discovery session|documentation|user guide|training|enablement|sign[\s-]?off|approval|internal qa|qa testing|user acceptance|uat\b|test execution|hypercare|lessons learned|project clos/i;
+    // Does a task read as delivery-side process work? Only the task's OWN name is
+    // matched — walking ancestors made every child of a phase like "Discovery"
+    // internal, which wrongly excluded real build work from client coverage.
+    function taskNameIsProcess(t) { return !!t && PROCESS_NAME_RE.test(t.name || ''); }
+    // An activity's audience: explicit t.audience wins; else inferred. Test cases
+    // follow the story they verify; otherwise the name heuristic decides.
+    function activityAudience(t) {
+      if (!t) return 'client';
+      if (t.audience === 'client' || t.audience === 'internal') return t.audience;
+      if (isTestCaseTask(t)) { const st = storiesForTask(t.id)[0]; if (st) return storyAudience(st); }
+      return taskNameIsProcess(t) ? 'internal' : 'client';
+    }
+    function isInternalActivity(t) { return activityAudience(t) === 'internal'; }
     function isProcessStory(story) {
       // authoritative: the AI classifies verification at draft time
       if (story && story.verification === 'artifact') return true;
       if (story && story.verification === 'uat') return false;
-      // fallback for stories drafted before the field existed: activity-name
-      // heuristic over the task and its ancestors
-      const re = /project management|governance|pmo\b|status report|steering committee|raid log|change control|kick[\s-]?off|meeting|workshop|interview|elicit|gather.*requirement|requirements? gather|discovery session|wireframe|mock-?up|design review|documentation|user guide|training|enablement|sign[\s-]?off|approval|internal qa|qa testing|user acceptance|uat\b|test execution|hypercare|lessons learned|project closure/i;
-      let cur = story && story.wbsId != null ? tasks.find(x => x.id === story.wbsId) : null;
-      let guard = 0;
-      while (cur && guard++ < 50) {
-        if (re.test(cur.name)) return true;
-        cur = cur.parentId != null ? tasks.find(x => x.id === cur.parentId) : null;
-      }
-      return false;
+      // explicit story audience, then the linked activity's audience/name heuristic
+      if (story && (story.audience === 'internal' || story.audience === 'client')) return story.audience === 'internal';
+      const cur = story && story.wbsId != null ? tasks.find(x => x.id === story.wbsId) : null;
+      return cur ? taskNameIsProcess(cur) : false;
     }
     // "(Parallel Track)" clones — created by an early AI risk-fix that duplicated
     // work instead of splitting it. Their ORIGINALS carry the stories/estimates;
