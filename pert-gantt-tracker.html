@@ -13192,15 +13192,22 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       if (!calculated || !tasks.length) { cont.innerHTML = '<p class="help-text">Calculate the plan first, and set bill rates on the Resources tab.</p>'; return; }
       const cost = projectCost();
       const revP50 = laborRevenue() + leafTasks().reduce((s, t) => s + (+t.fixedCost || 0), 0);
-      const anyBill = laborRevenue() > 0;
+      // Revenue is labour OR pass-through fixed costs. Gating on labour alone hid
+      // the whole section from a pure pass-through engagement (licences, vendor
+      // fees, travel rebilled at cost) that has real revenue to price.
+      const anyBill = laborRevenue() > 0 || revP50 > 0;
       if (!anyBill) { cont.innerHTML = '<p class="help-text">No bill rates set yet — add <strong>Bill $/d</strong> per resource on the Resources tab and the pricing model appears here (T&M price, P80/P90 risk-adjusted fixed price, and margin).</p>'; return; }
       // Prefer TRUE simulated revenue percentiles (effort-based). Fall back to the
       // duration-ratio uplift only when no simulation is available.
       const haveSim = mcResult && mcResult.revP50 > 0;
       const u80 = haveSim ? (mcResult.revP80 / Math.max(1, mcResult.revP50)) : riskUplift('p80');
       const u90 = haveSim ? (mcResult.revP90 / Math.max(1, mcResult.revP50)) : riskUplift('p90');
+      // The simulated revenue percentiles ALREADY include fixed costs — runMonteCarlo
+      // seeds every iteration with `let iterCost = fixedTotal, iterRev = fixedTotal`.
+      // Adding the fixed total again billed it to the client twice: a $20k licence
+      // moved the simulation by $20k and the quoted price by $40k.
       const prices = haveSim
-        ? { p50: mcResult.revP50 + (revP50 - laborRevenue()), p80: mcResult.revP80 + (revP50 - laborRevenue()), p90: mcResult.revP90 + (revP50 - laborRevenue()) }
+        ? { p50: mcResult.revP50, p80: mcResult.revP80, p90: mcResult.revP90 }
         : { p50: revP50, p80: revP50 * u80, p90: revP50 * u90 };
       const chosen = prices[pricing.basis] || prices.p80;
       const contract = pricing.contractPrice || 0;
