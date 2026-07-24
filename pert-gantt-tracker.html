@@ -527,6 +527,17 @@
     @media (min-width: 2100px) {
       .story-grid { grid-template-columns: 1fr 1fr 1fr; }
     }
+    /* test cases shown under an acceptance criterion (story card + story editor) */
+    .ac-tcs { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.15rem 0 0.1rem 1.5rem; }
+    .ac-tc { display: inline-flex; align-items: center; gap: 0.3rem; background: #f0fdf4; border: 1px solid #86efac; color: #166534; border-radius: 999px; padding: 0.05rem 0.5rem; font-size: 0.72rem; line-height: 1.6; cursor: pointer; max-width: 100%; }
+    .ac-tc:hover { background: #dcfce7; }
+    .ac-tc-dot { width: 6px; height: 6px; border-radius: 50%; background: #cbd5e1; flex: none; }
+    .ac-tc-dot.prog { background: var(--primary); }
+    .ac-tc-dot.done { background: #16a34a; }
+    .st-tc-row { padding: 0.3rem 0 0.35rem; border-bottom: 1px solid var(--border); }
+    .st-tc-row:last-of-type { border-bottom: none; }
+    .st-tc-ac { font-size: 0.76rem; margin-bottom: 0.15rem; }
+    #stTcList .ac-tc { margin-right: 0.25rem; }
     /* audience filter toggle (Stories / Test cases) */
     .aud-filter { background: #fff; border: 1px solid var(--border); color: var(--muted); }
     .aud-filter.active { background: var(--primary); border-color: var(--primary); color: #fff; }
@@ -1013,6 +1024,10 @@
           <div class="form-group" style="margin-top:0.7rem;margin-bottom:0"><label>Acceptance criteria</label><button type="button" class="info-icon" aria-label="About Acceptance criteria" data-help="Cover all three: happy = it works; error = something invalid fails gracefully; edge = boundaries, empty states, timeouts, capacity. perf = measurable thresholds. Write each as Given / When / Then.">i</button>
             <div id="stAcRows"></div>
             <button class="btn-sm btn-secondary no-print" type="button" onclick="stAddAcRow()">＋ Add criterion</button></div>
+          <div class="form-group" id="stTcGroup" style="margin-top:0.7rem;margin-bottom:0;display:none">
+            <span class="fg-head"><label>Test cases verifying this story</label><button type="button" class="info-icon" aria-label="About the test cases" data-help="The scheduled WBS test cases that verify this story's criteria (named “TC &lt;AC-id&gt; — …”). Click one to open it — steps, pass-when, owner and schedule. Artifact-verified stories are proven by their deliverable and carry none.">i</button></span>
+            <div id="stTcList"></div>
+          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-top:0.7rem">
             <div class="form-group" style="align-self:start"><label for="stNfr">NFRs (one per line)</label><button type="button" class="info-icon" aria-label="About NFRs (one per line)" data-help="Non-functional requirements: performance, availability, security, accessibility, audit… The most under-scoped and most expensive category in an SOW.">i</button><textarea id="stNfr" rows="4" oninput="autoGrowTA(this)" placeholder="p95 export ≤ 5 s at 100k rows&#10;WCAG 2.2 AA on the export control"></textarea></div>
             <div class="form-group"><label>Assumptions &amp; client dependencies</label><button type="button" class="info-icon" aria-label="About Assumptions &amp; client dependencies" data-help="Each assumption states the impact if false; each client dependency the consequence of a slip — that's what makes the estimate defensible and re-priceable.">i</button>
@@ -7601,7 +7616,7 @@
       const acHtml = (s.ac || []).map(a => {
         const bw = bannedIn(a.text);
         const tcs = testCasesForAC(a.id);
-        return `<li style="margin-bottom:0.25rem"><span title="${escapeHtml(typeTip[a.type] || '')}" style="cursor:help">${typeIcon[a.type] || '•'}</span> <b>${escapeHtml(a.id || '')}</b> ${escapeHtml(a.text)}${tcs.length ? ` <span class="help-text" title="${escapeHtml(tcs.map(tc => tc.name + ' (' + (tc.percentComplete || 0) + '%)').join('\n'))}">🧪${tcs.length}</span>` : ''}${bw.length ? ` <span class="risk-tag" style="background:#fee2e2;color:#b91c1c;cursor:help" title="Untestable word(s) — cannot be accepted or invoiced. Replace with a number and its measurement condition.">${escapeHtml(bw.join(', '))}</span>` : ''}</li>`;
+        return `<li style="margin-bottom:0.25rem"><span title="${escapeHtml(typeTip[a.type] || '')}" style="cursor:help">${typeIcon[a.type] || '•'}</span> <b>${escapeHtml(a.id || '')}</b> ${escapeHtml(a.text)}${tcs.length ? `<div class="ac-tcs">${tcs.map(tc => { const st = taskStatus(tc); const pc = tc.percentComplete || 0; return `<span class="ac-tc" onclick="event.preventDefault();event.stopPropagation();openEditModal(${tc.id}, true)" title="${escapeHtml('Open this test case — steps, pass-when, owner, schedule. ' + tc.name)}"><span class="ac-tc-dot ${pc >= 100 ? 'done' : pc > 0 ? 'prog' : ''}"></span>🧪 ${escapeHtml(tc.name.replace(/^TC\s+[A-Za-z0-9_.-]+\s*[—-]\s*/i, ''))} <span class="help-text">${pc >= 100 ? 'passed' : pc > 0 ? pc + '%' : escapeHtml(st.label)}</span></span>`; }).join('')}</div>` : '<div class="ac-tcs"><span class="help-text" style="font-size:0.7rem">no test case yet</span></div>'}${bw.length ? ` <span class="risk-tag" style="background:#fee2e2;color:#b91c1c;cursor:help" title="Untestable word(s) — cannot be accepted or invoiced. Replace with a number and its measurement condition.">${escapeHtml(bw.join(', '))}</span>` : ''}</li>`;
       }).join('');
       const nAc = k => (s.ac || []).filter(a => a.type === k).length;
       const mix = `✅${nAc('happy')} ⚠️${nAc('error')} 🧪${nAc('edge')}${nAc('perf') ? ' 📏' + nAc('perf') : ''}`;
@@ -8440,6 +8455,25 @@ Write the test cases for the criteria above, following the contract exactly. Ret
         onPick: l => { const id = storyLinkMap[l]; if (id != null && !storyModalWbsIds.includes(id)) { storyModalWbsIds.push(id); renderStoryWbsChips(); } inp.value = ''; },
       });
     }
+    // Read-only panel in the story editor: every scheduled test case that verifies
+    // one of this story's criteria, grouped by criterion, each opening its task.
+    function renderStoryTestCases(s) {
+      const grp = document.getElementById('stTcGroup'), list = document.getElementById('stTcList');
+      if (!grp || !list) return;
+      const acs = (s && s.ac) || [];
+      const rows = acs.map(a => ({ a, tcs: testCasesForAC(a.id) }));
+      const total = rows.reduce((n, r) => n + r.tcs.length, 0);
+      if (!s || !acs.length) { grp.style.display = 'none'; list.innerHTML = ''; return; }
+      grp.style.display = '';
+      const artifact = (s.verification === 'artifact');
+      list.innerHTML = rows.map(({ a, tcs }) => `<div class="st-tc-row">
+          <div class="st-tc-ac"><b>${escapeHtml(a.id)}</b> <span class="help-text">${escapeHtml((a.text || '').slice(0, 90))}${(a.text || '').length > 90 ? '…' : ''}</span></div>
+          ${tcs.length
+            ? tcs.map(tc => { const pc = tc.percentComplete || 0; return `<span class="ac-tc" onclick="event.preventDefault();closeStoryModal();openEditModal(${tc.id}, true)" title="${escapeHtml('Open ' + tc.name)}"><span class="ac-tc-dot ${pc >= 100 ? 'done' : pc > 0 ? 'prog' : ''}"></span>🧪 ${escapeHtml((tc.wbs ? tc.wbs + ' · ' : '') + tc.name.replace(/^TC\s+[A-Za-z0-9_.-]+\s*[—-]\s*/i, ''))} <span class="help-text">${pc >= 100 ? 'passed' : pc > 0 ? pc + '%' : 'not run'}</span></span>`; }).join('')
+            : `<span class="help-text" style="font-size:0.72rem">${artifact ? 'verified by the deliverable — no test case needed' : 'no test case yet — run 🧪 Generate test plan'}</span>`}
+        </div>`).join('')
+        + `<p class="help-text" style="margin:0.35rem 0 0;font-size:0.72rem">${total} test case${total === 1 ? '' : 's'} across ${acs.length} criteri${acs.length === 1 ? 'on' : 'a'}${artifact ? ' · this story is artifact-verified' : ''}.</p>`;
+    }
     function openStoryModal(storyId) {
       if (!reqs) reqs = { personas: [], epics: [], stories: [] };
       editingStoryId = storyId;
@@ -8473,6 +8507,7 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       // whole story reads without expanding or scrolling anything
       storyModalAutosize();
       updateStoryPreview();
+      renderStoryTestCases(s);
     }
     function autoGrowTA(el) {
       if (!el || el.tagName !== 'TEXTAREA') return;
