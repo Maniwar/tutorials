@@ -3411,16 +3411,19 @@
       // schedule exists, exclude anything that doesn't already finish by the time
       // this task starts: a predecessor must precede. Milestones included.
       const me = byId[id];
-      if (me && me.startDate) {
-        const myStart = stripTime(me.startDate).getTime();
+      if (me) {
+        const myStart = me.startDate ? stripTime(me.startDate).getTime() : null;
+        const myEs = Number.isFinite(me.es) ? me.es : null;
         tasks.forEach(x => {
           if (bad.has(x.id) || x.id === id) return;
+          // BOTH orderings are checked: calendar dates catch what the CPM numbers
+          // round together (same-day test cases), and the CPM early/late numbers
+          // catch what equal dates hide. Either saying "x ends after I start"
+          // means x cannot precede me.
           const f = x.finishDate || x.startDate;
-          if (f && stripTime(f).getTime() > myStart) bad.add(x.id);
+          if (myStart != null && f && stripTime(f).getTime() > myStart) { bad.add(x.id); return; }
+          if (myEs != null && Number.isFinite(x.ef) && x.ef > myEs) bad.add(x.id);
         });
-      } else if (Number.isFinite(me && me.es)) {
-        // no dates yet — fall back to the CPM early-start ordering
-        tasks.forEach(x => { if (!bad.has(x.id) && x.id !== id && Number.isFinite(x.ef) && x.ef > me.es) bad.add(x.id); });
       }
       return bad;
     }
@@ -10492,6 +10495,9 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       baselineDate = ''; collapsedIds = new Set(); levelMode = 'none'; projectBudget = 0; calculated = false;
       document.getElementById('projectName').value = 'Sample Client Engagement – CRM Rollout';
       if (!document.getElementById('projectStart').value) document.getElementById('projectStart').value = fmtISO(new Date());
+      // the sample is complete — schedule it immediately so every tab has data
+      // (ensureCalculated no-ops when a fresh schedule already exists)
+      ensureCalculated();
       renderTaskTable(); switchTab('tasks'); saveLocal();
     }
     // The header "New Project" button. This used to wipe IN PLACE under the
