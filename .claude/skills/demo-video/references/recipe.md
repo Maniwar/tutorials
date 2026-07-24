@@ -119,6 +119,53 @@ optional. Cards are the demo's narration — write them like headlines.
 - Music is optional and looped/trimmed to length, ducked to `audio_gain`, with a
   gentle in/out. Only add royalty-free/licensed audio — never copyrighted tracks.
 
+## 5b. Voiceover narration
+
+Add a `narration` line to any segment and the assembler renders it and **stretches
+that segment to fit the voice** — you don't time your recording to a script, the
+video accommodates the words. A clip that's shorter than its line simply freezes
+its last frame until the sentence finishes; a card is held at least as long as its
+line. Music (if present) ducks under the voice automatically via sidechain
+compression, and the whole mix is loudness-normalized.
+
+```json
+{
+  "out": "/abs/scratch/demo/acme.mp4",
+  "width": 1920, "height": 1080, "fps": 30, "fade": 0.35, "crf": 22,
+  "tts": { "backend": "auto", "rate": 1.0 },
+  "audio": "/abs/music/soft-bed.mp3", "audio_gain": 0.10,
+  "vo_head": 0.35, "vo_tail": 0.55,
+  "segments": [
+    { "type": "card", "png": "…/c1.png", "duration": 2.5,
+      "narration": "Chapter one. From notes to a costed plan." },
+    { "type": "clip", "video": "…/01-ai.webm", "trim_start": 0.3,
+      "narration": "Paste the meeting notes, hit generate, and the AI drafts the whole engagement." },
+    { "type": "clip", "video": "…/02-gantt.webm",
+      "narration": "Open the Gantt to see the schedule and the critical path in one view.",
+      "voice": null }
+  ]
+}
+```
+
+Backend selection (`tts.backend: "auto"`, the default) prefers, in order:
+`ELEVENLABS_API_KEY` → `OPENAI_API_KEY` → Piper (a local `.onnx` voice model) →
+espeak-ng. Check what a machine has with `python scripts/tts.py --list`, and
+preview a single line with
+`python scripts/tts.py --text "Hello." --out /tmp/vo.wav`.
+
+- **Write for the ear.** One idea per line, active voice, contractions. Read it
+  aloud; if you run out of breath, split it into two segments.
+- **Pin the voice for a real cut.** espeak is robotic — fine for laying out the
+  edit, wrong for LinkedIn. Set `OPENAI_API_KEY`/`ELEVENLABS_API_KEY`, or install
+  a Piper voice, then re-run assembly (the recording doesn't change).
+- **Pre-rendered lines.** Instead of `narration`, a segment can carry
+  `"voice": "/abs/vo/03.wav"` — a WAV you made elsewhere (a real human take, a
+  premium voice you generated once). The segment still stretches to fit it.
+- **Tuning.** `tts.rate` (>1 faster), `tts.voice` (backend-specific — an espeak
+  voice like `en-us+f3`, an OpenAI voice like `alloy`, an ElevenLabs voice id),
+  `audio_gain` for music level under the voice, `vo_head`/`vo_tail` for the pause
+  before/after each line, `loudness` for the LUFS target.
+
 ## 6. Vertical (story / reel) cut
 
 For 9:16, set `width: 1080, height: 1920` everywhere — the recording viewport,

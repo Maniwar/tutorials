@@ -168,6 +168,40 @@ found.
 package. `assemble.py` shells out to `ffmpeg`/`ffprobe` on `PATH`; there's no
 Python codec dependency to install.
 
+## Voiceover / TTS
+
+**Symptom:** `No TTS backend available`, or the narration comes out robotic, or a
+voice model won't download.
+
+**Causes & fixes:**
+- **Nothing installed.** `python scripts/tts.py --list` shows what's usable.
+  `apt-get install -y espeak-ng` guarantees an offline fallback so narration never
+  hard-fails. That voice is robotic on purpose-of-last-resort; it's for laying out
+  the edit, not for a published cut.
+- **Piper voice-model download blocked.** `pip install piper-tts` gives the engine,
+  but voices come from HuggingFace, which some locked-down sandboxes block at the
+  proxy (a `403 Tunnel connection failed`). Two ways around it: (a) run assembly on
+  a machine with open network so `python -m piper.download_voices en_US-lessac-medium
+  --data-dir <dir>` succeeds once, then point `tts.piper_data_dir`/`piper_voice`
+  at it; or (b) side-load a `.onnx` + `.onnx.json` you already have and set
+  `tts.piper_model` to the `.onnx` path. Piper is the best *free* voice — worth the
+  one-time fetch.
+- **Premium voice.** Set `OPENAI_API_KEY` (voice e.g. `alloy`) or
+  `ELEVENLABS_API_KEY` (+ optional `ELEVENLABS_VOICE_ID`) and `backend:"auto"` picks
+  it first. These hit the network at assembly time and cost credits, but sound
+  human — the right choice for anything public-facing.
+- **Voice sounds cut off at a scene change.** Increase `vo_tail` (the pause kept
+  after each line) so the sentence finishes before the cross-fade; the segment
+  stretches to accommodate it.
+- **Music drowns the voice / voice drowns music.** The music `audio_gain` defaults
+  to 0.10 under narration; the sidechain ducks it further while the voice speaks.
+  Lower `audio_gain` if music still competes; raise it for a livelier bed. Never
+  add copyrighted tracks.
+- **espeak reads punctuation oddly / a line starts with a dash.** espeak-ng
+  interprets a leading `-` as a flag and `[[...]]` as raw phonemes; `tts.py`
+  collapses whitespace but pass clean prose (no leading dashes, no `[[ ]]`). Spell
+  out symbols the app shows as glyphs.
+
 ## Proxies / network
 
 - Recording a **local `file://`** app needs no network — the most reliable setup.

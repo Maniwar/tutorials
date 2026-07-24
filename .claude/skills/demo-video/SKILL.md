@@ -3,13 +3,14 @@ name: demo-video
 description: >-
   Produce a polished animated product-demo / walkthrough VIDEO of a web app or
   HTML page — a screen recording with a smooth animated cursor that clicks and
-  types through the UI, chapter title cards, and an MP4 stitched together with
-  cross-fades. Use this whenever the user wants a demo video, product walkthrough,
-  screen recording, promo/marketing clip, "show it in action" video, a LinkedIn/
-  Twitter/launch demo, an animated GIF-style tour, or asks to "record", "film",
-  "capture a demo of", or "make a video of" a web app, site, dashboard, or HTML
-  file — even if they don't say the word "video". Works on any URL or local HTML
-  file. Not for editing pre-existing footage and not for native mobile apps.
+  types through the UI, chapter title cards, optional AI VOICEOVER NARRATION, and
+  an MP4 stitched together with cross-fades. Use this whenever the user wants a
+  demo video, product walkthrough, screen recording, promo/marketing clip, "show
+  it in action" video, a LinkedIn/Twitter/launch demo, an animated GIF-style tour,
+  a narrated or voiced-over demo, or asks to "record", "film", "capture a demo
+  of", "add a voiceover to", or "make a video of" a web app, site, dashboard, or
+  HTML file — even if they don't say the word "video". Works on any URL or local
+  HTML file. Not for editing pre-existing footage and not for native mobile apps.
 ---
 
 # Demo Video
@@ -17,9 +18,11 @@ description: >-
 Turn any web app into a crisp, narrated-by-motion demo video: the mouse glides
 (never teleports) to each control, clicks with a ripple, types at a human
 cadence, pauses on the payoff, and chapter cards give the whole thing
-structure. You write a short recording script per scene (this skill hands you
-the hard parts — the animated cursor, the recorder, the ffmpeg assembly — so you
-never reinvent easing curves or codec flags).
+structure. Add a line of narration per scene and an AI voice reads it while the
+video stretches to fit — with background music ducking politely underneath. You
+write a short recording script per scene (this skill hands you the hard parts —
+the animated cursor, the recorder, the voiceover, the ffmpeg assembly — so you
+never reinvent easing curves, sidechain ducking, or codec flags).
 
 ## When to reach for this
 Any request for a moving picture of a web UI: "make a demo video for LinkedIn",
@@ -36,6 +39,13 @@ want a single screenshot, just screenshot; if they want motion, use this.
   `PW_CHROME=/abs/path/to/chrome`. See `references/gotchas.md`.
 - **ffmpeg + ffprobe**: `ffmpeg -version`. If missing: `apt-get install -y ffmpeg`
   (npm `ffmpeg-static` is often blocked behind proxies — prefer the system pkg).
+- **A TTS backend — only if you want voiceover.** Run
+  `python scripts/tts.py --list` to see what's available. Order of preference:
+  a premium API (`OPENAI_API_KEY` or `ELEVENLABS_API_KEY`) for a human voice →
+  Piper (`pip install piper-tts`, neural, free, offline once its voice model is
+  fetched) → **espeak-ng** (`apt-get install -y espeak-ng`, robotic but always
+  works offline, no download). Install at least espeak-ng and narration will
+  never hard-fail. See `references/gotchas.md` for the voice-model-download quirk.
 - **A scratch dir** for `clips/`, `cards/`, and the manifest — use the session
   scratchpad, not the repo.
 
@@ -54,8 +64,15 @@ independent clips are re-recordable and let the assembler cross-fade between the
 4. **Mock any network the demo shouldn't really hit** (AI streaming, slow APIs)
    with `record.mockSSE` so clips are fast, free, and identical every run.
 5. **Render title cards** with `titlecard.render(...)`.
-6. **Assemble** all cards + clips, in order, via `assemble.py` + a manifest.
-7. **QA the output** (see checklist) and iterate on any weak scene by
+6. **Write narration (optional but recommended).** Add a `narration` line to any
+   card/clip segment in the manifest. Don't time your recording to a script — the
+   assembler synthesizes each line and **stretches that segment to fit its voice**
+   (a clip freezes its last frame to fill), so you write the line and the video
+   accommodates it. Keep each line to one breath; let the payoff land under it.
+7. **Assemble** all cards + clips, in order, via `assemble.py` + a manifest.
+   Narration is rendered here, laid over the video, and any background music is
+   auto-ducked beneath the voice.
+8. **QA the output** (see checklist) and iterate on any weak scene by
    re-recording just that clip and re-running assembly.
 
 ## Using the bundled engine
@@ -74,8 +91,15 @@ Python one on a manifest.
   `bg1`/`bg2` to match the app's colors).
 - **`scripts/assemble.py`** — `python scripts/assemble.py manifest.json` stitches
   cards + clips into the final MP4 (scale-to-fit + pad, per-segment cross-fade,
-  x264 + faststart, optional background music). Manifest schema is documented at
-  the top of the file.
+  x264 + faststart, optional background music). Also renders per-segment
+  `narration`, stretches each segment to fit its voice, ducks music under the
+  voiceover (sidechain), and loudness-normalizes the mix. Manifest schema is
+  documented at the top of the file.
+- **`scripts/tts.py`** — pluggable text-to-speech behind the narration. Picks the
+  best backend available (ElevenLabs/OpenAI API → Piper neural → espeak-ng) and
+  returns a clean 48 kHz WAV. `python scripts/tts.py --list` shows what's on this
+  machine; `--text "…" --out vo.wav` previews one line. `assemble.py` calls it for
+  you — you rarely invoke it directly.
 
 Point at the scripts with absolute paths (they work whether the skill is a repo
 skill or installed personally). Copy them next to your recording script if you
@@ -111,12 +135,18 @@ const APP = 'file:///abs/path/app.html';                // or an https URL
 ```
 ```json
 // manifest.json → python scripts/assemble.py manifest.json
+// Add "narration" to any segment for voiceover; add "audio" for music (it ducks
+// under the voice automatically). Omit both for a silent video (original behavior).
 { "out": "/abs/scratch/demo/acme-demo.mp4", "width": 1920, "height": 1080,
   "fps": 30, "fade": 0.35, "crf": 22,
+  "tts": { "backend": "auto" },
   "segments": [
-    { "type": "card", "png": "/abs/scratch/demo/cards/c00.png", "duration": 2.6 },
-    { "type": "clip", "video": "/abs/scratch/demo/clips/01-open.webm" },
-    { "type": "clip", "video": "/abs/scratch/demo/clips/02-edit.webm" }
+    { "type": "card", "png": "/abs/scratch/demo/cards/c00.png", "duration": 2.6,
+      "narration": "Meet Acme Planner." },
+    { "type": "clip", "video": "/abs/scratch/demo/clips/01-open.webm",
+      "narration": "Load a sample and the whole plan is ready to work with." },
+    { "type": "clip", "video": "/abs/scratch/demo/clips/02-edit.webm",
+      "narration": "Rename the project, recalculate, and the schedule updates live." }
   ] }
 ```
 
@@ -134,6 +164,11 @@ const APP = 'file:///abs/path/app.html';                // or an https URL
   the assembler pads mismatches to black, which you don't want.
 - **Keep it tight.** 60–150s total for a product demo. Cut scenes that don't earn
   their seconds.
+- **Let the voice lead, not the clock.** With narration on, write the line first
+  and let the segment stretch to it — don't crop a sentence to fit a clip. One
+  idea per line, conversational, active voice ("Paste your notes and a plan
+  appears"), and leave the last ~0.5s of each line to breathe before the cut. For
+  a published cut use Piper or an API voice; espeak is for proving the edit.
 
 ## QA checklist (before you call it done)
 Extract a few frames and actually look at them — recordings lie in ways logs
@@ -144,6 +179,13 @@ don't. `ffmpeg -i out.mp4 -vf fps=1/3 /tmp/qa_%03d.png` then read them.
 - Card text has no typos and matches the app's story.
 - Transitions don't cut mid-motion; total length matches the brief.
 - File plays (has `+faststart`) and is a sane size (≈ crf 22 → a few MB/min).
+- **If narrated:** there's a real audio stream (`ffprobe -select_streams a:0 …`),
+  it's 48 kHz, and the length matches (segments stretch to fit their voice, so a
+  narrated demo is usually longer than the raw clips). Play it or at least check
+  `ffmpeg -i out.mp4 -af volumedetect -f null -` for a sane level (max near the
+  loudness target, not 0 dB clipping). Confirm the voice isn't cut off at a cut
+  and music sits *under* it, not over it. Robotic espeak voice = install Piper or
+  set an API key for the real cut (see prerequisites).
 
 ## Deeper docs
 - `references/recipe.md` — a full worked multi-chapter example (incl. mocking an
