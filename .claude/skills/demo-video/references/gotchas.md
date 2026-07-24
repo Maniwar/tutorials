@@ -278,3 +278,26 @@ unobtainable. A quick reachability sweep is cheap and often finds a way through:
 A `403`/`400` on a host root does not always mean blocked — the release-asset URL
 above returned 200 and downloaded 58 MB in an environment where `github.com`
 itself answered 403 and every HuggingFace host and mirror was unreachable.
+
+
+**Which voices are in that v0.0.2 release.** Only this one release ever shipped
+voices as GitHub assets; every later release (v1.0.0+) has none, and all newer
+voices — `libritts_r-medium`, `lessac-high`, `ljspeech-high`, `hfc_female-medium`
+and the rest of the current `VOICES.md` catalog — are HuggingFace-only. Confirmed
+downloadable from v0.0.2 (asset pattern `voice-<name>.tar.gz`):
+
+    en-us-libritts-high     <- best of the set; audiobook-trained, natural for narration
+    en-us-lessac-low / -medium
+    en-us-ryan-low / -medium / -high      (male)
+    en-us-amy-low, en-us-kathleen-low, en-us-danny-low
+    en-gb-alan-low                        (British)
+
+`amy-medium`, `lessac-high` and `alan-medium` are NOT in it. When you have normal
+network access, skip all of this and just run
+`python -m piper.download_voices en_US-libritts_r-medium` — LibriTTS-R is the
+cleaned-up retrain of libritts and sounds better still.
+
+The catalog itself is worth reading before choosing, and raw.githubusercontent is
+often reachable when the rest of GitHub is not:
+
+    curl -fsSL https://raw.githubusercontent.com/rhasspy/piper/master/VOICES.md
