@@ -490,6 +490,9 @@
     .fg-head { display: flex; align-items: center; gap: 0.3rem; min-height: 1.4rem; margin-bottom: 0.3rem; }
     .fg-head > label { margin: 0; padding: 0; display: inline-block; }
     .fg-head > .info-icon { flex: none; }
+    /* task-backed table rows that open the editor on a single click/tap */
+    tr.row-edit { transition: background .1s ease; }
+    @media (hover: hover) { tr.row-edit:hover > td { background: #eff6ff; } }
     #helpPop { position: fixed; z-index: 300; max-width: 300px; background: #fff; border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--sh-3); padding: 0.6rem 0.75rem; font-size: var(--t-md); color: var(--text); line-height: 1.45; }
     /* W19: contained iconography */
     .ico { display: inline-block; width: 1.4em; text-align: center; flex: none; filter: grayscale(1); opacity: .8; }
@@ -6430,9 +6433,9 @@
         const linksCell = predChips.concat(succChips).join(' · ') || '<span class="help-text">—</span>';
         const dur = t.milestone ? '◆' : (calculated ? fmtDur(t.te) : '—');
         const twisty = t.isSummary
-          ? `<button class="wbs-twisty" onclick="toggleCollapse(${t.id})" title="${collapsedIds.has(t.id) ? 'Expand' : 'Collapse'}">${collapsedIds.has(t.id) ? '▸' : '▾'}</button>`
+          ? `<button class="wbs-twisty" onclick="event.stopPropagation();toggleCollapse(${t.id})" title="${collapsedIds.has(t.id) ? 'Expand' : 'Collapse'}">${collapsedIds.has(t.id) ? '▸' : '▾'}</button>`
           : '<span class="wbs-twisty-spacer"></span>';
-        return `<tr data-wbsrow="${t.id}" style="cursor:pointer;${t.isSummary ? 'font-weight:700;background:#f8fafc' : ''}" ondblclick="openEditModal(${t.id}, true)" title="Double-click to edit">
+        return `<tr class="row-edit" data-wbsrow="${t.id}" style="cursor:pointer;${t.isSummary ? 'font-weight:700;background:#f8fafc' : ''}" onclick="openEditModal(${t.id}, true)" title="Click to edit — deliverable, scope, acceptance, owner, estimate">
           <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
           <td style="padding-left:${8 + depth * 18}px"><span style="display:inline-flex;align-items:center">${twisty}${t.milestone ? '◆ ' : ''}${escapeHtml(t.milestone ? t.name.replace(/^◆\s*/, '') : t.name)}${collapsedIds.has(t.id) ? ` <span class="help-text" style="font-size:0.68rem;margin-left:4px">(+${leafDescendants(t.id).length})</span>` : ''}</span></td>
           <td style="font-size:0.8rem">${t.isSummary ? summaryOwnerCell(t) : escapeHtml(t.owner || '—') + roleSub(t.owner)}</td>
@@ -7058,8 +7061,8 @@
         const steps = hasRealSteps(tc)
           ? `<ol style="margin:0;padding-left:1.1rem">${tcStepLines(tc.description).split('\n').filter(Boolean).map(sx => `<li>${escapeHtml(sx.replace(/^\d+\.\s*/, ''))}</li>`).join('')}</ol>`
           : `<span style="color:#b45309">⚠ no executable steps — re-run 🧪 Generate test plan</span>${tc.description ? `<div class="help-text">${escapeHtml(tc.description.slice(0, 120))}</div>` : ''}`;
-        return `<tr>
-          <td style="font-size:0.78rem;min-width:180px;max-width:260px;cursor:pointer;color:var(--primary)" onclick="openEditModal(${tc.id}, true)" title="Open the task — full spec, schedule, % complete">${escapeHtml(tc.name)}${jiraChip(tc.jira)}</td>
+        return `<tr class="row-edit" style="cursor:pointer" onclick="openEditModal(${tc.id}, true)" title="Click to edit this test case — steps, pass-when, owner, schedule, % complete">
+          <td style="font-size:0.78rem;min-width:180px;max-width:260px;color:var(--primary)">${escapeHtml(tc.name)}${jiraChip(tc.jira)}</td>
           <td style="font-size:0.75rem;white-space:nowrap" title="${hit ? escapeHtml(hit.a.text) : 'criterion not found in Requirements'}">${hit ? escapeHtml(hit.a.id) + ' <span class="help-text">(' + escapeHtml(hit.s.id) + ')</span>' : escapeHtml(acId.toUpperCase() || '—')}</td>
           <td style="font-size:0.76rem;min-width:260px;max-width:380px">${steps}</td>
           <td style="font-size:0.76rem;min-width:180px;max-width:300px">${escapeHtml(tc.acceptance || '—')}</td>
