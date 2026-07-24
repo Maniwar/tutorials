@@ -225,6 +225,7 @@
     .suggest-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
     .suggest-hint { color: var(--muted); font-size: .72rem; font-weight: 400; }
     @media (max-width: 640px) { .suggest-item { min-height: 48px; font-size: 16px; } .suggest-hint { font-size: .8rem; } }
+    .story-actions { display: flex; gap: 0.4rem; align-items: center; margin-left: auto; }
     .empty-state { text-align: center; padding: 3rem 1rem; color: var(--muted); }
     .empty-state h3 { margin-bottom: 0.5rem; color: var(--text); }
     /* Modal */
@@ -2554,8 +2555,10 @@
         () => [...document.getElementById('predDatalist').options].map(o => o.value),
         null, {
           persist: true, single: true,
-          isChecked: l => [...document.querySelectorAll('#depRows .dep-id-input')].some(x => x.value === l),
-          onRemove: l => { const r = [...document.querySelectorAll('#depRows .dep-id-input')].find(x => x.value === l); if (r) r.closest('.dep-row').remove(); },
+          // compare by RESOLVED task id — a loaded row stores "wbs · name" while
+          // the options are indented labels, so a raw === would never match
+          isChecked: l => { const id = resolveTaskRef(l, modalRefMap); return id != null && [...document.querySelectorAll('#depRows .dep-id-input')].some(x => resolveTaskRef(x.value, modalRefMap) === id); },
+          onRemove: l => { const id = resolveTaskRef(l, modalRefMap); const r = [...document.querySelectorAll('#depRows .dep-id-input')].find(x => resolveTaskRef(x.value, modalRefMap) === id); if (r) r.closest('.dep-row').remove(); },
           chain: () => { addDepRow(); const xs = [...document.querySelectorAll('#depRows .dep-id-input')]; if (xs.length) xs[xs.length - 1].focus(); },
         });
     }
@@ -2808,7 +2811,12 @@
       const pop = document.createElement('div');
       pop.className = 'suggest-pop';
       pop.setAttribute('role', 'listbox');
-      document.body.appendChild(pop);
+      // Append INSIDE the field's modal overlay (not <body>) so openOverlay's
+      // setBackgroundInert — which marks every <body> child except the modal as
+      // inert — can't mark the popup inert (an inert popup is skipped by
+      // hit-testing, so taps fall through to the field behind it). Inline-table
+      // editors have no modal, so they fall back to <body>.
+      (inp.closest('.modal-overlay') || document.body).appendChild(pop);
       inp._suggestPop = pop;
       let items = [], sel = -1, typed = false, popActive = false, docDown = null;
       // position:fixed + flip up when there isn't room below, and never spill off-screen
@@ -2832,7 +2840,9 @@
         if (opts.single) {
           if (opts.chain && opts.isChecked && opts.isChecked(items[i])) {   // multi-add field: tapping a ✓'d item removes it
             if (opts.onRemove) opts.onRemove(items[i]);
-            render(); inp.focus(); return;
+            if (!inp.isConnected) closePop();              // the removed row was THIS one → close (don't render a dead input)
+            else { render(); inp.focus(); }
+            return;
           }
           inp.value = items[i]; typed = false; commit();
           if (opts.chain) { closePop(); opts.chain(); }   // add-another flow (predecessors/attendees): fill this row + open a fresh one
@@ -7186,8 +7196,7 @@
               <span class="badge ${pct >= 100 ? 'badge-done' : pct > 0 ? 'badge-prog' : 'badge-notstarted'}" title="Status inherited from the linked WBS activity — check work off on the Tasks tab and this follows">${pct >= 100 ? '✓ done' : pct > 0 ? pct + '%' : 'not started'}</span>`
             : `<span class="badge badge-blocked" title="No linked WBS activity — this scope is NOT in the plan or the price. Link it in the editor, or create the missing activity from the story.">unlinked</span>
                <button class="btn-sm btn-secondary" data-story-mk="${escapeHtml(s.id)}" title="Create the missing WBS activity from this story: name from 'I want…', dictionary from the story + happy-path AC, nested under the epic's phase. It then needs an O/M/P estimate.">➕</button>`}
-            <button class="btn-sm btn-secondary" data-story-edit="${escapeHtml(s.id)}" title="Edit this story">✎</button>
-            ${(s.ac || []).some(a => testCasesForAC(a.id).length) ? `<button class="btn-sm btn-secondary" data-story-retc="${escapeHtml(s.id)}" title="Regenerate this story's test cases from the CURRENT acceptance criteria (AI). Rewritten IN PLACE — id, schedule position and links survive; % complete resets to 0. Use after editing the story or its criteria.">🧪↻</button>` : ''}
+            <span class="story-actions"><button class="btn-sm btn-secondary" data-story-edit="${escapeHtml(s.id)}" title="Edit this story">✎</button>${(s.ac || []).some(a => testCasesForAC(a.id).length) ? `<button class="btn-sm btn-secondary" data-story-retc="${escapeHtml(s.id)}" title="Regenerate this story's test cases from the CURRENT acceptance criteria (AI). Rewritten IN PLACE — id, schedule position and links survive; % complete resets to 0. Use after editing the story or its criteria.">🧪↻</button>` : ''}</span>
           </span>
         </summary>
         <div style="padding:0 1rem 0.75rem">
