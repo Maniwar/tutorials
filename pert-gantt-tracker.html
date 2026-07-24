@@ -545,6 +545,15 @@
     .ac-text { font-size: 0.8rem; line-height: 1.5; }
     /* test cases shown under an acceptance criterion (story card + story editor) */
     .ac-tcs { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.3rem 0 0; }
+    /* linked activities inside an expanded story: full name + jump actions */
+    .story-links { border: 1px solid var(--border); border-radius: 8px; padding: 0.4rem 0.55rem; margin-bottom: 0.5rem; background: #f8fafc; }
+    .story-links-cap { font-size: 0.64rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 0.25rem; }
+    .story-link { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding: 0.2rem 0; font-size: 0.78rem; }
+    .story-link + .story-link { border-top: 1px dashed var(--border); }
+    .sl-wbs { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 700; white-space: nowrap; }
+    .sl-name { font-weight: 600; }
+    .sl-meta { color: var(--muted); font-size: 0.72rem; }
+    .sl-go { margin-left: auto; display: flex; gap: 0.25rem; }
     /* a test case reads as one unit: its name, then its own status pill */
     .ac-tc { display: inline-flex; align-items: stretch; border: 1px solid var(--border); border-radius: 999px; overflow: hidden;
              font-size: 0.72rem; line-height: 1.7; cursor: pointer; max-width: 100%; background: #fff; }
@@ -5322,6 +5331,26 @@
       return false;
     }
     function visibleWbsOrder() { return tasksInWbsOrder().filter(({ task }) => !hasCollapsedAncestor(task)); }
+    // Jump from anywhere (a story card, the matrix) to an activity in the plan:
+    // expand its ancestors, switch to the WBS view, scroll it into frame and flash
+    // it so the eye lands on the right row.
+    function showActivityInPlan(id) {
+      if (id == null) return;
+      if (document.getElementById('storyModal').classList.contains('open')) closeStoryModal();
+      if (document.getElementById('modal').classList.contains('open')) closeModal();
+      let cur = tasks.find(x => x.id === id), guard = 0;
+      while (cur && cur.parentId != null && guard++ < 1000) { collapsedIds.delete(cur.parentId); cur = tasks.find(x => x.id === cur.parentId); }
+      switchTab('wbs');
+      renderWBS();
+      const row = document.querySelector('#wbsContainer tr[data-wbsrow="' + id + '"]');
+      if (row) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        row.style.transition = 'background 0.4s';
+        const orig = row.style.background;
+        row.style.background = '#fef9c3';
+        setTimeout(() => { row.style.background = orig; }, 2200);
+      }
+    }
     function viewInWbs() {
       const id = editingId;
       closeModal();
@@ -7661,6 +7690,19 @@
           </span>
         </summary>
         <div style="padding:0 1rem 0.75rem">
+          ${linkTasks.length ? `<div class="story-links">
+            <div class="story-links-cap">Builds this story</div>
+            ${linkTasks.map((lt, i) => { const p2 = lt.percentComplete || 0; return `<div class="story-link">
+              <span class="sl-wbs">${escapeHtml(lt.wbs || '')}</span>
+              <span class="sl-name">${escapeHtml(lt.name)}${i === 0 && linkTasks.length > 1 ? ' <span class="help-text">(primary)</span>' : ''}</span>
+              <span class="sl-meta">${lt.owner ? escapeHtml(lt.owner) : '<span class="help-text">unassigned</span>'}${calculated && lt.startDate ? ' · ' + escapeHtml(fmtNice(lt.startDate) + ' → ' + fmtNice(lt.finishDate)) : ''}</span>
+              <span class="badge ${p2 >= 100 ? 'badge-done' : p2 > 0 ? 'badge-prog' : 'badge-notstarted'}">${p2 >= 100 ? '✓ done' : p2 > 0 ? p2 + '%' : 'not started'}</span>
+              <span class="sl-go">
+                <button class="btn-sm btn-secondary" onclick="event.preventDefault();event.stopPropagation();openEditModal(${lt.id}, true)" title="Open the activity editor — estimate, owner, dependencies, dictionary">✎ Edit</button>
+                <button class="btn-sm btn-secondary" onclick="event.preventDefault();event.stopPropagation();showActivityInPlan(${lt.id})" title="Show this activity in the WBS, expanded and highlighted">→ In plan</button>
+              </span>
+            </div>`; }).join('')}
+          </div>` : ''}
           ${acHtml ? `<ul class="ac-list">${acHtml}</ul>` : '<p class="help-text">No acceptance criteria yet — untestable stories cannot be accepted or invoiced.</p>'}
           ${(s.nfrs || []).length ? `<div style="margin-top:0.4rem;display:flex;gap:0.35rem;flex-wrap:wrap">${s.nfrs.map(n => `<span class="risk-tag" style="background:#ede9fe;color:#6d28d9;cursor:help" title="Non-functional requirement — often the largest cost driver; must be Required, N/A or Excluded, never blank">NFR: ${escapeHtml(n)}</span>`).join('')}</div>` : ''}
           ${(s.assumptions || []).length ? `<div class="help-text" style="margin-top:0.35rem;font-size:0.75rem" title="A: assumptions (with impact if false) — D: client dependencies (with slip consequence)">${s.assumptions.map(a => '• ' + escapeHtml(a)).join('<br/>')}</div>` : ''}
