@@ -2522,14 +2522,15 @@
         <input class="att-units" type="number" min="0" step="5" value="${att.units}" title="Units % for this attendee" />
         <button type="button" class="btn-sm btn-danger" onclick="this.parentElement.closest('.dep-row').remove()" aria-label="Remove dependency">✕</button>`;
       wrap.appendChild(row);
-      // touch-safe suggestion popup instead of the native <datalist>; chain adds
-      // several attendees fast, ✓ marks those already added (tap a ✓ to remove).
-      attachTokenSuggest(row.querySelector('.att-name'),
+      // touch-safe popup instead of the native <datalist>. A person already added
+      // in ANOTHER row is HIDDEN from the list (no duplicates); remove with ✕.
+      // chain adds several fast.
+      const attInp = row.querySelector('.att-name');
+      attachTokenSuggest(attInp,
         () => [...document.getElementById('ownerList').options].map(o => o.value),
         roleHintPlain, {
           persist: true, single: true,
-          isChecked: l => [...document.querySelectorAll('#attRows .att-name')].some(x => x.value === l),
-          onRemove: l => { const r = [...document.querySelectorAll('#attRows .att-name')].find(x => x.value === l); if (r) r.closest('.dep-row').remove(); },
+          exclude: l => [...document.querySelectorAll('#attRows .att-name')].some(x => x !== attInp && x.value === l),
           chain: () => { addAttRow(); const xs = [...document.querySelectorAll('#attRows .att-name')]; if (xs.length) xs[xs.length - 1].focus(); },
         });
     }
@@ -2548,17 +2549,16 @@
         <button type="button" class="btn-sm btn-danger" onclick="this.parentElement.remove()" aria-label="Remove row">✕</button>`;
       wrap.appendChild(row);
       // own touch-safe popup instead of the native <datalist> (which won't open
-      // on many phones); labels read fresh from predDatalist at focus time.
-      // chain = pick one, get a fresh row + reopen so several predecessors add
-      // fast; ✓ marks tasks already chosen — tap a ✓ to remove it.
-      attachTokenSuggest(row.querySelector('.dep-id-input'),
+      // on many phones). An activity already linked in ANOTHER row is HIDDEN from
+      // the list, so a duplicate can't be added; remove one with the row's ✕.
+      // chain = pick one and a fresh row opens, so several add fast. Compare by
+      // resolved task id (a loaded row stores "wbs · name", options are indented).
+      const depInp = row.querySelector('.dep-id-input');
+      attachTokenSuggest(depInp,
         () => [...document.getElementById('predDatalist').options].map(o => o.value),
         null, {
           persist: true, single: true,
-          // compare by RESOLVED task id — a loaded row stores "wbs · name" while
-          // the options are indented labels, so a raw === would never match
-          isChecked: l => { const id = resolveTaskRef(l, modalRefMap); return id != null && [...document.querySelectorAll('#depRows .dep-id-input')].some(x => resolveTaskRef(x.value, modalRefMap) === id); },
-          onRemove: l => { const id = resolveTaskRef(l, modalRefMap); const r = [...document.querySelectorAll('#depRows .dep-id-input')].find(x => resolveTaskRef(x.value, modalRefMap) === id); if (r) r.closest('.dep-row').remove(); },
+          exclude: l => { const id = resolveTaskRef(l, modalRefMap); return id != null && [...document.querySelectorAll('#depRows .dep-id-input')].some(x => x !== depInp && resolveTaskRef(x.value, modalRefMap) === id); },
           chain: () => { addDepRow(); const xs = [...document.querySelectorAll('#depRows .dep-id-input')]; if (xs.length) xs[xs.length - 1].focus(); },
         });
     }
@@ -2811,12 +2811,11 @@
       const pop = document.createElement('div');
       pop.className = 'suggest-pop';
       pop.setAttribute('role', 'listbox');
-      // Append INSIDE the field's modal overlay (not <body>) so openOverlay's
-      // setBackgroundInert — which marks every <body> child except the modal as
-      // inert — can't mark the popup inert (an inert popup is skipped by
-      // hit-testing, so taps fall through to the field behind it). Inline-table
-      // editors have no modal, so they fall back to <body>.
-      (inp.closest('.modal-overlay') || document.body).appendChild(pop);
+      // Popup lives on <body> (position:fixed, above the modal). openOverlay's
+      // setBackgroundInert explicitly SKIPS .suggest-pop, so it is never marked
+      // inert — an inert popup is skipped by hit-testing, which makes taps fall
+      // through to the field behind it (the 'clicking does nothing' bug).
+      document.body.appendChild(pop);
       inp._suggestPop = pop;
       let items = [], sel = -1, typed = false, popActive = false, docDown = null;
       // position:fixed + flip up when there isn't room below, and never spill off-screen
@@ -2866,6 +2865,7 @@
         } else {
           items = all.filter(l => norm(l).indexOf(tl) >= 0);
         }
+        if (opts.exclude) items = items.filter(l => !opts.exclude(l));  // hide already-added entries so a duplicate can't be added
         items = items.slice(0, 60); // the popover scrolls — never hide options behind a tiny cap
         sel = -1;
         if (!items.length) { closePop(); return; }
@@ -11917,7 +11917,9 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
       while (node && node !== document.body) {
         const parent = node.parentElement;
         if (parent) Array.from(parent.children).forEach(sib => {
-          if (sib !== node) { if (on) sib.setAttribute('inert', ''); else sib.removeAttribute('inert'); }
+          // never inert the type-ahead popups (body children) — an inert popup is
+          // skipped by hit-testing, so taps fall straight through it
+          if (sib !== node && !sib.classList.contains('suggest-pop')) { if (on) sib.setAttribute('inert', ''); else sib.removeAttribute('inert'); }
         });
         node = parent;
       }
