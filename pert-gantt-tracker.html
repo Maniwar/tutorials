@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#0f172a" />
+  <meta http-equiv="Cache-Control" content="no-cache, must-revalidate" />
   <title>Engagement PERT &amp; Gantt Tracker</title>
   <style>
     :root {
@@ -540,6 +541,12 @@
       .pa-row { grid-template-columns: 2.4rem 1fr auto; }
       .pa-row .pa-bar { grid-column: 1 / -1; }
     }
+    /* time-spent state in the % column: an unmissable amber ⏱ when progress was
+       recorded without effort, the logged duration itself once it is there */
+    .eff-missing { cursor: pointer; font-size: var(--t-xs); font-weight: 700; line-height: 1; padding: 0.15rem 0.3rem; border-radius: 999px; background: #fef3c7; color: #b45309; border: 1px solid #fcd34d; }
+    .eff-missing:hover { background: #fde68a; }
+    .eff-ok { cursor: pointer; font-size: var(--t-xs); color: var(--muted); font-variant-numeric: tabular-nums; padding: 0.1rem 0.2rem; border-radius: 4px; }
+    .eff-ok:hover { background: #eff6ff; color: var(--primary); }
     /* task-backed table rows that open the editor on a single click/tap */
     tr.row-edit { transition: background .1s ease; }
     @media (hover: hover) { tr.row-edit:hover > td { background: #eff6ff; } }
@@ -1424,6 +1431,7 @@
 
   <footer>
     All data stays in your browser.
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.24.2051</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3263,6 +3271,13 @@
 
       const pct = Math.min(100, Math.max(0, parseFloat(document.getElementById('mPct').value) || 0));
       const owner = document.getElementById('mOwner').value.trim();
+      // progress and effort are entered side by side in the Progress & actuals
+      // panel now, so requiring both together is a one-field ask, not a detour
+      if (!isSum && !isMs && pct > 0 && !document.getElementById('mActualEffort').value.trim()) {
+        const ae = document.getElementById('mActualEffort');
+        ae.focus();
+        return showErr(effortRequiredMsg(pct));
+      }
       let units = parseFloat(document.getElementById('mUnits').value);
       if (isNaN(units) || units < 0) units = 100;
       const fixedCost = Math.max(0, parseFloat(document.getElementById('mFixedCost').value) || 0);
@@ -3373,6 +3388,48 @@
     // 100% stamps actualFinish (today). Auto-stamped dates are TAGGED so they
     // never overwrite a manually entered date — and un-checking removes only
     // the auto-stamped ones, never yours.
+    // ===== TIME SPENT IS REQUIRED WHENEVER PROGRESS IS RECORDED =====
+    // Progress without logged effort is the one gap that poisons everything
+    // downstream: the estimate bank only counts rows whose basis is 'logged'
+    // (a date span measures elapsed time, not work), so a task marked 60% with
+    // no time against it teaches the next project nothing and quietly makes the
+    // actual-cost figure fall back to a cruder derivation. Summaries and
+    // auto-tracked milestones are exempt — neither owns its own percentage.
+    function needsEffort(t) {
+      if (!t || t.isSummary || isSummaryId(t.id)) return false;
+      if (t.milestone) return false;              // a milestone is a date, not work
+      if ((t.percentComplete || 0) <= 0) return false;
+      return t.actualEffort == null;
+    }
+    function tasksNeedingEffort() { return leafTasks().filter(needsEffort); }
+    // one place that phrases the ask, so the modal, the table and the banner agree
+    function effortRequiredMsg(pct) {
+      return 'Time spent is required once an activity has progress' + (pct >= 100 ? ' — this one is marked complete' : ' — this one is at ' + Math.round(pct) + '%')
+        + '. Log the real effort (20m · 1.5h · 2d) so the actual cost and the estimate bank measure work rather than elapsed days.';
+    }
+    // inline log-time editor, reusing the table's own cell-edit convention
+    function beginEffortEdit(id, td) {
+      const t = tasks.find(x => x.id === id); if (!t) return;
+      beginCellEdit(td, `<input type="text" inputmode="text" value="${t.actualEffort == null ? '' : fmtDurCell(t.actualEffort)}" placeholder="20m · 1.5h · 2d" style="width:110px;padding:0.3rem 0.4rem;font-size:0.8rem" title="Real effort worked on this activity — not the elapsed calendar window" />`, v => {
+        if (!v.trim()) {
+          if (t.actualEffort == null) return '';
+          t.actualEffort = null; return '';
+        }
+        const n = parseDurExpr(v);
+        if (isNaN(n) || n < 0) return 'Enter a duration — 20m, 1.5h, 2d, or "1d 4h"';
+        t.actualEffort = n;
+        window.__rowFlash = id;
+        return '';
+      });
+    }
+    // after a quick check-off there is nothing on screen asking for the effort,
+    // so put the cursor straight in the cell that is now missing it
+    function promptEffortFor(id) {
+      requestAnimationFrame(() => {
+        const td = document.querySelector(`#taskBody td[data-effort-id="${id}"]`);
+        if (td) beginEffortEdit(id, td);
+      });
+    }
     function applyPctActuals(t, prevPct) {
       if (!t || t.isSummary) return;
       const today = fmtISO(new Date());
@@ -3413,6 +3470,10 @@
         if (active('baseline')) renderBaseline();
         if (active('wbs')) renderWBS();
       }
+      // A checkbox click is one gesture; blocking it would just discard the click
+      // and teach nothing. Record the progress, then put the cursor in the cell
+      // that is now missing its effort so the pair is completed in one motion.
+      if (needsEffort(t)) promptEffortFor(id);
     }
 
     // ========================= STATUS HELPERS =========================
@@ -4128,7 +4189,9 @@
           ? `<span title="Rolled up automatically from sub-tasks, weighted by expected duration (TE) — check off the children and this updates itself">${calculated ? (t.percentComplete || 0) + '%' : '—'} <span class="help-text" style="font-size:0.65rem">auto</span></span>`
           : (t.milestone && effectivePreds(t).length)
             ? `<span class="badge ${t.percentComplete >= 100 ? 'badge-done' : 'badge-notstarted'}" title="Tracked automatically — complete when every predecessor reaches 100%">${t.percentComplete >= 100 ? '✓ auto' : 'auto'}</span>`
-            : `<span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap"><input type="checkbox" ${t.percentComplete >= 100 ? 'checked' : ''} onclick="event.stopPropagation()" onchange="updatePct(${t.id}, this.checked ? 100 : 0)" title="Check off = 100% done (uncheck = 0%). Phase and project %s recompute instantly, TE-weighted." style="width:15px;height:15px;cursor:pointer;accent-color:var(--success)" /><input class="mini-inp" type="number" min="0" max="100" value="${t.percentComplete}" onchange="updatePct(${t.id}, this.value)" onclick="event.stopPropagation()" title="Or type a partial %" /></span>`;
+            : `<span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap"><input type="checkbox" ${t.percentComplete >= 100 ? 'checked' : ''} onclick="event.stopPropagation()" onchange="updatePct(${t.id}, this.checked ? 100 : 0)" title="Check off = 100% done (uncheck = 0%). Phase and project %s recompute instantly, TE-weighted." style="width:15px;height:15px;cursor:pointer;accent-color:var(--success)" /><input class="mini-inp" type="number" min="0" max="100" value="${t.percentComplete}" onchange="updatePct(${t.id}, this.value)" onclick="event.stopPropagation()" title="Or type a partial %" />${needsEffort(t)
+                ? `<span class="eff-missing" onclick="event.stopPropagation();beginEffortEdit(${t.id}, this.closest('td'))" title="${escapeHtml(effortRequiredMsg(t.percentComplete || 0))} Click to log it here.">⏱</span>`
+                : (t.actualEffort != null ? `<span class="eff-ok" onclick="event.stopPropagation();beginEffortEdit(${t.id}, this.closest('td'))" title="Time spent: ${escapeHtml(fmtDurCell(t.actualEffort))} — click to change">${escapeHtml(fmtDurCell(t.actualEffort))}</span>` : '')}</span>`;
         return `<tr draggable="true" data-task-id="${t.id}" class="${t.isCritical && !t.milestone && !summary && (t.percentComplete || 0) < 100 ? 'critical' : ''} ${isLate(t) ? 'late' : ''} ${calculated && sumDone ? 'sum-done' : ''}" style="${summary ? 'font-weight:600;background:#f8fafc' : ''}${selectedTaskIds.has(t.id) ? ';outline:2px solid #93c5fd;outline-offset:-2px' : ''}">
           <td class="no-print"><input type="checkbox" data-selid="${t.id}" ${selectedTaskIds.has(t.id) ? 'checked' : ''} onclick="taskRowCheckClick(event, ${t.id}, this)" title="Select for bulk edit${summary ? ' — includes every sub-task' : ''}. Shift-click selects the whole range from the last box you clicked." style="width:14px;height:14px;cursor:pointer" /></td>
           <td title="Drag to reorder / re-nest"><button type="button" class="drag-handle" aria-label="Reorder ${escapeHtml(t.name)} — Alt+ArrowUp/ArrowDown moves it" data-drag-id="${t.id}">⠿</button></td>
@@ -4149,7 +4212,7 @@
             return `<td data-start-id="${t.id}" style="font-size:var(--t-md);white-space:nowrap;cursor:text" onclick="beginStartEdit(${t.id}, this)" title="${t.startNoEarlier ? 'Pinned: starts no earlier than ' + t.startNoEarlier + '. ' : ''}Click to pin a start date (start-no-earlier-than). Dependencies can push the start LATER than the pin, never earlier. Clear the date to unpin.">${t.startNoEarlier ? '📌 ' : ''}${calculated ? fmtNice(t.startDate) : (t.startNoEarlier || '—')}</td>
           <td data-finish-id="${t.id}" style="font-size:var(--t-md);white-space:nowrap;cursor:text" onclick="beginFinishEdit(${t.id}, this)" title="${t.deadline ? 'Deadline ⚑ ' + t.deadline + (breach ? ' — BREACHED by the current forecast. ' : '. ') : ''}Finish is computed from estimates + dependencies. Click to set a deadline (commitment marker) — the ⚑ turns red if the forecast slips past it.">${calculated ? fmtNice(t.finishDate) : '—'}${t.deadline ? ` <span style="color:${breach ? '#dc2626;font-weight:700' : '#64748b'}">⚑</span>` : ''}</td>`; })()}
           <td>${slackStr}</td>
-          <td>${pctCell}</td>
+          <td data-effort-id="${t.id}">${pctCell}</td>
           <td>${statusBadge}</td>
           <td style="white-space:nowrap">
             <button class="btn-sm btn-secondary" onclick="outdentTask(${t.id})" title="Outdent (promote a level)">⇤</button>
@@ -4253,7 +4316,9 @@
         applyPctActuals(t, prev);
       });
       rollupProgress();
-      bulkApplyDone('✓ ' + n + ' task(s) set to ' + v + '%');
+      const missing = tasksNeedingEffort().length;
+      bulkApplyDone('✓ ' + n + ' task(s) set to ' + v + '%'
+        + (missing ? ' — ⏱ ' + missing + ' now need time spent logged (click the ⏱ in the % column)' : ''));
     }
     function bulkScaleEst() {
       const f = parseFloat(document.getElementById('bulkScale').value);
@@ -6296,7 +6361,7 @@
               ${card(fmtMoney(PV), 'Planned value (PV)', usingBaseline ? 'baseline work due by today' : 'scheduled work by today', null)}
               ${card(fmtMoney(ev), 'Earned value (EV)', 'monetary value of work done', null)}
               ${card(fmtMoney(AC), 'Actual cost (AC)', 'entered on tasks', null)}
-              ${card((SV >= 0 ? '+' : '') + fmtMoney(SV).replace('$', SV < 0 ? '−$' : '$'), 'Schedule variance (SV)', 'EV − PV', SV < -BAC * 0.02)}
+              ${card((SV >= 0 ? '+' : '') + fmtMoney(Math.abs(SV)).replace('$', SV < 0 ? '−$' : '$'), 'Schedule variance (SV)', 'EV − PV', SV < -BAC * 0.02)}
               ${card(CV == null ? '—' : (CV >= 0 ? '+' : '') + fmtMoney(Math.abs(CV)).replace('$', CV < 0 ? '−$' : '$'), 'Cost variance (CV)', CV == null ? 'needs actual costs' : 'EV − AC', CV == null ? null : CV < 0)}
               ${card(SPI == null ? '—' : SPI.toFixed(2), 'SPI', SPI == null ? '' : SPI < 1 ? 'behind schedule' : 'on/ahead of schedule', SPI == null ? null : SPI < 0.95)}
               ${card(CPI == null ? '—' : CPI.toFixed(2), 'CPI', CPI == null ? 'needs actual costs' : CPI < 1 ? 'over cost' : 'under cost', CPI == null ? null : CPI < 0.95)}
@@ -10990,8 +11055,29 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           'Every defect with 2 failed retests is flagged for architect review with L. Chen named and a review date, that review appears in the triage minutes for that date with L. Chen present and a dated outcome, and the first status report after the second failure names the defect and gives either a new UAT sign-off date or an explicit statement that it is unchanged. A booked-but-unheld review, a silent status report, or a report naming the defect without a sign-off position all fail. With no twice-failed defect in the window, the recorded retest total is the result.')
       ];
       // in-flight progress so completeness indicators / handoff report show real data
-      const pcts = { 1: 100, 2: 100, 3: 100, 4: 60, 5: 30 };
-      tasks.forEach(t => { if (pcts[t.id] != null) t.percentComplete = pcts[t.id]; });
+      // An engagement three weeks in, with REAL logged effort — not just percentages.
+      // The start date has to sit in the past or the plan claims work finished before
+      // it began, which is what made planned value and every EVM index read as zero.
+      // Effort is deliberately mixed (some over, some under) so the estimate bank,
+      // the variance readouts and the health header all have something true to show.
+      const dayMs = 86400000, t0 = new Date(Date.now() - 17 * dayMs);
+      const psEl = document.getElementById('projectStart');
+      if (psEl) psEl.value = fmtISO(t0);
+      const on = n => fmtISO(new Date(t0.getTime() + n * dayMs));
+      //           pct, effort logged, actual start, actual finish
+      const seed = {
+        1: [100, 3.5,  on(0),  on(4)],    // ran 1.10x the 3.17d estimate
+        2: [100, 6,    on(4),  on(12)],   // 1.16x — interviews always slip
+        3: [100, 2.5,  on(7),  on(10)],   // 0.83x — came in under
+        4: [60,  4.5,  on(12), ''],       // 71% of the estimate spent at 60% done
+        5: [30,  1.5,  on(15), '']        // roughly on pace
+      };
+      tasks.forEach(t => {
+        const s = seed[t.id]; if (!s) return;
+        t.percentComplete = s[0]; t.actualEffort = s[1];
+        t.actualStart = s[2]; t.actualFinish = s[3];
+        t.autoActualStart = false; t.autoActualFinish = false;   // these are recorded facts, not stamps
+      });
       nextId = 42;
       // roster with ROLES + side — every view (tables, Gantt, SOW, emails) shows who does what
       resources = {
@@ -12073,6 +12159,7 @@ Estimate rules: an estimates[] entry ONLY for rows where new O/M/P numbers were 
           if (up.actualEffort != null && String(up.actualEffort).trim()) {   // reported effort, at whatever resolution they gave
             const eff = Number.isFinite(+up.actualEffort) ? +up.actualEffort : parseDurExpr(String(up.actualEffort));
             if (Number.isFinite(eff) && eff >= 0 && eff !== t.actualEffort) { t.actualEffort = eff; changed++; }
+            // (reported effort recorded; anything still missing is counted below)
           }
         });
         (res.newRisks || []).forEach(r => {
