@@ -216,6 +216,15 @@
       details.refx-row:not([open]) > .refx-body { display: block !important; }
       .req-back, .refx-go { display: none !important; }
     }
+    /* Touch-first type-ahead popup (replaces the flaky native <datalist>) */
+    .suggest-pop { position: fixed; z-index: 320; background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--sh-3); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; display: none; padding: 4px; }
+    .suggest-item { display: flex; align-items: center; gap: .4rem; min-height: 40px; padding: .45rem .55rem; border-radius: 8px; cursor: pointer; font-size: var(--t-md); color: var(--text); white-space: nowrap; }
+    .suggest-item:hover, .suggest-item.active { background: #eff6ff; }
+    .suggest-item.on { color: var(--primary); font-weight: 600; }
+    .suggest-mark { flex: 0 0 1rem; width: 1rem; text-align: center; color: var(--primary); font-weight: 700; }
+    .suggest-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+    .suggest-hint { color: var(--muted); font-size: .72rem; font-weight: 400; }
+    @media (max-width: 640px) { .suggest-item { min-height: 48px; font-size: 16px; } .suggest-hint { font-size: .8rem; } }
     .empty-state { text-align: center; padding: 3rem 1rem; color: var(--muted); }
     .empty-state h3 { margin-bottom: 0.5rem; color: var(--text); }
     /* Modal */
@@ -1264,7 +1273,7 @@
         <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:0.75rem">
           <div class="form-group">
             <label for="mOwner">Owner / resource</label>
-            <input id="mOwner" type="text" placeholder="e.g. A. Rivera" list="ownerList" oninput="updateOwnerRoleHint()" onchange="updateOwnerRoleHint()" />
+            <input id="mOwner" type="text" placeholder="e.g. A. Rivera" autocomplete="off" oninput="updateOwnerRoleHint()" onchange="updateOwnerRoleHint()" />
             <datalist id="ownerList"></datalist>
             <div id="mOwnerRole" style="margin-top:2px"></div>
           </div>
@@ -2271,7 +2280,7 @@
       document.getElementById('mFixedCost').value = 0;
       document.getElementById('mMilestone').checked = !!isMilestone;
       document.getElementById('modalError').style.display = 'none';
-      document.querySelectorAll('#depRows .dep-id-input').forEach(i => { if (i._suggestPop) i._suggestPop.remove(); });
+      document.querySelectorAll('#depRows .dep-id-input, #attRows .att-name').forEach(i => { if (i._suggestPop) i._suggestPop.remove(); });
       document.getElementById('depRows').innerHTML = '';
       document.getElementById('attRows').innerHTML = '';
       document.getElementById('mDesc').value = '';
@@ -2283,12 +2292,8 @@
       populateOwnerList();
       modalRefMap = buildTaskDatalist('predDatalist', t => true);
       buildTaskDatalist('parentDatalist', t => !t.milestone);
-      const mpNew = document.getElementById('mParent');
-      mpNew.value = '';
-      if (!mpNew._suggestAttached) {                     // touch-safe popup replaces the native <datalist>
-        mpNew._suggestAttached = true;
-        attachTokenSuggest(mpNew, () => [...document.getElementById('parentDatalist').options].map(o => o.value), null, { persist: true, single: true });
-      }
+      document.getElementById('mParent').value = '';
+      ensureModalSuggests();
       toggleMilestoneFields();
       openOverlay(document.getElementById('modal'));
       document.getElementById('mName').focus();
@@ -2361,7 +2366,7 @@
       document.getElementById('mMilestone').checked = !!t.milestone;
       document.getElementById('modalError').style.display = 'none';
       // drop orphaned predecessor popups before their inputs are destroyed
-      document.querySelectorAll('#depRows .dep-id-input').forEach(i => { if (i._suggestPop) i._suggestPop.remove(); });
+      document.querySelectorAll('#depRows .dep-id-input, #attRows .att-name').forEach(i => { if (i._suggestPop) i._suggestPop.remove(); });
       document.getElementById('depRows').innerHTML = '';
       document.getElementById('attRows').innerHTML = '';
       (t.attendees || []).forEach(a => addAttRow(a));
@@ -2378,12 +2383,8 @@
       modalRefMap = buildTaskDatalist('predDatalist', x => x.id !== id);
       buildTaskDatalist('parentDatalist', x => !x.milestone && x.id !== id && !allDescendants(id).some(d => d.id === x.id));
       const curPar = tasks.find(x => x.id === t.parentId);
-      const mParentEl = document.getElementById('mParent');
-      mParentEl.value = curPar ? ((curPar.wbs ? curPar.wbs + ' · ' : '') + curPar.name) : '';
-      if (!mParentEl._suggestAttached) {                 // touch-safe popup replaces the native <datalist>
-        mParentEl._suggestAttached = true;
-        attachTokenSuggest(mParentEl, () => [...document.getElementById('parentDatalist').options].map(o => o.value), null, { persist: true, single: true });
-      }
+      document.getElementById('mParent').value = curPar ? ((curPar.wbs ? curPar.wbs + ' · ' : '') + curPar.name) : '';
+      ensureModalSuggests();
       t.predecessors.forEach(p => addDepRow(p));
       toggleMilestoneFields();
       refreshTaskStoriesPanel(id);
@@ -2515,11 +2516,21 @@
       row.className = 'dep-row';
       row.style.gridTemplateColumns = '3fr 1fr auto';
       row.innerHTML = `
-        <div style="min-width:0"><input class="att-name" list="ownerList" value="${escapeHtml(att.name)}" placeholder="Type resource name…" autocomplete="off" style="width:100%" oninput="this.parentElement.querySelector('.att-role').innerHTML = ownerRoleHintHtml(this.value)" />
+        <div style="min-width:0"><input class="att-name" value="${escapeHtml(att.name)}" placeholder="Type resource name…" autocomplete="off" style="width:100%" oninput="this.parentElement.querySelector('.att-role').innerHTML = ownerRoleHintHtml(this.value)" onchange="this.parentElement.querySelector('.att-role').innerHTML = ownerRoleHintHtml(this.value)" />
         <div class="att-role" style="margin-top:1px">${ownerRoleHintHtml(att.name)}</div></div>
         <input class="att-units" type="number" min="0" step="5" value="${att.units}" title="Units % for this attendee" />
         <button type="button" class="btn-sm btn-danger" onclick="this.parentElement.closest('.dep-row').remove()" aria-label="Remove dependency">✕</button>`;
       wrap.appendChild(row);
+      // touch-safe suggestion popup instead of the native <datalist>; chain adds
+      // several attendees fast, ✓ marks those already added (tap a ✓ to remove).
+      attachTokenSuggest(row.querySelector('.att-name'),
+        () => [...document.getElementById('ownerList').options].map(o => o.value),
+        roleHintPlain, {
+          persist: true, single: true,
+          isChecked: l => [...document.querySelectorAll('#attRows .att-name')].some(x => x.value === l),
+          onRemove: l => { const r = [...document.querySelectorAll('#attRows .att-name')].find(x => x.value === l); if (r) r.closest('.dep-row').remove(); },
+          chain: () => { addAttRow(); const xs = [...document.querySelectorAll('#attRows .att-name')]; if (xs.length) xs[xs.length - 1].focus(); },
+        });
     }
     function addDepRow(pred) {
       pred = pred || { id: null, type: 'FS', lag: 0 };
@@ -2536,10 +2547,17 @@
         <button type="button" class="btn-sm btn-danger" onclick="this.parentElement.remove()" aria-label="Remove row">✕</button>`;
       wrap.appendChild(row);
       // own touch-safe popup instead of the native <datalist> (which won't open
-      // on many phones); labels read fresh from predDatalist at focus time
+      // on many phones); labels read fresh from predDatalist at focus time.
+      // chain = pick one, get a fresh row + reopen so several predecessors add
+      // fast; ✓ marks tasks already chosen — tap a ✓ to remove it.
       attachTokenSuggest(row.querySelector('.dep-id-input'),
         () => [...document.getElementById('predDatalist').options].map(o => o.value),
-        null, { persist: true, single: true });
+        null, {
+          persist: true, single: true,
+          isChecked: l => [...document.querySelectorAll('#depRows .dep-id-input')].some(x => x.value === l),
+          onRemove: l => { const r = [...document.querySelectorAll('#depRows .dep-id-input')].find(x => x.value === l); if (r) r.closest('.dep-row').remove(); },
+          chain: () => { addDepRow(); const xs = [...document.querySelectorAll('#depRows .dep-id-input')]; if (xs.length) xs[xs.length - 1].focus(); },
+        });
     }
     function saveActivity() {
       const name = document.getElementById('mName').value.trim();
@@ -2788,14 +2806,41 @@
       opts = opts || {};                                  // {persist, single}
       const L = () => (typeof labels === 'function' ? labels() : labels);  // fresh list per render
       const pop = document.createElement('div');
-      pop.style.cssText = 'position:absolute;z-index:300;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 25px -5px rgb(0 0 0 /.25);max-height:230px;overflow-y:auto;display:none';
+      pop.className = 'suggest-pop';
+      pop.setAttribute('role', 'listbox');
       document.body.appendChild(pop);
       inp._suggestPop = pop;
-      let items = [], sel = -1, typed = false;
-      const place = () => { const r = inp.getBoundingClientRect(); pop.style.left = (r.left + window.scrollX) + 'px'; pop.style.top = (r.bottom + window.scrollY + 2) + 'px'; pop.style.minWidth = Math.max(240, r.width) + 'px'; };
+      let items = [], sel = -1, typed = false, popActive = false, docDown = null;
+      // position:fixed + flip up when there isn't room below, and never spill off-screen
+      const place = () => {
+        const r = inp.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
+        const below = vh - r.bottom - 12, above = r.top - 12, flip = below < 220 && above > below;
+        pop.style.maxHeight = Math.max(150, Math.min(340, flip ? above : below)) + 'px';
+        const w = Math.min(Math.max(260, r.width), vw - 16);
+        pop.style.width = w + 'px';
+        pop.style.left = Math.round(Math.max(8, Math.min(r.left, vw - w - 8))) + 'px';
+        if (flip) { pop.style.top = 'auto'; pop.style.bottom = Math.round(vh - r.top + 6) + 'px'; }
+        else { pop.style.bottom = 'auto'; pop.style.top = Math.round(r.bottom + 6) + 'px'; }
+      };
+      const closePop = () => { pop.style.display = 'none'; if (docDown) { document.removeEventListener('pointerdown', docDown, true); docDown = null; } if (!opts.persist) pop.remove(); };
+      const armOutside = () => { if (docDown) return; docDown = e => { if (e.target !== inp && !pop.contains(e.target)) closePop(); }; document.addEventListener('pointerdown', docDown, true); };
       const bounds = () => { if (opts.single) return { prefix: '', token: inp.value.trim() }; const v = inp.value; const cut = Math.max(v.lastIndexOf(','), v.lastIndexOf(';')); return { prefix: cut >= 0 ? v.slice(0, cut + 1) : '', token: v.slice(cut + 1).trim() }; };
-      const highlight = i => { sel = i; [...pop.children].forEach((el, j) => { el.style.background = j === i ? '#eff6ff' : ''; }); };
-      const pick = i => { if (!items[i]) return; if (opts.single) { inp.value = items[i]; typed = false; pop.style.display = 'none'; inp.focus(); return; } const { prefix } = bounds(); inp.value = (prefix ? prefix + ' ' : '') + items[i] + ', '; typed = false; render(); inp.focus(); };
+      const highlight = i => { sel = i; [...pop.children].forEach((el, j) => el.classList.toggle('active', j === i)); };
+      const commit = () => inp.dispatchEvent(new Event('change', { bubbles: true }));  // fire onchange (role hints etc.) after a programmatic pick
+      const pick = i => {
+        if (!items[i]) return;
+        if (opts.single) {
+          if (opts.chain && opts.isChecked && opts.isChecked(items[i])) {   // multi-add field: tapping a ✓'d item removes it
+            if (opts.onRemove) opts.onRemove(items[i]);
+            render(); inp.focus(); return;
+          }
+          inp.value = items[i]; typed = false; commit();
+          if (opts.chain) { closePop(); opts.chain(); }   // add-another flow (predecessors/attendees): fill this row + open a fresh one
+          else { closePop(); }                            // single field: set + close (don't refocus → no reopen)
+          return;
+        }
+        const { prefix } = bounds(); inp.value = (prefix ? prefix + ' ' : '') + items[i] + ', '; typed = false; commit(); render(); inp.focus();
+      };
       const render = () => {
         const tl = bounds().token.toLowerCase().replace(/ /g, '');
         const norm = l => l.toLowerCase().replace(/ /g, '').trim();
@@ -2811,34 +2856,54 @@
         } else {
           items = all.filter(l => norm(l).indexOf(tl) >= 0);
         }
-        items = items.slice(0, 40); // the popover scrolls — never hide options behind a tiny cap
+        items = items.slice(0, 60); // the popover scrolls — never hide options behind a tiny cap
         sel = -1;
-        if (!items.length) { pop.style.display = 'none'; return; }
-        pop.innerHTML = items.map((l, i) => { const h = hintFn ? hintFn(l) : ''; return `<div data-i="${i}" style="padding:0.35rem 0.6rem;font-size:0.8rem;cursor:pointer;white-space:nowrap">${escapeHtml(l)}${h ? ` <span style="color:var(--muted);font-size:0.68rem">${escapeHtml(h)}</span>` : ''}</div>`; }).join('');
-        place(); pop.style.display = 'block';
+        if (!items.length) { closePop(); return; }
+        const checkOf = opts.isChecked || (() => false);
+        pop.innerHTML = items.map((l, i) => { const on = checkOf(l), h = hintFn ? hintFn(l) : ''; return `<div class="suggest-item${on ? ' on' : ''}" data-i="${i}" role="option" aria-selected="${on}"><span class="suggest-mark" aria-hidden="true">${on ? '✓' : ''}</span><span class="suggest-label">${escapeHtml(l)}${h ? ` <span class="suggest-hint">${escapeHtml(h)}</span>` : ''}</span></div>`; }).join('');
+        place(); pop.style.display = 'block'; armOutside();
         [...pop.children].forEach(el => {
           // pointerdown fires for BOTH mouse and touch (mousedown alone is
           // unreliable on phones — the tap can blur-commit before it lands);
           // preventDefault keeps focus so the pick wins over the blur handler.
-          el.addEventListener('pointerdown', e => { e.preventDefault(); pick(+el.dataset.i); });
+          el.addEventListener('click', () => pick(+el.dataset.i));   // click = a tap without a scroll; lets the list scroll freely on touch
           el.addEventListener('mouseenter', () => highlight(+el.dataset.i));
         });
       };
+      // while a finger is down inside the popup (scrolling), don't let blur close it
+      pop.addEventListener('pointerdown', () => { popActive = true; document.addEventListener('pointerup', () => { popActive = false; }, { once: true, passive: true }); }, { passive: true });
       inp.addEventListener('input', () => { typed = true; render(); });
       inp.addEventListener('keydown', e => {
         if (pop.style.display === 'none') return;
         if (e.key === 'ArrowDown') { e.preventDefault(); highlight(Math.min(items.length - 1, sel + 1)); if (pop.children[sel]) pop.children[sel].scrollIntoView({ block: 'nearest' }); }
-        else if (e.key === 'ArrowUp') { e.preventDefault(); highlight(Math.max(0, sel - 1)); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); highlight(Math.max(0, sel - 1)); if (pop.children[sel]) pop.children[sel].scrollIntoView({ block: 'nearest' }); }
         else if (e.key === 'Enter' && sel >= 0) { e.preventDefault(); e.stopImmediatePropagation(); pick(sel); }
-        else if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); pop.style.display = 'none'; } // 1st Esc closes suggestions, 2nd cancels the edit
+        else if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); closePop(); }
       }, true); // capture: a suggestion pick must win over the editor's commit/cancel keys
       inp.addEventListener('focus', render);            // reopen on (re)focus — the mobile-safe replacement for a native datalist
-      inp.addEventListener('blur', () => setTimeout(() => { if (opts.persist) pop.style.display = 'none'; else pop.remove(); }, 120));
+      inp.addEventListener('blur', () => setTimeout(() => { if (!popActive) closePop(); }, 180));
       if (document.activeElement === inp) render();      // inline editors focus first; persistent modal fields don't show until focused
     }
     function removeSuggestPop(container) {
       const inp = container && container.querySelector ? container.querySelector('input') : null;
       if (inp && inp._suggestPop) { inp._suggestPop.remove(); inp._suggestPop = null; }
+    }
+    // The edit modal's Owner + WBS-parent fields use the app's own touch-safe
+    // suggestion popup instead of a native <datalist> (which won't open on many
+    // phones). Attached once; labels are read fresh from the datalist each focus.
+    function ensureModalSuggests() {
+      const own = document.getElementById('mOwner');
+      if (own && !own._suggestAttached) {
+        own._suggestAttached = true;
+        attachTokenSuggest(own, () => [...document.getElementById('ownerList').options].map(o => o.value), roleHintPlain,
+          { persist: true, single: true, isChecked: l => document.getElementById('mOwner').value === l });
+      }
+      const par = document.getElementById('mParent');
+      if (par && !par._suggestAttached) {
+        par._suggestAttached = true;
+        attachTokenSuggest(par, () => [...document.getElementById('parentDatalist').options].map(o => o.value), null,
+          { persist: true, single: true, isChecked: l => document.getElementById('mParent').value === l });
+      }
     }
     // ---- generic inline cell editing on the activity table ----
     // One cell edits at a time. Enter/blur commits, Esc cancels; the onCommit
@@ -7103,7 +7168,7 @@
       }).join('');
       const nAc = k => (s.ac || []).filter(a => a.type === k).length;
       const mix = `✅${nAc('happy')} ⚠️${nAc('error')} 🧪${nAc('edge')}${nAc('perf') ? ' 📏' + nAc('perf') : ''}`;
-      const sentence = `<b>${escapeHtml(s.id)}</b> — As a <b>${escapeHtml(s.persona || '?')}</b>, I want to ${escapeHtml(s.want || '?')}`;
+      const sentence = `<b>${escapeHtml(s.id)}</b> — As a <b>${escapeHtml(s.persona || '?')}</b>, I want to ${escapeHtml(s.want || '?')}<span style="color:var(--muted)">, so that ${escapeHtml(s.soThat || '?')}</span>`;
       return `<details class="story-card" id="story-card-${escapeHtml(s.id)}" ${warns.length ? 'open' : ''} style="background:#fff;border:1px solid var(--border);border-left:4px solid ${warns.length ? 'var(--warn)' : 'transparent'};border-radius:10px;margin-bottom:0.5rem">
         <summary style="list-style:none;cursor:pointer;display:flex;justify-content:space-between;gap:0.6rem;align-items:center;flex-wrap:wrap;padding:0.5rem 1rem">
           <span style="flex:1;min-width:240px;font-size:0.85rem">${sentence}</span>
@@ -7120,7 +7185,6 @@
           </span>
         </summary>
         <div style="padding:0 1rem 0.75rem">
-          <div class="help-text" style="font-size:0.78rem;margin-bottom:0.35rem">…so that ${escapeHtml(s.soThat || '?')}</div>
           ${acHtml ? `<ul style="list-style:none;margin:0;padding:0;font-size:0.82rem;line-height:1.5">${acHtml}</ul>` : '<p class="help-text">No acceptance criteria yet — untestable stories cannot be accepted or invoiced.</p>'}
           ${(s.nfrs || []).length ? `<div style="margin-top:0.4rem;display:flex;gap:0.35rem;flex-wrap:wrap">${s.nfrs.map(n => `<span class="risk-tag" style="background:#ede9fe;color:#6d28d9;cursor:help" title="Non-functional requirement — often the largest cost driver; must be Required, N/A or Excluded, never blank">NFR: ${escapeHtml(n)}</span>`).join('')}</div>` : ''}
           ${(s.assumptions || []).length ? `<div class="help-text" style="margin-top:0.35rem;font-size:0.75rem" title="A: assumptions (with impact if false) — D: client dependencies (with slip consequence)">${s.assumptions.map(a => '• ' + escapeHtml(a)).join('<br/>')}</div>` : ''}
