@@ -516,6 +516,17 @@
     .story-sentence .sc-id { font-size: 0.72rem; color: var(--muted); font-weight: 700; letter-spacing: 0.02em; }
     .story-sentence .sc-lead { color: var(--muted); font-weight: 700; font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 0.3rem; }
     .story-sentence .sc-muted { color: var(--muted); }
+    /* Wide screens: story cards flow into two columns instead of one long ribbon
+       with dead space on the right. An EXPANDED card spans both columns so its
+       acceptance criteria still get the full width to read in. */
+    @media (min-width: 1500px) {
+      .story-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 0.6rem; align-items: start; }
+      .story-grid > .story-card { margin-bottom: 0.5rem; }
+      .story-grid > .story-card[open] { grid-column: 1 / -1; }
+    }
+    @media (min-width: 2100px) {
+      .story-grid { grid-template-columns: 1fr 1fr 1fr; }
+    }
     /* audience filter toggle (Stories / Test cases) */
     .aud-filter { background: #fff; border: 1px solid var(--border); color: var(--muted); }
     .aud-filter.active { background: var(--primary); border-color: var(--primary); color: #fff; }
@@ -7556,11 +7567,11 @@
         list.forEach(s => rendered.add(s.id));
         return `<div style="margin-bottom:1.1rem">
           <h3 style="font-size:0.95rem;margin:0 0 0.5rem;cursor:${need ? 'help' : 'default'}" title="${escapeHtml(need || '')}">${escapeHtml(eid)}${title ? ' — ' + escapeHtml(title) : ''} <span class="help-text">(${list.length} stor${list.length === 1 ? 'y' : 'ies'})</span></h3>
-          ${list.map(s => storyCardHtml(s, idToTask, typeIcon, typeTip)).join('')}</div>`;
+          <div class="story-grid">${list.map(s => storyCardHtml(s, idToTask, typeIcon, typeTip)).join('')}</div></div>`;
       };
       epics.forEach(ep => { html += epicBlock(ep.id, ep.title, ep.businessNeed); });
       const leftovers = stories.filter(s => !rendered.has(s.id));
-      if (leftovers.length) html += `<div style="margin-bottom:1.1rem"><h3 style="font-size:0.95rem;margin:0 0 0.5rem">Ungrouped stories</h3>${leftovers.map(s => storyCardHtml(s, idToTask, typeIcon, typeTip)).join('')}</div>`;
+      if (leftovers.length) html += `<div style="margin-bottom:1.1rem"><h3 style="font-size:0.95rem;margin:0 0 0.5rem">Ungrouped stories</h3><div class="story-grid">${leftovers.map(s => storyCardHtml(s, idToTask, typeIcon, typeTip)).join('')}</div></div>`;
       cont.innerHTML = tiles
         + `<div id="reqStoriesView" class="req-view${reqView === 'stories' ? ' active' : ''}" data-view="stories" role="region" aria-label="Stories workflow">`
         + html + `</div>`
@@ -10333,7 +10344,13 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           'Only billing-queue cases are listed; the total matches the manager view for that queue.'),
         tc(27, 'AC-11.2', 'error path: out-of-queue direct link blocked and logged', 0.02, 0.04, 0.08, 26, 'Client SME',
           '1. As uat_agent02, paste the direct URL of case C-1042 (service queue).\n2. Attempt to open it.\n3. As uat_mgr01, open the access log.',
-          'The case is not displayed; the access log records the attempt with user and timestamp.')
+          'The case is not displayed; the access log records the attempt with user and timestamp.'),
+        tc(28, 'AC-10.3', 'edge: unmapped category routes to triage and is reported', 0.01, 0.03, 0.06, 27, 'Client SME',
+          '1. As uat_agent01, raise a case with category "Unmapped-Test" (no queue mapping).\n2. Save the case and note the queue it lands in.\n3. Open the next daily unmapped-category report.',
+          'The case routes to the triage queue, and the daily report lists the unmapped category with the case reference.'),
+        tc(29, 'AC-11.3', 'edge: role change mid-shift swaps the visible queue within 15 min', 0.02, 0.04, 0.08, 28, 'Client SME',
+          '1. As uat_mgr01, move uat_agent02 from the billing queue to the service queue.\n2. As uat_agent02, refresh the case list and start a 15-minute timer.\n3. Compare the visible cases before and after the refresh.',
+          'Service-queue cases appear and billing-queue cases disappear within 15 minutes, with no re-login required.')
       ];
       // in-flight progress so completeness indicators / handoff report show real data
       const pcts = { 1: 100, 2: 100, 3: 100, 4: 60, 5: 30 };
