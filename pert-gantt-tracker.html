@@ -10466,6 +10466,26 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       reqs.stories.find(s2 => s2.id === 'US-11').jira = JBASE + 'HLX-143';
       tasks.find(t => t.id === 20).jira = JBASE + 'HLX-151';
       tasks.find(t => t.id === 21).jira = JBASE + 'HLX-152';
+      // Make the sample COHERENT by construction: a story's audience follows how it
+      // is verified (uat = a product behaviour the client accepts → client-facing;
+      // artifact = delivery-side process evidenced by its own deliverable → internal),
+      // and each activity inherits the audience of the stories that build it. So
+      // "Kick-off" and "Integration Testing" read as internal process work needing no
+      // client story, while "Core workflow configuration" reads as client scope — and
+      // traceability only reports a gap on genuinely client-facing work.
+      // audience follows WHO ACCEPTS the story: a client-side persona means the
+      // client signs it off and is billed for it (client-facing scope, even when
+      // it's evidenced by an artifact); a delivery-side role means it's our own
+      // process work.
+      reqs.stories.forEach(s => {
+        s.audience = /^client|customer|end[- ]user/i.test(s.persona || '') ? 'client' : 'internal';
+        s.wbsIds = s.wbsId != null ? [s.wbsId] : [];
+      });
+      tasks.forEach(t => {
+        const st = reqs.stories.filter(s => (s.wbsIds || []).includes(t.id));
+        if (st.length) t.audience = st.some(s => s.audience === 'client') ? 'client' : 'internal';
+        else if (!tasks.some(c => c.parentId === t.id) && !t.milestone) t.audience = 'internal';  // storyless leaf = process work
+      });
       statusHistory = []; sowDraft = ''; statusNarrative = null; healthFindings = null; coLog = []; sowBaseline = null; coDraft = '';
       pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 };
       reserves = { contingency: { value: 10, unit: 'percent' }, management: { value: 5, unit: 'percent' } };
