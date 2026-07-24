@@ -521,8 +521,8 @@
         <summary class="btn-ghost btn-sm" style="list-style:none">Export ▾</summary>
         <div class="export-panel">
           <div class="grp">Project tools</div>
-          <button onclick="exportMSProjectXML()"><span class="ico" aria-hidden="true">📅</span> Microsoft Project (.xml)</button>
-          <button onclick="exportSmartsheetCSV()"><span class="ico" aria-hidden="true">📊</span> Smartsheet (.csv)</button>
+          <button onclick="exportMSProjectXML()"><span class="ico" aria-hidden="true">📅</span> Export to Microsoft Project (.xml)</button>
+          <button onclick="exportSmartsheetCSV()"><span class="ico" aria-hidden="true">📊</span> Export to Smartsheet (.csv)</button>
           <div class="grp">Communications</div>
           <label class="checkbox-row" id="clientSafeBtn" style="padding:0.4rem 0.6rem;cursor:pointer;display:flex;gap:0.45rem;align-items:center"><input type="checkbox" id="clientSafeChk" onchange="toggleClientSafe(this)" style="width:16px;height:16px" /> Client-safe reports</label>
           <button onclick="copyStatusReport()"><span class="ico" aria-hidden="true">📄</span> Copy status report (email-ready)</button>
@@ -1445,10 +1445,10 @@
       el.innerHTML = items.map(([id, meta]) => {
         const m = meta.metrics;
         const metaLine = m
-          ? `<span class="help-text" style="font-size:0.65rem">${m.pct || 0}% done · ${m.tasks || 0} tasks · finish ${escapeHtml(m.finish || '—')}${m.over ? ` · <span style="color:var(--critical)">⚠ ${m.over} over-alloc</span>` : ''}${m.cost ? ' · $' + Number(m.cost).toLocaleString() : ''}</span>`
+          ? `<span class="help-text" style="font-size:0.65rem;line-height:1.35">${m.pct || 0}% done · ${m.tasks || 0} tasks · finish ${escapeHtml(m.finish || '—')}${m.over ? ` · <span style="color:var(--critical)">⚠ ${m.over} over-alloc</span>` : ''}${m.cost ? ' · $' + Number(m.cost).toLocaleString() : ''}</span>`
           : `<span class="help-text" style="font-size:0.65rem">${escapeHtml((meta.updatedAt || '').slice(0, 10))} — open &amp; Calculate to see progress</span>`;
         const bar = m ? `<div class="progress-track" style="height:4px;margin-top:3px"><div class="progress-fill" style="width:${Math.min(100, m.pct || 0)}%;background:${(m.pct || 0) >= 100 ? 'var(--success)' : 'var(--primary)'}"></div></div>` : '';
-        return `<div style="display:flex;align-items:center;gap:2px"><button data-proj="${id}" style="flex:1;text-align:left;${id === act ? 'font-weight:700;color:var(--primary)' : ''}" title="${escapeHtml((meta.name || 'Untitled') + ' — last saved ' + (meta.updatedAt || '').slice(0, 16).replace('T', ' '))}">${id === act ? '● ' : ''}${escapeHtml(meta.name || 'Untitled')}<br/>${metaLine}${bar}</button>${id !== act ? `<button data-cmp="${id}" title="Compare with current (what-if)" style="width:auto;padding:0.2rem 0.4rem">⚖</button>` : ''}</div>`;
+        return `<div style="display:flex;align-items:center;gap:2px"><button data-proj="${id}" style="flex:1;display:flex;flex-direction:column;align-items:stretch;gap:2px;text-align:left;${id === act ? 'font-weight:700;color:var(--primary)' : ''}" title="${escapeHtml((meta.name || 'Untitled') + ' — last saved ' + (meta.updatedAt || '').slice(0, 16).replace('T', ' '))}"><span>${id === act ? '● ' : ''}${escapeHtml(meta.name || 'Untitled')}</span>${metaLine}${bar}</button>${id !== act ? `<button data-cmp="${id}" title="Compare with current (what-if)" style="width:auto;padding:0.2rem 0.4rem;align-self:stretch">⚖</button>` : ''}</div>`;
       }).join('') || '<div class="grp">No saved projects yet</div>';
       el.innerHTML += `<div class="grp" style="margin-top:0.4rem;font-size:0.65rem;color:var(--muted)" title="Projects live in the browser's IndexedDB (disk-backed, effectively unlimited — the old ~5 MB localStorage limit no longer applies). Every meaningful save also keeps one of the last 15 rolling snapshots per project.">💾 IndexedDB storage (no 5 MB limit) · 15-snapshot history${window.showSaveFilePicker ? ' · 💾 file autosave available' : ''} · <a href="#" onclick="event.preventDefault();openRecovery()" style="color:var(--primary)">🛟 Recover data…</a></div>`;
       el.querySelectorAll('[data-proj]').forEach(btn => btn.addEventListener('click', () => switchProject(btn.dataset.proj)));
