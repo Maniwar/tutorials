@@ -231,6 +231,11 @@
     /* Modal */
     .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5); display: none; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
     .modal-overlay.open { display: flex; }
+    /* while a modal is open, freeze the page behind it and keep the modal's own
+       scroll from chaining out to the body (wheel + touch). */
+    body.modal-open { overflow: hidden; }
+    .modal-overlay { overscroll-behavior: contain; }
+    .modal-overlay .modal { overscroll-behavior: contain; }
     .modal { background: white; border-radius: 12px; width: 100%; max-width: 540px; max-height: 92dvh; overflow-y: auto; box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25); }
     .modal-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
     .modal-body { padding: 1.25rem; }
@@ -493,6 +498,20 @@
     /* task-backed table rows that open the editor on a single click/tap */
     tr.row-edit { transition: background .1s ease; }
     @media (hover: hover) { tr.row-edit:hover > td { background: #eff6ff; } }
+    /* chip/token editor for multi-value inline cells (owner list, predecessors) */
+    .chip-edit { display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; min-width: 170px; padding: 0.2rem; border: 1px solid var(--primary); border-radius: 6px; background: #fff; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }
+    .chip-edit .chip { display: inline-flex; align-items: center; gap: 0.2rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; border-radius: 999px; padding: 0.05rem 0.15rem 0.05rem 0.5rem; font-size: 0.75rem; line-height: 1.5; white-space: nowrap; max-width: 100%; }
+    .chip-edit .chip-lbl { overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+    .chip-edit .chip-x { border: none; background: transparent; color: #64748b; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 0.25rem; border-radius: 999px; }
+    .chip-edit .chip-x:hover { background: #dbeafe; color: #b91c1c; }
+    .chip-edit .chip-input { flex: 1 1 60px; min-width: 60px; border: none; outline: none; padding: 0.2rem 0.25rem; font-size: 0.8rem; background: transparent; }
+    /* API key: a masked TEXT field, not a password field — browsers offer to
+       "save password" on real password inputs (and then the key is viewable in
+       the password manager). -webkit-text-security masks it on screen in
+       Chromium/WebKit without tripping the credential heuristics; the Show
+       button toggles it. Firefox has no save prompt for text fields either. */
+    .masked-field { -webkit-text-security: disc; text-security: disc; }
+    .masked-field.reveal { -webkit-text-security: none; text-security: none; }
     #helpPop { position: fixed; z-index: 300; max-width: 300px; background: #fff; border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--sh-3); padding: 0.6rem 0.75rem; font-size: var(--t-md); color: var(--text); line-height: 1.45; }
     /* W19: contained iconography */
     .ico { display: inline-block; width: 1.4em; text-align: center; flex: none; filter: grayscale(1); opacity: .8; }
@@ -723,7 +742,8 @@
             <div style="display:grid;grid-template-columns:2fr 1fr auto auto;gap:0.75rem;align-items:end">
               <div>
                 <label for="aiKey">Anthropic API Key</label>
-                <input id="aiKey" type="password" placeholder="sk-ant-api03-..." autocomplete="off" oninput="validateKeyFormat()" />
+                <input id="aiKey" type="text" class="masked-field" placeholder="sk-ant-api03-..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="anthropic-api-key" data-lpignore="true" data-1p-ignore data-form-type="other" oninput="validateKeyFormat()" />
+                <button type="button" id="aiKeyReveal" class="btn-sm btn-secondary" style="margin-top:0.25rem;font-size:0.7rem;padding:0.15rem 0.5rem" onclick="const k=document.getElementById('aiKey'); const on=k.classList.toggle('reveal'); this.textContent=on?'🙈 Hide':'👁 Show';" title="Show or hide the key">👁 Show</button>
                 <div id="aiKeyHint" class="help-text" style="min-height:1em"></div>
               </div>
               <div>
@@ -1699,8 +1719,9 @@
       overlay.id = 'cmpOverlay';
       overlay.className = 'modal-overlay open';
       overlay.innerHTML = html;
-      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+      overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); syncModalScrollLock(); } });
       document.body.appendChild(overlay);
+      syncModalScrollLock();
     }
 
     // ========================= PERSISTENCE =========================
@@ -2247,6 +2268,8 @@
       // bottom-right on every other tab
       const sbox = document.getElementById('aiStreamBox');
       if (sbox && sbox.style.display !== 'none') sbox.classList.toggle('stream-float', name !== 'tasks');
+      // schedule-dependent tabs compute on entry so they never open blank
+      if (['pert', 'gantt', 'resources', 'baseline', 'analytics'].includes(name)) ensureCalculated();
       if (name === 'wbs') renderWBS();
       if (name === 'req') renderReqs();
       if (name === 'pert' && calculated) renderPERT();
@@ -2384,7 +2407,10 @@
       document.querySelectorAll('#depRows .dep-id-input, #attRows .att-name').forEach(i => { if (i._suggestPop) i._suggestPop.remove(); });
       document.getElementById('depRows').innerHTML = '';
       document.getElementById('attRows').innerHTML = '';
-      (t.attendees || []).forEach(a => addAttRow(a));
+      // the owner is already billed as the owner; never also show them as an
+      // attendee (saving strips it anyway — this keeps the display honest so it
+      // doesn't look like they're counted twice).
+      (t.attendees || []).filter(a => (a.name || '').trim() && (a.name || '').trim() !== (t.owner || '').trim()).forEach(a => addAttRow(a));
       // test-case steps read best one per line — normalize run-on "1. … 2. …"
       // from older generations for display; saving keeps the multi-line form
       document.getElementById('mDesc').value = (isTestCaseTask(t) && hasRealSteps(t)) ? tcStepLines(t.description) : (t.description || '');
@@ -2544,7 +2570,7 @@
         () => [...document.getElementById('ownerList').options].map(o => o.value),
         roleHintPlain, {
           persist: true, single: true,
-          exclude: l => [...document.querySelectorAll('#attRows .att-name')].some(x => x !== attInp && x.value === l),
+          exclude: l => { const own = (document.getElementById('mOwner').value || '').trim(); return l === own || [...document.querySelectorAll('#attRows .att-name')].some(x => x !== attInp && x.value === l); },
           chain: () => { addAttRow(); const xs = [...document.querySelectorAll('#attRows .att-name')]; if (xs.length) xs[xs.length - 1].focus(); },
         });
     }
@@ -2850,6 +2876,9 @@
       const commit = () => inp.dispatchEvent(new Event('change', { bubbles: true }));  // fire onchange (role hints etc.) after a programmatic pick
       const pick = i => {
         if (!items[i]) return;
+        // chip editors: a pick ADDS a token and leaves the popup open (minus the
+        // just-added entry, which exclude now hides) so several can be added fast.
+        if (opts.onPick) { opts.onPick(items[i]); typed = false; render(); return; }
         if (opts.single) {
           if (opts.chain && opts.isChecked && opts.isChecked(items[i])) {   // multi-add field: tapping a ✓'d item removes it
             if (opts.onRemove) opts.onRemove(items[i]);
@@ -2917,6 +2946,79 @@
     function removeSuggestPop(container) {
       const inp = container && container.querySelector ? container.querySelector('input') : null;
       if (inp && inp._suggestPop) { inp._suggestPop.remove(); inp._suggestPop = null; }
+    }
+    // Chip/token editor for multi-value inline cells (owner list, predecessors).
+    // Each value is a removable ✕ chip; a type-ahead adds more and HIDES what's
+    // already chosen (no duplicates). On commit the chips are joined into the same
+    // comma string the existing parsers understand, so all validation/save logic
+    // is reused. opts: { suggest, hintFn, keyOf, labelOf, insertOf, placeholder,
+    // title, commit(joined, fromBlur)->errString, cancel() }.
+    function mountChipEditor(td, cur, opts) {
+      let chips = String(cur || '').split(/[,;]+/).map(s => s.trim()).filter(Boolean);
+      let done = false;
+      const wrap = document.createElement('div');
+      wrap.className = 'chip-edit';
+      const input = document.createElement('input');
+      input.type = 'text'; input.className = 'chip-input'; input.autocomplete = 'off';
+      input.placeholder = chips.length ? '' : (opts.placeholder || '');
+      if (opts.title) input.title = opts.title;
+      td.innerHTML = ''; td.appendChild(wrap);
+      const keyOf = opts.keyOf || (x => String(x).trim().toLowerCase());
+      const keys = () => chips.map(keyOf);
+      const renderChips = () => {
+        [...wrap.querySelectorAll('.chip')].forEach(n => n.remove());
+        chips.forEach((c, i) => {
+          const chip = document.createElement('span');
+          chip.className = 'chip';
+          const lbl = opts.labelOf ? opts.labelOf(c) : c;
+          chip.innerHTML = `<span class="chip-lbl">${escapeHtml(lbl)}</span><button type="button" class="chip-x" tabindex="-1" aria-label="Remove ${escapeHtml(lbl)}">×</button>`;
+          // mousedown+preventDefault so removing a chip never blurs the input
+          // (blur would commit/close the editor before the removal registers).
+          chip.querySelector('.chip-x').addEventListener('mousedown', e => {
+            e.preventDefault(); e.stopPropagation();
+            chips.splice(i, 1); renderChips(); input.placeholder = chips.length ? '' : (opts.placeholder || '');
+            input.focus(); input.dispatchEvent(new Event('input'));
+          });
+          wrap.insertBefore(chip, input);
+        });
+      };
+      const addRaw = raw => {
+        raw = String(raw || '').trim(); if (!raw) return;
+        const k = keyOf(raw);
+        if (k && keys().includes(k)) return;         // already chosen — no duplicate
+        chips.push(raw); renderChips();
+        input.placeholder = '';
+      };
+      const finish = fromBlur => {
+        if (done) return;
+        if (input.value.trim()) { addRaw(opts.insertOf ? opts.insertOf(input.value.trim()) : input.value.trim()); input.value = ''; }
+        const err = opts.commit(chips.join(', '), fromBlur);
+        if (err) { if (fromBlur) { done = true; opts.cancel(); return; } input.style.borderColor = '#dc2626'; input.style.boxShadow = '0 0 0 3px rgba(220,38,38,0.15)'; input.title = err; flashSaved('⚠ ' + err); return; }
+        done = true;   // commit's saveLocal()/refreshAll() re-renders the row, tearing the editor down
+      };
+      wrap.appendChild(input);
+      renderChips();
+      attachTokenSuggest(input, opts.suggest, opts.hintFn, {
+        single: true,
+        exclude: l => { const k = keyOf(l); return !!k && keys().includes(k); },
+        onPick: l => { addRaw(opts.insertOf ? opts.insertOf(l) : l); input.value = ''; },
+      });
+      input.addEventListener('click', e => e.stopPropagation());
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (input.value.trim()) { addRaw(opts.insertOf ? opts.insertOf(input.value.trim()) : input.value.trim()); input.value = ''; input.dispatchEvent(new Event('input')); }
+          else finish(false);
+        } else if (e.key === 'Escape') { e.preventDefault(); if (!done) { done = true; opts.cancel(); } }
+        else if (e.key === 'Backspace' && !input.value && chips.length) { e.preventDefault(); chips.pop(); renderChips(); input.placeholder = chips.length ? '' : (opts.placeholder || ''); input.dispatchEvent(new Event('input')); }
+      });
+      // Arm blur-commit only AFTER focus settles. Opening via a real click leaves
+      // the browser's post-click focus on <body>; without this the immediate blur
+      // would commit and tear the editor down before the user can touch it.
+      let armed = false;
+      input.addEventListener('blur', () => { if (!armed) return; setTimeout(() => { if (!done && !wrap.contains(document.activeElement)) finish(true); }, 200); });
+      requestAnimationFrame(() => { input.focus(); armed = true; });
+      return { input, wrap };
     }
     // The edit modal's Owner + WBS-parent fields use the app's own touch-safe
     // suggestion popup instead of a native <datalist> (which won't open on many
@@ -2994,14 +3096,19 @@
     // — the first is the owner, the rest join as attendees (each loads their own
     // calendar, cost and billing, exactly like the editor's attendee rows).
     // @N sets allocation %; a re-listed attendee without @ keeps its old units.
+    // shared owner-name key: strips an "@units" tail and lower-cases, so the same
+    // person can't be added twice whether typed "QA Tester" or "QA Tester@50".
+    function ownerTokenKey(x) { return String(x || '').replace(/@.*$/, '').trim().toLowerCase(); }
     function beginOwnerEdit(id, td) {
       const t = tasks.find(x => x.id === id); if (!t) return;
+      if (cellEditTd === td) return;
+      endCellEdit(true); cancelPredEdit();
       populateOwnerList();
       const fmt = (name, units) => name + (units != null && units !== 100 ? '@' + units : '');
       const cur = [t.owner ? fmt(t.owner, t.units == null ? 100 : t.units) : '']
         .concat((t.attendees || []).map(a => fmt(a.name, a.units))).filter(Boolean).join(', ');
-      beginCellEdit(td, `<input type="text" value="${escapeHtml(cur)}" placeholder="(unassigned)" autocomplete="off" style="width:100%;min-width:150px;padding:0.3rem 0.45rem;font-size:0.8rem" title="Comma-separate to assign several people — FIRST = owner, the rest join as attendees. Add @N for allocation % (e.g. QA Tester@50). This field IS the full assignment: what you type replaces the whole list." />`, v => {
-        if (v === cur) return '';
+      cellEditTd = td; td.dataset.prevCell = td.innerHTML;
+      const applyOwner = v => {
         const parts = v.split(/[,;]+/).map(s => s.trim()).filter(Boolean).map(tok => {
           const m = tok.match(/^(.*?)\s*@\s*(\d+(?:\.\d+)?)\s*%?$/);
           return m && m[1].trim() ? { name: m[1].trim(), units: Math.max(0, parseFloat(m[2])) } : { name: tok, units: null };
@@ -3015,12 +3122,15 @@
           .map(x => ({ name: x.name, units: x.units != null ? x.units : ((oldAtt.find(a => a.name === x.name) || {}).units || 100) }));
         if (t.owner) syncResources();
         return '';
-      });
-      const ownerInp = td.querySelector('input');
-      // hide names already entered in this cell (owner + attendees) so the same
-      // person can't be added twice
-      attachTokenSuggest(ownerInp, Object.keys(resources), roleHintPlain, {
-        exclude: l => { const v = ownerInp.value, cut = Math.max(v.lastIndexOf(','), v.lastIndexOf(';')); return (cut >= 0 ? v.slice(0, cut) : '').split(/[,;]/).map(s => s.trim().replace(/@.*$/, '').trim().toLowerCase()).filter(Boolean).includes(String(l).toLowerCase()); },
+      };
+      mountChipEditor(td, cur, {
+        suggest: () => Object.keys(resources),
+        hintFn: roleHintPlain,
+        keyOf: ownerTokenKey,
+        placeholder: '(unassigned)',
+        title: 'FIRST chip = owner, the rest join as attendees (each loads their own calendar, cost and billing). Add @N for allocation % (e.g. QA Tester@50). ✕ removes; type a name and pick or press Enter to add.',
+        commit: v => { if (v === cur) { cellEditTd = null; delete td.dataset.prevCell; endCellEdit(true); return ''; } const err = applyOwner(v); if (err) return err; cellEditTd = null; delete td.dataset.prevCell; saveLocal(); refreshAll(); return ''; },
+        cancel: () => { if (cellEditTd === td) cellEditTd = null; removeSuggestPop(td); if (td.dataset.prevCell != null) { td.innerHTML = td.dataset.prevCell; delete td.dataset.prevCell; } },
       });
     }
     function beginOmpEdit(td, id, f) {
@@ -3077,27 +3187,40 @@
       const t = tasks.find(x => x.id === id);
       if (!t) return;
       predEditActive = id;
-      const refMap = buildTaskDatalist('predDatalist', x => x.id !== id);
+      // A valid predecessor can't be the task itself, nor anything that already
+      // depends on it (directly or through the chain) — that would form a circular
+      // dependency and break the schedule. Hide those from the picker AND reject
+      // them on commit, so a link that would break things can't be created.
+      const cycleSet = predCycleSet(id);
+      const refMap = buildTaskDatalist('predDatalist', x => !cycleSet.has(x.id));
       const cur = t.predecessors.map(p => {
         const pt = tasks.find(x => x.id === p.id);
         const nm = pt ? (pt.wbs || String(pt.id)) : String(p.id);
         return nm + ((p.type === 'FS' && !p.lag) ? '' : p.type + (p.lag ? (p.lag > 0 ? '+' + p.lag : String(p.lag)) : ''));
       }).join(', ');
       td.dataset.prevHtml = td.innerHTML;
-      td.innerHTML = `<input class="pred-inline" value="${escapeHtml(cur)}" placeholder="e.g. 1.2, 2.1SS+1" autocomplete="off" style="width:100%;min-width:150px;padding:0.25rem 0.4rem;font-size:0.8rem" />`;
-      const inp = td.querySelector('input');
-      inp._refMap = refMap;
-      // token-aware suggestions (the native datalist filters on the WHOLE
-      // value, so a second predecessor never got suggestions)
-      attachTokenSuggest(inp, [...document.getElementById('predDatalist').options].map(o => o.value));
-      inp.focus();
-      inp.setSelectionRange(inp.value.length, inp.value.length);
-      inp.addEventListener('click', e => e.stopPropagation());
-      inp.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { e.preventDefault(); commitPredEdit(id, td, inp, false); }
-        else if (e.key === 'Escape') { e.preventDefault(); cancelPredEdit(); }
+      // strip a relationship suffix (FS/SS/FF/SF±lag) to get the bare ref for dedupe/resolve
+      const bareRef = tok => { const m = String(tok).match(/^(.*?)\s*(FS|SS|FF|SF)\s*([+-]\s*\d+(?:\.\d+)?)?\s*$/i); return (m && m[1].trim()) ? m[1].trim() : String(tok).trim(); };
+      const keyOf = tok => { const pid = resolveTaskRef(bareRef(tok), refMap); return pid != null ? 'id:' + pid : ''; };
+      mountChipEditor(td, cur, {
+        suggest: () => [...document.getElementById('predDatalist').options].map(o => o.value),
+        keyOf,
+        // store a picked suggestion as its compact WBS code (matches existing chips)
+        insertOf: label => { const pid = resolveTaskRef(bareRef(label), refMap); const pt = pid != null ? tasks.find(x => x.id === pid) : null; return pt ? (pt.wbs || String(pt.id)) : label; },
+        placeholder: 'e.g. 1.2, 2.1SS+1',
+        title: 'Add a predecessor — pick from the list (only tasks that can validly come before this one are shown) or type a WBS code. Suffix a chip with FS/SS/FF/SF and ±lag by typing e.g. 2.1SS+1. ✕ removes.',
+        commit: (v, fromBlur) => commitPredValue(id, td, v, refMap, cycleSet, fromBlur),
+        cancel: () => cancelPredEdit(),
       });
-      inp.addEventListener('blur', () => { if (predEditActive === id) commitPredEdit(id, td, inp, true); });
+    }
+    // downstream-closure of a task (itself + everything that depends on it,
+    // transitively) — the set that must NOT become one of its predecessors.
+    function predCycleSet(id) {
+      const succ = {};
+      tasks.forEach(x => (x.predecessors || []).forEach(p => { (succ[p.id] = succ[p.id] || []).push(x.id); }));
+      const bad = new Set([id]); const stack = [id];
+      while (stack.length) { const n = stack.pop(); (succ[n] || []).forEach(m => { if (!bad.has(m)) { bad.add(m); stack.push(m); } }); }
+      return bad;
     }
     function cancelPredEdit() {
       if (predEditActive == null) return;
@@ -3106,36 +3229,40 @@
       removeSuggestPop(td);
       if (td && td.dataset.prevHtml != null) { td.innerHTML = td.dataset.prevHtml; delete td.dataset.prevHtml; }
     }
-    function commitPredEdit(id, td, inp, fromBlur) {
-      if (predEditActive !== id) return;
+    // commit the chip editor's joined value → t.predecessors. Returns an error
+    // STRING to keep the editor open (red), or '' on success (saves + refreshes).
+    function commitPredValue(id, td, value, refMap, cycleSet, fromBlur) {
+      if (predEditActive !== id) return '';
       const t = tasks.find(x => x.id === id);
-      if (!t) { predEditActive = null; return; }
-      const refMap = inp._refMap || {};
-      const preds = [], bad = [];
-      inp.value.split(/[,;]+/).map(s => s.trim()).filter(Boolean).forEach(tok => {
+      if (!t) { predEditActive = null; return ''; }
+      const preds = [], bad = [], cyc = [];
+      value.split(/[,;]+/).map(s => s.trim()).filter(Boolean).forEach(tok => {
         let type = 'FS', lag = 0, ref = tok;
         const m = tok.match(/^(.*?)\s*(FS|SS|FF|SF)\s*([+-]\s*\d+(?:\.\d+)?)?\s*$/i);
         if (m && m[1].trim()) { ref = m[1].trim(); type = m[2].toUpperCase(); lag = m[3] ? parseFloat(m[3].replace(/\s+/g, '')) : 0; }
         const pid = resolveTaskRef(ref, refMap);
-        if (pid == null || pid === id) { bad.push(tok); return; }
+        if (pid == null) { bad.push(tok); return; }
+        if (pid === id || (cycleSet && cycleSet.has(pid))) { cyc.push(tok); return; }  // would create a circular dependency
         preds.push({ id: pid, type, lag });
       });
+      if (cyc.length) {
+        if (fromBlur) { cancelPredEdit(); flashSaved('✕ Discarded — “' + cyc[0] + '” already depends on this task; making it a predecessor would loop the schedule.'); return ''; }
+        return '“' + cyc[0] + '” already depends on this task — a predecessor here would create a circular dependency. It has been left out.';
+      }
       if (bad.length) {
-        if (fromBlur) { cancelPredEdit(); flashSaved('✕ Predecessor edit discarded — no task matches: ' + bad.join(', ')); return; }
-        inp.style.borderColor = '#dc2626'; inp.style.boxShadow = '0 0 0 3px rgba(220,38,38,0.15)';
-        inp.title = 'No task matches: ' + bad.join(', ') + ' — use a WBS code (e.g. 1.2) or enough of the name to be unique, or pick from the suggestions.';
-        flashSaved('⚠ No task matches “' + bad[0] + '” — fix it or press Esc to cancel');
-        return;
+        if (fromBlur) { cancelPredEdit(); flashSaved('✕ Predecessor edit discarded — no task matches: ' + bad.join(', ')); return ''; }
+        return 'No task matches: ' + bad.join(', ') + ' — use a WBS code (e.g. 1.2) or pick from the suggestions.';
       }
       const seen = {}; preds.forEach(p => { seen[p.id] = p; });
       const before = predLabel(t);
       predEditActive = null; delete td.dataset.prevHtml;
-      if (inp._suggestPop) { inp._suggestPop.remove(); inp._suggestPop = null; }
+      removeSuggestPop(td);
       t.predecessors = Object.values(seen);
       saveLocal();
       refreshAll();
       const after = predLabel(t);
       if (before !== after) flashSaved('🔗 ' + (t.wbs ? t.wbs + ' ' : '') + t.name + ' now waits for: ' + (after === '—' ? 'nothing' : after) + '. ↶ Undo reverses');
+      return '';
     }
     function predTitle(t) {
       if (!t.predecessors.length) return '';
@@ -4062,6 +4189,19 @@
       const orig = btn.textContent;
       btn.textContent = '✓ Calculated'; btn.style.background = '#16a34a';
       setTimeout(() => { btn.textContent = orig; btn.style.background = ''; }, 1400);
+    }
+
+    // Auto-calc so a schedule-dependent tab (Gantt, PERT, Resources, Baseline,
+    // Analytics) never shows blank just because the button wasn't pressed. Runs
+    // the schedule pass once when it's stale; returns whether a schedule exists.
+    // recompute() sets calculated=true on success and returns false only when it
+    // can't (e.g. a circular dependency) — then the tab shows its own guidance.
+    function ensureCalculated() {
+      if (calculated) return true;
+      if (!tasks.length) return false;
+      if (!recompute()) return false;
+      saveLocal();
+      return true;
     }
 
     // ========================= MONTE CARLO =========================
@@ -11964,12 +12104,13 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
         const top = beneath[beneath.length - 1];
         if (top) { for (let a = top; a && a !== document.body; a = a.parentElement) a.removeAttribute('inert'); setBackgroundInert(top, true); }
         if (m._returnTo && m._returnTo.focus) { try { m._returnTo.focus(); } catch (e) {} } m._returnTo = null;
+        syncModalScrollLock();
       };
       m.removeEventListener('keydown', trapTab, true);
       if (!motionOK()) { m.classList.remove('open'); finish(); return; }
       m.classList.add('closing');
       clearTimeout(m._closeT);
-      m._closeT = setTimeout(() => { if (m.classList.contains('closing')) m.classList.remove('open', 'closing'); }, 160);
+      m._closeT = setTimeout(() => { if (m.classList.contains('closing')) m.classList.remove('open', 'closing'); syncModalScrollLock(); }, 160);
       finish();
     }
     function openOverlay(el) { // reopening mid-exit must win over the pending close
@@ -11984,6 +12125,7 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
       // the entire path to <body> before re-inerting the siblings behind this new top layer.
       for (let a = el; a && a !== document.body; a = a.parentElement) a.removeAttribute('inert');
       setBackgroundInert(el, true);
+      syncModalScrollLock();
       el.addEventListener('keydown', trapTab, true);
       // focus the first real field (skip the ✕ close button so the form is reachable immediately)
       requestAnimationFrame(() => {
@@ -11991,6 +12133,13 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
         const f = modal.querySelector('input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled])');
         (f || modal.querySelector('button:not([disabled])') || modal).focus && (f || modal.querySelector('button:not([disabled])') || modal).focus();
       });
+    }
+    // freeze the page behind any open overlay (incl. the standalone compare overlay)
+    function syncModalScrollLock() {
+      // a modal mid-close still carries .open during its fade — exclude .closing
+      // so the last modal releases the lock instead of freezing the page forever.
+      const anyOpen = !!document.querySelector('.modal-overlay.open:not(.closing), #cmpOverlay');
+      document.body.classList.toggle('modal-open', anyOpen);
     }
     function switchTabAnimated(name) { switchTab(name); }
     // sliding pill under the active tab
