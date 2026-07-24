@@ -175,7 +175,7 @@
     .refx-cap { display: flex; align-items: center; gap: .5rem; padding: .5rem .9rem; font-size: var(--t-xs); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: #fcfdfe; border-bottom: 1px solid var(--border); }
     .refx-row { border-bottom: 1px solid var(--border); }
     .refx-row:last-child { border-bottom: 0; }
-    .refx-line { display: flex; align-items: center; gap: .7rem; width: 100%; min-height: 46px; padding: .7rem .9rem; margin: 0; cursor: pointer; user-select: none; text-align: left; background: none; border: 0; color: var(--text); font: inherit; }
+    .refx-line { display: flex; align-items: center; justify-content: flex-start; gap: .7rem; width: 100%; min-height: 46px; padding: .7rem .9rem; margin: 0; cursor: pointer; user-select: none; text-align: left; background: none; border: 0; color: var(--text); font: inherit; }
     .refx-line:hover { background: #f8fafc; }
     details.refx-row > summary.refx-line { list-style: none; }
     details.refx-row > summary.refx-line::-webkit-details-marker { display: none; }
@@ -1297,7 +1297,7 @@
         </div>
         <div class="form-group">
           <label for="mParent">WBS parent (group under…)</label>
-          <input id="mParent" list="parentDatalist" placeholder="Type to search… (empty = top level)" autocomplete="off" />
+          <input id="mParent" placeholder="Type to search… (empty = top level)" autocomplete="off" />
           <datalist id="parentDatalist"></datalist>
           <p class="help-text">Type-ahead: start typing a phase name or WBS code (e.g. “2” or “Design”). Parents become summary rows that roll up their children.</p>
         </div>
@@ -2271,6 +2271,7 @@
       document.getElementById('mFixedCost').value = 0;
       document.getElementById('mMilestone').checked = !!isMilestone;
       document.getElementById('modalError').style.display = 'none';
+      document.querySelectorAll('#depRows .dep-id-input').forEach(i => { if (i._suggestPop) i._suggestPop.remove(); });
       document.getElementById('depRows').innerHTML = '';
       document.getElementById('attRows').innerHTML = '';
       document.getElementById('mDesc').value = '';
@@ -2282,7 +2283,12 @@
       populateOwnerList();
       modalRefMap = buildTaskDatalist('predDatalist', t => true);
       buildTaskDatalist('parentDatalist', t => !t.milestone);
-      document.getElementById('mParent').value = '';
+      const mpNew = document.getElementById('mParent');
+      mpNew.value = '';
+      if (!mpNew._suggestAttached) {                     // touch-safe popup replaces the native <datalist>
+        mpNew._suggestAttached = true;
+        attachTokenSuggest(mpNew, () => [...document.getElementById('parentDatalist').options].map(o => o.value), null, { persist: true, single: true });
+      }
       toggleMilestoneFields();
       openOverlay(document.getElementById('modal'));
       document.getElementById('mName').focus();
@@ -2354,6 +2360,8 @@
       document.getElementById('mFixedCost').value = t.fixedCost || 0;
       document.getElementById('mMilestone').checked = !!t.milestone;
       document.getElementById('modalError').style.display = 'none';
+      // drop orphaned predecessor popups before their inputs are destroyed
+      document.querySelectorAll('#depRows .dep-id-input').forEach(i => { if (i._suggestPop) i._suggestPop.remove(); });
       document.getElementById('depRows').innerHTML = '';
       document.getElementById('attRows').innerHTML = '';
       (t.attendees || []).forEach(a => addAttRow(a));
@@ -2370,7 +2378,12 @@
       modalRefMap = buildTaskDatalist('predDatalist', x => x.id !== id);
       buildTaskDatalist('parentDatalist', x => !x.milestone && x.id !== id && !allDescendants(id).some(d => d.id === x.id));
       const curPar = tasks.find(x => x.id === t.parentId);
-      document.getElementById('mParent').value = curPar ? ((curPar.wbs ? curPar.wbs + ' · ' : '') + curPar.name) : '';
+      const mParentEl = document.getElementById('mParent');
+      mParentEl.value = curPar ? ((curPar.wbs ? curPar.wbs + ' · ' : '') + curPar.name) : '';
+      if (!mParentEl._suggestAttached) {                 // touch-safe popup replaces the native <datalist>
+        mParentEl._suggestAttached = true;
+        attachTokenSuggest(mParentEl, () => [...document.getElementById('parentDatalist').options].map(o => o.value), null, { persist: true, single: true });
+      }
       t.predecessors.forEach(p => addDepRow(p));
       toggleMilestoneFields();
       refreshTaskStoriesPanel(id);
@@ -2517,11 +2530,16 @@
       const existing = pred.id != null ? (tasks.find(x => x.id === pred.id) || null) : null;
       const label = existing ? ((existing.wbs ? existing.wbs + ' · ' : '') + existing.name) : '';
       row.innerHTML = `
-        <input class="dep-id-input" list="predDatalist" value="${escapeHtml(label)}" placeholder="Type task name or WBS code…" autocomplete="off" title="Type-ahead: name or WBS code; phases work too (means after ALL their work)" />
+        <input class="dep-id-input" value="${escapeHtml(label)}" placeholder="Type task name or WBS code…" autocomplete="off" title="Type-ahead: name or WBS code; phases work too (means after ALL their work)" />
         <select class="dep-type">${types.map(ty => `<option value="${ty}" ${ty===pred.type?'selected':''}>${ty}</option>`).join('')}</select>
         <input class="dep-lag" type="number" step="0.5" value="${pred.lag||0}" title="Lag (units)" />
         <button type="button" class="btn-sm btn-danger" onclick="this.parentElement.remove()" aria-label="Remove row">✕</button>`;
       wrap.appendChild(row);
+      // own touch-safe popup instead of the native <datalist> (which won't open
+      // on many phones); labels read fresh from predDatalist at focus time
+      attachTokenSuggest(row.querySelector('.dep-id-input'),
+        () => [...document.getElementById('predDatalist').options].map(o => o.value),
+        null, { persist: true, single: true });
     }
     function saveActivity() {
       const name = document.getElementById('mName').value.trim();
@@ -2766,29 +2784,32 @@
     // filters every suggestion on that string and the second token gets no
     // help. This popover suggests on the LAST token only; clicking or ↓/Enter
     // picks, appends ", " and keeps suggesting so several can be chained.
-    function attachTokenSuggest(inp, labels, hintFn) {
+    function attachTokenSuggest(inp, labels, hintFn, opts) {
+      opts = opts || {};                                  // {persist, single}
+      const L = () => (typeof labels === 'function' ? labels() : labels);  // fresh list per render
       const pop = document.createElement('div');
       pop.style.cssText = 'position:absolute;z-index:300;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 25px -5px rgb(0 0 0 /.25);max-height:230px;overflow-y:auto;display:none';
       document.body.appendChild(pop);
       inp._suggestPop = pop;
       let items = [], sel = -1, typed = false;
       const place = () => { const r = inp.getBoundingClientRect(); pop.style.left = (r.left + window.scrollX) + 'px'; pop.style.top = (r.bottom + window.scrollY + 2) + 'px'; pop.style.minWidth = Math.max(240, r.width) + 'px'; };
-      const bounds = () => { const v = inp.value; const cut = Math.max(v.lastIndexOf(','), v.lastIndexOf(';')); return { prefix: cut >= 0 ? v.slice(0, cut + 1) : '', token: v.slice(cut + 1).trim() }; };
+      const bounds = () => { if (opts.single) return { prefix: '', token: inp.value.trim() }; const v = inp.value; const cut = Math.max(v.lastIndexOf(','), v.lastIndexOf(';')); return { prefix: cut >= 0 ? v.slice(0, cut + 1) : '', token: v.slice(cut + 1).trim() }; };
       const highlight = i => { sel = i; [...pop.children].forEach((el, j) => { el.style.background = j === i ? '#eff6ff' : ''; }); };
-      const pick = i => { if (!items[i]) return; const { prefix } = bounds(); inp.value = (prefix ? prefix + ' ' : '') + items[i] + ', '; typed = false; render(); inp.focus(); };
+      const pick = i => { if (!items[i]) return; if (opts.single) { inp.value = items[i]; typed = false; pop.style.display = 'none'; inp.focus(); return; } const { prefix } = bounds(); inp.value = (prefix ? prefix + ' ' : '') + items[i] + ', '; typed = false; render(); inp.focus(); };
       const render = () => {
         const tl = bounds().token.toLowerCase().replace(/ /g, '');
         const norm = l => l.toLowerCase().replace(/ /g, '').trim();
-        const isExact = !!tl && labels.some(l => norm(l) === tl);
+        const all = L();
+        const isExact = !!tl && all.some(l => norm(l) === tl);
         // the editor opens PREFILLED — until the user types a partial token
         // (or right after an exact value), show the FULL list so a different
         // entry can be picked without clearing the field first; the current
         // value just sorts to the top
         if (!typed || !tl || isExact) {
-          items = labels.slice();
+          items = all.slice();
           if (isExact) items.sort((a, b) => (norm(b) === tl ? 1 : 0) - (norm(a) === tl ? 1 : 0));
         } else {
-          items = labels.filter(l => norm(l).indexOf(tl) >= 0);
+          items = all.filter(l => norm(l).indexOf(tl) >= 0);
         }
         items = items.slice(0, 40); // the popover scrolls — never hide options behind a tiny cap
         sel = -1;
@@ -2811,8 +2832,9 @@
         else if (e.key === 'Enter' && sel >= 0) { e.preventDefault(); e.stopImmediatePropagation(); pick(sel); }
         else if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); pop.style.display = 'none'; } // 1st Esc closes suggestions, 2nd cancels the edit
       }, true); // capture: a suggestion pick must win over the editor's commit/cancel keys
-      inp.addEventListener('blur', () => setTimeout(() => pop.remove(), 120));
-      render();
+      inp.addEventListener('focus', render);            // reopen on (re)focus — the mobile-safe replacement for a native datalist
+      inp.addEventListener('blur', () => setTimeout(() => { if (opts.persist) pop.style.display = 'none'; else pop.remove(); }, 120));
+      if (document.activeElement === inp) render();      // inline editors focus first; persistent modal fields don't show until focused
     }
     function removeSuggestPop(container) {
       const inp = container && container.querySelector ? container.querySelector('input') : null;
