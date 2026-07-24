@@ -2753,8 +2753,11 @@
         else if (d.crew.every(c => c.client)) why = `<span class="badge badge-info">Client-billed</span> ${escapeHtml(d.crew.map(c => c.name).join(', '))} ${d.crew.length > 1 ? 'are' : 'is'} client-side — their time costs you nothing. <b>This $0 is correct, not missing.</b> `;
         else if (unrated.length) why = `<span class="badge badge-warn">No day rate</span> ${escapeHtml(unrated.map(c => c.name).join(', '))} ha${unrated.length > 1 ? 've' : 's'} no rate on the 👥 Team tab, so that time counts as $0. `;
         const math = billable.map(c => escapeHtml(c.name) + ' ' + fmtMoney(c.rate) + '/day' + (c.units !== 100 ? ' @' + c.units + '%' : '')).join(' + ');
+        // state the ACCRUED share of the fixed cost, not the whole figure — the
+        // arithmetic on screen has to add up to the number in the box
+        const accrued = d.fixed ? d.fixed * Math.min(100, Math.max(0, d.pct)) / 100 : 0;
         html = why + `${dayTxt} (${escapeHtml(d.basis)})` + (math ? ' × ' + math : '')
-          + (d.fixed ? ' + ' + fmtMoney(d.fixed) + ' fixed' : '')
+          + (d.fixed ? ' + ' + fmtMoney(accrued) + (accrued < d.fixed ? ' of ' + fmtMoney(d.fixed) + ' fixed (accrues with progress)' : ' fixed') : '')
           + ` = <b>${fmtMoney(d.autoCost || 0)}</b>` + over;
       }
       if (hint.innerHTML !== html) { hint.innerHTML = html; paFlash(hint); }
@@ -5139,7 +5142,14 @@
         p50: pct(0.5), p80: pct(0.8), p90: pct(0.9), p95: pct(0.95),
         min: durations[0], max: durations[durations.length - 1],
         costP50: pctOf(costS, 0.5), costP80: pctOf(costS, 0.8), costP90: pctOf(costS, 0.9),
-        revP50: pctOf(revS, 0.5), revP80: pctOf(revS, 0.8), revP90: pctOf(revS, 0.9)
+        revP50: pctOf(revS, 0.5), revP80: pctOf(revS, 0.8), revP90: pctOf(revS, 0.9),
+        // Keep the sorted MONEY distributions, not just three percentiles off them.
+        // Pricing is the one place the spread itself is the argument — "this bid
+        // absorbs risk up to here" needs the curve, and drawing a smooth line
+        // through three saved points would invent shape the simulation never had.
+        // Same lifetime as `durations` above, and mcResult is memory-only (never
+        // serialised), so this costs nothing on disk.
+        costDist: costS, revDist: revS
       };
       mcRand = Math.random;
     }
@@ -5761,7 +5771,21 @@
       const days = actualEffortDays(t);
       if (days == null) return null;
       const labor = taskParticipants(t).reduce((sx, pr) => sx + (isClientResource(pr.name) ? 0 : getRate(pr.name) * days * pr.units / 100), 0);
-      return Math.round(labor + (Number(t.fixedCost) || 0));
+      // Fixed cost accrues WITH the work rather than all at once on the first
+      // logged minute. Labor here is already a to-date figure (rate × effort so
+      // far), so charging a whole licence alongside it put two different clocks in
+      // one number: a task running exactly to plan reported CPI 0.19 at 10%
+      // complete, because earned value prorates that same dollar while this
+      // charged it in full. Both halves now accrue on the same clock. When the
+      // money genuinely did leave on day one, the manual actual-cost override
+      // (✎ override in the editor) records that exactly.
+      const done = Math.min(100, Math.max(0, Number(t.percentComplete) || 0)) / 100;
+      return Math.round(labor + (Number(t.fixedCost) || 0) * done);
+    }
+    // the portion of a task's fixed cost counted as incurred so far
+    function accruedFixedCost(t) {
+      const done = Math.min(100, Math.max(0, Number(t && t.percentComplete) || 0)) / 100;
+      return (Number(t && t.fixedCost) || 0) * done;
     }
     function actualCostOf(t) {
       if (!t) return 0;
