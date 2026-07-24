@@ -508,6 +508,19 @@
     @media (max-width: 640px) {
       #storyModal [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
     }
+    /* AI plan-builder controls: the mode / UAT-style selects have long option text
+       (width:auto) that inflates their flex row past the phone viewport — let them
+       shrink and clip on mobile instead of overflowing the card */
+    @media (max-width: 640px) {
+      /* a <select> won't shrink below its longest option and propagates that width
+         up; overflow:hidden on the AI card's inner divs stops that propagation so the
+         mode / UAT-style selects fit the phone instead of overflowing the card */
+      #aiCard .card-body div { max-width: 100%; overflow: hidden; }
+      #aiMode { width: 100% !important; min-width: 0; max-width: 100%; }
+      label:has(> #uatStyle) { display: flex; width: 100%; align-items: center; gap: 6px; }
+      #uatStyle { flex: 1 1 auto; min-width: 0; max-width: 100%; }
+      #aiNotes { box-sizing: border-box; width: 100%; }
+    }
   </style>
 </head>
 <body>
@@ -624,7 +637,7 @@
     <!-- TASKS VIEW -->
     <div id="view-tasks" role="tabpanel" class="view active">
       <!-- AI ASSISTANT -->
-      <div class="card" style="border-color:#bfdbfe">
+      <div class="card" id="aiCard" style="border-color:#bfdbfe">
         <div class="card-header" style="background:linear-gradient(135deg,#eff6ff,#f1f5f9)">
           <h2><span class="ico" aria-hidden="true">🤖</span> AI Plan Builder <span class="help-text" style="font-weight:400">Paste notes → get a costed plan. No manual entry.</span></h2>
           <button class="btn-sm btn-secondary no-print" onclick="toggleAiSettings()" id="aiSettingsToggle">⚙ API Key</button>
