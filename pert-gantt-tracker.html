@@ -725,6 +725,7 @@
           <div class="grp">Data</div>
           <button onclick="exportCSV()"><span class="ico" aria-hidden="true"></span> Download spreadsheet (.csv)</button>
           <button onclick="exportWBSDictionaryCSV()"><span class="ico" aria-hidden="true"></span> Download WBS dictionary (.csv)</button>
+          <button onclick="exportVarianceCSV()" title="Planned vs actual per activity: estimate O/M/P and TE against the effort actually logged, baseline vs actual dates, planned vs actual cost, with variance and ratio columns and a project total. The record for judging how accurate your estimates are."><span class="ico" aria-hidden="true">📊</span> Download variance — plan vs actual (.csv)</button>
           <button onclick="exportResourcesCSV()"><span class="ico" aria-hidden="true"></span> Download resources &amp; PTO (.csv)</button>
           <button onclick="exportJSON()"><span class="ico" aria-hidden="true"></span> Download backup (.json)</button>
           <button onclick="exportEditableWorkbook()" title="Four editable CSVs — activities & estimates, user stories & acceptance criteria, test cases & results, RAID log. Send them to the client, take the edited files back with IMPORT: rows are matched by their ID column (leave the ID blank on new rows). Changed criteria offer test-case regeneration; failed test results open RAID issues."><span class="ico" aria-hidden="true">✏️</span> Editable workbook (4 CSVs)</button>
@@ -1466,7 +1467,7 @@
                 <textarea id="mAcceptance" rows="2" placeholder="Definition of done"></textarea>
               </div>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:0.75rem">
               <div class="form-group">
                 <label>Actual start (if begun)</label>
                 <input id="mActualStart" type="date" onchange="refreshAutoActualCost()" />
@@ -1474,6 +1475,11 @@
               <div class="form-group">
                 <label>Actual finish (if done)</label>
                 <input id="mActualFinish" type="date" onchange="refreshAutoActualCost()" />
+              </div>
+              <div class="form-group">
+                <span class="fg-head"><label for="mActualEffort">Actual time spent</label><button type="button" class="info-icon" aria-label="About actual time spent" data-help="The REAL effort this took — the number that tells you how good your estimates are. Type a duration at any resolution: 20m, 90m, 1.5h, 2d, or '1d 4h'. This is effort, not elapsed time: a task open for a week but worked on for three hours is 3h. Leave empty and the tool falls back to the span between the actual dates, which is far cruder.">i</button></span>
+                <input id="mActualEffort" type="text" inputmode="text" placeholder="e.g. 20m, 1.5h, 2d" oninput="refreshAutoActualCost()" />
+                <div id="mActualEffortHint" class="help-text" style="font-size:var(--t-xs);margin-top:2px"></div>
               </div>
               <div class="form-group">
                 <span class="fg-head"><label for="mActualCost">Actual cost $</label><button type="button" class="info-icon" aria-label="About Actual cost $" data-help="What the work actually cost. Auto-derived from the actual time spent — actual working days between the dates above × the participants' day-rates (client-kind people $0) + fixed cost. Type a number to override; ↺ returns to auto. Feeds CPI / EAC and the historical archive.">i</button></span>
@@ -1635,7 +1641,7 @@
         owner: '', units: 100, attendees: [], levelDelay: 0, percentComplete: 0, predecessors: [],
         startNoEarlier: '', deadline: '', jira: '', autoActualStart: false, autoActualFinish: false,
         parentId: null, description: '', deliverable: '', acceptance: '',
-        actualStart: '', actualFinish: '', fixedCost: 0, actualCost: 0, autoActualCost: true, audience: null,
+        actualStart: '', actualFinish: '', actualEffort: null, fixedCost: 0, actualCost: 0, autoActualCost: true, audience: null,
         baseStart: null, baseFinish: null, baseTe: null, baseCost: null,
         te: 0, variance: 0, es: 0, ef: 0, ls: 0, lf: 0, slack: 0, wbs: '', isSummary: false,
         isCritical: false, criticality: 0, startDate: null, finishDate: null, overallocated: false
@@ -2190,7 +2196,7 @@
           owner: t.owner, units: t.units, attendees: t.attendees || [], levelDelay: t.levelDelay,
           percentComplete: t.percentComplete, predecessors: t.predecessors,
           parentId: t.parentId, description: t.description, deliverable: t.deliverable,
-          acceptance: t.acceptance, actualStart: t.actualStart, actualFinish: t.actualFinish,
+          acceptance: t.acceptance, actualStart: t.actualStart, actualFinish: t.actualFinish, actualEffort: (t.actualEffort == null ? null : t.actualEffort),
           fixedCost: t.fixedCost || 0, actualCost: t.actualCost || 0, autoActualCost: t.autoActualCost !== false, audience: t.audience || null,
           baseStart: t.baseStart ? fmtISO(new Date(t.baseStart)) : null,
           baseFinish: t.baseFinish ? fmtISO(new Date(t.baseFinish)) : null,
@@ -2219,7 +2225,7 @@
         predecessors: (t.predecessors || []).map(normalizePred),
         parentId: (t.parentId == null ? null : t.parentId),
         description: t.description || '', deliverable: t.deliverable || '', acceptance: t.acceptance || '',
-        actualStart: t.actualStart || '', actualFinish: t.actualFinish || '',
+        actualStart: t.actualStart || '', actualFinish: t.actualFinish || '', actualEffort: (t.actualEffort == null || t.actualEffort === '' ? null : Number(t.actualEffort)),
         autoActualStart: !!t.autoActualStart, autoActualFinish: !!t.autoActualFinish,
         // strict ISO or nothing — these flow into title/value attributes and
         // the scheduler, and imported backup JSON is untrusted input
@@ -2478,19 +2484,27 @@
     function refreshAutoActualCost() {
       const inp = document.getElementById('mActualCost'); const hint = document.getElementById('mActualCostHint');
       if (!inp) return;
+      // prefer logged EFFORT (minute-resolution); fall back to the date span
+      let days = null, basis = '';
+      const eff = parseDurExpr(document.getElementById('mActualEffort').value.trim());
+      const eh = document.getElementById('mActualEffortHint');
+      if (!isNaN(eff) && eff >= 0) { days = unitToWorkingDays(eff); basis = 'logged effort'; }
+      if (eh) eh.textContent = (!isNaN(eff) && eff >= 0)
+        ? fmtDur(eff) + ' — vs estimate ' + (document.getElementById('mM').value ? fmtDur(parseDurExpr(document.getElementById('mM').value) || 0) + ' most likely' : 'not set')
+        : 'Real effort, any resolution: 20m · 1.5h · 2d. Drives actual cost and estimate accuracy.';
       const sV = document.getElementById('mActualStart').value, fV = document.getElementById('mActualFinish').value;
-      let days = null;
-      if (/^\d{4}-\d{2}-\d{2}$/.test(sV) && /^\d{4}-\d{2}-\d{2}$/.test(fV)) {
+      if (days == null && /^\d{4}-\d{2}-\d{2}$/.test(sV) && /^\d{4}-\d{2}-\d{2}$/.test(fV)) {
         const start = new Date(sV + 'T00:00:00'), fin = new Date(fV + 'T00:00:00');
-        if (fin >= start) days = workingDaysBetween(start, fin, getHolidaySet()) + 1;
+        if (fin >= start) { days = workingDaysBetween(start, fin, getHolidaySet()) + 1; basis = 'elapsed span (log actual time spent for a truer figure)'; }
       }
-      if (days == null) { if (hint) hint.textContent = mActualCostManual ? 'Manual value. Add actual start + finish to auto-derive from time spent.' : 'Auto — set actual start + finish above and this fills from time × rates.'; return; }
+      if (days == null) { if (hint) hint.textContent = mActualCostManual ? 'Manual value. Log actual time spent to auto-derive it.' : 'Auto — log actual time spent (or the actual dates) and this fills from time × rates.'; return; }
       const labor = modalActualParticipants().reduce((sx, p) => sx + (isClientResource(p.name) ? 0 : getRate(p.name) * days * p.units / 100), 0);
       const auto = Math.round(labor + (Math.max(0, parseFloat(document.getElementById('mFixedCost').value) || 0)));
       if (!mActualCostManual) inp.value = auto;
+      const dayTxt = days < 1 ? (Math.round(days * 480) + ' min') : (Math.round(days * 100) / 100 + ' working day' + (days === 1 ? '' : 's'));
       if (hint) hint.innerHTML = mActualCostManual
-        ? `Manual. Auto from ${days} working day${days !== 1 ? 's' : ''} × rates = $${auto.toLocaleString()}. <a href="#" onclick="event.preventDefault();mActualCostManual=false;refreshAutoActualCost()">↺ use auto</a>`
-        : `Auto: ${days} working day${days !== 1 ? 's' : ''} × rates + fixed = $${auto.toLocaleString()}. Type to override.`;
+        ? `Manual. Auto from ${dayTxt} (${escapeHtml(basis)}) × rates = $${auto.toLocaleString()}. <a href="#" onclick="event.preventDefault();mActualCostManual=false;refreshAutoActualCost()">↺ use auto</a>`
+        : `Auto: ${dayTxt} (${escapeHtml(basis)}) × rates + fixed = $${auto.toLocaleString()}. Type to override.`;
     }
     function openAddModal(isMilestone) {
       editingId = null;
@@ -2518,12 +2532,13 @@
       document.getElementById('mAcceptance').value = '';
       document.getElementById('mActualStart').value = '';
       document.getElementById('mActualFinish').value = '';
+      document.getElementById('mActualEffort').value = '';
       document.getElementById('mActualCost').value = 0;
       mActualCostManual = false; refreshAutoActualCost();
       document.getElementById('mAudience').value = '';
       populateOwnerList();
       modalRefMap = buildTaskDatalist('predDatalist', t => true);
-      buildTaskDatalist('parentDatalist', t => !t.milestone);
+      modalParentMap = buildTaskDatalist('parentDatalist', t => !t.milestone);
       document.getElementById('mParent').value = '';
       ensureModalSuggests();
       toggleMilestoneFields();
@@ -2620,6 +2635,7 @@
       document.getElementById('mAcceptance').value = t.acceptance || '';
       document.getElementById('mActualStart').value = t.actualStart || '';
       document.getElementById('mActualFinish').value = t.actualFinish || '';
+      document.getElementById('mActualEffort').value = (t.actualEffort == null ? '' : fmtDurCell(t.actualEffort));
       document.getElementById('mActualCost').value = t.actualCost || 0;
       mActualCostManual = (t.autoActualCost === false); refreshAutoActualCost();
       document.getElementById('mAudience').value = (t.audience === 'client' || t.audience === 'internal') ? t.audience : '';
@@ -2629,7 +2645,10 @@
       // and nothing that already depends on it (would create a circular dependency).
       const predCycle = predCycleSet(id);
       modalRefMap = buildTaskDatalist('predDatalist', x => !predCycle.has(x.id));
-      buildTaskDatalist('parentDatalist', x => !x.milestone && x.id !== id && !allDescendants(id).some(d => d.id === x.id));
+      // the parent field has its OWN candidate set — a task's ancestors are valid
+      // parents but are deliberately absent from the predecessor map, so resolving
+      // the parent against modalRefMap would reject every nested task on save.
+      modalParentMap = buildTaskDatalist('parentDatalist', x => !x.milestone && x.id !== id && !allDescendants(id).some(d => d.id === x.id));
       const curPar = tasks.find(x => x.id === t.parentId);
       document.getElementById('mParent').value = curPar ? ((curPar.wbs ? curPar.wbs + ' · ' : '') + curPar.name) : '';
       ensureModalSuggests();
@@ -2731,6 +2750,7 @@
     // Type-ahead task references: label "WBS · Name" (indented to show hierarchy),
     // resolvable back by label, WBS code, or plain name — case-insensitive.
     let modalRefMap = {};
+    let modalParentMap = {};   // WBS-parent candidates (ancestors allowed)
     function taskRefLabel(t, depth) { return '\u00A0\u00A0'.repeat(depth) + (t.wbs ? t.wbs + ' · ' : '') + t.name; }
     function buildTaskDatalist(datalistId, filterFn) {
       computeWbsCodes();
@@ -2843,7 +2863,7 @@
       const parentText = document.getElementById('mParent').value;
       let parentId = null;
       if (parentText.trim()) {
-        parentId = resolveTaskRef(parentText, modalRefMap);
+        parentId = resolveTaskRef(parentText, modalParentMap) ?? resolveTaskRef(parentText, modalRefMap);
         if (parentId == null) return showErr(`WBS parent "${parentText.trim()}" doesn’t match any task — pick one from the type-ahead list or leave empty for top level.`);
         if (parentId === editingId) return showErr('A task can’t be its own parent.');
       }
@@ -2855,6 +2875,13 @@
       const actualStart = document.getElementById('mActualStart').value || '';
       const actualFinish = document.getElementById('mActualFinish').value || '';
       const actualCost = Math.max(0, parseFloat(document.getElementById('mActualCost').value) || 0);
+      const aeRaw = document.getElementById('mActualEffort').value.trim();
+      let actualEffort = null;
+      if (aeRaw) {
+        const n = parseDurExpr(aeRaw);
+        if (isNaN(n) || n < 0) return showErr('Actual time spent must be a duration — a number in ' + unitLabel() + ', or 20m / 1.5h / 2d / "1d 4h".');
+        actualEffort = n;
+      }
 
       const attendees = [];
       document.querySelectorAll('#attRows .dep-row').forEach(r => {
@@ -2883,7 +2910,7 @@
       }
       const finalPreds = Object.values(seen).filter(pr => pr.id !== editingId);
 
-      const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, actualCost, autoActualCost: !mActualCostManual, audience: (v => (v === 'client' || v === 'internal') ? v : null)(document.getElementById('mAudience').value), percentComplete: pct, predecessors: finalPreds, jira: document.getElementById('mJira').value.trim(),
+      const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, actualCost, actualEffort, autoActualCost: !mActualCostManual, audience: (v => (v === 'client' || v === 'internal') ? v : null)(document.getElementById('mAudience').value), percentComplete: pct, predecessors: finalPreds, jira: document.getElementById('mJira').value.trim(),
         parentId, description, deliverable, acceptance, actualStart, actualFinish };
       // roll-up rows: the locked, computed-from-children fields never save
       if (isSum) ['o', 'm', 'p', 'milestone', 'owner', 'units', 'attendees', 'percentComplete'].forEach(k => delete fields[k]);
@@ -5217,8 +5244,15 @@
     // plan uses, client-kind people $0, plus the task's fixed cost) — so logging
     // actual start/finish is enough, no hand-entry. A manually typed value wins
     // (autoActualCost === false). This feeds CPI/EAC and the historical archive.
+    // effort actually spent, in working days. Prefers the logged actualEffort
+    // (real effort, minute-resolution) and only falls back to the elapsed span
+    // between actual dates, which counts calendar presence rather than work.
+    function actualEffortDays(t) {
+      if (t && t.actualEffort != null && Number.isFinite(+t.actualEffort) && +t.actualEffort >= 0) return unitToWorkingDays(+t.actualEffort);
+      return actualWorkingDays(t);
+    }
     function computedActualCost(t) {
-      const days = actualWorkingDays(t);
+      const days = actualEffortDays(t);
       if (days == null) return null;
       const labor = taskParticipants(t).reduce((sx, pr) => sx + (isClientResource(pr.name) ? 0 : getRate(pr.name) * days * pr.units / 100), 0);
       return Math.round(labor + (Number(t.fixedCost) || 0));
@@ -9379,13 +9413,14 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       owners.forEach(o => {
         html += `<h3 style="margin:12px 0 4px;font-size:13.5px">${escapeHtml(roleText(o))} — ${byOwner[o].length} open item${byOwner[o].length === 1 ? '' : 's'}</h3>
         <table style="border-collapse:collapse;width:100%">
-          <tr><th style="${th}">WBS</th><th style="${th}">Task</th><th style="${th}">Planned window</th><th style="${th}">% today</th><th style="${fillTh}">Now at %</th><th style="${fillTh}">Done? (finish date)</th><th style="${fillTh}">Blockers / notes</th></tr>
+          <tr><th style="${th}">WBS</th><th style="${th}">Task</th><th style="${th}">Planned window</th><th style="${th}">Est.</th><th style="${th}">% today</th><th style="${fillTh}">Now at %</th><th style="${fillTh}">Time spent (e.g. 90m, 1.5h, 2d)</th><th style="${fillTh}">Done? (finish date)</th><th style="${fillTh}">Blockers / notes</th></tr>
           ${byOwner[o].map(t => `<tr>
             <td style="${td};white-space:nowrap">${escapeHtml(t.wbs)}</td>
             <td style="${td}">${t.milestone ? '◆ ' : ''}${escapeHtml(t.name)}${isLate(t) ? ' <span style="color:#b91c1c;font-weight:700">⚠ behind</span>' : ''}</td>
             <td style="${td};white-space:nowrap">${calculated && t.startDate ? escapeHtml(fmtNice(t.startDate) + ' → ' + fmtNice(t.finishDate)) : ''}</td>
+            <td style="${td};text-align:right;white-space:nowrap">${escapeHtml(fmtDur(t.te || 0))}</td>
             <td style="${td};text-align:right">${t.percentComplete || 0}%</td>
-            <td style="${fill}">&nbsp;</td><td style="${fill}">&nbsp;</td><td style="${fill};min-width:200px">&nbsp;</td>
+            <td style="${fill}">&nbsp;</td><td style="${fill}">&nbsp;</td><td style="${fill}">&nbsp;</td><td style="${fill};min-width:200px">&nbsp;</td>
           </tr>`).join('')}
         </table>`;
       });
@@ -9396,15 +9431,16 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       L.push('STATUS UPDATE REQUEST — ' + projName() + scopeNote + ' — ' + fmtNice(new Date()));
       L.push('');
       L.push('Please update your items below: replace ____ with today\'s % complete (or "done"),');
-      L.push('add the actual finish date for anything completed, and flag blockers.');
+      L.push('add the actual finish date for anything completed, the TIME SPENT (e.g. 90m, 1.5h, 2d)');
+      L.push('so we can compare actuals against estimates, and flag blockers.');
       L.push('Reply with the whole list — it gets pasted straight back into the plan.');
       owners.forEach(o => {
         L.push('');
         L.push('== ' + roleText(o) + ' ==');
         byOwner[o].forEach(t => {
           const win = calculated && t.startDate ? fmtNice(t.startDate) + ' → ' + fmtNice(t.finishDate) + ', ' : '';
-          L.push(`• [${t.wbs}] ${t.name}${t.milestone ? ' (milestone)' : ''} — ${win}currently ${t.percentComplete || 0}%${isLate(t) ? '  ⚠ behind schedule' : ''}`);
-          L.push('    now at: ____%    actual finish (if done): YYYY-MM-DD    blockers/notes:');
+          L.push(`• [${t.wbs}] ${t.name}${t.milestone ? ' (milestone)' : ''} — ${win}estimate ${fmtDur(t.te || 0)}, currently ${t.percentComplete || 0}%${isLate(t) ? '  ⚠ behind schedule' : ''}`);
+          L.push('    now at: ____%    time spent: ____ (90m / 1.5h / 2d)    actual finish (if done): YYYY-MM-DD    blockers/notes:');
         });
       });
       L.push('');
@@ -10151,6 +10187,56 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         ]);
       });
       download(safeName() + '-wbs-dictionary.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
+    }
+
+    // ---- Variance CSV: planned vs actual, per activity ----------------------
+    // The estimate-accuracy record. Effort variance uses logged actualEffort where
+    // present (real work, minute resolution) and falls back to the elapsed span
+    // between actual dates, which is cruder — the Basis column says which, so a
+    // ratio is never read as harder evidence than it is.
+    function exportVarianceCSV() {
+      if (!ensureCalc()) return;
+      const u = unitLabel();
+      const rows = [['WBS', 'Activity', 'Type', 'Owner', '% Complete',
+        'Est O (' + u + ')', 'Est M (' + u + ')', 'Est P (' + u + ')', 'Est TE (' + u + ')',
+        'Actual effort (' + u + ')', 'Effort variance (' + u + ')', 'Effort ratio (actual/est)', 'Effort basis',
+        'Baseline start', 'Baseline finish', 'Planned start', 'Planned finish',
+        'Actual start', 'Actual finish', 'Finish variance (working days)',
+        'Planned cost', 'Actual cost', 'Cost variance', 'Cost ratio (actual/est)']];
+      let tEst = 0, tAct = 0, tPc = 0, tAc = 0;
+      tasksInWbsOrder().forEach(({ task: t }) => {
+        if (t.isSummary) return;                     // leaves only — summaries would double-count
+        const te = t.te || 0;
+        const effDays = actualEffortDays(t);
+        const effUnit = effDays == null ? null : workingDaysToUnit(effDays);
+        const basis = effDays == null ? '' : (t.actualEffort != null ? 'logged effort' : 'elapsed span between actual dates');
+        const pc = taskCost(t), ac = actualCostOf(t);
+        const fv = (t.baseFinish && t.actualFinish) ? calDaysBetween(new Date(t.baseFinish), new Date(t.actualFinish + 'T00:00:00')) : null;
+        if (effUnit != null) { tEst += te; tAct += effUnit; }
+        tPc += pc; tAc += ac;
+        rows.push([
+          t.wbs, t.name,
+          t.milestone ? 'Milestone' : (isTestCaseTask(t) ? 'Test case' : 'Work package'),
+          t.owner || '', (t.percentComplete || 0) + '%',
+          t.milestone ? '' : t.o, t.milestone ? '' : t.m, t.milestone ? '' : t.p, t.milestone ? '' : te.toFixed(3),
+          effUnit == null ? '' : effUnit.toFixed(3),
+          effUnit == null ? '' : (effUnit - te).toFixed(3),
+          (effUnit == null || !(te > 0)) ? '' : (effUnit / te).toFixed(2),
+          basis,
+          t.baseStart ? fmtISO(new Date(t.baseStart)) : '', t.baseFinish ? fmtISO(new Date(t.baseFinish)) : '',
+          t.startDate ? fmtISO(t.startDate) : '', t.finishDate ? fmtISO(t.finishDate) : '',
+          t.actualStart || '', t.actualFinish || '', fv == null ? '' : fv,
+          pc.toFixed(2), ac ? ac.toFixed(2) : '', ac ? (ac - pc).toFixed(2) : '',
+          (ac && pc > 0) ? (ac / pc).toFixed(2) : ''
+        ]);
+      });
+      rows.push([]);
+      rows.push(['TOTAL (activities with logged actuals)', '', '', '', '', '', '', '', tEst.toFixed(3), tAct.toFixed(3),
+        (tAct - tEst).toFixed(3), tEst > 0 ? (tAct / tEst).toFixed(2) : '', '', '', '', '', '', '', '', '',
+        tPc.toFixed(2), tAc.toFixed(2), (tAc - tPc).toFixed(2), tPc > 0 ? (tAc / tPc).toFixed(2) : '']);
+      download(safeName() + '-variance-plan-vs-actual.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
+      const n = rows.length - 3;
+      flashSaved('📊 Variance exported — ' + n + ' activities, planned vs actual effort, dates and cost' + (tEst > 0 ? ' · overall effort ratio ' + (tAct / tEst).toFixed(2) + '×' : ''));
     }
 
     // ---- Smartsheet CSV: row-based predecessors like "3FS+2d" ----
@@ -11376,14 +11462,15 @@ ${aiSchemaHint()}`];
     // ---- AI: update progress / actuals from pasted meeting or standup notes ----
     async function updateProgressFromNotes(notes, btn, status, errEl) {
       if (!tasks.length) { errEl.textContent = 'No tasks to update yet.'; errEl.style.display = 'block'; return; }
-      const taskList = leafTasks().map(t => `"${t.name}" (${t.percentComplete || 0}% now${t.actualStart ? ', started ' + t.actualStart : ''}${t.milestone ? '' : ', O/M/P ' + t.o + '/' + t.m + '/' + t.p})`).join('; ');
+      const taskList = leafTasks().map(t => `"${t.name}" (${t.percentComplete || 0}% now${t.actualStart ? ', started ' + t.actualStart : ''}${t.actualEffort != null ? ', time spent so far ' + fmtDur(t.actualEffort) : ''}${t.milestone ? '' : ', estimate TE ' + fmtDur(t.te || 0) + ', O/M/P ' + t.o + '/' + t.m + '/' + t.p})`).join('; ');
       const prompt = `You are updating project tracking data from meeting/standup notes or replies to a status-update request or an ESTIMATE REVIEW request.
 Today is ${fmtISO(new Date())}. Current tasks: ${taskList}.
-NOTES (may be free text, a filled-in status table — columns like WBS | Task | Planned window | % today | Now at % | Done? (finish date) | Blockers / notes — or a filled-in estimate-review table with Current O / M / P and New O / New M / New P + Basis columns, possibly tab- or space-separated):\n"""${notes}"""
+NOTES (may be free text, a filled-in status table — columns like WBS | Task | Planned window | Est. | % today | Now at % | Time spent | Done? (finish date) | Blockers / notes — or a filled-in estimate-review table with Current O / M / P and New O / New M / New P + Basis columns, possibly tab- or space-separated):\n"""${notes}"""
 Return ONLY JSON:
-{"updates":[{"task":"exact task name","percentComplete":0-100,"actualStart":"YYYY-MM-DD or empty","actualFinish":"YYYY-MM-DD or empty"}],
+{"updates":[{"task":"exact task name","percentComplete":0-100,"actualStart":"YYYY-MM-DD or empty","actualFinish":"YYYY-MM-DD or empty","actualEffort":"time actually spent as written, e.g. 90m / 1.5h / 2d, or empty"}],
  "estimates":[{"task":"exact task name","optimistic":n,"mostLikely":n,"pessimistic":n,"basis":"the reply's stated reason, or empty"}],
  "newRisks":[{"type":"Risk|Issue","title":"...","probability":1-5,"impact":1-5,"mitigation":"..."}]}
+Time-spent rules: copy the reporter's "Time spent" cell (or a phrase like "took about 3 hours") VERBATIM into actualEffort, keeping their unit — 90m stays 90m, do not convert or round. This is EFFORT actually worked, never the elapsed calendar window, and it is what lets us measure estimate accuracy; if a reply gives a cumulative total, use that total. Leave actualEffort empty when the cell is blank.
 Rules: only include tasks the notes actually mention or whose table row has a filled-in cell; in status replies "Now at %" (the filled cell) is the new percentComplete — "% today" is the OLD value, never use it; "done"/"yes" in the Done column means percentComplete 100 with its date as actualFinish; never lower an existing percentComplete unless the notes explicitly say work was redone; use actualFinish only when clearly done; anything in a Blockers/notes cell that describes a real impediment becomes a newRisks entry (type Issue if it is blocking now, Risk if it might); extract genuinely new risks/issues only.
 Estimate rules: an estimates[] entry ONLY for rows where new O/M/P numbers were actually filled in (or the free text clearly states revised numbers like "more like 3-5 days"); numbers must satisfy optimistic ≤ mostLikely ≤ pessimistic — if a reply gives a single number, treat it as mostLikely and spread O/P around it (~0.7×/1.5×); if a reply gives a range "3-5", optimistic=3, pessimistic=5, mostLikely between; never invent estimate changes for rows left blank.`;
       btn.disabled = true; const orig = btn.textContent; btn.textContent = '⏳ Updating…'; status.textContent = 'Reading notes…';
@@ -11408,6 +11495,10 @@ Estimate rules: an estimates[] entry ONLY for rows where new O/M/P numbers were 
           if (Number.isFinite(+up.percentComplete)) { const v = Math.min(100, Math.max(0, +up.percentComplete)); if (v !== t.percentComplete) { t.percentComplete = v; changed++; } }
           if (up.actualStart && /^\d{4}-\d{2}-\d{2}$/.test(up.actualStart)) { t.actualStart = up.actualStart; t.autoActualStart = false; } // reported facts are manual, never auto-cleared later
           if (up.actualFinish && /^\d{4}-\d{2}-\d{2}$/.test(up.actualFinish)) { t.actualFinish = up.actualFinish; t.autoActualFinish = false; if (t.percentComplete < 100) t.percentComplete = 100; }
+          if (up.actualEffort != null && String(up.actualEffort).trim()) {   // reported effort, at whatever resolution they gave
+            const eff = Number.isFinite(+up.actualEffort) ? +up.actualEffort : parseDurExpr(String(up.actualEffort));
+            if (Number.isFinite(eff) && eff >= 0 && eff !== t.actualEffort) { t.actualEffort = eff; changed++; }
+          }
         });
         (res.newRisks || []).forEach(r => {
           const title = String(r.title || '').trim(); if (!title) return;
