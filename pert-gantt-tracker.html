@@ -7414,7 +7414,7 @@
           <td style="font-size:0.78rem;min-width:260px">${a ? escapeHtml(a.text) : '<i>no acceptance criteria</i>'}</td>
           <td style="font-size:0.72rem;white-space:nowrap">${a ? (() => { const tcs = testCasesForAC(a.id); return tcs.length
             ? tcs.map(tc => `<span class="badge ${tc.percentComplete >= 100 ? 'badge-done' : tc.percentComplete > 0 ? 'badge-prog' : 'badge-notstarted'}" style="cursor:pointer" onclick="openEditModal(${tc.id})" title="${escapeHtml(tc.name + ' — ' + (tc.percentComplete || 0) + '% complete.' + (tc.description ? '\nSTEPS: ' + (tc.description.length > 260 ? tc.description.slice(0, 258) + '…' : tc.description) : '') + (tc.acceptance ? '\nEXPECTED: ' + (tc.acceptance.length > 160 ? tc.acceptance.slice(0, 158) + '…' : tc.acceptance) : '') + '\nClick to open the test-case task.')}">${escapeHtml((tc.wbs || 'TC'))}</span>`).join(' ')
-            : (isProcessStory(s) ? '<span class="help-text" title="PM/governance process criterion — acceptance is evidenced by the artifact itself (signed document, distributed report, log entry), not by a scheduled UAT test case.">📋 process</span>' : '<span class="help-text" title="No test-case task references this criterion yet — 🧪 Generate test plan covers it (named TC ' + escapeHtml(a.id) + ' — …)">—</span>'); })() : ''}</td>
+            : (storyAudience(s) === 'internal' ? '<span class="help-text" title="Internal delivery-side criterion — evidenced by its own artifact (signed document, distributed report, log entry); no client verification task needed.">📋 internal</span>' : '<span class="help-text" title="No test-case task references this criterion yet — 🧪 Generate test plan covers it (named TC ' + escapeHtml(a.id) + ' — …)">—</span>'); })() : ''}</td>
           <td style="font-size:0.75rem;white-space:nowrap;${t ? 'cursor:pointer;color:var(--primary)' : ''}" ${t ? `onclick="openEditModal(${t.id}, true)" title="Open ${escapeHtml(t.wbs + ' ' + t.name)}"` : ''}>${t ? escapeHtml(t.wbs + ' ' + (t.name.length > 24 ? t.name.slice(0, 22) + '…' : t.name)) : '⚠ unlinked'}</td>
           <td style="font-size:0.75rem">${t ? escapeHtml(t.owner || '—') + roleSub(t.owner) : ''}</td>
           <td style="font-size:0.75rem;white-space:nowrap">${t ? (t.percentComplete || 0) + '% · ' + taskStatus(t).label : ''}</td>
@@ -7928,10 +7928,14 @@ Return ONLY JSON:
         const tcs = testCasesForAC(a.id);
         const forced = force && force.has(String(a.id).toLowerCase());
         if (tcs.length && !tcs.every(brokenTc) && !forced) return; // a healthy TC exists
-        if (isProcessStory(s)) { skippedProcess++; return; } // verified by its artifact, not UAT
-        work.push({ s, a });
+        // Only INTERNAL delivery-side work is exempt. A CLIENT-FACING criterion is
+        // the billing checklist: it needs a verification record even when it is
+        // proven by an artifact rather than a UI walkthrough — that becomes an
+        // evidence check (open the signed record, confirm it) instead of a script.
+        if (storyAudience(s) === 'internal') { skippedProcess++; return; }
+        work.push({ s, a, evidence: isProcessStory(s) });
       }));
-      if (!work.length) { flashSaved('✓ Every UAT-testable criterion already has a real test case' + (skippedProcess ? ' (' + skippedProcess + ' PM/governance process criteria are verified by their own artifacts — no test tasks needed)' : '') + '.'); return; }
+      if (!work.length) { flashSaved('✓ Every client-facing criterion already has a verification' + (skippedProcess ? ' (' + skippedProcess + ' internal delivery criteria need none)' : '') + '.'); return; }
       // Hosts: test cases are a WBS DECOMPOSITION of the plan's own UAT/testing
       // activities — each TC becomes a sub-task of the matching UAT task (same
       // WBS branch preferred, so per-workstream UAT tasks each get their own
@@ -8006,6 +8010,7 @@ PROJECT: ${projName()}. Available people: ${roster}. Default test owner: ${qaOwn
 Rules:
 - One test case per criterion minimum; add a second only when the criterion genuinely bundles two scenarios.
 - name MUST start with "TC <AC-id> — " — the tool links TCs to criteria by that prefix. After the dash: the path type, a colon, then WHAT THE TESTER DOES → WHAT THEY MUST SEE, verb-first, with the arrow: "TC AC-3.2 — error path: submit a case with two matching owners → flagged 'unresolved', never auto-assigned", "TC AC-8.4 — perf: run the quartile query on the 10,000-case dataset → completes in ≤5 s". Never a noun-phrase restatement of the criterion ("validate classification accuracy" is a TOPIC, not a test — the action and the observable outcome are what make it executable).
+- VERIFICATION KIND: most criteria are verified by EXECUTING the product — a scripted walkthrough in the test environment. Some client-facing criteria are instead verified against a RECORD (an approved spec, a distributed report, a signed sign-off, a log entry). For those write an EVIDENCE CHECK, not a UI script: the steps open the artifact and confirm the stated facts ("1. Open the approved mapping spec v1.3 in the project workspace. 2. Confirm every in-scope field has a target, a transform rule or a recorded drop decision. 3. Check the approval date is within 5 business days of the spec being issued."), the owner is whoever signs it off, and the estimate is a few minutes. Both kinds are real verification with a recorded pass/fail — a client-facing criterion is the billing checklist and must never be left with nothing verifying it.
 - steps: MINIMUM 3 numbered steps derived from the Given/When/Then (Given → setup, When → action, Then → observation), executable by a client UAT tester without asking questions — name the exact test data or account in the setup. "1. Log in as billing admin (test user uat_billing01). 2. Open Analytics ▸ Export and select Jan–Mar 2026. 3. Click Export CSV and time the download." — that level of concreteness.
 - pass: the EXPECTED RESULT — the observable behaviour that means PASS, copied faithfully from the criterion's Then (keep every number and its measurement condition). Never restate the steps here.
 - Durations in ${document.getElementById('durationUnit').value}: executing ONE scripted test case takes 5–30 MINUTES — a UAT case is a scripted walkthrough with evidence capture, not exploratory testing. Reserve up to 1 hour ONLY for genuinely long scenarios (performance timing runs, multi-role end-to-end flows). CONVERSION — a day is 8 WORKING hours, never 24: 15 min = 0.03 days, 30 min = 0.06, 1 h = 0.12, 2 h = 0.25. Dividing by 24 (e.g. 1 h → 0.042) is ALWAYS wrong.
@@ -8092,7 +8097,7 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       calculate();
       renderReqs();
       const uncovered = [];
-      reqs.stories.forEach(s => (s.ac || []).forEach(a => { if (!testCasesForAC(a.id).length && !isProcessStory(s)) uncovered.push(a.id); }));
+      reqs.stories.forEach(s => (s.ac || []).forEach(a => { if (!testCasesForAC(a.id).length && storyAudience(s) !== 'internal') uncovered.push(a.id); }));
       flashSaved('🧪 ' + made + ' test case(s) created' + (respec ? ' · ' + respec + ' broken one(s) healed in place (steps, action → outcome name, real O<M<P spread)' : '') + (skippedProcess ? ' · ' + skippedProcess + ' PM/governance process criteria skipped (verified by their artifacts)' : '') + (usedHosts.size ? ' — nested under ' + [...usedHosts].map(n => '"' + n + '"').join(', ') : '') + (uncovered.length ? ' — ⚠ still uncovered: ' + uncovered.slice(0, 6).join(', ') + ' (re-run to fill)' : ' — every UAT-testable AC covered. Export ⬇ Test plan (.md)'));
     }
     // Test plan document: strategy + gates from the estimation guide + AC→TC traceability
