@@ -3332,11 +3332,34 @@
     }
     // downstream-closure of a task (itself + everything that depends on it,
     // transitively) — the set that must NOT become one of its predecessors.
+    // The set of tasks that CANNOT be a predecessor of `id` because a link would
+    // be nonsense or loop the schedule: id itself, its WBS ancestors (a task can't
+    // wait for the summary that contains it) and descendants (a summary already
+    // rolls up its children), and everything that comes AFTER id in the effective
+    // order. "Effective" means each task inherits its ancestors' predecessors, so a
+    // UAT test case whose phase waits for Integration Testing counts as after it —
+    // even though the leaf itself has no direct link. Descendants of anything that
+    // comes after id are pulled in too.
     function predCycleSet(id) {
+      const byId = {}; tasks.forEach(t => byId[t.id] = t);
+      const ancestorsOf = t => { const out = []; let c = t && byId[t.parentId], g = 0; while (c && g++ < 60) { out.push(c.id); c = byId[c.parentId]; } return out; };
+      // effective predecessors = own + every ancestor's predecessors
       const succ = {};
-      tasks.forEach(x => (x.predecessors || []).forEach(p => { (succ[p.id] = succ[p.id] || []).push(x.id); }));
-      const bad = new Set([id]); const stack = [id];
-      while (stack.length) { const n = stack.pop(); (succ[n] || []).forEach(m => { if (!bad.has(m)) { bad.add(m); stack.push(m); } }); }
+      tasks.forEach(t => {
+        const eff = new Set((t.predecessors || []).map(p => p.id));
+        ancestorsOf(t).forEach(aid => (byId[aid].predecessors || []).forEach(p => eff.add(p.id)));
+        eff.forEach(pid => { (succ[pid] = succ[pid] || []).push(t.id); });
+      });
+      // downstream: everything that comes AFTER id via effective order — and the
+      // descendants of those (a child of a downstream summary is downstream too).
+      // Kept SEPARATE from the ancestor rule so id's own siblings aren't caught.
+      const down = new Set(); const stack = [id];
+      while (stack.length) { const n = stack.pop(); (succ[n] || []).forEach(m => { if (!down.has(m)) { down.add(m); stack.push(m); } }); }
+      let grew = true; while (grew) { grew = false; tasks.forEach(t => { if (!down.has(t.id) && t.parentId != null && down.has(t.parentId)) { down.add(t.id); grew = true; } }); }
+      const bad = new Set([id, ...down]);
+      const addDesc = tid => tasks.forEach(x => { if (x.parentId === tid && !bad.has(x.id)) { bad.add(x.id); addDesc(x.id); } });
+      addDesc(id);                                       // id's own descendants
+      ancestorsOf(byId[id]).forEach(aid => bad.add(aid)); // id's own ancestors (not their other children)
       return bad;
     }
     function cancelPredEdit() {
