@@ -197,7 +197,7 @@
     .dep-row select, .dep-row input { padding: 0.4rem 0.5rem; font-size: var(--t-base); }
     .checkbox-row { display: flex; align-items: center; gap: 0.5rem; }
     .checkbox-row input { width: auto; }
-    .checkbox-row label { margin: 0; font-size: var(--t-base); color: var(--text); }
+    .checkbox-row label { margin: 0; font-size: var(--t-base); color: var(--text); text-transform: none; letter-spacing: 0; font-weight: 600; }
     .config-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1.8fr; gap: 0.75rem; align-items: start; }
     .hist-bar { background: linear-gradient(90deg,#2563eb,#60a5fa); border-radius: 3px; height: 14px; }
     .saved-dot { font-size: var(--t-xs); opacity: 0.75; }
@@ -332,7 +332,7 @@
 
     /* ===== DESIGN SYSTEM PASS ===== */
     /* W1e: caps only for micro-labels; wrapped controls get sentence case */
-    label:has(> input[type="checkbox"]), label:has(> input[type="radio"]), label:has(> select) {
+    label:has(> input[type="checkbox"]), label:has(> input[type="radio"]), label:has(> select), input[type="checkbox"] + label, input[type="radio"] + label {
       text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--text);
     }
     /* W2a: numeric typography — right-aligned tabular figures */
@@ -341,7 +341,8 @@
     #taskTable th:nth-child(15), #taskTable td:nth-child(15) { min-width: 110px; }
     #wbsContainer th:nth-child(4), #wbsContainer td:nth-child(4),
     #wbsContainer th:nth-child(7), #wbsContainer td:nth-child(7) { text-align: right; font-variant-numeric: tabular-nums; }
-    .roster-table th:nth-child(n+9):nth-child(-n+11), .roster-table td:nth-child(n+9):nth-child(-n+11) { text-align: right; }
+    .roster-table th:nth-child(n+9):nth-child(-n+11), .roster-table td:nth-child(n+9):nth-child(-n+11),
+    .roster-table th:nth-child(n+4):nth-child(-n+6), .roster-table td:nth-child(n+4):nth-child(-n+6) { text-align: right; }
     .rl-bill { text-align: right; }
     #raidContainer th:nth-child(3), #raidContainer td:nth-child(3) { text-align: center; }
     /* W3a: criticality is an edge indicator, not a row wash */
@@ -369,6 +370,7 @@
     .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
     .seg button { border-radius: 0; border: none; background: #fff; color: #334155; box-shadow: none; }
     .seg button + button { border-left: 1px solid var(--border); }
+    .seg button:hover { background: #f1f5f9; }
     /* W4c: header action hierarchy */
     .btn-light { background: #fff; color: #0f172a; }
     .btn-light:hover { background: #e2e8f0; }
@@ -378,6 +380,9 @@
     header :is(button, summary, label):focus-visible { outline-color: #93c5fd; }
     /* W10a: hover-lift only where lift belongs */
     .export-panel button:hover:not(:disabled):not(.tab), .export-panel button:active:not(:disabled):not(.tab),
+    .seg button:hover:not(:disabled), .seg button:active:not(:disabled),
+    button.info-icon:hover:not(:disabled), button.info-icon:active:not(:disabled),
+    .story-card summary .btn-sm:hover:not(:disabled), .story-card summary .btn-sm:active:not(:disabled),
     td button:hover:not(:disabled):not(.tab), td button:active:not(:disabled):not(.tab),
     .pto-chip button:hover:not(:disabled):not(.tab), .pto-chip button:active:not(:disabled):not(.tab),
     button.wbs-twisty:hover:not(:disabled):not(.tab),
@@ -425,7 +430,7 @@
     .rl-cap:focus, .rl-rate:focus, .rl-bill:focus, .rl-role:focus { border-color: var(--primary); background: #fff; }
     .story-chip { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; background: #f1f5f9; color: #475569; font-size: var(--t-sm); font-weight: 600; white-space: nowrap; }
     /* W24: config grid collapses gracefully */
-    @media (max-width: 1024px) { .config-grid { grid-template-columns: 1fr 1fr; } }
+    @media (min-width: 641px) and (max-width: 1024px) { .config-grid { grid-template-columns: 1fr 1fr; } }
     /* W9a: no iOS focus-zoom */
     @media (max-width: 768px), (pointer: coarse) {
       input, select, textarea { font-size: 16px; }
@@ -444,9 +449,9 @@
     }
     @media (max-width: 640px) {
       #taskTable th:nth-child(1), #taskTable td:nth-child(1):not([colspan]) { display: none; }
-      tr.critical td:nth-child(4) { box-shadow: inset 3px 0 0 var(--critical), 4px 0 8px -4px rgb(15 23 42/.18); }
-      tr.late td:nth-child(4) { box-shadow: inset 3px 0 0 var(--warn), 4px 0 8px -4px rgb(15 23 42/.18); }
-      tr.critical.late td:nth-child(4) { box-shadow: inset 3px 0 0 var(--warn), inset 6px 0 0 var(--critical), 4px 0 8px -4px rgb(15 23 42/.18); }
+      #taskTable tr.critical td:nth-child(4) { box-shadow: inset 3px 0 0 var(--critical), 4px 0 8px -4px rgb(15 23 42/.18); }
+      #taskTable tr.late td:nth-child(4) { box-shadow: inset 3px 0 0 var(--warn), 4px 0 8px -4px rgb(15 23 42/.18); }
+      #taskTable tr.critical.late td:nth-child(4) { box-shadow: inset 3px 0 0 var(--warn), inset 6px 0 0 var(--critical), 4px 0 8px -4px rgb(15 23 42/.18); }
     }
     /* W13: touch targets */
     @media (pointer: coarse) {
@@ -692,7 +697,7 @@
           </div>
         </div>
         <div class="card-body">
-          <details class="help-details">
+          <details class="help-details" id="taskTableHelp">
             <summary>How estimates, status and inline editing work</summary>
             <p class="help-text" style="margin:0.5rem 0 0">
               Enter Optimistic (best case), Most Likely, and Pessimistic (worst case) durations.
@@ -702,7 +707,7 @@
               <br/>Edit in place: click a task's <b>name</b>, <b>Owner</b> (comma-separate for several people — first = owner, rest attendees, @N for allocation %), <b>O/M/P</b>, <b>Predecessors</b>, <b>Start</b> (📌 pin a start-no-earlier-than date) or <b>Finish</b> (⚑ set a deadline — red when the forecast breaches it) and type. Enter saves, Esc cancels.
             </p>
           </details>
-          <p class="help-text" style="margin:0 0 0.75rem">Shift-click selects a range · click a Start cell to pin a date.</p>
+          <p class="help-text" id="taskTableHint" style="margin:0 0 0.75rem">Shift-click selects a range · click a Start cell to pin a date.</p>
           <div id="bulkBar" class="no-print" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:0.6rem 0.9rem;margin-bottom:0.6rem">
             <div style="display:flex;gap:0.8rem;flex-wrap:wrap;align-items:center;font-size:0.8rem">
               <strong id="bulkCount" style="white-space:nowrap"></strong>
@@ -720,7 +725,7 @@
               <button class="btn-sm btn-secondary" onclick="clearSelection()">✕ Clear</button>
             </div>
           </div>
-          <div class="table-wrap">
+          <div class="table-wrap" id="taskTableWrap">
             <table id="taskTable">
               <thead>
                 <tr>
@@ -2122,6 +2127,7 @@
       document.querySelector(`.tab[data-tab="${name}"]`).classList.add('active');
       document.getElementById(`view-${name}`).classList.add('active');
       document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+      if (name === 'analytics') { const g = document.getElementById('summaryGrid'); if (g && !g.dataset.entered) animateTiles(); }
       updateTabSlider();
       // an in-flight AI stream follows you: inline on the Tasks tab, floating
       // bottom-right on every other tab
@@ -3000,9 +3006,22 @@
       const tbody = document.getElementById('taskBody');
       const empty = document.getElementById('tasksEmpty');
       const tb2 = document.getElementById('taskToolbar');
-      if (tasks.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; if (tb2) tb2.style.display = 'none'; return; }
+      const tblWrap = document.getElementById('taskTableWrap');
+      const tblHelp = document.getElementById('taskTableHelp');
+      const tblHint = document.getElementById('taskTableHint');
+      if (tasks.length === 0) {
+        tbody.innerHTML = ''; empty.style.display = 'block';
+        if (tb2) tb2.style.display = 'none';
+        if (tblWrap) tblWrap.style.display = 'none';
+        if (tblHelp) tblHelp.style.display = 'none';
+        if (tblHint) tblHint.style.display = 'none';
+        return;
+      }
       empty.style.display = 'none';
       if (tb2) tb2.style.display = '';
+      if (tblWrap) tblWrap.style.display = '';
+      if (tblHelp) tblHelp.style.display = '';
+      if (tblHint) tblHint.style.display = '';
       computeWbsCodes();
       // pinned whole-project rollup row — O/M/P spans from the all-optimistic /
       // all-likely / all-pessimistic scheduling passes (parallel work overlaps)
@@ -3028,7 +3047,7 @@
           <td>${Math.round(overallProgress())}% <span class="help-text" style="font-size:0.65rem">auto</span></td>
           <td>${mcResult ? (() => { const rv = computeReserves(); const committed = rv.contingencyUnits > 0;
             return committed
-              ? `<span class="badge badge-done" style="cursor:pointer" onclick="switchTab('analytics')" title="Committed date ${escapeHtml(fmtNice(rv.committedDate))} = CPM finish + contingency buffer (sized from P80). The Finish column stays the honest expected date; the buffer is the hatched bar on the Gantt. Click for the simulation.">✅ commit ${escapeHtml(fmtNice(rv.committedDate))}</span>`
+              ? `<span class="badge badge-info" style="cursor:pointer" onclick="switchTab('analytics')" title="Committed date ${escapeHtml(fmtNice(rv.committedDate))} = CPM finish + contingency buffer (sized from P80). The Finish column stays the honest expected date; the buffer is the hatched bar on the Gantt. Click for the simulation.">📅 commit ${escapeHtml(fmtNice(rv.committedDate))}</span>`
               : `<span class="badge badge-info" style="cursor:pointer" onclick="commitToP80()" title="P80 finish ${escapeHtml(fmtNice(durationToDate(mcResult.p80)))} — the commit-safe date (80% of simulations finish by then; the Finish column is only ~P50). CLICK to size the contingency reserve so your committed date = P80: task estimates stay honest, the buffer becomes a visible hatched bar on the Gantt and flows into the SOW committed date.">P80 ${escapeHtml(fmtNice(durationToDate(mcResult.p80)))} — click to commit</span>`; })() : ''}</td>
           <td></td>
         </tr>`;
@@ -3080,7 +3099,7 @@
           <td title="Drag to reorder / re-nest"><button type="button" class="drag-handle" aria-label="Reorder ${escapeHtml(t.name)} — Alt+ArrowUp/ArrowDown moves it" data-drag-id="${t.id}">⠿</button></td>
           <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
           <td data-name-id="${t.id}">${nameCell}</td>
-          <td data-owner-id="${t.id}" style="font-size:0.8rem${summary ? '' : ';cursor:text'}" title="${(resources[(t.owner || '').trim()] || {}).role ? escapeHtml((t.owner || '').trim() + ' — ' + resources[(t.owner || '').trim()].role) + '. ' : ''}${t.overallocated ? escapeHtml((t.owner||'')+' is over-allocated during this task. ') : ''}${summary ? '' : 'Click to reassign right here (type-ahead from the roster). Comma-separate for several people — first = owner, the rest join as attendees; @N sets allocation % (e.g. QA Tester@50).'}"${summary ? '' : ` onclick="beginOwnerEdit(${t.id}, this)"`}>${t.overallocated ? '<span style="color:var(--critical)" title="over-allocated">⚠ </span>' : ''}${summary ? summaryOwnerCell(t) : escapeHtml(t.owner || '—') + roleSub(t.owner)}${(!t.milestone && !summary && t.units !== 100) ? ` <span class="help-text" style="font-size:0.68rem">@${t.units}%</span>` : ''}${(t.attendees && t.attendees.length) ? ` <span class="badge badge-info" title="${escapeHtml(t.attendees.map(a => a.name + ' @' + a.units + '%').join(', '))}">+${t.attendees.length}</span>` : ''}</td>
+          <td data-owner-id="${t.id}" style="font-size:var(--t-md)${summary ? '' : ';cursor:text'}" title="${(resources[(t.owner || '').trim()] || {}).role ? escapeHtml((t.owner || '').trim() + ' — ' + resources[(t.owner || '').trim()].role) + '. ' : ''}${t.overallocated ? escapeHtml((t.owner||'')+' is over-allocated during this task. ') : ''}${summary ? '' : 'Click to reassign right here (type-ahead from the roster). Comma-separate for several people — first = owner, the rest join as attendees; @N sets allocation % (e.g. QA Tester@50).'}"${summary ? '' : ` onclick="beginOwnerEdit(${t.id}, this)"`}>${t.overallocated ? '<span style="color:var(--critical)" title="over-allocated">⚠ </span>' : ''}${summary ? summaryOwnerCell(t) : escapeHtml(t.owner || '—') + ((!t.milestone && t.units !== 100) ? ` <span class="help-text" style="font-size:var(--t-xs)">@${t.units}%</span>` : '') + ((t.attendees && t.attendees.length) ? ` <span class="badge badge-info" title="${escapeHtml(t.attendees.map(a => a.name + ' @' + a.units + '%').join(', '))}">+${t.attendees.length}</span>` : '') + roleSub(t.owner)}</td>
           ${(() => { const noEst = !summary && !t.milestone && !(t.p > 0);
             const a = noEst ? ' style="background:#fee2e2;color:#b91c1c;font-weight:700" title="NO ESTIMATE — this work package contributes nothing to the schedule, the critical path or the price. Click the cell and type the estimate right here."' : '';
             const ed = f => (!summary && !t.milestone) ? ` data-omp="${f}" onclick="beginOmpEdit(this, ${t.id}, '${f}')"${noEst ? '' : ' style="cursor:text"'}` : '';
@@ -3088,12 +3107,12 @@
           <td${a}${ed('m')}>${summary ? rollCell(t.mUp, 'most-likely') : t.milestone ? '—' : fmtDurCell(t.m)}</td>
           <td${a}${ed('p')}>${summary ? rollCell(t.pUp, 'pessimistic') : t.milestone ? '—' : fmtDurCell(t.p)}</td>
           <td${a}><strong>${noEst ? '⚠ 0' : teStr}</strong></td>`; })()}
-          <td data-pred-id="${t.id}" style="font-size:0.8rem${summary ? '' : ';cursor:text'}" title="${escapeHtml(summary ? predTitle(t) : (predTitle(t) ? predTitle(t) + '\n' : '') + 'Click to edit right here — comma-separated WBS codes or names, optional FS/SS/FF/SF±lag (e.g. “1.2, 2.1SS+1”). Enter saves, Esc cancels.')}"${summary ? '' : ` onclick="beginPredEdit(${t.id}, this)"`}>${summary ? '—' : (t.predecessors.length ? escapeHtml(predLabel(t)) : '<span class="help-text" style="font-style:italic">+ link</span>')}</td>
-          ${(() => { if (summary) return `<td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.startDate) : '—'}</td>
-          <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.finishDate) : '—'}</td>`;
+          <td data-pred-id="${t.id}" style="font-size:var(--t-md)${summary ? '' : ';cursor:text'}" title="${escapeHtml(summary ? predTitle(t) : (predTitle(t) ? predTitle(t) + '\n' : '') + 'Click to edit right here — comma-separated WBS codes or names, optional FS/SS/FF/SF±lag (e.g. “1.2, 2.1SS+1”). Enter saves, Esc cancels.')}"${summary ? '' : ` onclick="beginPredEdit(${t.id}, this)"`}>${summary ? '—' : (t.predecessors.length ? escapeHtml(predLabel(t)) : '<span class="help-text" style="font-style:italic">+ link</span>')}</td>
+          ${(() => { if (summary) return `<td style="font-size:var(--t-md);white-space:nowrap">${calculated ? fmtNice(t.startDate) : '—'}</td>
+          <td style="font-size:var(--t-md);white-space:nowrap">${calculated ? fmtNice(t.finishDate) : '—'}</td>`;
             const breach = calculated && t.deadline && t.finishDate && fmtISO(t.finishDate) > t.deadline;
-            return `<td data-start-id="${t.id}" style="font-size:0.8rem;white-space:nowrap;cursor:text" onclick="beginStartEdit(${t.id}, this)" title="${t.startNoEarlier ? 'Pinned: starts no earlier than ' + t.startNoEarlier + '. ' : ''}Click to pin a start date (start-no-earlier-than). Dependencies can push the start LATER than the pin, never earlier. Clear the date to unpin.">${t.startNoEarlier ? '📌 ' : ''}${calculated ? fmtNice(t.startDate) : (t.startNoEarlier || '—')}</td>
-          <td data-finish-id="${t.id}" style="font-size:0.8rem;white-space:nowrap;cursor:text" onclick="beginFinishEdit(${t.id}, this)" title="${t.deadline ? 'Deadline ⚑ ' + t.deadline + (breach ? ' — BREACHED by the current forecast. ' : '. ') : ''}Finish is computed from estimates + dependencies. Click to set a deadline (commitment marker) — the ⚑ turns red if the forecast slips past it.">${calculated ? fmtNice(t.finishDate) : '—'}${t.deadline ? ` <span style="color:${breach ? '#dc2626;font-weight:700' : '#64748b'}">⚑</span>` : ''}</td>`; })()}
+            return `<td data-start-id="${t.id}" style="font-size:var(--t-md);white-space:nowrap;cursor:text" onclick="beginStartEdit(${t.id}, this)" title="${t.startNoEarlier ? 'Pinned: starts no earlier than ' + t.startNoEarlier + '. ' : ''}Click to pin a start date (start-no-earlier-than). Dependencies can push the start LATER than the pin, never earlier. Clear the date to unpin.">${t.startNoEarlier ? '📌 ' : ''}${calculated ? fmtNice(t.startDate) : (t.startNoEarlier || '—')}</td>
+          <td data-finish-id="${t.id}" style="font-size:var(--t-md);white-space:nowrap;cursor:text" onclick="beginFinishEdit(${t.id}, this)" title="${t.deadline ? 'Deadline ⚑ ' + t.deadline + (breach ? ' — BREACHED by the current forecast. ' : '. ') : ''}Finish is computed from estimates + dependencies. Click to set a deadline (commitment marker) — the ⚑ turns red if the forecast slips past it.">${calculated ? fmtNice(t.finishDate) : '—'}${t.deadline ? ` <span style="color:${breach ? '#dc2626;font-weight:700' : '#64748b'}">⚑</span>` : ''}</td>`; })()}
           <td>${slackStr}</td>
           <td>${pctCell}</td>
           <td>${statusBadge}</td>
@@ -4894,10 +4913,10 @@
       const overCard = `<div class="stat-card ${rl.overResourceDays ? 'critical' : ''}" style="cursor:pointer" onclick="switchTab('resources')" title="Open Resources tab">
         <div class="value">${rl.overResourceDays}</div><div class="label">Over-allocated ${rl.overResourceDays === 1 ? 'resource-day' : 'resource-days'}</div></div>`;
       document.getElementById('summaryGrid').innerHTML = `
-        <div class="stat-card" style="cursor:pointer" onclick="switchTab('gantt')" title="Critical-path length if every task takes exactly its expected (TE) duration. Click to open the Gantt."><div class="value">${projectDuration.toFixed(1)}</div><div class="label">Deterministic Duration (${u})</div></div>
-        <div class="stat-card" style="cursor:pointer" onclick="switchTab('gantt')" title="Finish date at expected durations — roughly a coin-flip. Commit to P80 instead. Click for the Gantt."><div class="value">${fmtNice(finishDate)}</div><div class="label">Expected Finish (P≈50)</div></div>
-        <div class="stat-card" title="80% of Monte-Carlo simulations finish within this many ${u} — the safer number for commitments."><div class="value">${p80str}</div><div class="label">P80 Duration (${u})</div></div>
-        <div class="stat-card" style="cursor:pointer" onclick="switchTab('baseline')" title="TE-weighted progress across all work. Click for baseline & variance detail."><div class="value">${prog.toFixed(0)}%</div><div class="label">Overall Complete</div></div>
+        <div class="stat-card" style="cursor:pointer" onclick="switchTab('gantt')" title="Critical-path length if every task takes exactly its expected (TE) duration. Click to open the Gantt."><div class="value">${projectDuration.toFixed(1)}</div><div class="label">Deterministic duration (${u})</div></div>
+        <div class="stat-card" style="cursor:pointer" onclick="switchTab('gantt')" title="Finish date at expected durations — roughly a coin-flip. Commit to P80 instead. Click for the Gantt."><div class="value">${fmtNice(finishDate)}</div><div class="label">Expected finish (P≈50)</div></div>
+        <div class="stat-card" title="80% of Monte-Carlo simulations finish within this many ${u} — the safer number for commitments."><div class="value">${p80str}</div><div class="label">P80 duration (${u})</div></div>
+        <div class="stat-card" style="cursor:pointer" onclick="switchTab('baseline')" title="TE-weighted progress across all work. Click for baseline & variance detail."><div class="value">${prog.toFixed(0)}%</div><div class="label">Overall complete</div></div>
         <div class="stat-card" style="cursor:pointer" onclick="switchTab('pert')" title="How many activities have zero slack — each one can delay the whole project. Click to see them on the network."><div class="value">${criticalTasks.length}/${leaves.filter(t=>!t.milestone).length}</div><div class="label">Critical / Total</div></div>
         ${overCard}
       `;
@@ -4937,7 +4956,8 @@
               ${counts.map((c,i) => {
                 const dLow = (min + i/bins*span);
                 const binHi = min + (i+1)/bins*span;
-                const col = binHi <= mcResult.p80 ? '#3b82f6' : '#cbd5e1';
+                const binMid = min + (i + 0.5) / bins * span;
+                const col = binMid <= mcResult.p80 ? '#3b82f6' : '#cbd5e1';
                 return `<div title="${dLow.toFixed(1)} ${u}: ${c}" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%">
                   <div style="background:${col};border-radius:2px 2px 0 0;height:${maxCount?(c/maxCount*100):0}%"></div></div>`;
               }).join('')}
@@ -5727,9 +5747,17 @@
           const lbl = `${teLbl}${done ? ' ✓' : (t.percentComplete > 0 ? ' · ' + t.percentComplete + '%' : '')}`;
           if (bw >= 56) {
             const lw = lbl.length * 5.8 + 10;
-            const onFill = done || pctw >= lw;
             const ink = crit ? '#7f1d1d' : '#1e3a8a';
-            svg += `<text x="${bx + 6}" y="${y + 7 + BAR_H - 4.5}" font-family="${FF}" font-size="10.5" font-weight="600" fill="${onFill ? '#fff' : ink}"${(!onFill && pctw > 6) ? ' paint-order="stroke" stroke="#ffffff" stroke-width="2.2"' : ''}>${escapeXml(lbl)}</text>`;
+            if (done || pctw >= lw) {
+              // fits on the solid fill: white on fill
+              svg += `<text x="${bx + 6}" y="${y + 7 + BAR_H - 4.5}" font-family="${FF}" font-size="10.5" font-weight="600" fill="#fff">${escapeXml(lbl)}</text>`;
+            } else if ((bw - pctw) >= lw) {
+              // fits on the remaining tinted track: ink text starting past the fill, no boundary straddle
+              svg += `<text x="${bx + pctw + 4}" y="${y + 7 + BAR_H - 4.5}" font-family="${FF}" font-size="10.5" font-weight="600" fill="${ink}">${escapeXml(lbl)}</text>`;
+            } else {
+              // neither side has room: place it outside the bar end
+              svg += `<text x="${bx + bw + (slackW > 2 ? slackW : 0) + 5}" y="${y + 7 + BAR_H - 4.5}" font-family="${FF}" font-size="10.5" font-weight="600" fill="#475569">${escapeXml(lbl)}</text>`;
+            }
           }
           else svg += `<text x="${bx + bw + (slackW > 2 ? slackW : 0) + 5}" y="${y + 7 + BAR_H - 4.5}" font-family="${FF}" font-size="10.5" font-weight="600" fill="#475569">${escapeXml(lbl)}</text>`;
           svg += `<title>${escapeXml(tip)}</title></g>`;
@@ -10729,9 +10757,9 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       const effPrice = contract || chosen;
       const margin = effPrice > 0 ? (effPrice - cost) / effPrice * 100 : 0;
       const mRow = (label, price, note, hot) => `
-        <div class="stat-card ${hot ? 'warn' : ''}" style="${hot ? 'border-color:#f59e0b' : ''}">
+        <div class="stat-card" style="${hot ? 'border:1.5px solid var(--primary)' : ''}">
           <div class="value" style="font-size:1.1rem">${fmtMoney(price)}</div>
-          <div class="label">${label}</div>
+          <div class="label">${label}${hot ? ' <span class="badge badge-info" style="font-size:0.6rem">Recommended</span>' : ''}</div>
           <div class="help-text" style="font-size:0.65rem">${note}</div>
         </div>`;
       cont.innerHTML = `
@@ -10751,8 +10779,8 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           ${mRow('T&M revenue (P50 effort)', prices.p50, 'bill-rates × estimated effort', false)}
           ${mRow('Fixed bid @ P80', prices.p80, '+' + Math.round((u80 - 1) * 100) + '% Monte-Carlo risk uplift', pricing.basis === 'p80')}
           ${mRow('Fixed bid @ P90', prices.p90, '+' + Math.round((u90 - 1) * 100) + '% risk uplift', pricing.basis === 'p90')}
-          <div class="stat-card ${margin < 25 ? 'critical' : 'success'}"><div class="value" style="font-size:1.1rem">${margin.toFixed(0)}%</div><div class="label">Margin at ${contract ? 'contract' : pricing.basis.toUpperCase()} price</div><div class="help-text" style="font-size:0.65rem">${fmtMoney(effPrice)} − ${fmtMoney(cost)} P50 cost</div></div>
-          ${(mcResult && mcResult.costP80) ? (() => { const dm = effPrice > 0 ? (effPrice - mcResult.costP80) / effPrice * 100 : 0; return `<div class="stat-card ${dm < 15 ? 'critical' : 'warn'}"><div class="value" style="font-size:1.1rem">${dm.toFixed(0)}%</div><div class="label">Downside margin (cost @ P80)</div><div class="help-text" style="font-size:0.65rem">${fmtMoney(effPrice)} − ${fmtMoney(mcResult.costP80)} — defend this in the QBR</div></div>`; })() : ''}
+          <div class="stat-card ${margin < 25 ? 'critical' : ''}"><div class="value" style="font-size:1.1rem">${margin.toFixed(0)}%</div><div class="label">Margin at ${contract ? 'contract' : pricing.basis.toUpperCase()} price</div><div class="help-text" style="font-size:0.65rem">${fmtMoney(effPrice)} − ${fmtMoney(cost)} P50 cost</div></div>
+          ${(mcResult && mcResult.costP80) ? (() => { const dm = effPrice > 0 ? (effPrice - mcResult.costP80) / effPrice * 100 : 0; return `<div class="stat-card ${dm < 15 ? 'critical' : ''}"><div class="value" style="font-size:1.1rem">${dm.toFixed(0)}%</div><div class="label">Downside margin (cost @ P80)</div><div class="help-text" style="font-size:0.65rem">${fmtMoney(effPrice)} − ${fmtMoney(mcResult.costP80)} — defend this in the QBR</div></div>`; })() : ''}
         </div>
         <p class="help-text" style="margin-top:0.6rem">${pricing.model === 'fixed'
           ? `Fixed-price guidance: bids are the TRUE ${pricing.basis.toUpperCase()} of simulated effort × rates (every task's overrun counts, on or off the critical path)${mcResult && mcResult.revP50 ? '' : ' — run Calculate for the simulation'}. The simulation is seeded, so the same plan always quotes the same number.`
@@ -11641,7 +11669,9 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
     let _tileVals = {};
     function animateTiles() {
       const grid = document.getElementById('summaryGrid'); if (!grid || !grid.children.length) return;
-      if (!grid.dataset.entered) {
+      const av = document.getElementById('view-analytics');
+      const visible = av && av.classList.contains('active');
+      if (!grid.dataset.entered && visible) {
         grid.dataset.entered = '1';
         grid.classList.add('tiles-in');
         setTimeout(() => grid.classList.remove('tiles-in'), 650); // class MUST come off: innerHTML rebuilds re-match .tiles-in .stat-card
@@ -11653,7 +11683,7 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
         if (!m) { _tileVals[key] = null; return; }
         const to = parseFloat(m[1]), suffix = m[2], from = _tileVals[key];
         _tileVals[key] = to;
-        if (key.indexOf('Overall Complete') >= 0 && to >= 100) celebrate100();
+        if (key.indexOf('Overall complete') >= 0 && to >= 100) celebrate100();
         if (!motionOK() || !Number.isFinite(from) || from === to) return;
         const dec = (m[1].split('.')[1] || '').length;
         const t0 = performance.now();
