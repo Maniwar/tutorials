@@ -1416,13 +1416,13 @@
         <div class="metric-row" style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:0.75rem">
           <div class="form-group">
             <span class="fg-head"><label for="mOwner">Owner / resource</label></span>
-            <input id="mOwner" type="text" placeholder="e.g. A. Rivera" autocomplete="off" oninput="updateOwnerRoleHint()" onchange="updateOwnerRoleHint()" />
+            <input id="mOwner" type="text" placeholder="e.g. A. Rivera" autocomplete="off" oninput="updateOwnerRoleHint();refreshAutoActualCost()" onchange="updateOwnerRoleHint();refreshAutoActualCost()" />
             <datalist id="ownerList"></datalist>
             <div id="mOwnerRole" style="margin-top:2px"></div>
           </div>
           <div class="form-group">
             <span class="fg-head"><label for="mUnits">Units %</label><button type="button" class="info-icon" aria-label="About Units %" data-help="How much of the resource this task consumes while active. 100 = full-time. Two 100% tasks at once for one person = over-allocated.">i</button></span>
-            <input id="mUnits" type="number" min="0" step="5" value="100" />
+            <input id="mUnits" type="number" min="0" step="5" value="100" oninput="refreshAutoActualCost()" />
           </div>
           <div class="form-group">
             <span class="fg-head"><label for="mPct">% Complete</label></span>
@@ -1430,7 +1430,7 @@
           </div>
           <div class="form-group">
             <span class="fg-head"><label for="mFixedCost">Fixed cost $</label><button type="button" class="info-icon" aria-label="About Fixed cost $" data-help="One-off cost (licences, travel, vendor fee). Labor cost comes from the owner's day rate on the Resources tab.">i</button></span>
-            <input id="mFixedCost" type="number" min="0" step="100" value="0" />
+            <input id="mFixedCost" type="number" min="0" step="100" value="0" oninput="refreshAutoActualCost()" />
           </div>
         </div>
         <div class="form-group" style="max-width:26rem">
@@ -1496,7 +1496,7 @@
               </div>
               <div class="form-group">
                 <span class="fg-head"><label for="mActualCost">Actual cost $</label><button type="button" class="info-icon" aria-label="About Actual cost $" data-help="What the work actually cost. Auto-derived from the actual time spent — actual working days between the dates above × the participants' day-rates (client-kind people $0) + fixed cost. Type a number to override; ↺ returns to auto. Feeds CPI / EAC and the historical archive.">i</button></span>
-                <input id="mActualCost" type="number" min="0" step="100" value="0" readonly oninput="refreshAutoActualCost()" title="Calculated from the actual time spent — use ✎ override to type your own figure" />
+                <input id="mActualCost" type="text" inputmode="decimal" value="$0" readonly oninput="refreshAutoActualCost()" title="Calculated from the actual time spent — use ✎ override to type your own figure" />
                 <div id="mActualCostHint" class="help-text" style="font-size:var(--t-xs);margin-top:2px"></div>
               </div>
             </div>
@@ -2497,7 +2497,12 @@
     function setActualCostManual(on) {
       mActualCostManual = !!on;
       const inp = document.getElementById('mActualCost');
-      if (inp) { inp.readOnly = !on; if (on) { inp.focus(); inp.select(); } }
+      if (inp) {
+        inp.readOnly = !on;
+        // typing wants a bare number; the calculated state reads as money
+        const n = parseFloat(String(inp.value).replace(/[^0-9.\-]/g, '')) || 0;
+        if (on) { inp.value = String(n); inp.focus(); inp.select(); }
+      }
       refreshAutoActualCost();
     }
     function refreshAutoActualCost() {
@@ -2529,7 +2534,7 @@
       }
       const labor = modalActualParticipants().reduce((sx, p) => sx + (isClientResource(p.name) ? 0 : getRate(p.name) * days * p.units / 100), 0);
       const auto = Math.round(labor + (Math.max(0, parseFloat(document.getElementById('mFixedCost').value) || 0)));
-      if (!mActualCostManual) inp.value = auto;
+      if (!mActualCostManual) inp.value = fmtMoney(auto);
       const dayTxt = days < 1 ? (Math.round(days * 480) + ' min') : (Math.round(days * 100) / 100 + ' working day' + (days === 1 ? '' : 's'));
       if (hint) hint.innerHTML = mActualCostManual
         ? `<b>Manual figure.</b> Calculated would be $${auto.toLocaleString()} from ${dayTxt} (${escapeHtml(basis)}) × rates. <a href="#" onclick="event.preventDefault();setActualCostManual(false)">↺ back to calculated</a>`
@@ -2562,7 +2567,7 @@
       document.getElementById('mActualStart').value = '';
       document.getElementById('mActualFinish').value = '';
       document.getElementById('mActualEffort').value = '';
-      document.getElementById('mActualCost').value = 0;
+      document.getElementById('mActualCost').value = fmtMoney(0);
       mActualCostManual = false; refreshAutoActualCost();
       document.getElementById('mAudience').value = '';
       populateOwnerList();
@@ -2667,7 +2672,7 @@
       document.getElementById('mActualStart').value = t.actualStart || '';
       document.getElementById('mActualFinish').value = t.actualFinish || '';
       document.getElementById('mActualEffort').value = (t.actualEffort == null ? '' : fmtDurCell(t.actualEffort));
-      document.getElementById('mActualCost').value = t.actualCost || 0;
+      document.getElementById('mActualCost').value = (t.autoActualCost === false) ? String(t.actualCost || 0) : fmtMoney(t.actualCost || 0);
       mActualCostManual = (t.autoActualCost === false); refreshAutoActualCost();
       document.getElementById('mAudience').value = (t.audience === 'client' || t.audience === 'internal') ? t.audience : '';
       document.getElementById('mJira').value = t.jira || '';
@@ -2815,10 +2820,10 @@
       row.className = 'dep-row';
       row.style.gridTemplateColumns = '3fr 1fr 2.2rem';   // fixed ✕ column so the remove button is a proper box (matches dependency rows)
       row.innerHTML = `
-        <div style="min-width:0"><input class="att-name" value="${escapeHtml(att.name)}" placeholder="Type resource name…" autocomplete="off" style="width:100%" oninput="this.parentElement.querySelector('.att-role').innerHTML = ownerRoleHintHtml(this.value)" onchange="this.parentElement.querySelector('.att-role').innerHTML = ownerRoleHintHtml(this.value)" />
+        <div style="min-width:0"><input class="att-name" value="${escapeHtml(att.name)}" placeholder="Type resource name…" autocomplete="off" style="width:100%" oninput="this.parentElement.querySelector('.att-role').innerHTML = ownerRoleHintHtml(this.value);refreshAutoActualCost()" onchange="this.parentElement.querySelector('.att-role').innerHTML = ownerRoleHintHtml(this.value);refreshAutoActualCost()" />
         <div class="att-role" style="margin-top:1px">${ownerRoleHintHtml(att.name)}</div></div>
-        <input class="att-units" type="number" min="0" step="5" value="${att.units}" title="Units % for this attendee" />
-        <button type="button" class="btn-sm btn-danger" onclick="this.parentElement.closest('.dep-row').remove()" aria-label="Remove dependency">✕</button>`;
+        <input class="att-units" type="number" min="0" step="5" value="${att.units}" title="Units % for this attendee" oninput="refreshAutoActualCost()" />
+        <button type="button" class="btn-sm btn-danger" onclick="this.parentElement.closest('.dep-row').remove();refreshAutoActualCost()" aria-label="Remove attendee">✕</button>`;
       wrap.appendChild(row);
       // touch-safe popup instead of the native <datalist>. A person already added
       // in ANOTHER row is HIDDEN from the list (no duplicates); remove with ✕.
@@ -2905,7 +2910,7 @@
       const acceptance = document.getElementById('mAcceptance').value.trim();
       const actualStart = document.getElementById('mActualStart').value || '';
       const actualFinish = document.getElementById('mActualFinish').value || '';
-      const actualCost = Math.max(0, parseFloat(document.getElementById('mActualCost').value) || 0);
+      const actualCost = Math.max(0, parseFloat(String(document.getElementById('mActualCost').value).replace(/[^0-9.\-]/g, '')) || 0);
       const aeRaw = document.getElementById('mActualEffort').value.trim();
       let actualEffort = null;
       if (aeRaw) {
