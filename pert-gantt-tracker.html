@@ -389,6 +389,123 @@
       .tabs::-webkit-scrollbar { display: none; }
       .tab { flex: 0 0 auto; min-width: 0; padding: 0.55rem 0.85rem; font-size: 0.84rem; }
     }
+    /* ===== Plan Truth — diverging variance bars + activity strip (Analytics) =====
+       Percent-positioned CSS, not a fixed-viewBox SVG: a shared axis IS shared
+       geometry, and percentages reflow losslessly from 320px to 1400px while the
+       text stays at real px sizes. Same idiom as the Monte-Carlo histogram in
+       this tab, whose percentile markers are absolutely positioned at left:X%.
+       Prefix `ptr-` is deliberately three characters so it cannot be confused at
+       a glance with the activity editor's `.pa-` family (504-542). */
+    .ptr-wrap { font-size: var(--t-base); }
+    .ptr-blank { color: var(--muted); font-size: var(--t-base); line-height: 1.5; padding: 0.3rem 0; }
+    .ptr-lead { display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem;
+      padding: 0.6rem 0.8rem; border-radius: 8px; margin-bottom: 0.9rem; line-height: 1.45; }
+    .ptr-lead-do { background: var(--primary-50); border: 1px solid var(--primary-200); color: var(--primary-700); }
+    .ptr-lead-ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
+
+    .ptr-row { display: grid; grid-template-columns: 172px minmax(0, 1fr) 176px;
+      gap: 0.15rem 0.9rem; align-items: center; padding: 0.55rem 0; border-top: 1px solid var(--border); }
+    .ptr-axis { border-top: 0; padding: 0 0 0.2rem; }
+
+    .ptr-head { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+    .ptr-dim { font-size: var(--t-sm); font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+      color: var(--muted); display: flex; align-items: center; }
+    /* plan → actual, reusing the app's own pair grammar (.pa-nums/.pa-ar 523-525,
+       pairCell() in renderBaseline 7492) so the two screens read identically */
+    .ptr-pair { font-size: var(--t-md); line-height: 1.35; overflow-wrap: anywhere; }
+    .ptr-plan { color: var(--muted); }
+    .ptr-arr { color: var(--slack); margin: 0 0.25rem; }
+    .ptr-act { color: var(--text); font-weight: 700; }
+    .ptr-na { color: var(--muted); font-style: italic; }
+
+    .ptr-plot { position: relative; height: 26px; border-radius: 6px;
+      background: var(--bg); border: 1px solid var(--border); overflow: hidden; }
+    .ptr-grid { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border); }
+    .ptr-zero { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px;
+      background: var(--header); opacity: .85; }
+    .ptr-bar { position: absolute; top: 5px; height: 16px; border-radius: 3px;
+      transform-origin: left center; animation: ptrGrow .3s var(--easeo) backwards; }
+    .ptr-neg { transform-origin: right center; }
+    @keyframes ptrGrow { from { transform: scaleX(.02); } }
+    .ptr-good { background: var(--success); }
+    .ptr-bad { background: var(--critical); }
+    .ptr-chg { background: var(--warn); }
+    /* zero variance is a measurement, not an absence — a dot ON the plan line */
+    .ptr-dot { position: absolute; left: 50%; top: 50%; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px;
+      border-radius: 999px; background: var(--success); box-shadow: 0 0 0 3px var(--card), 0 0 0 4.5px var(--success); }
+    .ptr-over { position: absolute; top: 50%; transform: translateY(-50%); font-size: 13px; line-height: 1; font-weight: 700; }
+    .ptr-over-r { right: 3px; } .ptr-over-l { left: 3px; }
+    .ptr-good-t { color: var(--success); } .ptr-bad-t { color: var(--critical); } .ptr-chg-t { color: var(--warn); }
+
+    /* "not measurable yet" must be impossible to mistake for "zero variance" */
+    .ptr-void { border-style: dashed; display: flex; align-items: center; justify-content: center;
+      background: repeating-linear-gradient(135deg, var(--bg) 0 6px, var(--card) 6px 12px); }
+    .ptr-voidtxt { font-size: var(--t-xs); color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+
+    .ptr-side { display: flex; align-items: center; justify-content: flex-end; gap: 0.4rem; flex-wrap: wrap; min-width: 0; }
+    .ptr-side .badge { white-space: normal; text-align: right; max-width: 100%; line-height: 1.3; }
+    .ptr-pct { font-size: var(--t-md); font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+    .ptr-note { grid-column: 1 / -1; font-size: var(--t-sm); color: var(--muted); line-height: 1.55; margin-top: 0.1rem; }
+    .ptr-note b { color: var(--text); }
+    .ptr-needs > b:first-child { color: var(--warn); }
+    .ptr-cta { vertical-align: middle; margin-left: 0.2rem; }
+
+    .ptr-axisplot { height: 18px; background: none; border: 0; border-radius: 0; overflow: visible; }
+    .ptr-axisplot .ptr-zero { opacity: .3; }
+    .ptr-tick { position: absolute; top: 0; transform: translateX(-50%); font-size: var(--t-xs);
+      color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ptr-tick0 { font-weight: 700; color: var(--header); letter-spacing: .06em; }
+    .ptr-tick-s { transform: none; } .ptr-tick-e { transform: translateX(-100%); }
+    .ptr-end { font-size: var(--t-xs); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .ptr-head.ptr-end { justify-content: flex-end; }
+
+    /* the evidence strip: one cell per leaf, in task-list order. This is the only
+       part of the header that carries real geometry on a brand-new plan, which is
+       exactly when the three bars above have nothing yet to say. */
+    .ptr-strip-wrap { border-top: 1px solid var(--border); margin-top: 0.4rem; padding-top: 0.8rem; }
+    .ptr-strip { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+    .ptr-strip i { width: 11px; height: 11px; border-radius: 2px; flex: none; display: block; }
+    .ptr-strip .ptr-ms { border-radius: 999px; }
+    .ptr-strip .ptr-ring { box-shadow: 0 0 0 1.5px var(--milestone); }
+    .ptr-more { font-size: var(--t-xs); color: var(--muted); margin-left: 0.2rem; }
+    .ptr-c-done { background: var(--success); }
+    .ptr-c-prog { background: var(--primary); }
+    .ptr-c-late { background: var(--critical); }
+    .ptr-c-todo { background: #cbd5e1; }
+    .ptr-c-none { background: var(--card); border: 1px dashed var(--slack); }
+    .ptr-key { display: flex; flex-wrap: wrap; gap: 0.2rem 0.8rem; margin-top: 0.6rem;
+      font-size: var(--t-xs); color: var(--muted); }
+    .ptr-k { display: inline-flex; align-items: center; gap: 0.3rem; }
+    .ptr-k i { width: 9px; height: 9px; border-radius: 2px; flex: none; display: inline-block; }
+    .ptr-cap { font-size: var(--t-sm); color: var(--muted); line-height: 1.55; margin-top: 0.5rem; }
+    .ptr-cap b { color: var(--text); }
+    .ptr-foot { font-size: var(--t-xs); color: var(--muted); line-height: 1.55;
+      margin-top: 0.75rem; padding-top: 0.6rem; border-top: 1px dashed var(--border); }
+
+    /* Bars and cells are background-colours, and browsers strip backgrounds on
+       paper unless told otherwise — without this the whole chart prints as a row
+       of empty grey tracks. (The app's existing .progress-fill and .pa-fill have
+       exactly that bug today; this section opts out of inheriting it.) */
+    @media print {
+      .ptr-bar, .ptr-dot, .ptr-zero, .ptr-grid, .ptr-void, .ptr-lead,
+      .ptr-strip i, .ptr-k i, .ptr-side .badge {
+        -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .ptr-bar { animation: none; }
+      .ptr-row, .ptr-strip-wrap { break-inside: avoid; }
+    }
+
+    /* The generic inline-grid collapse exists only inside .modal-body (710) and
+       #storyModal (731) and matches inline styles only, so a class-based grid on
+       this tab has to state its own breakpoint. */
+    @media (max-width: 640px) {
+      .ptr-row { grid-template-columns: 1fr; gap: 0.35rem; padding: 0.7rem 0; }
+      .ptr-head { flex-direction: row; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+      .ptr-pair { white-space: normal; overflow: visible; text-align: right; }
+      .ptr-side { justify-content: flex-start; }
+      .ptr-axis .ptr-head, .ptr-axis .ptr-side { display: none; }
+      .ptr-tick { font-size: 0.625rem; }
+    }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
       .modal-overlay.open { backdrop-filter: none; }
@@ -1401,6 +1518,20 @@
       <div class="summary-grid" id="summaryGrid"></div>
       <div class="card">
         <div class="card-header">
+          <h2><span class="ico" aria-hidden="true">⚖️</span> Plan truth — schedule, budget &amp; scope</h2>
+          <div class="toolbar no-print">
+            <button class="btn-secondary btn-sm" onclick="switchTab('baseline')" title="Open Baseline &amp; Actuals — logging actual dates and time spent is what turns the planned bars into real spend and real slip">Log actuals</button>
+            <button class="btn-secondary btn-sm" onclick="setBaseline();renderAnalytics()" title="Freeze today's dates, effort and cost as the committed plan. Every bar here is measured against it.">📌 Set baseline</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="planTruth">
+            <p class="ptr-blank"><b>Nothing to compare yet.</b> Add activities and press <b>Calculate</b> — schedule, budget and scope then appear as one bar each on one shared scale.</p>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
           <h2><span class="ico" aria-hidden="true">🩺</span> Plan Health Check &amp; Trend</h2>
           <div class="toolbar no-print">
             <button class="btn-primary btn-sm" onclick="runHealthCheck()">Run health check</button>
@@ -1865,6 +1996,7 @@
       renderTaskTable(); renderWBS(); renderRaid(); renderProjectMenu();
       if (!fromCurrent) {
         document.getElementById('summaryGrid').innerHTML = '';
+        { const p = document.getElementById('planTruth'); if (p) p.innerHTML = '<p class="ptr-blank"><b>Nothing to compare yet.</b> Add activities and press <b>Calculate</b>.</p>'; }
         document.getElementById('analyticsContent').innerHTML = '<div class="empty-state"><h3>Run Calculate to see analytics</h3></div>';
         document.getElementById('ganttContainer').innerHTML = '';
         document.getElementById('resourcesContainer').innerHTML = '';
@@ -6122,6 +6254,461 @@
         if (document.getElementById('view-req').classList.contains('active')) renderReqs();
       }
     }
+    // ---- shared metric helpers (single source of truth) ----------------------
+    // Client-facing story coverage — ONE definition, used by the Requirements
+    // tab tile AND the Analytics header. It was inline in renderReqs(); a second
+    // copy in a second tab is how the four already-divergent gap formulas in
+    // this file happened, so it is extracted rather than repeated.
+    function coverageStats() {
+      const stories = (reqs && Array.isArray(reqs.stories)) ? reqs.stories : [];
+      const leaves = storyableLeaves().filter(t => !isInternalActivity(t));
+      const covered = new Set(stories.flatMap(storyWbsIds));
+      return {
+        stories, leaves, covered,
+        uncovered: leaves.filter(t => !covered.has(t.id)),
+        internalLeafCount: storyableLeaves().filter(isInternalActivity).length
+      };
+    }
+
+    // Consumption paced by progress. Half a budget spent at 10% done and at 90%
+    // done are opposite findings, so a signed delta lies about both; the honest
+    // ratio is used ÷ earned. Under 25% complete the denominator is too small to
+    // carry a projection, so it returns null rather than a confident wrong
+    // number. Lifted out of renderBaseline() so both screens share one rule.
+    function planPace(used, plan, donePct) {
+      if (!(plan > 0) || !(used > 0) || !(donePct >= 25)) return null;
+      return (used / plan) / (donePct / 100);
+    }
+
+    // ================= PLAN TRUTH — schedule · budget · scope =================
+    // ONE chart: three diverging bars on ONE shared axis, over a per-activity
+    // evidence strip. The axis is "% away from that dimension's OWN plan" — the
+    // only defensible common scale, because days, dollars and effort have no
+    // common absolute currency but "a tenth more than we committed" means the
+    // same thing in all three. The absolute is always printed in the badge
+    // beside the bar: the percentage is the comparator, the absolute is the fact.
+    //
+    // Three deliberate refusals, each fixing a real defect in the data model:
+    //
+    //  1. The budget row NEVER falls back to planned cost. Planned cost against
+    //     a baselined cost is the scope change repriced at the same rates — two
+    //     bars, one signal. With no actual cost booked the row says so and names
+    //     the one action that fills it in. No "are these two bars secretly the
+    //     same?" heuristic is needed because the situation cannot arise.
+    //
+    //  2. No CPI and no EAC. taskCost() (5740) charges a task's whole fixedCost,
+    //     earnedValue() (5859) prorates that same fixedCost by percent complete,
+    //     and computedActualCost() (5767) charges it in full the moment any
+    //     actual exists. One $10k licence at 10% done therefore yields EV ≈ $1k
+    //     against AC ≈ $10k — CPI 0.10 and a tenfold overrun forecast, from
+    //     arithmetic rather than from the project. Consumption paced by progress
+    //     has no such asymmetry, and it is the rule renderBaseline() already uses.
+    //
+    //  3. Schedule reads currentFinish() (6087), never t.ef. recompute() (4862)
+    //     schedules purely from te and never consults actual dates, so a forecast
+    //     derived from ef structurally cannot move when a task finishes late.
+    const PTR_STEPS = [10, 25, 50, 100, 200];
+
+    function ptrPct(p) {
+      if (!Number.isFinite(p)) return '—';
+      const v = Math.abs(p) >= 10 ? Math.round(p) : Math.round(p * 10) / 10;
+      return (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v) + '%';
+    }
+    function ptrNum(n, unit) {
+      const v = Math.round(n * 10) / 10;
+      return (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v) + (unit ? ' ' + unit : '');
+    }
+    function ptrPl(n, one, many) { return n === 1 ? one : (many || one + 's'); }
+
+    function planTruthData() {
+      const leaves = leafTasks();
+      const hb = hasBaseline();
+      const u = unitLabel();
+      const safe = !!clientSafeReports;                 // screen-share mode: hide money, keep ratios
+      const money = v => safe ? '•••' : fmtMoney(v);
+      const donePct = overallProgress();
+      const today = stripTime(new Date());
+
+      // ------------------------------ SCHEDULE ------------------------------
+      const sch = { key: 'sched', dim: 'Schedule', icon: '📅', kind: 'signed', state: 'needs' };
+      (function () {
+        const fins = leaves.map(currentFinish)
+          .filter(d => d instanceof Date && !isNaN(d.getTime())).map(d => d.getTime());
+        if (!fins.length) {
+          sch.why = 'No activity carries a finish date yet, so there is nothing to forecast.';
+          sch.cta = { label: 'Add activities', act: "switchTab('tasks')" };
+          return;
+        }
+        const curFin = new Date(Math.max.apply(null, fins));
+        sch.actTxt = fmtNice(curFin);
+        const bF = tasks.filter(t => t.baseFinish instanceof Date && !isNaN(t.baseFinish.getTime()))
+          .map(t => t.baseFinish.getTime());
+        const bS = tasks.filter(t => t.baseStart instanceof Date && !isNaN(t.baseStart.getTime()))
+          .map(t => t.baseStart.getTime());
+        if (!hb || !bF.length || !bS.length) {
+          sch.why = 'No baseline is saved, so the forecast has nothing to move against — it just quietly '
+            + 'drifts. Today it lands on ' + escapeHtml(fmtNice(curFin)) + '. Freeze that and every later '
+            + 'move becomes a number instead of a memory.';
+          sch.cta = { label: '📌 Set baseline (today)', act: 'setBaseline();renderAnalytics()' };
+          return;
+        }
+        const baseFin = new Date(Math.max.apply(null, bF));
+        // BOTH ends of the denominator come from the frozen baseline. Using the
+        // live projectStartDate() would silently rescale every schedule
+        // percentage the moment someone edits the start field, while the
+        // absolute "+14 cal d" beside it stayed put.
+        const span = Math.max(1, calDaysBetween(new Date(Math.min.apply(null, bS)), baseFin) + 1);
+        const slip = varianceDays(baseFin, curFin);   // CALENDAR days (the comment on 7465 is wrong)
+        sch.planTxt = fmtNice(baseFin);
+        sch.pct = slip / span * 100;
+        sch.state = slip === 0 ? 'flat' : 'ok';
+        sch.delta = slip === 0 ? 'on the baseline date' : (slip > 0 ? '+' : '−') + Math.abs(slip) + ' cal d';
+        sch.denom = span + ' calendar days of baselined span';
+        // The contingency reserve is quoted in absolute days, NOT drawn on the
+        // axis: computeReserves() works off the LIVE critical path while the
+        // denominator above is frozen, and dividing one by the other would be a
+        // cross-basis ratio dressed up as a tolerance band.
+        const rv = computeReserves();
+        const buf = rv.contingencyUnits > 0 ? Math.max(0, calDaysBetween(rv.cpmDate, rv.committedDate)) : 0;
+        sch.note = 'Committed finish → today’s forecast, taking each activity’s <b>actual</b> finish wherever '
+          + 'one is logged. ' + (buf
+            ? 'Contingency reserve covers ' + buf + ' calendar ' + ptrPl(buf, 'day')
+              + (slip > buf ? ' — you are <b>' + (slip - buf) + '</b> beyond it.' : '.')
+            : 'No contingency reserve is set, so every slipped day comes straight off the committed date.');
+      })();
+
+      // ------------------------------- BUDGET -------------------------------
+      const bud = { key: 'budget', dim: 'Budget', icon: '💰', kind: 'signed', state: 'needs' };
+      (function () {
+        const planCost = projectCost();
+        const baseCost = hb ? leaves.reduce((s, t) => s + (Number(t.baseCost) || 0), 0) : 0;
+        const actCost = leaves.reduce((s, t) => s + actualCostOf(t), 0);
+        // No silent `|| planCost` while still captioning it "baseline": a
+        // baseline taken before rates were entered froze $0, and claiming to
+        // measure against it would be a lie with a date attached.
+        const ref = baseCost > 0 ? baseCost : planCost;
+
+        if (!(ref > 0) && !(actCost > 0)) {
+          // $0 has three different causes with three different cures. Asserting
+          // "nobody has a day rate" when the real cause is missing estimates
+          // sends the user to the wrong tab to fix the wrong thing.
+          const work = leaves.filter(t => !t.milestone);
+          const noEst = work.filter(t => !(Number(t.te) > 0)).length;
+          const unassigned = work.filter(t => !taskParticipants(t).length).length;
+          const unrated = billingData().rows.filter(r => !r.client && !r.rate).length;
+          if (work.length && noEst === work.length) {
+            bud.why = 'Every activity has a zero estimate, so effort × rate is $0 whatever the roster says. '
+              + 'Cost cannot exist before estimates do.';
+            bud.cta = { label: 'Add estimates', act: "switchTab('tasks')" };
+          } else if (unrated) {
+            bud.why = '<b>' + unrated + '</b> assigned ' + ptrPl(unrated, 'resource') + ' '
+              + (unrated === 1 ? 'has' : 'have') + ' no day rate, so the whole plan prices at <b>$0</b>. '
+              + 'That is a missing rate card, not a free project.';
+            bud.cta = { label: 'Set day rates', act: "switchTab('resources')" };
+          } else if (unassigned) {
+            bud.why = '<b>' + unassigned + '</b> ' + ptrPl(unassigned, 'activity', 'activities')
+              + ' ' + (unassigned === 1 ? 'has' : 'have') + ' nobody assigned, so there is no rate to '
+              + 'multiply and the plan prices at <b>$0</b>.';
+            bud.cta = { label: 'Assign owners', act: "switchTab('tasks')" };
+          } else {
+            bud.why = 'Nothing in this plan carries money — no day rates and no fixed costs — so there is '
+              + 'no cost signal to compare against.';
+            bud.cta = { label: 'Set day rates', act: "switchTab('resources')" };
+          }
+          return;
+        }
+        if (!(actCost > 0)) {
+          bud.why = 'The plan is priced at <b>' + money(ref) + '</b>, but no actual cost is booked anywhere. '
+            + 'This row deliberately will not show planned-cost drift instead: that is the scope change '
+            + 'repriced at the same rates, which you are already reading on the Scope bar. Logging an '
+            + 'actual finish date, or time spent, derives real cost from the same day rates.';
+          bud.cta = { label: 'Log actuals', act: "switchTab('baseline')" };
+          return;
+        }
+        if (!(ref > 0)) {
+          bud.why = '<b>' + money(actCost) + '</b> of cost is booked against a plan that prices at <b>$0</b> — '
+            + 'money is going out with nothing to compare it to. Set the day rates the work is actually '
+            + 'being done at.';
+          bud.cta = { label: 'Set day rates', act: "switchTab('resources')" };
+          return;
+        }
+        const pace = planPace(actCost, ref, donePct);
+        if (pace == null) {
+          bud.why = 'Only <b>' + donePct.toFixed(0) + '%</b> of the work is done. <b>' + money(actCost)
+            + '</b> of the <b>' + money(ref) + '</b> envelope is booked, but under a quarter complete the '
+            + 'denominator is too small for a spend pace to mean anything — it would swing wildly on the '
+            + 'next task that closes.';
+          bud.softCta = { label: 'Log actuals', act: "switchTab('baseline')" };
+          return;
+        }
+        bud.planTxt = money(ref);
+        bud.actTxt = money(actCost);
+        bud.pct = (pace - 1) * 100;
+        bud.state = Math.abs(bud.pct) < 0.5 ? 'flat' : 'ok';
+        bud.delta = bud.state === 'flat' ? 'on pace'
+          : Math.round(actCost / ref * 100) + '% spent at ' + Math.round(donePct) + '% done';
+        bud.denom = (baseCost > 0 ? 'baselined cost ' : 'planned cost ') + money(ref) + ', paced by progress';
+        bud.note = 'Money actually booked against the ' + (baseCost > 0 ? 'committed' : 'planned')
+          + ' envelope, divided by how much of the work is finished — so it is a burn <em>rate</em>, not a '
+          + 'signed saving. Because both sides run through the same day rates, at fixed rates this largely '
+          + 'tracks effort efficiency: read it <em>with</em> the Scope bar, not as separate confirmation of it.'
+        // A baseline taken before rates were entered froze $0 into every
+        // baseCost. Saying "vs the baseline of <date>" there would be a lie with
+        // a date attached, so the reference falls back to the live plan and says so.
+        + (hb && !(baseCost > 0) ? ' The baseline of ' + escapeHtml(baselineDate) + ' carries no costs — it was '
+          + 'taken before rates were entered — so this measures against the <b>live</b> plan, not against it.' : '');
+        // Fixed costs are charged whole to actuals but prorated into earned
+        // value. On a plan with big licence lines this makes the pace read worse
+        // than reality until those activities close, so it is disclosed rather
+        // than silently averaged away.
+        const fixedOpen = leaves.reduce((s, t) => s + ((Number(t.fixedCost) || 0) > 0
+          && actualEffortDays(t) != null && (t.percentComplete || 0) < 100 ? (Number(t.fixedCost) || 0) : 0), 0);
+        if (fixedOpen > actCost * 0.1) {
+          bud.note += ' <b>' + money(fixedOpen) + '</b> of that is fixed cost booked in full on activities '
+            + 'that are only part done, so the pace reads high until they close.';
+        }
+      })();
+
+      // ------------------------------- SCOPE --------------------------------
+      const scp = { key: 'scope', dim: 'Scope', icon: '📦', kind: 'change', state: 'needs' };
+      (function () {
+        const planTe = leaves.reduce((s, t) => s + (Number(t.te) || 0), 0);
+        if (!hb) {
+          scp.why = 'No baseline is saved, so there is no committed scope to measure growth against. The plan '
+            + 'holds <b>' + (Math.round(planTe * 10) / 10) + ' ' + escapeHtml(u) + '</b> of effort across <b>'
+            + leaves.length + '</b> ' + ptrPl(leaves.length, 'activity', 'activities') + ' right now.';
+          scp.cta = { label: '📌 Set baseline (today)', act: 'setBaseline();renderAnalytics()' };
+          return;
+        }
+        const baseTe = leaves.reduce((s, t) => s + (Number(t.baseTe) || 0), 0);
+        if (!(baseTe > 0)) {
+          scp.why = 'The baseline of ' + escapeHtml(baselineDate) + ' captured no effort — everything was '
+            + 'unestimated when it was taken, so scope growth has no denominator. Estimate the work, then '
+            + 're-baseline.';
+          scp.cta = { label: 'Re-baseline now', act: 'setBaseline();renderAnalytics()' };
+          return;
+        }
+        // baseTe === null is the app's own "added after the baseline" test:
+        // makeTask (1754) defaults it to null and only setBaseline (6068) fills it.
+        const added = leaves.filter(t => t.baseTe == null);
+        const addedTe = added.reduce((s, t) => s + (Number(t.te) || 0), 0);
+        const addedTc = added.filter(isTestCaseTask).length;
+        const drift = planTe - baseTe;
+        const reEst = drift - addedTe;
+        scp.planTxt = (Math.round(baseTe * 10) / 10) + ' ' + u;
+        scp.actTxt = (Math.round(planTe * 10) / 10) + ' ' + u;
+        scp.pct = drift / baseTe * 100;
+        scp.state = Math.abs(drift) < 0.05 ? 'flat' : 'ok';
+        scp.delta = scp.state === 'flat' ? 'unchanged' : ptrNum(drift, u);
+        scp.denom = 'baselined effort ' + (Math.round(baseTe * 10) / 10) + ' ' + u;
+        // "Unpriced scope" is an accusation. It fires only when scope was
+        // genuinely ADDED — a team that merely re-estimated existing work upward
+        // has not sold anything for free, and telling their client otherwise is
+        // worse than saying nothing.
+        scp.unpriced = added.length > 0 && scp.pct > 5 && !(Array.isArray(coLog) && coLog.length);
+        const bits = [];
+        if (added.length) bits.push('<b>' + added.length + '</b> new '
+          + ptrPl(added.length, 'activity', 'activities') + ' (' + ptrNum(addedTe, u) + ')'
+          + (addedTc ? ', ' + (addedTc === added.length ? 'all' : addedTc + ' of them') + ' generated test cases' : ''));
+        if (Math.abs(reEst) >= 0.05) bits.push('<b>' + ptrNum(reEst, u) + '</b> of re-estimates on work that '
+          + 'was already agreed');
+        scp.note = (bits.length ? bits.join(' plus ') + '.' : 'Effort is unchanged since the baseline was taken.')
+          + (scp.unpriced ? ' <b>No change order has ever been raised</b> — this is scope you are building for free.' : '');
+        if (scp.unpriced) scp.softCta = { label: 'Raise a change order', act: "switchTab('raid')" };
+      })();
+
+      // ------------- evidence strip: one cell per leaf, same order -----------
+      // The bars are the aggregate; the strip is what they are made of. It is
+      // the only part of this header that carries real geometry on a brand-new
+      // plan, which is precisely when the three bars have nothing to say.
+      const cov = coverageStats();
+      const cfGap = new Set(cov.uncovered.map(t => t.id));
+      const cells = leaves.map(t => {
+        const nm = t.name || '(unnamed)';
+        const pct = Number(t.percentComplete) || 0;
+        const fin = (t.finishDate instanceof Date && !isNaN(t.finishDate.getTime())) ? stripTime(t.finishDate) : null;
+        const isNew = hb && t.baseTe == null;
+        const c = { cls: '', ring: isNew, round: !!t.milestone, ttl: '' };
+        if (!t.milestone && !(Number(t.te) > 0)) { c.cls = 'ptr-c-none'; c.ttl = nm + ' — no estimate'; }
+        else if (pct >= 100) { c.cls = 'ptr-c-done'; c.ttl = nm + ' — complete'; }
+        else if (fin && fin < today) { c.cls = 'ptr-c-late'; c.ttl = nm + ' — past its planned finish (' + fmtNice(fin) + '), ' + Math.round(pct) + '% done'; }
+        else if (pct > 0) { c.cls = 'ptr-c-prog'; c.ttl = nm + ' — ' + Math.round(pct) + '% done' + (fin ? ', due ' + fmtNice(fin) : ''); }
+        else { c.cls = 'ptr-c-todo'; c.ttl = nm + ' — not started' + (fin ? ', due ' + fmtNice(fin) : ''); }
+        if (cfGap.has(t.id)) c.ttl += ' · client-facing, no user story';
+        if (isNew) c.ttl += ' · added after the baseline';
+        return c;
+      });
+
+      return {
+        rows: [sch, bud, scp], cells, leaves, cov, hb, donePct, u, safe,
+        added: hb ? leaves.filter(t => t.baseTe == null).length : 0
+      };
+    }
+
+    function ptrCta(c, lite) {
+      if (!c) return '';
+      return ' <button class="' + (lite ? 'btn-lite' : 'btn-secondary btn-sm') + ' no-print ptr-cta" onclick="'
+        + c.act + '">' + escapeHtml(c.label) + '</button>';
+    }
+
+    function ptrRowHtml(r, R) {
+      const at = v => 50 + (Math.max(-R, Math.min(R, v)) / R) * 50;
+      const head = '<div class="ptr-head"><span class="ptr-dim"><span class="ico" aria-hidden="true">' + r.icon
+        + '</span>' + r.dim + '</span>'
+        + (r.state === 'needs'
+          ? '<span class="ptr-pair ptr-na">not measurable yet</span>'
+          : '<span class="ptr-pair"><span class="ptr-plan">' + escapeHtml(r.planTxt) + '</span>'
+            + '<span class="ptr-arr" aria-hidden="true">→</span><b class="ptr-act">' + escapeHtml(r.actTxt) + '</b></span>')
+        + '</div>';
+
+      // A hatched dashed track, the reason in words, and the one button that
+      // fills it in. This must be impossible to mistake for a zero-variance bar.
+      if (r.state === 'needs') {
+        return '<div class="ptr-row" data-dim="' + r.key + '">' + head
+          + '<div class="ptr-plot ptr-void"><span class="ptr-voidtxt">no comparison available</span></div>'
+          + '<div class="ptr-side"><span class="badge badge-slack">—</span></div>'
+          + '<div class="ptr-note ptr-needs"><b>What is missing:</b> ' + r.why
+          + ptrCta(r.cta) + ptrCta(r.softCta, true) + '</div></div>';
+      }
+
+      const grid = [-R, -R / 2, R / 2, R]
+        .map(v => '<i class="ptr-grid" style="left:' + at(v).toFixed(2) + '%"></i>').join('');
+
+      let shape, badgeCls, pctTxt;
+      if (r.state === 'flat') {
+        // Zero variance is a measurement, not an absence — a dot ON the line.
+        shape = '<i class="ptr-dot"></i>';
+        badgeCls = 'badge-ok';
+        pctTxt = '0%';
+      } else {
+        const over = r.pct > 0;
+        // Scope growth is a CHANGE needing a change order, not a defect — amber,
+        // escalating to red only when it grew past 5% and nobody ever raised one.
+        const cls = r.kind === 'change' ? (r.unpriced ? 'ptr-bad' : 'ptr-chg') : (over ? 'ptr-bad' : 'ptr-good');
+        const xv = at(r.pct);
+        const w = Math.max(0.8, Math.abs(xv - 50));   // floor: a real-but-tiny gap must stay visible
+        const l = over ? 50 : 50 - w;                 // always anchored exactly on the plan line
+        shape = '<i class="ptr-bar ' + cls + (over ? '' : ' ptr-neg') + '" style="left:' + l.toFixed(2)
+          + '%;width:' + w.toFixed(2) + '%"></i>'
+          + (Math.abs(r.pct) > R
+            ? '<i class="ptr-over ' + (over ? 'ptr-over-r' : 'ptr-over-l') + ' ' + cls + '-t">'
+              + (over ? '▸' : '◂') + '</i>' : '');
+        badgeCls = r.kind === 'change' ? (r.unpriced ? 'badge-blocked' : 'badge-warn')
+          : (over ? 'badge-blocked' : 'badge-ok');
+        pctTxt = ptrPct(r.pct);
+      }
+      return '<div class="ptr-row" data-dim="' + r.key + '">' + head
+        + '<div class="ptr-plot" title="' + escapeHtml(pctTxt + ' against ' + (r.denom || 'plan')) + '">'
+        + grid + '<i class="ptr-zero"></i>' + shape + '</div>'
+        + '<div class="ptr-side"><span class="badge ' + badgeCls + '">' + escapeHtml(r.delta) + '</span>'
+        + '<span class="ptr-pct">' + pctTxt + '</span></div>'
+        + '<div class="ptr-note">' + r.note + ptrCta(r.softCta, true) + '</div></div>';
+    }
+
+    function ptrStripHtml(d) {
+      const MAX = 260;                                  // beyond this the strip stops teaching and starts scrolling
+      const shown = d.cells.slice(0, MAX), hid = d.cells.length - shown.length;
+      const done = d.cells.filter(c => c.cls === 'ptr-c-done').length;
+      const late = d.cells.filter(c => c.cls === 'ptr-c-late').length;
+      const prog = d.cells.filter(c => c.cls === 'ptr-c-prog').length;
+      const none = d.cells.filter(c => c.cls === 'ptr-c-none').length;
+      const gaps = d.cov.uncovered.length, cf = d.cov.leaves.length;
+      const key = [['ptr-c-done', 'complete'], ['ptr-c-prog', 'in progress'], ['ptr-c-late', 'past planned finish'],
+        ['ptr-c-todo', 'not started'], ['ptr-c-none', 'no estimate']]
+        .map(k => '<span class="ptr-k"><i class="' + k[0] + '"></i>' + k[1] + '</span>').join('')
+        + (d.added ? '<span class="ptr-k"><i class="ptr-c-todo ptr-ring"></i>added since baseline</span>' : '');
+
+      // Only non-empty buckets are listed. "0 complete, 0 in progress, 0 not
+      // started · 7 overdue" is arithmetically fine and reads as broken.
+      const bits = [];
+      const add = (n, txt) => { if (n) bits.push('<b>' + n + '</b> ' + txt); };
+      add(done, 'complete');
+      add(prog, 'in progress');
+      add(late, 'past ' + ptrPl(late, 'its', 'their') + ' planned finish');
+      add(d.cells.length - done - prog - late - none, 'not started');
+      add(none, 'with no estimate');
+      add(d.added, 'added since the baseline (ringed)');
+      let cap = '<b>' + d.cells.length + '</b> ' + ptrPl(d.cells.length, 'activity', 'activities')
+        + (bits.length ? ' — ' + bits.join(' · ') : '') + '.';
+      // Story coverage lives here, not on a bar: it measures how well the scope
+      // is WRITTEN DOWN, which is a different question from whether the scope
+      // GREW, and putting both on one axis would make neither legible.
+      if (cf) {
+        cap += gaps
+          ? ' <b>' + gaps + '</b> of <b>' + cf + '</b> client-facing ' + ptrPl(cf, 'activity', 'activities')
+            + ' ' + (gaps === 1 ? 'has' : 'have') + ' no user story — undefined scope you are building anyway.'
+            + ptrCta({ label: 'Close the gaps', act: "switchTab('req')" }, true)
+          : ' All <b>' + cf + '</b> client-facing ' + ptrPl(cf, 'activity', 'activities') + ' trace to a user story.';
+      }
+      return '<div class="ptr-strip-wrap">'
+        + '<div class="ptr-strip" role="img" aria-label="' + escapeHtml(d.cells.length
+          + ' activities: ' + done + ' complete, ' + prog + ' in progress, ' + late + ' past planned finish') + '">'
+        + shown.map(c => '<i class="' + c.cls + (c.ring ? ' ptr-ring' : '') + (c.round ? ' ptr-ms' : '')
+          + '" title="' + escapeHtml(c.ttl) + '"></i>').join('')
+        + (hid ? '<span class="ptr-more">+' + hid + ' more</span>' : '')
+        + '</div><div class="ptr-key">' + key + '</div>'
+        + '<p class="ptr-cap">' + cap + '</p></div>';
+    }
+
+    function renderPlanTruth() {
+      const host = document.getElementById('planTruth');
+      if (!host) return;
+      const blank = '<p class="ptr-blank"><b>Nothing to compare yet.</b> Add activities and press '
+        + '<b>Calculate</b> — schedule, budget and scope then appear as one bar each on one shared scale.</p>';
+      if (!calculated || !tasks.length) { host.innerHTML = blank; return; }
+      // renderAnalytics() has no error boundary and keeps writing #analyticsContent
+      // for another 300 lines after this call. A throw here would blank the whole
+      // tab, including the EVM and Monte-Carlo blocks people already rely on.
+      let d;
+      try {
+        d = planTruthData();
+      } catch (err) {
+        console.error('planTruth', err);
+        host.innerHTML = '<p class="ptr-blank"><b>Plan-health header unavailable.</b> The rest of this tab is '
+          + 'unaffected. (' + escapeHtml(String(err && err.message || err)) + ')</p>';
+        return;
+      }
+      const live = d.rows.filter(r => r.state === 'ok').map(r => Math.abs(r.pct || 0));
+      const maxAbs = live.length ? Math.max.apply(null, live) : 0;
+      const R = PTR_STEPS.find(v => v >= maxAbs) || 200;
+      const ticks = [-R, -R / 2, 0, R / 2, R].map((v, i) =>
+        '<span class="ptr-tick' + (v === 0 ? ' ptr-tick0' : '') + (i === 0 ? ' ptr-tick-s' : i === 4 ? ' ptr-tick-e' : '')
+        + '" style="left:' + (50 + (v / R) * 50).toFixed(2) + '%">'
+        + (v === 0 ? 'PLAN' : (v > 0 ? '+' : '−') + Math.abs(Math.round(v * 10) / 10) + '%') + '</span>').join('');
+
+      // If ONE action unblocks more than one empty bar, hoist it. A brand-new
+      // plan shows three "needs" rows that a single button fixes, and the header
+      // should say that once at the top rather than three times underneath.
+      let lead = '';
+      const needs = d.rows.filter(r => r.state === 'needs' && r.cta);
+      const tally = {};
+      needs.forEach(r => { tally[r.cta.act] = (tally[r.cta.act] || 0) + 1; });
+      const sharedAct = Object.keys(tally).find(k => tally[k] > 1);
+      if (sharedAct) {
+        const g = needs.filter(r => r.cta.act === sharedAct);
+        lead = '<p class="ptr-lead ptr-lead-do"><b>One action fills in ' + g.length + ' of the ' + d.rows.length
+          + ' bars</b> — ' + g.map(r => r.dim.toLowerCase()).join(' and ') + ' both need it.'
+          + ptrCta(g[0].cta) + '</p>';
+      } else if (d.rows.every(r => r.state === 'flat')) {
+        lead = '<p class="ptr-lead ptr-lead-ok"><b>All three dimensions sit exactly on plan.</b> Nothing has '
+          + 'moved since the baseline of ' + escapeHtml(baselineDate) + '.</p>';
+      }
+      const denoms = d.rows.filter(r => r.denom)
+        .map(r => escapeHtml(r.dim.toLowerCase() + ' ÷ ' + r.denom)).join(' · ');
+
+      host.innerHTML = '<div class="ptr-wrap">' + lead
+        + '<div class="ptr-row ptr-axis">'
+        + '<div class="ptr-head ptr-end"><span>◀ under plan</span></div>'
+        + '<div class="ptr-plot ptr-axisplot">' + ticks + '<i class="ptr-zero"></i></div>'
+        + '<div class="ptr-side ptr-end"><span>over plan ▶</span></div></div>'
+        + d.rows.map(r => ptrRowHtml(r, R)).join('')
+        + ptrStripHtml(d)
+        + '<p class="ptr-foot">Each bar is the gap between plan and reality as a share of <b>that dimension’s '
+        + 'own plan</b> — the only scale on which days, dollars and effort can sit side by side'
+        + (denoms ? ' (' + denoms + ')' : '') + '. Every square below is one activity, in the same order as '
+        + 'the task list; hover any of them.' + (d.safe ? ' Money is hidden while client-safe mode is on.' : '')
+        + '</p></div>';
+    }
     function renderAnalytics() {
       if (!calculated) return;
       const leaves = leafTasks();
@@ -6148,6 +6735,7 @@
         ${overCard}
       `;
       animateTiles();
+      renderPlanTruth();
 
       // target date probability
       const tgt = document.getElementById('targetDate').value;
@@ -7621,11 +8209,7 @@
       // So: say how much has been used, and colour it by PACE (used ÷ earned), which
       // is only meaningful once enough of the work is done to trust the percentage.
       const donePct = overallProgress();
-      const paceOf = (used, plan) => {
-        if (!(plan > 0) || !(used > 0)) return null;
-        if (donePct < 25) return null;                 // too early for a projection to mean anything
-        return (used / plan) / (donePct / 100);
-      };
+      const paceOf = (used, plan) => planPace(used, plan, donePct);
       const paceColor = p => p == null ? 0 : p > 1.10 ? 1 : p < 0.90 ? -1 : 0;
       const usedTxt = (used, plan, noun) => (plan > 0 && used > 0)
         ? Math.round(used / plan * 100) + '% of ' + noun + ' used at ' + Math.round(donePct) + '% complete' : '';
@@ -8019,10 +8603,10 @@
       // coverage is about CLIENT-facing scope: an internal/delivery activity
       // (kickoff, PM, our own test execution) legitimately needs no client story,
       // so it's never counted as a gap. Test cases verify ACs, never covered here.
-      const leaves = storyableLeaves().filter(t => !isInternalActivity(t));
-      const covered = new Set(stories.flatMap(storyWbsIds));
-      const uncovered = leaves.filter(t => !covered.has(t.id));
-      const internalLeafCount = storyableLeaves().filter(isInternalActivity).length;
+      // one definition, shared with the Analytics header — see coverageStats()
+      const cov = coverageStats();
+      const leaves = cov.leaves, covered = cov.covered, uncovered = cov.uncovered;
+      const internalLeafCount = cov.internalLeafCount;
       const allWarns = stories.reduce((n, s) => n + storyLint(s).length, 0);
       const acCount = stories.reduce((n, s) => n + (s.ac || []).length, 0);
       const tiles = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:0.75rem;margin-bottom:1rem">
@@ -11427,6 +12011,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       if (tasks.length && !confirm('Start a NEW project?\n\nThe current plan stays saved in the 📁 Projects menu — nothing is deleted. (Use Projects ▸ 🗑 Delete current if you actually want it gone.)')) return;
       await newProject(false);
       const empt = document.getElementById('summaryGrid'); if (empt) empt.innerHTML = '';
+      const pt = document.getElementById('planTruth'); if (pt) pt.innerHTML = '<p class="ptr-blank"><b>Nothing to compare yet.</b> Add activities and press <b>Calculate</b>.</p>';
       const ac = document.getElementById('analyticsContent'); if (ac) ac.innerHTML = '<div class="empty-state"><h3>Run Calculate to see analytics</h3></div>';
     }
 
