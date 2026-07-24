@@ -1496,7 +1496,7 @@
               </div>
               <div class="form-group">
                 <span class="fg-head"><label for="mActualCost">Actual cost $</label><button type="button" class="info-icon" aria-label="About Actual cost $" data-help="What the work actually cost. Auto-derived from the actual time spent — actual working days between the dates above × the participants' day-rates (client-kind people $0) + fixed cost. Type a number to override; ↺ returns to auto. Feeds CPI / EAC and the historical archive.">i</button></span>
-                <input id="mActualCost" type="number" min="0" step="100" value="0" oninput="mActualCostManual = true; refreshAutoActualCost()" />
+                <input id="mActualCost" type="number" min="0" step="100" value="0" readonly oninput="refreshAutoActualCost()" title="Calculated from the actual time spent — use ✎ override to type your own figure" />
                 <div id="mActualCostHint" class="help-text" style="font-size:var(--t-xs);margin-top:2px"></div>
               </div>
             </div>
@@ -2494,6 +2494,12 @@
       document.querySelectorAll('#attRows .dep-row').forEach(r => { const nm = (r.querySelector('.att-name').value || '').trim(); if (nm && nm !== owner) add(nm, parseFloat(r.querySelector('.att-units').value)); });
       return out;
     }
+    function setActualCostManual(on) {
+      mActualCostManual = !!on;
+      const inp = document.getElementById('mActualCost');
+      if (inp) { inp.readOnly = !on; if (on) { inp.focus(); inp.select(); } }
+      refreshAutoActualCost();
+    }
     function refreshAutoActualCost() {
       const inp = document.getElementById('mActualCost'); const hint = document.getElementById('mActualCostHint');
       if (!inp) return;
@@ -2502,22 +2508,32 @@
       const eff = parseDurExpr(document.getElementById('mActualEffort').value.trim());
       const eh = document.getElementById('mActualEffortHint');
       if (!isNaN(eff) && eff >= 0) { days = unitToWorkingDays(eff); basis = 'logged effort'; }
-      if (eh) eh.textContent = (!isNaN(eff) && eff >= 0)
-        ? fmtDur(eff) + ' — vs estimate ' + (document.getElementById('mM').value ? fmtDur(parseDurExpr(document.getElementById('mM').value) || 0) + ' most likely' : 'not set')
-        : 'Real effort, any resolution: 20m · 1.5h · 2d. Drives actual cost and estimate accuracy.';
+      if (eh) {
+        const estM = parseDurExpr(document.getElementById('mM').value);
+        eh.textContent = (!isNaN(eff) && eff >= 0)
+          ? fmtDurCell(eff) + ' logged' + (Number.isFinite(estM) && estM > 0 ? ' — vs ' + fmtDurCell(estM) + ' most likely (' + (eff / estM).toFixed(2) + '× estimate)' : '')
+          : 'Real effort, any resolution: 20m · 1.5h · 2d. Drives actual cost and estimate accuracy.';
+      }
       const sV = document.getElementById('mActualStart').value, fV = document.getElementById('mActualFinish').value;
       if (days == null && /^\d{4}-\d{2}-\d{2}$/.test(sV) && /^\d{4}-\d{2}-\d{2}$/.test(fV)) {
         const start = new Date(sV + 'T00:00:00'), fin = new Date(fV + 'T00:00:00');
         if (fin >= start) { days = workingDaysBetween(start, fin, getHolidaySet()) + 1; basis = 'elapsed span (log actual time spent for a truer figure)'; }
       }
-      if (days == null) { if (hint) hint.textContent = mActualCostManual ? 'Manual value. Log actual time spent to auto-derive it.' : 'Auto — log actual time spent (or the actual dates) and this fills from time × rates.'; return; }
+      inp.readOnly = !mActualCostManual;
+      inp.style.background = mActualCostManual ? '' : '#f8fafc';
+      if (days == null) {
+        if (hint) hint.innerHTML = mActualCostManual
+          ? `<b>Manual figure.</b> Log actual time spent and it can calculate instead. <a href="#" onclick="event.preventDefault();setActualCostManual(false)">↺ back to calculated</a>`
+          : `Calculated — log actual time spent (or the actual dates) above and this fills from time × rates. <a href="#" onclick="event.preventDefault();setActualCostManual(true)">✎ override</a>`;
+        return;
+      }
       const labor = modalActualParticipants().reduce((sx, p) => sx + (isClientResource(p.name) ? 0 : getRate(p.name) * days * p.units / 100), 0);
       const auto = Math.round(labor + (Math.max(0, parseFloat(document.getElementById('mFixedCost').value) || 0)));
       if (!mActualCostManual) inp.value = auto;
       const dayTxt = days < 1 ? (Math.round(days * 480) + ' min') : (Math.round(days * 100) / 100 + ' working day' + (days === 1 ? '' : 's'));
       if (hint) hint.innerHTML = mActualCostManual
-        ? `Manual. Auto from ${dayTxt} (${escapeHtml(basis)}) × rates = $${auto.toLocaleString()}. <a href="#" onclick="event.preventDefault();mActualCostManual=false;refreshAutoActualCost()">↺ use auto</a>`
-        : `Auto: ${dayTxt} (${escapeHtml(basis)}) × rates + fixed = $${auto.toLocaleString()}. Type to override.`;
+        ? `<b>Manual figure.</b> Calculated would be $${auto.toLocaleString()} from ${dayTxt} (${escapeHtml(basis)}) × rates. <a href="#" onclick="event.preventDefault();setActualCostManual(false)">↺ back to calculated</a>`
+        : `Calculated: ${dayTxt} (${escapeHtml(basis)}) × rates + fixed = <b>$${auto.toLocaleString()}</b>. <a href="#" onclick="event.preventDefault();setActualCostManual(true)">✎ override</a>`;
     }
     function openAddModal(isMilestone) {
       editingId = null;
@@ -5602,6 +5618,9 @@
         renderTaskTable(); renderWBS(); renderGantt(); renderResources();
         renderBaseline(); renderAnalytics(); renderPERT();
         if (document.getElementById('view-raid').classList.contains('active')) renderRaid();
+        // story cards carry test-case status chips — without this, ticking a test
+        // case to 100% left them reading "not run" until the tab was revisited
+        if (document.getElementById('view-req').classList.contains('active')) renderReqs();
       }
     }
     function renderAnalytics() {
