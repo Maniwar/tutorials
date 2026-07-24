@@ -493,6 +493,18 @@
       details.export-menu[open]::before { content: ""; position: fixed; inset: 0; background: rgb(15 23 42/.4); z-index: 150; pointer-events: none; }
       .export-panel::after { content: ""; position: sticky; bottom: -0.5rem; display: block; height: 28px; margin: 0 -0.5rem -0.5rem; background: linear-gradient(transparent, #fff); pointer-events: none; }
     }
+    /* story-editor criterion / assumption rows: compact 3-col on desktop, stacked on phones */
+    .st-ac-row { display: grid; grid-template-columns: 132px 1fr auto; gap: 0.5rem; align-items: start; margin-bottom: 0.45rem; }
+    .st-as-row { display: grid; grid-template-columns: 176px 1fr auto; gap: 0.5rem; align-items: start; margin-bottom: 0.45rem; }
+    @media (max-width: 640px) {
+      .st-ac-row, .st-as-row { grid-template-columns: 1fr auto; }
+      .st-ac-row > .st-ac-text, .st-as-row > .st-as-text { grid-column: 1 / -1; grid-row: 2; }
+    }
+    /* story editor: every multi-column field grid stacks to one column on phones
+       (ID over the W14 .modal-body 1fr-1fr rule via the #storyModal id) */
+    @media (max-width: 640px) {
+      #storyModal [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+    }
   </style>
 </head>
 <body>
@@ -7587,7 +7599,6 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       const wrap = document.getElementById('stAcRows');
       const row = document.createElement('div');
       row.className = 'st-ac-row';
-      row.style.cssText = 'display:grid;grid-template-columns:132px 1fr auto;gap:0.5rem;align-items:start;margin-bottom:0.45rem';
       row.innerHTML = `
         <select class="st-ac-type" title="happy = it works · error = fails gracefully · edge = boundaries/empty/timeouts · perf = measured threshold" style="padding:0.35rem 0.4rem;font-size:0.8rem">
           <option value="happy">✅ happy path</option><option value="error">⚠️ error path</option>
@@ -7627,7 +7638,6 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       const wrap = document.getElementById('stAssumeRows');
       const row = document.createElement('div');
       row.className = 'st-as-row';
-      row.style.cssText = 'display:grid;grid-template-columns:176px 1fr auto;gap:0.5rem;align-items:start;margin-bottom:0.45rem';
       row.innerHTML = `
         <select class="st-as-kind" title="Assumption: state the impact if false. Client dependency: state the consequence of a slip." style="padding:0.35rem 0.4rem;font-size:0.8rem">
           <option value="A">🤔 Assumption</option><option value="D">🤝 Client dependency</option></select>
