@@ -122,6 +122,10 @@
     .badge-blocked { background: #fee2e2; color: #b91c1c; }
     .badge-notstarted { background: #e2e8f0; color: #475569; }
     .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+    /* baseline roll-up cards hold a "plan → actual" pair; two-up on a phone
+       leaves a 121px content box and clips the actual half, which is the number
+       that matters. Scoped so the short Analytics tiles keep their 2-up grid. */
+    @media (max-width: 520px) { .summary-grid.bl-cards { grid-template-columns: 1fr; } }
     .stat-card { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 1rem; text-align: center; }
     .stat-card .value { font-size: var(--t-3xl); font-weight: 700; color: var(--header, #0f172a); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
     .stat-card .label { font-size: var(--t-sm); color: var(--muted); margin-top: 0.25rem; }
@@ -8283,7 +8287,9 @@
           ${pairCell(fmtMoney(planCost), started ? fmtMoney(actCost) : '<span style="color:var(--muted)">—</span>',
             cd.txt, cd.v,
             started ? `${hb ? 'Baselined' : 'Planned'} at ${fmtMoney(planCost)}, actual so far ${fmtMoney(actCost)}` : 'Not started — no actual cost yet')}
-          ${pairCell(planTe > 0 ? fmtDurCell(planTe) : '—',
+          ${pairCell((planTe > 0 ? fmtDurCell(planTe) : '—')
+              + ((hb && t.baseTe != null && Math.abs((t.te || 0) - t.baseTe) > 0.01)
+                ? ` <span class="badge badge-warn" style="font-size:0.6rem" title="Re-estimated since the baseline: ${escapeHtml(fmtDurCell(t.baseTe))} → ${escapeHtml(fmtDurCell(t.te || 0))}">${(t.te || 0) > t.baseTe ? '+' : '−'}${escapeHtml(fmtDurCell(Math.abs((t.te || 0) - t.baseTe)))}</span>` : ''),
             spent == null ? (started ? '<span style="color:var(--warn);font-weight:600" title="Progress recorded with no time spent">⏱ not logged</span>' : '<span style="color:var(--muted)">not logged</span>') : fmtDurCell(spent),
             ed.txt, ed.v,
             spent == null ? 'No time spent logged against this activity' : `Estimated ${fmtDurCell(planTe)}, logged ${fmtDurCell(spent)}`)}
@@ -8304,7 +8310,15 @@
       const baseTeAll = hb ? sum(t => t.baseTe) : 0;
       const planTeAll = sum(t => t.te);
       const spentAll = sum(t => actualEffortDays(t) == null ? 0 : workingDaysToUnit(actualEffortDays(t)));
+      // Scope variance and effort consumption are different questions and were
+      // sharing one card. "45.8d baselined → 18d logged" says how much of the
+      // estimate has been spent; it says nothing about whether the estimate GREW.
+      // Scope change is baseline plan → current plan, and it has two causes worth
+      // telling apart: work that was added, and work that was re-estimated.
       const addedTasks = hb ? leaves.filter(t => t.baseTe == null).length : 0;
+      const reEstimated = hb ? leaves.filter(t => t.baseTe != null && Math.abs((t.te || 0) - t.baseTe) > 0.01) : [];
+      const addedTe = hb ? leaves.filter(t => t.baseTe == null).reduce((s, t) => s + (t.te || 0), 0) : 0;
+      const reEstTe = reEstimated.reduce((s, t) => s + ((t.te || 0) - t.baseTe), 0);
       const costRef = hb ? baseCostAll : planCostAll;
       const teRef = hb ? baseTeAll : planTeAll;
       const noEffort = tasksNeedingEffort().length;
@@ -8312,9 +8326,11 @@
       const card = (label, estTxt, actTxt, deltaTxt, deltaVal, sub) => `
         <div class="stat-card" style="text-align:left">
           <div class="label" style="margin-bottom:0.2rem">${label}</div>
-          <div style="font-size:0.95rem;font-weight:700;white-space:nowrap">
-            <span style="font-weight:400;color:var(--muted);font-size:0.85rem">${estTxt}</span>
-            <span style="color:var(--slack);margin:0 0.25rem">→</span>${actTxt}
+          <!-- no nowrap: "Aug 20, 2026 → Aug 20, 2026" is 110px wider than a phone
+               card, and clipping the actual half loses the number that matters -->
+          <div style="font-size:0.95rem;font-weight:700;line-height:1.3">
+            <span style="font-weight:400;color:var(--muted);font-size:0.85rem;white-space:nowrap">${estTxt}</span>
+            <span style="color:var(--slack);margin:0 0.25rem">→</span><span style="white-space:nowrap">${actTxt}</span>
           </div>
           ${deltaTxt ? `<div style="font-size:0.78rem;font-weight:700;color:${dColor(deltaVal)};margin-top:0.15rem">${deltaTxt}</div>` : ''}
           ${sub ? `<div class="help-text" style="font-size:var(--t-xs);margin-top:0.15rem">${sub}</div>` : ''}
@@ -8338,17 +8354,26 @@
         ? Math.round(used / plan * 100) + '% of ' + noun + ' used at ' + Math.round(donePct) + '% complete' : '';
 
       cont.innerHTML = `${banner}
-        <div class="summary-grid" style="margin-bottom:1rem">
+        <div class="summary-grid bl-cards" style="margin-bottom:1rem">
           ${card('Schedule', hb ? fmtNice(baseFinishAll) : 'no baseline', fmtNice(curFinishAll),
             projVar == null ? '' : (projVar > 0 ? '+' + projVar + 'd late vs baseline' : projVar < 0 ? -projVar + 'd early vs baseline' : 'on the baseline date'), projVar,
             hb ? 'committed finish → forecast finish' : 'live forecast finish')}
           ${card('Budget', fmtMoney(costRef), fmtMoney(actCostAll),
             usedTxt(actCostAll, costRef, hb ? 'baseline' : 'budget'), paceColor(paceOf(actCostAll, costRef)),
             hb && planCostAll !== baseCostAll ? 'plan now ' + fmtMoney(planCostAll) + ' — scope repriced' : 'actual cost booked so far')}
-          ${card('Scope &amp; effort', teRef > 0 ? fmtDurCell(teRef) : '—', spentAll > 0 ? fmtDurCell(spentAll) : 'nothing logged',
-            usedTxt(spentAll, teRef, 'estimate'), paceColor(paceOf(spentAll, teRef)),
-            (addedTasks ? `<span style="color:var(--warn);font-weight:600">+${addedTasks} activit${addedTasks === 1 ? 'y' : 'ies'} added since baseline</span> · ` : '')
-              + (hb && planTeAll !== baseTeAll ? 'now ' + fmtDurCell(planTeAll) + ' planned' : 'estimated effort → logged effort'))}
+          ${card('Scope', hb ? fmtDurCell(baseTeAll) : 'no baseline', fmtDurCell(planTeAll),
+            hb ? (Math.abs(planTeAll - baseTeAll) < 0.01 ? 'scope unchanged'
+              : (planTeAll > baseTeAll ? '+' : '−') + fmtDurCell(Math.abs(planTeAll - baseTeAll))
+                + ' (' + (planTeAll > baseTeAll ? '+' : '−') + Math.abs(Math.round((planTeAll / Math.max(0.0001, baseTeAll) - 1) * 100)) + '%) vs baseline') : '',
+            planTeAll > baseTeAll ? 1 : planTeAll < baseTeAll ? -1 : 0,
+            hb ? ((addedTasks || reEstimated.length)
+                ? [addedTasks ? `<span style="color:var(--warn);font-weight:600">+${addedTasks} added</span> (${fmtDurCell(addedTe)})` : '',
+                   reEstimated.length ? `${reEstimated.length} re-estimated (${reEstTe >= 0 ? '+' : '−'}${fmtDurCell(Math.abs(reEstTe))})` : ''].filter(Boolean).join(' · ')
+                : 'no activities added or re-estimated')
+              : 'committed effort → effort planned now')}
+          ${card('Effort spent', planTeAll > 0 ? fmtDurCell(planTeAll) : '—', spentAll > 0 ? fmtDurCell(spentAll) : 'nothing logged',
+            usedTxt(spentAll, planTeAll, 'plan'), paceColor(paceOf(spentAll, planTeAll)),
+            noEffort ? `<span style="color:var(--warn);font-weight:600">⏱ ${noEffort} missing time spent</span>` : 'planned effort → logged effort')}
           ${(() => {
             // calendar burned vs work earned — the one comparison that says whether
             // "34% done" is good news or bad news
@@ -13298,12 +13323,10 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           sx + (isClientResource(pr.name) ? 0 : getBillRate(pr.name) * days * pr.units / 100), 0);
       }, 0);
     }
-    function riskUplift(basis) { // duration-based uplift from Monte Carlo
-      if (!mcResult) return 1;
-      const det = Math.max(0.0001, ...leafTasks().map(t => t.ef));
-      const pick = basis === 'p90' ? mcResult.p90 : basis === 'p80' ? mcResult.p80 : mcResult.p50;
-      return Math.max(1, pick / det);
-    }
+    // riskUplift() lived here: a ratio of simulated DURATION multiplied into money.
+    // It only ever moved with the critical path, so an overrun on a parallel branch
+    // priced at nothing, and it now has no callers — pricingFigures() is the single
+    // source for every quoted number in the app.
     function setPricing(field, val) {
       if (field === 'contractPrice') pricing.contractPrice = Math.max(0, parseFloat(val) || 0);
       else pricing[field] = val;
@@ -13790,10 +13813,15 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         assumptions: raid.filter(r => r.type === 'Assumption' && r.status !== 'Closed').map(r => ({ text: r.title, impact: r.mitigation || '', ref: 'RAID' })),
         exclusions: raid.filter(r => r.type === 'Exclusion').map(r => r.title),
         risks: raid.filter(r => r.type === 'Risk' && r.status !== 'Closed').sort((a, b) => b.probability * b.impact - a.probability * a.impact).slice(0, 6).map(r => r.title),
-        price: (() => { const rev = laborRevenue() + leafTasks().reduce((sx, t) => sx + (+t.fixedCost || 0), 0);
-          if (rev <= 0) return null;
-          const p = pricing.contractPrice || rev * riskUplift(pricing.basis);
-          return { model: pricing.model === 'fixed' ? 'Fixed price' : 'Time & materials', amount: fmtMoney(p), basis: pricing.basis.toUpperCase() }; })()
+        // One pricing function for the whole app. This used to multiply revenue by
+        // riskUplift() — a ratio of simulated DURATION — so the SOW quoted a
+        // different number from the Pricing panel for the same engagement, and a
+        // T&M SOW quoted the risk-adjusted figure as a commitment when it is a cap.
+        price: (() => { const f = pricingFigures();
+          if (!(f.price > 0)) return null;
+          return { model: f.isTM ? 'Time & materials' : 'Fixed price', amount: fmtMoney(f.price),
+            basis: (f.basis || 'p80').toUpperCase(),
+            cap: (f.isTM && f.cap > f.price) ? fmtMoney(f.cap) : null }; })()
       };
     }
     function sowAssembleHtml(d, narrative) {
@@ -13838,7 +13866,7 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         <table style="border-collapse:collapse;width:100%"><tr><th style="${th}">Dependency (with slip consequence)</th><th style="${th};width:80px">Story</th></tr>
         ${d.clientDeps.map(x => `<tr><td style="${td}">${h(x.text)}</td><td style="${td}">${h(x.ref)}</td></tr>`).join('')}</table>` : ''}
         ${d.price ? `<h2 style="font-size:16px;margin:16px 0 6px">8. Commercial Terms</h2>
-        <p style="font-size:13px"><b>${d.price.model}:</b> ${d.price.amount}${d.price.model === 'Fixed price' ? ' (risk-adjusted at ' + d.price.basis + ' effort basis)' : ''}. ${n.paymentTerms || '<em>[Payment schedule — e.g. per milestone above.]</em>'}</p>` : ''}
+        <p style="font-size:13px"><b>${d.price.model}:</b> ${d.price.amount}${d.price.model === 'Fixed price' ? ' (risk-adjusted at ' + d.price.basis + ' effort basis)' : d.price.cap ? ' estimated, not to exceed <b>' + d.price.cap + '</b> (' + d.price.basis + ' of simulated billings)' : ''}. ${n.paymentTerms || '<em>[Payment schedule — e.g. per milestone above.]</em>'}</p>` : ''}
         <h2 style="font-size:16px;margin:16px 0 6px">9. Assumptions</h2>
         ${(d.assumptions.length || (d.storyAssumps && d.storyAssumps.length))
           ? `<p style="font-size:12.5px;color:#475569">Pricing and schedule are based on the assumptions below. If one proves false, the stated impact applies and is handled through change control (§11).</p>
@@ -14016,11 +14044,13 @@ Professional, client-ready, no hype, no invented facts.`;
     // against. Taken when the SOW is generated AND every time a CO is approved,
     // so each successive CO covers only the changes since the last approval.
     function snapshotSowBaseline() {
-      const revNow = laborRevenue() + leafTasks().reduce((sx, t) => sx + (+t.fixedCost || 0), 0);
       return {
         date: fmtISO(new Date()),
         finish: fmtISO(durationToDate(Math.max(0, ...leafTasks().map(t => t.ef), 0))),
-        price: pricing.contractPrice || (revNow > 0 ? Math.round(revNow * riskUplift(pricing.basis)) : 0),
+        price: Math.round(pricingFigures().price || 0),
+        // Stamped so a change order can tell a genuine price movement from the
+        // change of formula. Snapshots taken before this carry no marker.
+        priceBasis: 'sim-rev',
         tasks: leafTasks().map(t => ({ name: t.name, te: +(t.te || 0).toFixed(2), milestone: !!t.milestone }))
       };
     }
@@ -14041,9 +14071,12 @@ Professional, client-ready, no hype, no invented facts.`;
       }).map(t => ({ t, from: baseByName[t.name.toLowerCase()].te, to: +(t.te || 0).toFixed(2) }));
       const curFinish = fmtISO(durationToDate(Math.max(0, ...curLeaves.map(t => t.ef), 0)));
       const finishDelta = calDaysBetween(new Date(sowBaseline.finish + 'T00:00:00'), new Date(curFinish + 'T00:00:00'));
-      const revNow = laborRevenue() + curLeaves.reduce((sx, t) => sx + (+t.fixedCost || 0), 0);
-      const curPrice = pricing.contractPrice || (revNow > 0 ? Math.round(revNow * riskUplift(pricing.basis)) : 0);
+      const curPrice = Math.round(pricingFigures().price || 0);
       const priceDelta = curPrice - (sowBaseline.price || 0);
+      // A baseline captured before pricing was consolidated priced off a duration
+      // ratio, so part of any delta against it is the formula, not the scope. Say
+      // so rather than letting a change order bill a methodology change.
+      const legacyBasis = !sowBaseline.priceBasis;
       if (!added.length && !removed.length && !changed.length && Math.abs(finishDelta) < 1 && Math.abs(priceDelta) < 1) {
         alert('No differences vs the SOW baseline of ' + sowBaseline.date + ' — nothing to change-order.');
         return;
@@ -14070,6 +14103,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         <p style="color:#64748b;font-size:12px;margin:0 0 12px">DRAFT ${new Date().toLocaleDateString()} • diffs against the contract baseline of ${escapeHtml(sowBaseline.date)}${escapeHtml(amendedNote)}</p>
         ${rationale ? `<p style="font-size:13px">${rationale}</p>` : '<p style="font-size:13px"><em>[Describe why this change is needed.]</em></p>'}
         ${(added.length && Math.abs(priceDelta) < 1) ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 12px;margin:10px 0;font-size:12.5px;color:#b91c1c"><b>⚠ Unpriced scope:</b> ${added.length} added item(s) totalling ${added.reduce((sx, t) => sx + (t.te || 0), 0).toFixed(1)} ${u} of effort carry <b>no price impact</b> in this change order. If that is intentional goodwill, say so explicitly below and cap it; otherwise set rates for the people doing the work (Resources tab) or a contract price (Pricing) and re-draft — silent free scope is how margins die.</div>` : ''}
+        ${legacyBasis ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;margin:10px 0;font-size:12.5px;color:#92400e"><b>⚠ Baseline priced on the previous method:</b> this SOW baseline was captured before pricing was consolidated onto the simulated revenue percentile, so part of the price movement below is the change of method rather than a change of scope. Re-generate the SOW to re-baseline before issuing this change order, or state the scope-only delta explicitly.</div>` : ''}
         <h2 style="font-size:15px;margin:12px 0 6px">Scope changes</h2>
         <table style="border-collapse:collapse"><tr><th style="${th}">Change</th><th style="${th}">Item</th><th style="${th}">Effort</th></tr>
           ${added.map(t => `<tr><td style="${td};color:#15803d">Added</td><td style="${td}">${escapeHtml(t.name)}</td><td style="${td}">${(t.te || 0).toFixed(1)} ${u}</td></tr>`).join('')}
