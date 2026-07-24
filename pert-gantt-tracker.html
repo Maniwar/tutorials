@@ -512,6 +512,10 @@
        button toggles it. Firefox has no save prompt for text fields either. */
     .masked-field { -webkit-text-security: disc; text-security: disc; }
     .masked-field.reveal { -webkit-text-security: none; text-security: none; }
+    /* working-week day toggles: on = working (blue), off = non-working (greyed) */
+    .wk-day { border: 1px solid var(--primary); background: var(--primary); color: #fff; border-radius: 6px; padding: 0.28rem 0.6rem; font-size: 0.78rem; font-weight: 600; cursor: pointer; min-width: 3rem; }
+    .wk-day.off { background: #f1f5f9; color: #94a3b8; border-color: #cbd5e1; text-decoration: line-through; }
+    @media (hover: hover) { .wk-day:hover { filter: brightness(1.05); } .wk-day.off:hover { background: #e2e8f0; } }
     #helpPop { position: fixed; z-index: 300; max-width: 300px; background: #fff; border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--sh-3); padding: 0.6rem 0.75rem; font-size: var(--t-md); color: var(--text); line-height: 1.45; }
     /* W19: contained iconography */
     .ico { display: inline-block; width: 1.4em; text-align: center; flex: none; filter: grayscale(1); opacity: .8; }
@@ -700,6 +704,12 @@
             </div>
             <div id="holidayChips" style="margin:4px 0 0;line-height:1.5;display:inline"></div>
           </div>
+        </div>
+        <div style="margin-top:0.75rem">
+          <label>Working week</label><button type="button" class="info-icon" aria-label="About the working week" data-help="Which weekdays count as working days. Scheduling skips the greyed-out (non-working) days exactly like weekends. Default is Mon–Fri; toggle any day for odd patterns — a 6-day week, or a Fri/Sat weekend. Company holidays are the separate Non-working days field above.">i</button>
+          <input id="weekendDays" type="hidden" value="0,6" />
+          <div id="workweekToggles" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px"></div>
+          <div id="workweekHint" class="help-text" style="margin-top:3px"></div>
         </div>
         <div class="config-actions" style="display:flex;justify-content:flex-end;margin-top:0.75rem">
           <button id="calcBtn" class="btn-primary" onclick="calculate()">Calculate schedule</button>
@@ -1519,7 +1529,7 @@
     // convert a duration in the chosen unit to whole calendar working-day span for date math
     function unitToWorkingDays(v) {
       const u = document.getElementById('durationUnit').value;
-      if (u === 'weeks') return v * 5;
+      if (u === 'weeks') return v * workingDaysPerWeek();
       if (u === 'hours') return v / 8;
       return v;
     }
@@ -1640,6 +1650,7 @@
         document.getElementById('projectName').value = 'New Engagement';
         document.getElementById('holidays').value = '';
         renderHolidayChips();
+        document.getElementById('weekendDays').value = '0,6'; loadWeekendFromField(); renderWorkweekToggles();
       } else {
         document.getElementById('projectName').value = (document.getElementById('projectName').value || 'Project') + ' (copy)';
       }
@@ -2076,6 +2087,7 @@
         projectStart: document.getElementById('projectStart').value,
         durationUnit: document.getElementById('durationUnit').value,
         holidays: document.getElementById('holidays').value,
+        weekendDays: [...weekendDays].sort().join(','),
         nextId,
         resources, reserves, baselineDate, levelMode, projectBudget,
         raid, nextRaidId, statusHistory, sowDraft, statusNarrative, pricing,
@@ -2102,6 +2114,9 @@
       if (data.durationUnit) document.getElementById('durationUnit').value = data.durationUnit;
       document.getElementById('holidays').value = data.holidays || '';
       renderHolidayChips();
+      document.getElementById('weekendDays').value = (data.weekendDays != null ? data.weekendDays : '0,6');
+      loadWeekendFromField();
+      renderWorkweekToggles();
       tasks = (data.tasks || []).map(t => makeTask({
         id: t.id, name: t.name, o: +t.o, m: +t.m, p: +t.p,
         milestone: !!t.milestone, owner: t.owner || '',
@@ -2206,9 +2221,45 @@
       const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
       return `${y}-${m}-${day}`;
     }
+    // which weekday indices (0=Sun … 6=Sat) are non-working. Default: Sat+Sun.
+    // Editable so projects with odd working patterns (e.g. a 6-day week, or a
+    // Fri/Sat weekend) schedule correctly. Always kept to ≤6 days so at least
+    // one working day remains (otherwise the schedule loops forever).
+    let weekendDays = new Set([0, 6]);
+    function workingDaysPerWeek() { return Math.max(1, 7 - weekendDays.size); }
+    // read/persist the non-working weekday set to/from the hidden field, then
+    // rebuild the toggles and re-run the schedule so a changed week takes effect.
+    function loadWeekendFromField() {
+      const raw = (document.getElementById('weekendDays') || {}).value || '';
+      const set = new Set(raw.split(',').map(s => parseInt(s.trim(), 10)).filter(n => n >= 0 && n <= 6));
+      weekendDays = set.size >= 7 ? new Set([0, 6]) : set;   // never zero working days
+    }
+    function toggleWorkday(idx) {
+      const next = new Set(weekendDays);
+      if (next.has(idx)) next.delete(idx);
+      else { if (next.size >= 6) { flashSaved('⚠ At least one day must stay a working day.'); return; } next.add(idx); }
+      weekendDays = next;
+      const f = document.getElementById('weekendDays'); if (f) f.value = [...next].sort().join(',');
+      renderWorkweekToggles();
+      markDirty();
+      calculated = false;   // the calendar changed — force a fresh schedule
+      refreshAll();
+    }
+    function renderWorkweekToggles() {
+      const wrap = document.getElementById('workweekToggles'); if (!wrap) return;
+      const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      wrap.innerHTML = names.map((nm, i) => {
+        const off = weekendDays.has(i);
+        return `<button type="button" class="wk-day${off ? ' off' : ''}" onclick="toggleWorkday(${i})" aria-pressed="${!off}" title="${off ? nm + ' is non-working — click to make it a working day' : nm + ' is a working day — click to make it non-working'}">${nm}</button>`;
+      }).join('');
+      const hint = document.getElementById('workweekHint');
+      if (hint) {
+        const work = [...Array(7).keys()].filter(i => !weekendDays.has(i)).map(i => names[i]);
+        hint.textContent = `${workingDaysPerWeek()}-day week: ${work.join(', ')} working. ${weekendDays.size ? 'Non-working: ' + [...weekendDays].sort().map(i => names[i]).join(', ') + '.' : 'Every day is a working day.'}`;
+      }
+    }
     function isWorkingDay(d, holidays) {
-      const day = d.getDay();
-      if (day === 0 || day === 6) return false;
+      if (weekendDays.has(d.getDay())) return false;
       if (holidays.has(fmtISO(d))) return false;
       return true;
     }
@@ -2242,7 +2293,7 @@
     }
     function workingDaysToUnit(wd) {
       const u = document.getElementById('durationUnit').value;
-      if (u === 'weeks') return wd / 5;
+      if (u === 'weeks') return wd / workingDaysPerWeek();
       if (u === 'hours') return wd * 8;
       return wd;
     }
@@ -2360,8 +2411,16 @@
             ${hasRealSteps(t) ? `<div><b>Steps for the tester:</b><ol style="margin:0.2rem 0 0.45rem;padding-left:1.25rem">${steps.map(sx => `<li>${escapeHtml(sx.replace(/^\d+\.\s*/, ''))}</li>`).join('')}</ol></div>` : `<div style="color:#b45309;margin-bottom:0.35rem">⚠ This test case has no real numbered steps yet${t.description ? ' (only: “' + escapeHtml(t.description.slice(0, 90)) + (t.description.length > 90 ? '…' : '') + '”)' : ''} — run 🧪 Generate test plan on the Requirements tab; it now rewrites shallow test cases in place with executable steps.</div>`}
             ${t.acceptance ? `<div style="background:#dcfce7;border-radius:6px;padding:0.35rem 0.55rem"><b>✅ Pass when:</b> ${gwtLines(t.acceptance).split('\n').map(escapeHtml).join('<br/>')}</div>` : ''}
             ${t.jira ? `<div style="margin-top:0.4rem"><b>\ud83d\udd17 Jira / evidence:</b>${jiraChip(t.jira)}</div>` : ''}
-            ${stHit ? `<div class="help-text" style="margin-top:0.4rem">From <b>${escapeHtml(stHit.id)}</b> — As a ${escapeHtml(stHit.persona || '?')}, I want to ${escapeHtml(stHit.want || '?')} <button class="btn-lite no-print" style="margin-left:0.4rem" onclick="openStoryModal('${escapeHtml(stHit.id)}')" title="Edit the story (and this criterion) right here — opens on top, saving refreshes this panel">✎ Edit</button> <button class="btn-lite no-print" onclick="closeModal();openReqStory('${escapeHtml(stHit.id)}')">Open story →</button></div>` : ''}
-          </div>`;
+          </div>${stHit ? `
+          <div style="margin:-0.4rem 0 1rem;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:0.55rem 0.75rem;font-size:0.8rem;line-height:1.5">
+            <div style="font-weight:700;color:#334155;margin-bottom:0.35rem"><span class="ico" aria-hidden="true">📖</span> Source story · ${escapeHtml(stHit.id)}${stHit.epicId ? ` <span class="help-text" style="font-weight:400">(${escapeHtml(stHit.epicId)})</span>` : ''}</div>
+            <div style="margin-bottom:0.4rem">As a <b>${escapeHtml(stHit.persona || '?')}</b>, I want to ${escapeHtml(stHit.want || '?')}, so that ${escapeHtml(stHit.soThat || '?')}.</div>
+            ${(stHit.ac || []).length ? `<div style="margin-bottom:0.35rem"><b>Acceptance criteria (${stHit.ac.length}):</b><ul style="list-style:none;margin:0.2rem 0 0;padding-left:0.25rem">${stHit.ac.map(a => `<li style="margin-bottom:0.15rem${a.id === (acHit && acHit.id) ? ';background:#fef9c3;border-radius:4px;padding:1px 4px' : ''}">${typeIcon[a.type] || '•'} <span style="color:#475569">${escapeHtml(a.id)}</span> ${escapeHtml(a.text)}${a.id === (acHit && acHit.id) ? ' <span class="help-text">← this test verifies this one</span>' : ''}</li>`).join('')}</ul></div>` : ''}
+            <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.5rem">
+              <button class="btn-sm btn-secondary no-print" onclick="openStoryModal('${escapeHtml(stHit.id)}')" title="Edit ${escapeHtml(stHit.id)} — persona, acceptance criteria, NFRs, assumptions. Opens on top; saving refreshes this panel.">✎ Edit story</button>
+              <button class="btn-sm btn-secondary no-print" onclick="closeModal();openReqStory('${escapeHtml(stHit.id)}')" title="Jump to ${escapeHtml(stHit.id)} on the Requirements tab">Open story →</button>
+            </div>
+          </div>` : ''}`;
         }
         sp.innerHTML = tcSpec + (st.length
           ? `<details open style="margin-bottom:1rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:0.5rem 0.75rem">
@@ -2421,7 +2480,10 @@
       document.getElementById('mActualCost').value = t.actualCost || 0;
       document.getElementById('mJira').value = t.jira || '';
       populateOwnerList();
-      modalRefMap = buildTaskDatalist('predDatalist', x => x.id !== id);
+      // only offer predecessors that can validly come before this task: not itself,
+      // and nothing that already depends on it (would create a circular dependency).
+      const predCycle = predCycleSet(id);
+      modalRefMap = buildTaskDatalist('predDatalist', x => !predCycle.has(x.id));
       buildTaskDatalist('parentDatalist', x => !x.milestone && x.id !== id && !allDescendants(id).some(d => d.id === x.id));
       const curPar = tasks.find(x => x.id === t.parentId);
       document.getElementById('mParent').value = curPar ? ((curPar.wbs ? curPar.wbs + ' · ' : '') + curPar.name) : '';
@@ -2665,8 +2727,15 @@
         preds.push({ id, type: r.querySelector('.dep-type').value, lag: parseFloat(r.querySelector('.dep-lag').value) || 0 });
       });
       if (unresolved) return showErr(`Predecessor "${unresolved}" doesn’t match any task — pick from the type-ahead list (name or WBS code).`);
-      // de-dupe by id (keep last), and drop any self/parent references that would form a link cycle
+      // de-dupe by id (keep last), then reject any that would form a circular
+      // dependency (self, or a task that already depends on this one through the chain)
       const seen = {}; preds.forEach(pr => seen[pr.id] = pr);
+      const cycle = editingId != null ? predCycleSet(editingId) : new Set();
+      const badCycle = Object.values(seen).filter(pr => pr.id === editingId || cycle.has(pr.id));
+      if (badCycle.length) {
+        const nm = (tasks.find(x => x.id === badCycle[0].id) || {});
+        return showErr(`“${(nm.wbs ? nm.wbs + ' ' : '') + (nm.name || 'that task')}” already depends on this activity — making it a predecessor would create a circular dependency. Remove it to save.`);
+      }
       const finalPreds = Object.values(seen).filter(pr => pr.id !== editingId);
 
       const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, actualCost, percentComplete: pct, predecessors: finalPreds, jira: document.getElementById('mJira').value.trim(),
@@ -12308,6 +12377,7 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
       restoreDiskHandle();
       if (!startInput.value) startInput.value = fmtISO(new Date());
       renderHolidayChips();
+      loadWeekendFromField(); renderWorkweekToggles();
       renderTaskTable();
       renderProjectMenu();
       updateTabSlider();
