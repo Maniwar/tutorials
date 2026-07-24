@@ -658,6 +658,128 @@
       .pa-row { grid-template-columns: 2.4rem 1fr auto; }
       .pa-row .pa-bar { grid-column: 1 / -1; }
     }
+    /* ===== Price build & coverage (RAID › Pricing & margin) =====
+       The pricing tiles state six numbers that are really one sentence: cost,
+       plus what the rate card earns, plus what risk adds, equals the price —
+       and then a simulation that says how often that price is enough. So it is
+       drawn as ONE waterfall on ONE money scale, with the simulation's own
+       outcomes plotted as ticks on that same scale in the last row.
+       Deliberate sibling of the .pa- panel above: same tinted card, same 3px
+       primary rail, same uppercase eyebrow, same dashed divider between "what
+       you set" and "what it means", and .pb-needle is .pa-tick's job (the fill
+       is consumption, the needle is the line it must not cross).
+       Texture is meaning, not decoration: solid = arithmetic you can redo by
+       hand, and the 45deg/6px hatch is already this file's word for "reserve,
+       not committed work" on the Gantt (.gantt-reserve-cont / -mgmt, 156-157),
+       so it is reused verbatim to mean "this came out of the simulation". */
+    .pb-wrap { border: 1px solid var(--primary-200); border-left: 3px solid var(--primary); border-radius: 10px; background: var(--primary-50); padding: 0.6rem 0.8rem 0.7rem; margin: 0.85rem 0 0; }
+    .pb-wrap[data-model="tm"] { border-left-color: var(--milestone); }
+    .pb-wrap[data-state="blocked"], .pb-wrap[data-state="unknown"] { border-left-color: var(--slack); background: #f8fafc; }
+    .pb-wrap[data-state="loss"] { border-left-color: var(--critical); border-color: #fecaca; background: var(--critical-bg); }
+    .pb-head { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+    .pb-title { font-size: var(--t-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary-700); }
+    .pb-wrap[data-model="tm"] .pb-title { color: #5b21b6; }
+    .pb-wrap[data-state="loss"] .pb-title { color: #b91c1c; }
+    .pb-wrap[data-state="blocked"] .pb-title, .pb-wrap[data-state="unknown"] .pb-title { color: var(--muted); }
+    .pb-headline { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+    .pb-why { flex: 1 1 15rem; font-size: var(--t-xs); color: var(--muted); line-height: 1.4; }
+    .pb-lock { font-size: var(--t-md); color: var(--muted); background: #eff6ff; border: 1px solid var(--primary-200); border-radius: 8px; padding: 0.45rem 0.6rem; line-height: 1.5; }
+    .pb-lock b { color: var(--text); }
+    .pb-wrap[data-state="blocked"] .pb-lock, .pb-wrap[data-state="unknown"] .pb-lock { background: #fff; border-color: var(--border); }
+
+    /* the waterfall — one row per step, every row on the same money scale */
+    .pb-plot { margin-top: 0.6rem; padding-top: 0.55rem; border-top: 1px dashed var(--primary-200); font-size: var(--t-md); font-variant-numeric: tabular-nums; }
+    .pb-row { display: grid; grid-template-columns: 10.5rem minmax(9.5rem, auto) 1fr 5.5rem; gap: 0.5rem; align-items: center; min-height: 1.9rem; }
+    .pb-k { font-size: var(--t-xs); font-weight: 700; letter-spacing: 0.02em; color: var(--muted); }
+    .pb-row.pb-total { margin-top: 0.9rem; }          /* room for the needle flag */
+    .pb-row.pb-total .pb-k { text-transform: uppercase; letter-spacing: 0.04em; color: var(--text); }
+    .pb-row.pb-total .pb-nums b { color: var(--text); }
+    .pb-row.pb-neg .pb-k, .pb-row.pb-neg .pb-d { color: var(--critical); }
+    .pb-row.pb-advisory .pb-k, .pb-row.pb-advisory .pb-d { color: #b45309; font-style: italic; }
+    .pb-row.pb-advisory .pb-nums, .pb-row.pb-unknown .pb-nums { color: var(--slack); }
+    .pb-row.pb-unknown .pb-k { color: var(--slack); }
+    .pb-nums { white-space: nowrap; color: var(--muted); font-size: var(--t-sm); }
+    .pb-nums b { color: var(--text); font-size: var(--t-md); }
+    .pb-ar { color: var(--slack); margin: 0 0.25rem; }
+    .pb-d { font-size: var(--t-xs); font-weight: 700; white-space: nowrap; text-align: right; color: var(--muted); }
+    .pb-q { color: var(--slack); font-weight: 400; font-style: italic; }
+
+    .pb-track { position: relative; height: 14px; border-radius: 4px; background: #eef2f7; min-width: 4rem; }
+    .pb-row.pb-total .pb-track, .pb-row.pb-cov .pb-track { height: 18px; }
+    .pb-row.pb-total .pb-track { background: var(--border); }
+    .pb-row.pb-cov .pb-track { background: #fff; box-shadow: inset 0 0 0 1px var(--border); }
+    .pb-seg { position: absolute; top: 0; bottom: 0; border-radius: 3px; box-sizing: border-box; }
+    /* solid = deterministic arithmetic the reader can recompute by hand */
+    .pb-cost   { background: var(--slack);    border: 1px solid #64748b; }
+    .pb-margin { background: var(--success);  border: 1px solid #15803d; }
+    .pb-price  { background: var(--primary);  border: 1px solid var(--primary-dark); }
+    .pb-loss   { background: var(--critical); border: 1px solid #b91c1c; }
+    .pb-gain   { background: var(--success);  border: 1px solid #15803d; }
+    /* hatched = sampled from the Monte Carlo — the Gantt's reserve hatch, verbatim */
+    .pb-uplift { background: repeating-linear-gradient(45deg,#fcd34d,#fcd34d 6px,#fef3c7 6px,#fef3c7 12px); border: 1px solid #d97706; }
+    .pb-over   { background: repeating-linear-gradient(45deg,#fca5a5,#fca5a5 6px,#fee2e2 6px,#fee2e2 12px); border: 1px solid var(--critical); }
+    /* grey hatch = a quantity the panel is refusing to assert */
+    .pb-nocost { background: repeating-linear-gradient(45deg,#cbd5e1,#cbd5e1 6px,#e2e8f0 6px,#e2e8f0 12px); border: 1px dashed var(--slack); }
+
+    /* the reference needle — same job as .pa-tick, overhanging its track */
+    .pb-needle { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--header); }
+    .pb-needle.pb-rec { width: 0; background: none; border-left: 2px dashed var(--primary-dark); }
+    .pb-needle.pb-cap { width: 0; background: none; border-left: 2px dashed #d97706; }
+    .pb-flag { position: absolute; top: -1.05rem; font-size: var(--t-xs); font-weight: 700; white-space: nowrap; color: var(--header); background: var(--primary-50); padding: 0 3px; border-radius: 3px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+    .pb-wrap[data-state="loss"] .pb-flag { background: var(--critical-bg); }
+    .pb-wrap[data-state="blocked"] .pb-flag, .pb-wrap[data-state="unknown"] .pb-flag { background: #f8fafc; }
+    /* a step of exactly zero is a mark, never a zero-width block pretending to be one */
+    .pb-zero { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; background: #d97706; }
+
+    /* the coverage strip: one tick per 5% of the simulated runs, placed at what
+       that run costs. Discrete on purpose — a smooth curve would assert shape
+       between samples the simulation never produced. */
+    .pb-tk { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; border-radius: 1px; }
+    .pb-tk-ok { background: var(--success); }
+    .pb-tk-no { background: var(--critical); }
+    .pb-row.pb-cov { margin-top: 0.9rem; }
+    .pb-row.pb-cov .pb-k { color: var(--text); text-transform: uppercase; letter-spacing: 0.04em; }
+    .pb-sep { height: 1px; background: var(--primary-200); margin: 0.9rem 0 0.35rem; }
+    .pb-covhead { font-size: var(--t-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 0.2rem; }
+    .pb-note { font-size: var(--t-xs); color: var(--muted); line-height: 1.45; margin-top: 0.45rem; }
+    .pb-note b { color: var(--text); }
+    .pb-legend { display: flex; gap: 0.8rem; flex-wrap: wrap; align-items: center; font-size: var(--t-xs); color: var(--muted); margin-top: 0.5rem; padding-top: 0.4rem; border-top: 1px dashed var(--primary-200); }
+    .pb-sw { display: inline-block; width: 15px; height: 9px; border-radius: 2px; vertical-align: -1px; margin-right: 0.25rem; box-sizing: border-box; }
+    .pb-sw-solid { background: var(--slack); border: 1px solid #64748b; }
+    .pb-sw-hatch { background: repeating-linear-gradient(45deg,#fcd34d,#fcd34d 4px,#fef3c7 4px,#fef3c7 8px); border: 1px solid #d97706; }
+    .pb-sw-tick { width: 2px; height: 12px; background: var(--success); border-radius: 1px; }
+    .pb-warnline { font-size: var(--t-xs); color: #b45309; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; padding: 0.3rem 0.5rem; margin-top: 0.45rem; line-height: 1.45; }
+
+    /* Declared transitions and their opt-out sit together, the way the .pa-
+       block does, so the component stays self-contained under re-ordering. */
+    .pb-seg, .pb-needle, .pb-tk { transition: left 0.2s var(--easeo), width 0.2s var(--easeo); }
+    @media (prefers-reduced-motion: reduce) { .pb-seg, .pb-needle, .pb-tk { transition: none } }
+
+    /* Backgrounds ARE the data here, so this opts into colour printing — scoped
+       to .pb- only, matching what the .ptr- block above already does. Belt and
+       braces: every segment also carries a 1px border and every value is stated
+       as text, so the picture still reads as outlined blocks with numbers if a
+       printer drops the fills entirely. */
+    @media print {
+      .pb-wrap, .pb-track, .pb-seg, .pb-needle, .pb-tk, .pb-zero, .pb-sw, .pb-warnline {
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+      }
+      .pb-wrap { break-inside: avoid; }
+      .pb-tk { box-shadow: 0 0 0 1px #fff; }
+    }
+    /* Class-based grid, so it needs its own breakpoint. Every child is given an
+       explicit row AND column: with sparse auto-placement a full-width item
+       forces a row break, so mixing `1 / -1` with auto-placed siblings silently
+       stacks all four children instead of pairing the label with the delta. */
+    @media (max-width: 640px) {
+      .pb-row { grid-template-columns: 1fr auto; row-gap: 0.1rem; padding-bottom: 0.4rem; min-height: 0; }
+      .pb-k     { grid-row: 1; grid-column: 1; }
+      .pb-d     { grid-row: 1; grid-column: 2; }
+      .pb-nums  { grid-row: 2; grid-column: 1 / -1; white-space: normal; }
+      .pb-track { grid-row: 3; grid-column: 1 / -1; margin-top: 0.15rem; }
+      .pb-row.pb-total, .pb-row.pb-cov { margin-top: 0.6rem; }
+      .pb-flag  { display: none; }   /* would collide at this width; the title attributes carry it */
+    }
     /* keyboard-flow hint in modal footers — the shortcuts are useless if nobody
        knows they exist, so they are stated where the save button is */
     .kbd-hint { display: inline-flex; align-items: center; gap: 0.25rem; font-size: var(--t-xs); color: var(--muted); margin-right: 0.5rem; white-space: nowrap; }
@@ -2679,7 +2801,7 @@
       const sbox = document.getElementById('aiStreamBox');
       if (sbox && sbox.style.display !== 'none') sbox.classList.toggle('stream-float', name !== 'tasks');
       // schedule-dependent tabs compute on entry so they never open blank
-      if (['pert', 'gantt', 'resources', 'baseline', 'analytics'].includes(name)) ensureCalculated();
+      if (['pert', 'gantt', 'resources', 'baseline', 'analytics', 'raid'].includes(name)) ensureCalculated();
       if (name === 'wbs') renderWBS();
       if (name === 'req') renderReqs();
       if (name === 'pert' && calculated) renderPERT();
@@ -5108,6 +5230,7 @@
       renderTaskTable();
       renderWBS();
       renderAnalytics();
+      renderPricing();
       renderGantt();
       renderResources();
       renderBaseline();
@@ -5265,7 +5388,7 @@
       durations.sort((a, b) => a - b);
       costS.sort((a, b) => a - b); revS.sort((a, b) => a - b);
       const pct = q => durations[Math.min(durations.length - 1, Math.floor(q * durations.length))];
-      const pctOf = (arr, q) => arr.length ? arr[Math.min(arr.length - 1, Math.floor(q * arr.length))] : 0;
+      const pctOf = pctOfSorted; // one nearest-rank rule for the whole app
       const mean = durations.reduce((s, v) => s + v, 0) / durations.length;
       tasks.forEach(t => t.criticality = critCount[t.id] / iters);
 
@@ -13186,63 +13309,409 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       else pricing[field] = val;
       saveLocal(); renderPricing();
     }
+    function pctOfSorted(arr, q) {
+      return (arr && arr.length) ? arr[Math.min(arr.length - 1, Math.floor(q * arr.length))] : 0;
+    }
+    // How many simulated runs land at or below v. A straight count — no
+    // distribution assumption, which is what makes the coverage sentence
+    // defensible in front of a client.
+    function pbCountAtOrBelow(sorted, v) {
+      if (!sorted || !sorted.length || !Number.isFinite(v)) return 0;
+      let lo = 0, hi = sorted.length;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (sorted[mid] <= v) lo = mid + 1; else hi = mid; }
+      return lo;
+    }
+    function pbMean(arr) {
+      if (!arr || !arr.length) return 0;
+      let s = 0; for (let i = 0; i < arr.length; i++) s += arr[i];
+      return s / arr.length;
+    }
+    function pbSpread(arr) { return (arr && arr.length > 1) ? arr[arr.length - 1] - arr[0] : 0; }
+    function pbBasis(b) { return (b === 'p50' || b === 'p90') ? b : 'p80'; }
+    // fmtMoney renders a loss as "$-300,000"; a loss has to read as a loss at a
+    // glance, so the sign goes in front of the currency symbol. U+2212, matching
+    // pctTxt in renderBaseline — a hyphen reads as a dash at this size.
+    function pbMoney(v) { return Number.isFinite(v) ? (v < 0 ? '−' : '') + fmtMoney(Math.abs(v)) : '—'; }
+    function pbSigned(v) { const n = Math.abs(v) < 0.5 ? 0 : v; return (n < 0 ? '−' : '+') + fmtMoney(Math.abs(n)); }
+    // snap the sign-flip zone to a clean zero so "−0%" is unreachable
+    function pbPct(v) {
+      if (!Number.isFinite(v)) return '—';
+      const n = Math.abs(v) < 0.5 ? 0 : v;
+      return (n < 0 ? '−' : '') + Math.abs(Math.round(n)) + '%';
+    }
+    function pbSignedPct(v) {
+      if (!Number.isFinite(v)) return '—';
+      const n = Math.abs(v) < 0.5 ? 0 : v;
+      return (n < 0 ? '−' : '+') + Math.abs(Math.round(n)) + '%';
+    }
+    // The same four-band vocabulary paBand uses, at the two thresholds the
+    // pricing tiles already used (25% healthy, 15% thin).
+    function pbBand(m) {
+      if (m == null || !Number.isFinite(m)) return { badge: 'badge-slack', col: 'var(--muted)', word: 'No margin figure' };
+      if (m < 0) return { badge: 'badge-critical', col: 'var(--critical)', word: 'Loss-making' };
+      if (m < 15) return { badge: 'badge-warn', col: 'var(--warn)', word: 'Thin margin' };
+      if (m < 25) return { badge: 'badge-info', col: 'var(--primary)', word: 'Tight margin' };
+      return { badge: 'badge-ok', col: 'var(--success)', word: 'Healthy margin' };
+    }
+
+    // Every figure the panel draws, resolved once, so the degenerate cases are
+    // decided in ONE place instead of being re-guessed by each row and each tile.
+    function pricingFigures() {
+      const leaves = leafTasks();
+      const cost = projectCost();
+      const fixedTotal = leaves.reduce((s, t) => s + (Number(t.fixedCost) || 0), 0);
+      const labor = laborRevenue();
+      const detRev = labor + fixedTotal;
+      let anyEffort = false, anyPart = false, anyInternalPart = false, anyRatedPart = false;
+      leaves.forEach(t => {
+        if (t.milestone) return;
+        if ((t.te || 0) > 0) anyEffort = true;
+        taskParticipants(t).forEach(pr => {
+          anyPart = true;
+          if (isClientResource(pr.name)) return;
+          anyInternalPart = true;
+          if (getRate(pr.name) > 0) anyRatedPart = true;
+        });
+      });
+      // runMonteCarlo bails without clearing mcResult (a circular dependency
+      // leaves the PREVIOUS plan's result in memory), so `calculated` is the
+      // only trustworthy freshness signal. Guard on both, never on mcResult.
+      const mc = (calculated && mcResult) ? mcResult : null;
+      const costDist = (mc && Array.isArray(mc.costDist) && mc.costDist.length) ? mc.costDist : null;
+      const revDist = (mc && Array.isArray(mc.revDist) && mc.revDist.length) ? mc.revDist : null;
+      const haveSim = !!(costDist && revDist);
+      const basis = pbBasis(pricing.basis);
+      const isTM = pricing.model === 'tm';
+      // mcResult.rev* are seeded with fixedTotal inside runMonteCarlo, so the
+      // simulated figures ARE the whole price. The old code added fixedTotal to
+      // them a second time, inflating every bid and every margin.
+      // The uplift floors at detRev: a percentile below the expected outcome is
+      // not a risk uplift, and drawing it as a negative step would read as noise.
+      const upliftOf = q => {
+        const v = haveSim ? pctOfSorted(revDist, q) : 0;
+        return v > detRev ? v : detRev;
+      };
+      const prices = { p50: detRev, p80: upliftOf(0.8), p90: upliftOf(0.9) };
+      const ceiling = prices[basis];
+      // Fixed price: you quote the risk-adjusted number. T&M: you quote the
+      // estimate and the risk-adjusted number is a cap — so it must not sit
+      // inside the total, or the panel asserts a commitment that does not exist.
+      const recPrice = isTM ? detRev : ceiling;
+      const contract = pricing.contractPrice || 0;
+      const price = contract || recPrice;
+      const cap = isTM ? (contract || ceiling) : price;
+      // Cost is UNKNOWN (not zero) only when there is internal labour and nobody
+      // has a day rate. A pass-through plan with no internal labour has a
+      // perfectly known cost. Getting these apart is what stops the panel both
+      // printing a fictional 100% margin AND crying wolf on a legitimate $0.
+      const costBlind = anyInternalPart && !anyRatedPart;
+      const margin = (price > 0 && !costBlind) ? (price - cost) / price * 100 : null;
+      // Beta-PERT with lambda=4 has alpha+beta=6, so E[sampled duration] is
+      // exactly te=(o+4m+p)/6, and iterCost/iterRev are linear in duration.
+      // Therefore mean(costDist) MUST equal projectCost() and mean(revDist) MUST
+      // equal detRev on a fresh run — sampling error is ~0.1% at 5,000 iters.
+      // A >2% gap is proof the simulation predates a rate, kind, rate-unit or
+      // scope change, none of which re-run runMonteCarlo. This is the only
+      // detector in the file that catches a BILL-rate edit.
+      const simCostMean = haveSim ? pbMean(costDist) : 0;
+      const simRevMean = haveSim ? pbMean(revDist) : 0;
+      // A live figure of 0 against a non-zero simulated mean is not "no drift" —
+      // it is the largest drift possible (every rate cleared). Returning 0 from
+      // the divide-by-zero guard made that the one case the detector missed.
+      const drift = (a, b) => (b > 0) ? Math.abs(a - b) / b : (a > 0 ? Infinity : 0);
+      const staleSim = haveSim && (drift(simCostMean, cost) > 0.02 || drift(simRevMean, detRev) > 0.02);
+      // Fixed price: will delivery cost exceed what I charged? -> costDist.
+      // T&M: will billings exceed the cap I signed? -> revDist. Both are
+      // questions about ONE marginal distribution, so both are answerable.
+      const covArr = isTM ? revDist : costDist;
+      const covRef = isTM ? cap : price;
+      const covFlat = haveSim && pbSpread(covArr) <= Math.max(1e-9, Math.abs(covArr[0]) * 1e-9);
+      const canCover = haveSim && !costBlind && cost > 0 && covRef > 0;
+      return {
+        cost, fixedTotal, labor, detRev, prices, basis, isTM, ceiling, recPrice, contract, price, cap,
+        margin, haveSim, costDist, revDist, covArr, covRef, covFlat, canCover, staleSim,
+        simCostMean, simRevMean, anyEffort, anyPart, anyInternalPart, costBlind,
+        allClient: anyPart && !anyInternalPart,
+        iters: (mc && mc.iters) || 0
+      };
+    }
+
+    function priceBuildHtml(f) {
+      // ONE money scale for every row, including the coverage strip, taken over
+      // every quantity actually drawn. This is what makes a negative margin
+      // structurally honest: nothing can render backwards or off-scale, the cost
+      // block simply overshoots the price needle.
+      const TICKS = 20;
+      const tickVals = [];
+      if (f.canCover) for (let i = 0; i < TICKS; i++) tickVals.push(pctOfSorted(f.covArr, (i + 0.5) / TICKS));
+      const S = Math.max(f.price, f.cost, f.detRev, f.ceiling, f.covRef, ...tickVals, 1);
+      const pos = v => Math.max(0, Math.min(100, (Number.isFinite(v) ? v : 0) / S * 100));
+      // No minimum-width clamp: a sliver is DROPPED rather than widened, so
+      // left + width can never exceed 100 and nothing overhangs its track.
+      const seg = (a, b, cls, tip) => {
+        const L = pos(Math.min(a, b)), W = pos(Math.max(a, b)) - L;
+        return W < 0.35 ? '' : `<i class="pb-seg ${cls}" style="left:${L.toFixed(2)}%;width:${W.toFixed(2)}%" title="${escapeHtml(tip)}"></i>`;
+      };
+      const zeroTick = v => `<i class="pb-zero" style="left:${pos(v).toFixed(2)}%"></i>`;
+      // A centred flag at left:100% overhangs the panel padding, so the end
+      // thirds anchor inward instead of centring.
+      const flagStyle = p => p > 72 ? 'right:0;left:auto' : p < 12 ? 'left:0' : `left:${p.toFixed(2)}%;transform:translateX(-50%)`;
+      const needle = (v, cls, flagTxt, tip) => {
+        const p = pos(v);
+        return `<i class="pb-needle ${cls || ''}" style="left:${p.toFixed(2)}%" title="${escapeHtml(tip || '')}"></i>` +
+          (flagTxt ? `<span class="pb-flag" style="${flagStyle(p)}">${flagTxt}</span>` : '');
+      };
+      const row = (cls, k, nums, track, d, tip) =>
+        `<div class="pb-row ${cls || ''}" title="${escapeHtml(tip || '')}">
+          <span class="pb-k">${k}</span>
+          <span class="pb-nums">${nums}</span>
+          <span class="pb-track">${track}</span>
+          <span class="pb-d">${d}</span>
+        </div>`;
+      const step = (why, cum) => `<span>${why}</span><span class="pb-ar">→</span><b>${cum}</b>`;
+      const rows = [];
+
+      // 1. delivery cost
+      if (f.costBlind) {
+        rows.push(row('pb-unknown', 'Delivery cost',
+          step('no internal day rate set', '?'),
+          seg(0, S, 'pb-nocost', 'Delivery cost is unknown — no internal resource has a Cost $/d, so every margin below would be fiction'),
+          '<span class="pb-q">unknown</span>',
+          'Nobody on this plan has a cost rate, so cost cannot be computed. The panel refuses to show a margin rather than print a $0 cost as a 100% margin.'));
+      } else {
+        rows.push(row('', 'Delivery cost',
+          step('day rates × expected effort' + (f.fixedTotal > 0 ? ' + fixed' : ''), fmtMoney(f.cost)),
+          seg(0, f.cost, 'pb-cost', 'Delivery cost ' + fmtMoney(f.cost) + ' — projectCost(): day rates × PERT-mean effort, plus fixed costs') +
+          (f.price > 0 ? needle(f.price, '', '', 'Your price: ' + fmtMoney(f.price)) : ''),
+          f.price > 0 ? Math.round(f.cost / f.price * 100) + '% of price' : '',
+          'Day rates × the PERT-mean effort (o+4m+p)/6, plus fixed costs. Client-type resources cost nothing.'));
+      }
+
+      // 2. what the rate card earns — SAME estimator on both sides (both are the
+      //    PERT mean), so this step is arithmetic the reader can redo by hand.
+      const rc = f.detRev - f.cost;
+      const rcUp = rc >= 0;
+      rows.push(row(rcUp ? '' : 'pb-neg', rcUp ? '+ Rate-card margin' : '− Rate-card LOSS',
+        step(pbSigned(rc), fmtMoney(f.detRev)),
+        (!f.costBlind ? seg(f.cost, f.detRev, rcUp ? 'pb-margin' : 'pb-loss',
+          (rcUp ? 'Bill rates minus cost rates at expected effort: ' : 'Bill rates do not cover cost rates: ') + pbSigned(rc)) : ''),
+        !f.costBlind && f.cost > 0 ? pbSignedPct(f.detRev / f.cost * 100 - 100) + ' on cost' : '',
+        rcUp ? 'Bill rates minus cost rates at the same expected effort — the margin baked into the rate card before any risk is priced. Both sides use the PERT mean, so this step is exact arithmetic.'
+             : 'At expected effort your bill rates return LESS than the work costs. This is a rate-card problem, not a risk problem — no bid basis can fix it.'));
+
+      // 3. risk uplift — the ONE step that comes out of the simulation rather
+      //    than out of multiplication, which is exactly what the hatch means.
+      const up = f.ceiling - f.detRev;
+      const zeroUp = !(up > 0.5);
+      if (!f.isTM) {
+        rows.push(row('', '+ Risk uplift (' + f.basis.toUpperCase() + ')',
+          step(zeroUp ? 'none' : pbSigned(up), fmtMoney(f.ceiling)),
+          (zeroUp ? zeroTick(f.detRev) : seg(f.detRev, f.ceiling, 'pb-uplift', 'Risk uplift to ' + f.basis.toUpperCase() + ': ' + pbSigned(up))),
+          zeroUp ? '<span class="pb-q">none</span>' : pbSignedPct(f.ceiling / f.detRev * 100 - 100),
+          zeroUp
+            ? (f.basis === 'p50' ? 'P50 is the expected outcome by definition, so there is no uplift to add. You are bidding a coin flip on margin.'
+               : !f.haveSim ? 'No simulation has run, so there is no measured spread to price in. This is a missing input, not a finding.'
+               : 'The simulation found no spread above the expected outcome — every activity has p ≤ o, so nothing can overrun.')
+            : 'The ' + f.basis.toUpperCase() + ' of simulated revenue, minus revenue at expected effort. Hatched because it is sampled, not counted.'));
+      } else {
+        // T&M has no fixed bid, so the ceiling is NOT part of the quote.
+        rows.push(row('pb-advisory', 'Not-to-exceed (' + f.basis.toUpperCase() + ')',
+          step(zeroUp ? 'no headroom' : 'headroom ' + pbSigned(up), fmtMoney(f.contract || f.ceiling)),
+          (zeroUp ? zeroTick(f.detRev) : seg(f.detRev, f.ceiling, 'pb-uplift', 'Suggested not-to-exceed ' + fmtMoney(f.ceiling))) +
+          (f.contract > 0 ? needle(f.contract, 'pb-cap', 'your cap', 'Your contract price, treated as the cap: ' + fmtMoney(f.contract)) : ''),
+          '<span class="pb-q">advisory</span>',
+          'On T&M this is a cap to write into the contract, not money added to your quote — which is why it sits outside the total below.'));
+      }
+
+      // 4. the override, as its own signed step, so your price is shown AGAINST
+      //    the recommendation instead of quietly replacing it
+      if (f.contract > 0 && !f.isTM) {
+        const d = f.contract - f.recPrice;
+        const same = Math.abs(d) < 0.5;
+        rows.push(row(d < -0.5 ? 'pb-neg' : '', d >= 0 ? '+ Your override' : '− Your override',
+          step(same ? 'matches the recommendation' : pbSigned(d), fmtMoney(f.contract)),
+          same ? zeroTick(f.contract)
+               : seg(f.recPrice, f.contract, d >= 0 ? 'pb-gain' : 'pb-loss', pbSigned(d) + ' against the recommended ' + fmtMoney(f.recPrice)),
+          f.recPrice > 0 && !same ? pbSignedPct(f.contract / f.recPrice * 100 - 100) : '',
+          d < 0 ? 'You are quoting below the recommendation. The difference is risk you have chosen to absorb yourself.'
+                : 'You are quoting above the recommendation.'));
+      }
+
+      // 5. the total
+      const B = pbBand(f.margin);
+      let totalFlag = '';
+      if (!f.isTM && f.contract > 0 && Math.abs(f.contract - f.recPrice) > 0.5)
+        totalFlag = needle(f.recPrice, 'pb-rec', 'recommended ' + fmtMoney(f.recPrice),
+          'Recommended ' + f.basis.toUpperCase() + ' bid: ' + fmtMoney(f.recPrice));
+      rows.push(row('pb-total', f.isTM ? '= Estimated value' : '= Quoted price',
+        `<b>${fmtMoney(f.price)}</b>`,
+        seg(0, f.price, 'pb-price', (f.isTM ? 'Estimated value ' : 'Quoted price ') + fmtMoney(f.price)) +
+        // uncovered cost drawn ON the total bar, so "underwater" is a shape and
+        // not merely a colour that a printer might drop
+        (!f.costBlind && f.cost > f.price ? seg(f.price, f.cost, 'pb-over', 'Cost exceeds price by ' + fmtMoney(f.cost - f.price)) : '') +
+        totalFlag,
+        `<span style="color:${B.col}">${f.margin == null ? '—' : pbPct(f.margin)} margin</span>`,
+        f.isTM ? 'Bill rates × expected effort. On T&M this is an estimate, not a commitment.'
+               : 'What you quote. Margin is (price − cost) ÷ price.'));
+
+      return `<div class="pb-plot">${rows.join('')}${coverageHtml(f, pos, needle, row, TICKS, tickVals)}</div>`;
+    }
+
+    // The coverage strip: the same money scale, one tick per 5% of the simulated
+    // runs. Discrete on purpose — a smooth curve would assert shape between
+    // samples the simulation never produced, and this is the one row a client
+    // reads aloud. Every refusal below is a state where drawing anything would
+    // be a lie; each one names the single missing input.
+    function coverageHtml(f, pos, needle, row, TICKS, tickVals) {
+      const noun = f.isTM ? 'bill' : 'cost';
+      const head = t => `<div class="pb-sep"></div><div class="pb-covhead">${t}</div>`;
+      if (!f.haveSim)
+        return head('What the simulation says') +
+          `<div class="pb-lock">No simulated spread is available for this plan, so there is nothing to say about how often the price is enough. Press <b>Calculate</b>. Until then the rows above are arithmetic only — the words P80 and P90 on the tiles come from a duration-ratio proxy, which is a different quantity from a revenue percentile.</div>`;
+      if (f.costBlind)
+        return head('What the simulation says') +
+          `<div class="pb-lock">No internal resource has a <b>Cost $/d</b>, so every simulated run costs the same and the coverage read would come out at a meaningless 100%. Set cost rates on the Resources tab.</div>`;
+      if (!(f.covRef > 0))
+        return head('What the simulation says') +
+          `<div class="pb-lock">There is no ${f.isTM ? 'cap' : 'price'} to measure the simulation against yet.</div>`;
+      if (f.covFlat)
+        return head('What the simulation says') +
+          `<div class="pb-lock">Every one of the ${f.iters.toLocaleString()} simulated runs produced the <b>same</b> ${noun} of ${fmtMoney(f.covArr[0])}: optimistic = most likely = pessimistic on every activity, so there is nothing to vary. <b>There is no risk here to price</b> — which is a statement about your estimates, not about the engagement.</div>`;
+
+      const n = f.covArr.length;
+      const hits = pbCountAtOrBelow(f.covArr, f.covRef);
+      const pct = Math.round(hits / n * 100);
+      const ticks = tickVals.map((v, i) => {
+        const ok = v <= f.covRef;
+        return `<i class="pb-tk ${ok ? 'pb-tk-ok' : 'pb-tk-no'}" style="left:${pos(v).toFixed(2)}%" title="${escapeHtml(
+          'The ' + ((i + 0.5) / TICKS * 100).toFixed(1) + 'th percentile run ' + noun + 's ' + fmtMoney(v) +
+          (ok ? ' — covered' : ' — NOT covered'))}"></i>`;
+      }).join('');
+      const green = tickVals.filter(v => v <= f.covRef).length;
+      const verdict = hits === n ? `Every one of the ${n.toLocaleString()} simulated runs`
+        : hits === 0 ? `<b>Not one</b> of the ${n.toLocaleString()} simulated runs`
+        : `<b>${pct}%</b> of the ${n.toLocaleString()} simulated runs`;
+      const tail = hits === n
+        ? ` ${noun}s at or under ${fmtMoney(f.covRef)}. The remaining risk is whether the estimates themselves are right, not the spread around them.`
+        : hits === 0
+          ? ` ${noun}s at or under ${fmtMoney(f.covRef)} — the simulation says this ${f.isTM ? 'cap' : 'price'} is breached in every outcome it produced.`
+          : ` ${noun} at or under ${fmtMoney(f.covRef)}. In the other ${100 - pct}% ${f.isTM ? 'you bill through the cap and the overage is unrecoverable' : 'you deliver at a loss'}.`;
+      return head('What the simulation says' + (f.staleSim ? ' <span class="badge badge-warn" style="font-size:0.6rem;text-transform:none;letter-spacing:0">may be out of date</span>' : '')) +
+        row('pb-cov', 'Coverage',
+          `<span>${green} of ${TICKS} ticks</span><span class="pb-ar">→</span><b>${pct}%</b>`,
+          ticks + needle(f.covRef, '', f.isTM ? 'cap' : 'price', (f.isTM ? 'Your cap: ' : 'Your price: ') + fmtMoney(f.covRef)),
+          `<span style="color:${pct >= 80 ? 'var(--success)' : pct >= 50 ? 'var(--warn)' : 'var(--critical)'}">${pct}% covered</span>`,
+          'One tick per 5% of the simulated runs, placed at what that run ' + noun + 's, on the same money scale as the rows above. Green = the price covers it.') +
+        `<p class="pb-note">${verdict}${tail}${(f.isTM && !f.contract)
+          ? ' <b>That figure is true by definition</b> — your cap is the ' + f.basis.toUpperCase() + ' of the same distribution. Type a contract price above to test a cap you were actually given.'
+          : ''}</p>`;
+    }
+
     function renderPricing() {
       const cont = document.getElementById('pricingContainer');
       if (!cont) return;
-      if (!calculated || !tasks.length) { cont.innerHTML = '<p class="help-text">Calculate the plan first, and set bill rates on the Resources tab.</p>'; return; }
-      const cost = projectCost();
-      const revP50 = laborRevenue() + leafTasks().reduce((s, t) => s + (+t.fixedCost || 0), 0);
-      // Revenue is labour OR pass-through fixed costs. Gating on labour alone hid
-      // the whole section from a pure pass-through engagement (licences, vendor
-      // fees, travel rebilled at cost) that has real revenue to price.
-      const anyBill = laborRevenue() > 0 || revP50 > 0;
-      if (!anyBill) { cont.innerHTML = '<p class="help-text">No bill rates set yet — add <strong>Bill $/d</strong> per resource on the Resources tab and the pricing model appears here (T&M price, P80/P90 risk-adjusted fixed price, and margin).</p>'; return; }
-      // Prefer TRUE simulated revenue percentiles (effort-based). Fall back to the
-      // duration-ratio uplift only when no simulation is available.
-      const haveSim = mcResult && mcResult.revP50 > 0;
-      const u80 = haveSim ? (mcResult.revP80 / Math.max(1, mcResult.revP50)) : riskUplift('p80');
-      const u90 = haveSim ? (mcResult.revP90 / Math.max(1, mcResult.revP50)) : riskUplift('p90');
-      // The simulated revenue percentiles ALREADY include fixed costs — runMonteCarlo
-      // seeds every iteration with `let iterCost = fixedTotal, iterRev = fixedTotal`.
-      // Adding the fixed total again billed it to the client twice: a $20k licence
-      // moved the simulation by $20k and the quoted price by $40k.
-      const prices = haveSim
-        ? { p50: mcResult.revP50, p80: mcResult.revP80, p90: mcResult.revP90 }
-        : { p50: revP50, p80: revP50 * u80, p90: revP50 * u90 };
-      const chosen = prices[pricing.basis] || prices.p80;
-      const contract = pricing.contractPrice || 0;
-      const effPrice = contract || chosen;
-      const margin = effPrice > 0 ? (effPrice - cost) / effPrice * 100 : 0;
+      // The controls act rather than inform, and live <select>s printed on a
+      // client-facing page read as an unfinished document. The Analytics toolbar
+      // already does this correctly; this row was the section's one omission.
+      const controls = `
+        <div class="no-print" style="display:flex;gap:1rem;flex-wrap:wrap;align-items:end;margin-bottom:0.85rem">
+          <div><label>Pricing model</label><select style="width:auto" onchange="setPricing('model', this.value)">
+            <option value="fixed" ${pricing.model === 'fixed' ? 'selected' : ''}>Fixed price</option>
+            <option value="tm" ${pricing.model === 'tm' ? 'selected' : ''}>Time &amp; materials</option></select></div>
+          <div><label>Fixed-bid basis</label><button type="button" class="info-icon" aria-label="About Fixed-bid basis" data-help="For fixed-price work, bid at P80/P90 effort from the Monte Carlo — bidding the P50 mean means a coin-flip on margin. On T&amp;M this sets the suggested not-to-exceed instead.">i</button>
+            <select style="width:auto" onchange="setPricing('basis', this.value)">
+              <option value="p50" ${pricing.basis === 'p50' ? 'selected' : ''}>P50 (mean — risky)</option>
+              <option value="p80" ${pricing.basis === 'p80' ? 'selected' : ''}>P80 (recommended)</option>
+              <option value="p90" ${pricing.basis === 'p90' ? 'selected' : ''}>P90 (conservative)</option></select></div>
+          <div><label>Contract price $ (override)</label><input type="number" min="0" step="1000" style="width:130px" value="${pricing.contractPrice || ''}" placeholder="auto" onchange="setPricing('contractPrice', this.value)" /></div>
+        </div>`;
+      const blocked = msg => `${controls}<div class="pb-wrap" data-state="blocked">
+        <div class="pb-head"><span class="pb-title">Price build</span></div>
+        <div class="pb-lock">${msg}</div></div>`;
+
+      if (!calculated || !tasks.length) {
+        cont.innerHTML = blocked('Calculate the plan first, then set <b>Cost $/d</b> and <b>Bill $/d</b> per resource on the Resources tab. This panel needs an effort estimate and a rate card before it can show you anything true.');
+        return;
+      }
+      const f = pricingFigures();
+
+      // Blocked states name the ONE missing input rather than printing zeros.
+      // The old `!anyBill` guard tested laborRevenue() and ignored fixed costs,
+      // so a pure pass-through engagement was suppressed despite having revenue.
+      if (f.cost <= 0 && f.detRev <= 0) {
+        cont.innerHTML = blocked(
+          !f.anyEffort ? 'No effort estimated yet — every activity has a zero PERT estimate, so there is nothing to cost and nothing to bill. Add O/M/P estimates and this fills in.'
+          : f.allClient ? '<b>Every resource on this plan is client-type</b>, so nothing is billable and nothing costs you. <b>$0 is the correct answer here</b>, not a missing number. Add an internal resource to price delivery.'
+          : 'No rates set. Add <b>Cost $/d</b> and <b>Bill $/d</b> per resource on the Resources tab — this panel needs both: cost to know what delivery costs you, bill to know what it is worth.');
+        return;
+      }
+
+      const B = pbBand(f.margin);
+      const state = f.margin != null && f.margin < 0 ? 'loss' : f.margin == null ? 'unknown' : 'ok';
+      const verdict = f.margin == null ? (f.costBlind ? 'Cost unknown' : 'No price yet') : B.word;
+
+      const warns = [];
+      // A $0 that is CORRECT and a $0 that is a missing rate must never share a
+      // sentence — the same idiom paPaintCost uses at activity level.
+      if (f.allClient) warns.push('<b>Every resource on this plan is client-type</b>, so all labour is unpriced by design — <b>$0 is the correct answer here</b>, not a missing rate.' + (f.fixedTotal > 0 ? ' Only the ' + fmtMoney(f.fixedTotal) + ' of fixed cost flows through, at zero margin.' : ''));
+      else if (f.costBlind) warns.push('<b>No internal resource has a Cost $/d.</b> Delivery cost is unknown, not zero — so the margin column shows “—” rather than the 100% it would otherwise compute. Set cost rates on the Resources tab.');
+      if (!f.allClient && f.anyInternalPart && f.labor <= 0) warns.push('<b>No bill rates set.</b> Every day of labour you sell is currently priced at $0' + (f.fixedTotal > 0 ? ', so only the ' + fmtMoney(f.fixedTotal) + ' of fixed cost is being billed' : '') + '. Add <b>Bill $/d</b> on the Resources tab.');
+      if (!f.haveSim) warns.push('<b>No simulated cost or revenue spread is available for this plan.</b> The risk uplift and the coverage read are the two things only a simulation can give you, so neither is drawn. Press <b>Calculate</b>.');
+      else if (f.staleSim) warns.push('<b>These simulated figures are older than your rates or your scope.</b> The simulation’s own average ' + (f.cost > 0 ? 'cost is ' + fmtMoney(f.simCostMean) + ' against a live ' + fmtMoney(f.cost) : 'revenue is ' + fmtMoney(f.simRevMean) + ' against a live ' + fmtMoney(f.detRev)) + ', and those must agree. Changing a cost rate, a bill rate or a resource type does not re-run the simulation — press <b>Calculate</b> to re-sync the hatched and coverage rows.');
+      if (f.isTM && f.contract > 0) warns.push('You have typed a contract price on a <b>Time &amp; materials</b> engagement. It is being treated as a not-to-exceed cap, not as a fixed fee.');
+
+      const modelNote = f.isTM
+        ? '<b>Time &amp; materials shows</b> the estimate, the margin your rate card earns, and how often billings would breach your cap. <b>It hides</b> a fixed bid and a margin-at-bid, because on T&amp;M neither exists. If effort runs long you bill it, so your exposure is the client stopping work at the cap — which is exactly what the coverage row measures.'
+        : `<b>Fixed price shows</b> the bid, the margin it protects, and how often delivery cost would exceed it. <b>It hides</b> nothing — on fixed price the overrun is yours. Bids are the true ${f.basis.toUpperCase()} of simulated effort × rates, so every activity’s overrun counts whether or not it sits on the critical path.`;
+      const provenance = f.haveSim
+        ? `Percentiles are nearest-rank over ${f.iters.toLocaleString()} seeded iterations — the ranked outcome at that position, not a fitted curve and not accurate to the dollar. Read them as the shape of the risk and round before you quote.`
+        : 'Without a simulation the only honest figures here are delivery cost and rate-card margin.';
+      const clientNote = Object.keys(resources).some(isClientResource)
+        ? ' Client-type resources are excluded from both cost and billing.' : '';
+
+      const legend = `<div class="pb-legend">
+        <span><i class="pb-sw pb-sw-solid"></i>counted — arithmetic you can redo by hand</span>
+        <span><i class="pb-sw pb-sw-hatch"></i>sampled — a Monte Carlo percentile</span>
+        ${f.canCover ? '<span><i class="pb-sw pb-sw-tick"></i>one simulated outcome per 5% of runs</span>' : ''}
+      </div>`;
+
+      // The tiles stay on as the numeric audit trail, but they now read the SAME
+      // pricingFigures() the picture draws, so the two cannot drift apart.
       const mRow = (label, price, note, hot) => `
         <div class="stat-card" style="${hot ? 'border:1.5px solid var(--primary)' : ''}">
           <div class="value" style="font-size:1.1rem">${fmtMoney(price)}</div>
           <div class="label">${label}${hot ? ' <span class="badge badge-info" style="font-size:0.6rem">Recommended</span>' : ''}</div>
           <div class="help-text" style="font-size:0.65rem">${note}</div>
         </div>`;
-      cont.innerHTML = `
-        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:end;margin-bottom:0.85rem">
-          <div><label>Pricing model</label><select style="width:auto" onchange="setPricing('model', this.value)">
-            <option value="fixed" ${pricing.model === 'fixed' ? 'selected' : ''}>Fixed price</option>
-            <option value="tm" ${pricing.model === 'tm' ? 'selected' : ''}>Time &amp; materials</option></select></div>
-          <div><label>Fixed-bid basis</label><button type="button" class="info-icon" aria-label="About Fixed-bid basis" data-help="For fixed-price work, bid at P80/P90 effort from the Monte Carlo — bidding the P50 mean means a coin-flip on margin.">i</button>
-            <select style="width:auto" onchange="setPricing('basis', this.value)">
-              <option value="p50" ${pricing.basis === 'p50' ? 'selected' : ''}>P50 (mean — risky)</option>
-              <option value="p80" ${pricing.basis === 'p80' ? 'selected' : ''}>P80 (recommended)</option>
-              <option value="p90" ${pricing.basis === 'p90' ? 'selected' : ''}>P90 (conservative)</option></select></div>
-          <div><label>Contract price $ (override)</label><input type="number" min="0" step="1000" style="width:130px" value="${pricing.contractPrice || ''}" placeholder="auto" onchange="setPricing('contractPrice', this.value)" /></div>
+      const upNote = p => {
+        const u = f.detRev > 0 ? (p / f.detRev - 1) * 100 : 0;
+        return u > 0.5 ? '+' + Math.round(u) + '% risk uplift' : (f.haveSim ? 'no spread above expected' : 'not simulated');
+      };
+      const dsMargin = (f.haveSim && !f.costBlind && f.price > 0)
+        ? (f.price - pctOfSorted(f.costDist, 0.8)) / f.price * 100 : null;
+
+      cont.innerHTML = controls + `
+        <div class="pb-wrap" data-model="${f.isTM ? 'tm' : 'fixed'}" data-state="${state}">
+          <div class="pb-head">
+            <span class="pb-title">Price build</span>
+            <span class="badge ${B.badge}">${verdict}</span>
+            <span class="pb-headline">${fmtMoney(f.price)}</span>
+            <span class="pb-why">${f.isTM ? 'estimated value at expected effort' : 'quoted price'}${f.contract > 0 ? ' — <b>your override</b>' : ''}${f.margin != null ? `, leaving ${pbPct(f.margin)} margin over a ${fmtMoney(f.cost)} delivery cost` : ''}. Each row is one step you can say out loud: what it costs, what the rate card earns, what risk adds, and how often the answer is enough.</span>
+          </div>
+          ${priceBuildHtml(f)}
+          ${legend}
+          ${warns.map(w => `<div class="pb-warnline">${w}</div>`).join('')}
+          <p class="pb-note">${modelNote}</p>
+          <p class="pb-note">${provenance}${clientNote}</p>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:0.75rem">
-          <div class="stat-card"><div class="value" style="font-size:1.1rem">${fmtMoney(cost)}</div><div class="label">Delivery cost (P50)</div><div class="help-text" style="font-size:0.65rem">day-rates × effort + fixed</div></div>
-          ${mRow('T&M revenue (P50 effort)', prices.p50, 'bill-rates × estimated effort', false)}
-          ${mRow('Fixed bid @ P80', prices.p80, '+' + Math.round((u80 - 1) * 100) + '% Monte-Carlo risk uplift', pricing.basis === 'p80')}
-          ${mRow('Fixed bid @ P90', prices.p90, '+' + Math.round((u90 - 1) * 100) + '% risk uplift', pricing.basis === 'p90')}
-          <div class="stat-card ${margin < 25 ? 'critical' : ''}"><div class="value" style="font-size:1.1rem">${margin.toFixed(0)}%</div><div class="label">Margin at ${contract ? 'contract' : pricing.basis.toUpperCase()} price</div><div class="help-text" style="font-size:0.65rem">${fmtMoney(effPrice)} − ${fmtMoney(cost)} P50 cost</div></div>
-          ${(mcResult && mcResult.costP80) ? (() => { const dm = effPrice > 0 ? (effPrice - mcResult.costP80) / effPrice * 100 : 0; return `<div class="stat-card ${dm < 15 ? 'critical' : ''}"><div class="value" style="font-size:1.1rem">${dm.toFixed(0)}%</div><div class="label">Downside margin (cost @ P80)</div><div class="help-text" style="font-size:0.65rem">${fmtMoney(effPrice)} − ${fmtMoney(mcResult.costP80)} — defend this in the QBR</div></div>`; })() : ''}
-        </div>
-        <p class="help-text" style="margin-top:0.6rem">${pricing.model === 'fixed'
-          ? `Fixed-price guidance: bids are the TRUE ${pricing.basis.toUpperCase()} of simulated effort × rates (every task's overrun counts, on or off the critical path)${mcResult && mcResult.revP50 ? '' : ' — run Calculate for the simulation'}. The simulation is seeded, so the same plan always quotes the same number.`
-          : 'T&M: revenue tracks actual effort; quote the P50 number as the estimate and the P80 as the not-to-exceed.'}
-          ${Object.keys(resources).some(isClientResource) ? ' Client-type resources are excluded from cost and billing.' : ''}</p>`;
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:0.75rem;margin-top:0.85rem">
+          <div class="stat-card ${f.costBlind ? 'critical' : ''}"><div class="value" style="font-size:1.1rem">${f.costBlind ? '—' : fmtMoney(f.cost)}</div><div class="label">Delivery cost</div><div class="help-text" style="font-size:0.65rem">${f.costBlind ? 'no cost rates set' : 'day-rates × expected effort' + (f.fixedTotal > 0 ? ' + fixed' : '')}</div></div>
+          ${mRow(f.isTM ? 'T&M estimate (expected effort)' : 'Revenue at expected effort', f.prices.p50, 'bill-rates × PERT-mean effort', f.isTM && !f.contract)}
+          ${mRow(f.isTM ? 'Not-to-exceed @ P80' : 'Fixed bid @ P80', f.prices.p80, upNote(f.prices.p80), !f.isTM && f.basis === 'p80' && !f.contract)}
+          ${mRow(f.isTM ? 'Not-to-exceed @ P90' : 'Fixed bid @ P90', f.prices.p90, upNote(f.prices.p90), !f.isTM && f.basis === 'p90' && !f.contract)}
+          <div class="stat-card ${f.margin != null && f.margin < 25 ? 'critical' : ''}"><div class="value" style="font-size:1.1rem">${f.margin == null ? '—' : pbPct(f.margin)}</div><div class="label">Margin at ${f.contract ? 'contract' : (f.isTM ? 'estimate' : f.basis.toUpperCase())} price</div><div class="help-text" style="font-size:0.65rem">${f.margin == null ? 'no cost basis' : fmtMoney(f.price) + ' − ' + fmtMoney(f.cost) + ' cost'}</div></div>
+          ${dsMargin != null ? `<div class="stat-card ${dsMargin < 15 ? 'critical' : ''}"><div class="value" style="font-size:1.1rem">${pbPct(dsMargin)}</div><div class="label">Downside margin (cost @ P80)</div><div class="help-text" style="font-size:0.65rem">${fmtMoney(f.price)} − ${fmtMoney(pctOfSorted(f.costDist, 0.8))} — defend this in the QBR</div></div>` : ''}
+        </div>`;
     }
 
     // ========================= SOW GENERATOR =========================
