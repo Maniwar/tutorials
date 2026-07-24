@@ -541,6 +541,12 @@
       .pa-row { grid-template-columns: 2.4rem 1fr auto; }
       .pa-row .pa-bar { grid-column: 1 / -1; }
     }
+    /* keyboard-flow hint in modal footers — the shortcuts are useless if nobody
+       knows they exist, so they are stated where the save button is */
+    .kbd-hint { display: inline-flex; align-items: center; gap: 0.25rem; font-size: var(--t-xs); color: var(--muted); margin-right: 0.5rem; white-space: nowrap; }
+    .kbd-hint kbd { font-family: inherit; font-size: 0.68rem; font-weight: 700; line-height: 1; padding: 0.15rem 0.3rem; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; background: #f8fafc; color: var(--text); }
+    .kbd-sep { opacity: 0.5; margin: 0 0.15rem; }
+    @media (max-width: 640px) { .kbd-hint { display: none; } }
     /* time-spent state in the % column: an unmissable amber ⏱ when progress was
        recorded without effort, the logged duration itself once it is there */
     .eff-missing { cursor: pointer; font-size: var(--t-xs); font-weight: 700; line-height: 1; padding: 0.15rem 0.3rem; border-radius: 999px; background: #fef3c7; color: #b45309; border: 1px solid #fcd34d; }
@@ -1133,6 +1139,7 @@
         </div>
         <div class="modal-footer">
           <button class="btn-danger" id="stDeleteBtn" onclick="deleteStoryFromModal()" style="margin-right:auto">Delete</button>
+          <span class="kbd-hint" aria-hidden="true"><kbd>⏎</kbd> next field <span class="kbd-sep">·</span> <kbd>⇧</kbd><kbd>⏎</kbd> save <span class="kbd-sep">·</span> <kbd>esc</kbd> close</span>
           <button class="btn-secondary" onclick="closeStoryModal()">Cancel</button>
           <button class="btn-primary" onclick="saveStoryModal()">Save story</button>
         </div>
@@ -1597,6 +1604,7 @@
       </div>
       <div class="modal-footer">
         <button class="btn-secondary" style="margin-right:auto" onclick="viewInWbs()" title="Open the WBS dictionary at this element"><span class="ico" aria-hidden="true">📖</span> View in WBS dictionary</button>
+        <span class="kbd-hint" aria-hidden="true"><kbd>⏎</kbd> next field <span class="kbd-sep">·</span> <kbd>⇧</kbd><kbd>⏎</kbd> save <span class="kbd-sep">·</span> <kbd>esc</kbd> close</span>
         <button class="btn-secondary" onclick="closeModal()">Cancel</button>
         <button class="btn-primary" id="modalSaveBtn" onclick="saveActivity()">Save Activity</button>
       </div>
@@ -3146,6 +3154,33 @@
         .map(({ task, depth }) => `<option value="${task.id}" ${task.id === selectedParent ? 'selected' : ''}>${'  '.repeat(depth)}${escapeHtml((task.wbs ? task.wbs + ' ' : '') + task.name)}</option>`)
         .join('');
       sel.innerHTML = `<option value="" ${selectedParent == null ? 'selected' : ''}>— top level —</option>` + opts;
+    }
+    // ===== KEYBOARD FLOW IN THE EDITORS =====
+    // Filling in an activity is a run of short fields, and reaching for the mouse
+    // between each one is the slow part. Enter walks forward through them; Shift+
+    // Enter saves from wherever the cursor is. Textareas keep Enter for newlines —
+    // prose needs line breaks more than it needs a shortcut. The type-ahead popups
+    // claim Enter first (via stopImmediatePropagation) whenever a suggestion is
+    // highlighted, so picking a suggestion still wins over advancing.
+    function modalFields(root) {
+      return [...root.querySelectorAll('input, select, textarea')].filter(el =>
+        !el.disabled && !el.readOnly && el.type !== 'hidden' && el.offsetParent !== null);
+    }
+    function modalKeyFlow(e, saveFn) {
+      if (e.key !== 'Enter' || e.isComposing) return;
+      const el = e.target;
+      if (!el || el.tagName === 'BUTTON' || el.tagName === 'A') return;
+      const root = e.currentTarget;
+      if (e.shiftKey) { e.preventDefault(); saveFn(); return; }
+      if (el.tagName === 'TEXTAREA') return;                 // Enter stays a newline
+      if (!/^(INPUT|SELECT)$/.test(el.tagName)) return;
+      e.preventDefault();
+      const f = modalFields(root), i = f.indexOf(el);
+      if (i < 0) return;
+      const next = f[i + 1];
+      if (!next) { saveFn(); return; }                       // last field: Enter finishes the job
+      next.focus();
+      if (/^(text|number|search|tel|url|email)$/.test(next.type || '')) { try { next.select(); } catch (err) {} }
     }
     function toggleMilestoneFields() {
       const ms = document.getElementById('mMilestone').checked;
@@ -6036,7 +6071,7 @@
     }
     function clearBaseline() {
       if (!confirm('Clear the saved baseline?')) return;
-      tasks.forEach(t => { t.baseStart = null; t.baseFinish = null; t.baseTe = null; });
+      tasks.forEach(t => { t.baseStart = null; t.baseFinish = null; t.baseTe = null; t.baseCost = null; });
       baselineDate = '';
       saveLocal(); renderBaseline(); renderTaskTable(); renderGantt();
     }
@@ -7428,19 +7463,30 @@
       const cont = document.getElementById('baselineContainer');
       if (!cont) return;
       if (!calculated) { cont.innerHTML = '<div class="empty-state"><h3>Calculate first</h3></div>'; return; }
-      if (!hasBaseline()) {
-        cont.innerHTML = `<div class="empty-state">
-          <h3>No baseline saved</h3>
-          <p style="max-width:52ch;margin:0 auto">Snapshot the current plan as your baseline. You'll get start/finish variance per task, a slipped-work list, and gray baseline underbars on the Gantt for every task that has moved.</p>
-          <button class="btn-primary" style="margin-top:1rem" onclick="setBaseline()"><span class="ico" aria-hidden="true">📌</span> Set baseline (today)</button>
-        </div>`;
-        return;
-      }
+      // Actual dates and logged time are real recorded facts; they exist whether or
+      // not anyone has snapshotted a baseline. Hiding the whole table behind "set a
+      // baseline" meant the one screen for entering actuals was unreachable until
+      // you committed to a comparison you might not want yet. A baseline adds the
+      // VARIANCE columns — it is not a precondition for recording what happened.
+      const hb = hasBaseline();
       const leaves = leafTasks();
-      // overall project variance
-      const baseFinishAll = new Date(Math.max(...tasks.filter(t => t.baseFinish).map(t => t.baseFinish.getTime())));
+      const baseFinishAll = hb ? new Date(Math.max(...tasks.filter(t => t.baseFinish).map(t => t.baseFinish.getTime()))) : null;
       const curFinishAll = new Date(Math.max(...leaves.map(t => currentFinish(t).getTime())));
-      const projVar = varianceDays(baseFinishAll, curFinishAll);
+      const projVar = hb ? varianceDays(baseFinishAll, curFinishAll) : null;
+
+      // A baseline is a commitment on THREE things, not one. Reporting only the
+      // dates answered "are we late" and left "are we over" and "did the work grow"
+      // to be worked out by hand — even though baseCost and baseTe were already
+      // being captured at the same moment baseStart/baseFinish were.
+      const dColor = v => v > 0 ? 'var(--critical)' : v < 0 ? 'var(--success)' : 'var(--muted)';
+      // one grammar for every dimension: what we said → what happened, and the gap
+      const pairCell = (estTxt, actTxt, deltaTxt, deltaVal, tip) =>
+        `<td style="white-space:nowrap"${tip ? ` title="${escapeHtml(tip)}"` : ''}>
+          <span style="font-size:0.78rem;color:var(--muted)">${estTxt}</span>
+          <span style="color:var(--slack);margin:0 0.2rem">→</span><b style="font-size:0.8rem">${actTxt}</b>
+          ${deltaTxt ? `<div style="font-size:var(--t-xs);font-weight:700;color:${dColor(deltaVal)}">${deltaTxt}</div>` : ''}
+        </td>`;
+      const pctTxt = (a, b) => (b > 0 && Number.isFinite(a)) ? ((a / b - 1) >= 0 ? '+' : '−') + Math.abs(Math.round((a / b - 1) * 100)) + '%' : '';
 
       const rows = tasksInWbsOrder().map(({ task: t, depth }) => {
         if (t.isSummary) {
@@ -7451,21 +7497,61 @@
         }
         const bs = t.baseStart, bf = t.baseFinish;
         const cs = currentStart(t), cf = currentFinish(t);
-        const fv = (bf && cf) ? varianceDays(bf, cf) : null;
+        const fv = (hb && bf && cf) ? varianceDays(bf, cf) : null;
         const done = t.percentComplete >= 100;
+        const started = (t.percentComplete || 0) > 0;
         let status, cls;
         if (done) { status = 'Complete'; cls = 'badge-done'; }
+        else if (!hb) { status = started ? 'In progress' : 'Not started'; cls = started ? 'badge-prog' : 'badge-notstarted'; }
         else if (fv == null) { status = '—'; cls = 'badge-slack'; }
-        else if (fv > 0) { status = `${fv}${'d'} late`; cls = 'badge-blocked'; }
+        else if (fv > 0) { status = `${fv}d late`; cls = 'badge-blocked'; }
         else if (fv < 0) { status = `${-fv}d early`; cls = 'badge-ok'; }
         else { status = 'On plan'; cls = 'badge-ok'; }
         const actNote = (t.actualStart || t.actualFinish) ? ' <span class="help-text" style="font-size:0.65rem">(actual)</span>' : '';
+
+        // BUDGET — what the task was priced at vs what it has actually cost.
+        // A task with no progress has no actual yet; showing −100% there would be
+        // noise, not a finding.
+        const planCost = hb && t.baseCost != null ? t.baseCost : taskCost(t);
+        const actCost = actualCostOf(t);
+        // SCOPE / EFFORT — estimate vs the effort actually logged.
+        const planTe = hb && t.baseTe != null ? t.baseTe : (t.te || 0);
+        const spent = t.actualEffort;
+        const isNew = hb && t.baseTe == null;   // added after the baseline was taken
+        // Finished work has a real over/under. Work in flight does not: 71% of the
+        // estimate spent is good at 90% done and bad at 20% done, and the signed
+        // delta calls both of them a saving. So mid-flight reports consumption and
+        // colours by PACE (spent ÷ earned), which is the comparison that means
+        // something. Budget carries the money and effort carries the percentage —
+        // for a fixed crew they are the same signal, and printing one number twice
+        // would dress a single finding up as two.
+        const rowDelta = (used, plan, money) => {
+          if (!(plan > 0) || used == null || !started) return { txt: '', v: 0 };
+          const ratio = used / plan;
+          if ((t.percentComplete || 0) >= 100) {
+            const over = ratio >= 1;
+            return { txt: money ? (over ? '+' : '−') + fmtMoney(Math.abs(used - plan)) : (over ? '+' : '−') + Math.abs(Math.round((ratio - 1) * 100)) + '%',
+                     v: ratio > 1.001 ? 1 : ratio < 0.999 ? -1 : 0 };
+          }
+          const pace = ratio / ((t.percentComplete || 0) / 100);
+          return { txt: money ? fmtMoney(used) + ' of ' + fmtMoney(plan) : Math.round(ratio * 100) + '% used',
+                   v: pace > 1.10 ? 1 : pace < 0.90 ? -1 : 0 };
+        };
+        const cd = rowDelta(actCost, planCost, true), ed = rowDelta(spent, planTe, false);
+
         return `<tr class="${fv > 0 ? 'late' : ''}">
           <td style="white-space:nowrap;color:var(--muted)">${t.wbs}</td>
-          <td style="padding-left:${8 + depth * 16}px">${t.milestone ? '◆ ' : ''}${escapeHtml(t.name)}</td>
-          <td style="font-size:0.8rem;white-space:nowrap">${fmtNice(bs)} → ${fmtNice(bf)}</td>
-          <td style="font-size:0.8rem;white-space:nowrap">${fmtNice(cs)} → ${fmtNice(cf)}${actNote}</td>
-          <td style="font-weight:600;color:${fv > 0 ? 'var(--critical)' : fv < 0 ? 'var(--success)' : 'var(--muted)'}">${fv == null ? '—' : (fv > 0 ? '+' : '') + fv + 'd'}</td>
+          <td style="padding-left:${8 + depth * 16}px">${t.milestone ? '◆ ' : ''}${escapeHtml(t.name)}${isNew ? ' <span class="badge badge-warn" title="Added after the baseline was set — this is new scope">+ new</span>' : ''}</td>
+          ${pairCell(hb ? fmtNice(bf) : '<span title="No baseline saved">—</span>', fmtNice(cf) + actNote,
+            fv == null ? '' : (fv > 0 ? '+' : '') + fv + 'd', fv,
+            hb ? `Baseline ${fmtNice(bs)} → ${fmtNice(bf)}; now ${fmtNice(cs)} → ${fmtNice(cf)}` : 'No baseline saved — this is the live forecast')}
+          ${pairCell(fmtMoney(planCost), started ? fmtMoney(actCost) : '<span style="color:var(--muted)">—</span>',
+            cd.txt, cd.v,
+            started ? `${hb ? 'Baselined' : 'Planned'} at ${fmtMoney(planCost)}, actual so far ${fmtMoney(actCost)}` : 'Not started — no actual cost yet')}
+          ${pairCell(planTe > 0 ? fmtDurCell(planTe) : '—',
+            spent == null ? (started ? '<span style="color:var(--warn);font-weight:600" title="Progress recorded with no time spent">⏱ not logged</span>' : '<span style="color:var(--muted)">not logged</span>') : fmtDurCell(spent),
+            ed.txt, ed.v,
+            spent == null ? 'No time spent logged against this activity' : `Estimated ${fmtDurCell(planTe)}, logged ${fmtDurCell(spent)}`)}
           <td>${t.percentComplete || 0}%</td>
           <td><span class="badge ${cls}">${status}</span></td>
           <td style="white-space:nowrap">
@@ -7475,19 +7561,87 @@
         </tr>`;
       }).join('');
 
-      const vColor = projVar > 0 ? 'var(--critical)' : projVar < 0 ? 'var(--success)' : 'var(--muted)';
-      cont.innerHTML = `
+      // ---- project roll-ups, one per dimension ----
+      const sum = f => leaves.reduce((s, t) => s + (f(t) || 0), 0);
+      const baseCostAll = hb ? sum(t => t.baseCost) : 0;
+      const planCostAll = projectCost();
+      const actCostAll = sum(actualCostOf);
+      const baseTeAll = hb ? sum(t => t.baseTe) : 0;
+      const planTeAll = sum(t => t.te);
+      const spentAll = sum(t => actualEffortDays(t) == null ? 0 : workingDaysToUnit(actualEffortDays(t)));
+      const addedTasks = hb ? leaves.filter(t => t.baseTe == null).length : 0;
+      const costRef = hb ? baseCostAll : planCostAll;
+      const teRef = hb ? baseTeAll : planTeAll;
+      const noEffort = tasksNeedingEffort().length;
+
+      const card = (label, estTxt, actTxt, deltaTxt, deltaVal, sub) => `
+        <div class="stat-card" style="text-align:left">
+          <div class="label" style="margin-bottom:0.2rem">${label}</div>
+          <div style="font-size:0.95rem;font-weight:700;white-space:nowrap">
+            <span style="font-weight:400;color:var(--muted);font-size:0.85rem">${estTxt}</span>
+            <span style="color:var(--slack);margin:0 0.25rem">→</span>${actTxt}
+          </div>
+          ${deltaTxt ? `<div style="font-size:0.78rem;font-weight:700;color:${dColor(deltaVal)};margin-top:0.15rem">${deltaTxt}</div>` : ''}
+          ${sub ? `<div class="help-text" style="font-size:var(--t-xs);margin-top:0.15rem">${sub}</div>` : ''}
+        </div>`;
+
+      const banner = hb ? '' : `
+        <div class="pa-lock" style="margin-bottom:1rem">
+          📌 <b>No baseline saved.</b> The actuals below are live and editable — a baseline adds the
+          <b>committed</b> figures to compare them against, so variance becomes a number instead of a memory.
+          <button class="btn-sm btn-primary" style="margin-left:0.5rem" onclick="setBaseline()">Set baseline (today)</button>
+        </div>`;
+
+      // Consumption, not a signed delta. Half a budget spent at 10% complete and at
+      // 90% complete are opposite findings; "−55% of plan" reads as a saving in both.
+      // So: say how much has been used, and colour it by PACE (used ÷ earned), which
+      // is only meaningful once enough of the work is done to trust the percentage.
+      const donePct = overallProgress();
+      const paceOf = (used, plan) => {
+        if (!(plan > 0) || !(used > 0)) return null;
+        if (donePct < 25) return null;                 // too early for a projection to mean anything
+        return (used / plan) / (donePct / 100);
+      };
+      const paceColor = p => p == null ? 0 : p > 1.10 ? 1 : p < 0.90 ? -1 : 0;
+      const usedTxt = (used, plan, noun) => (plan > 0 && used > 0)
+        ? Math.round(used / plan * 100) + '% of ' + noun + ' used at ' + Math.round(donePct) + '% complete' : '';
+
+      cont.innerHTML = `${banner}
         <div class="summary-grid" style="margin-bottom:1rem">
-          <div class="stat-card"><div class="value" style="font-size:1.05rem">${fmtNice(baseFinishAll)}</div><div class="label">Baseline finish</div></div>
-          <div class="stat-card"><div class="value" style="font-size:1.05rem">${fmtNice(curFinishAll)}</div><div class="label">Current forecast finish</div></div>
-          <div class="stat-card ${projVar > 0 ? 'critical' : 'success'}"><div class="value" style="color:${vColor}">${projVar > 0 ? '+' : ''}${projVar}d</div><div class="label">Schedule variance</div></div>
-          <div class="stat-card"><div class="value">${overallProgress().toFixed(0)}%</div><div class="label">Complete</div></div>
+          ${card('Schedule', hb ? fmtNice(baseFinishAll) : 'no baseline', fmtNice(curFinishAll),
+            projVar == null ? '' : (projVar > 0 ? '+' + projVar + 'd late vs baseline' : projVar < 0 ? -projVar + 'd early vs baseline' : 'on the baseline date'), projVar,
+            hb ? 'committed finish → forecast finish' : 'live forecast finish')}
+          ${card('Budget', fmtMoney(costRef), fmtMoney(actCostAll),
+            usedTxt(actCostAll, costRef, hb ? 'baseline' : 'budget'), paceColor(paceOf(actCostAll, costRef)),
+            hb && planCostAll !== baseCostAll ? 'plan now ' + fmtMoney(planCostAll) + ' — scope repriced' : 'actual cost booked so far')}
+          ${card('Scope &amp; effort', teRef > 0 ? fmtDurCell(teRef) : '—', spentAll > 0 ? fmtDurCell(spentAll) : 'nothing logged',
+            usedTxt(spentAll, teRef, 'estimate'), paceColor(paceOf(spentAll, teRef)),
+            (addedTasks ? `<span style="color:var(--warn);font-weight:600">+${addedTasks} activit${addedTasks === 1 ? 'y' : 'ies'} added since baseline</span> · ` : '')
+              + (hb && planTeAll !== baseTeAll ? 'now ' + fmtDurCell(planTeAll) + ' planned' : 'estimated effort → logged effort'))}
+          ${(() => {
+            // calendar burned vs work earned — the one comparison that says whether
+            // "34% done" is good news or bad news
+            const ps = document.getElementById('projectStart').value;
+            const st = ps ? new Date(ps + 'T00:00:00') : null;
+            const elapsed = (st && curFinishAll && curFinishAll > st)
+              ? Math.max(0, Math.min(100, (Date.now() - st.getTime()) / (curFinishAll.getTime() - st.getTime()) * 100)) : null;
+            const gap = elapsed == null ? null : donePct - elapsed;
+            return card('Progress', elapsed == null ? 'elapsed' : Math.round(elapsed) + '% elapsed', Math.round(donePct) + '% complete',
+              gap == null ? '' : Math.abs(gap) < 5 ? 'tracking the calendar' : gap < 0 ? Math.round(-gap) + ' pts behind the calendar' : Math.round(gap) + ' pts ahead',
+              gap == null || Math.abs(gap) < 5 ? 0 : gap < 0 ? 1 : -1,
+              noEffort ? `<span style="color:var(--warn);font-weight:600">⏱ ${noEffort} activit${noEffort === 1 ? 'y' : 'ies'} missing time spent</span>` : 'TE-weighted across every leaf');
+          })()}
         </div>
         <div class="table-wrap"><table>
-          <thead><tr><th>WBS</th><th>Task</th><th title="The plan you committed to when the baseline was set">Baseline start → finish</th><th title="Live forecast — or the actual dates where you have entered them">Current / actual start → finish</th><th title="Calendar days later (+, red) or earlier (−, green) than the baseline finish">Finish var.</th><th>%</th><th>Status</th><th title="Record reality here — feeds variance and the estimation history archive">Actual start / finish</th></tr></thead>
+          <thead><tr><th>WBS</th><th>Task</th>
+            <th title="${hb ? 'Baseline finish → current or actual finish' : 'No baseline saved — this is the live forecast finish'}">Schedule ${hb ? '(base → now)' : '(forecast)'}</th>
+            <th title="What the activity was priced at → what it has actually cost">Budget (plan → actual)</th>
+            <th title="Estimated effort → the time actually logged against it">Effort (est → spent)</th>
+            <th>%</th><th>Status</th>
+            <th title="Record reality here — feeds variance, actual cost and the cross-project estimate bank">Actual start / finish</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
-        <p class="help-text" style="margin-top:0.75rem">Baseline set ${escapeHtml(baselineDate)}. “Current” uses actual dates where entered, otherwise the live forecast. Positive variance = later than baseline (slippage).</p>`;
+        <p class="help-text" style="margin-top:0.75rem">${hb ? 'Baseline set ' + escapeHtml(baselineDate) + '. ' : ''}“Now” uses actual dates where entered, otherwise the live forecast. Positive variance = later, dearer or longer than planned. Effort compares the logged time spent against the estimate — the same figure the estimate bank calibrates future projects from.</p>`;
     }
     function setActual(id, field, val) {
       const t = tasks.find(x => x.id === id); if (!t) return;
@@ -13295,6 +13449,13 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
     }
 
     // ========================= INIT =========================
+
+    // Enter walks the editor's fields, Shift+Enter saves — see modalKeyFlow.
+    (() => {
+      const wire = (id, save) => { const m = document.getElementById(id); if (m) m.addEventListener('keydown', e => modalKeyFlow(e, save)); };
+      wire('modal', () => saveActivity());
+      wire('storyModal', () => saveStoryModal());
+    })();
 
     // W17: tap/keyboard-reachable help popover (title= is desktop-hover redundancy)
     document.addEventListener('click', e => {
