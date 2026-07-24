@@ -170,6 +170,52 @@
     .edge { stroke: #64748b; stroke-width: 2; fill: none; }
     .edge.critical { stroke: var(--critical); stroke-width: 3; }
     .help-text { font-size: var(--t-md); color: var(--muted); margin-top: 0.5rem; }
+    /* Requirements tab: quiet reference & audit ledger + promoted audit views */
+    .refx { border: 1px solid var(--border); border-radius: 12px; background: var(--card); box-shadow: var(--sh-1); overflow: hidden; margin: 0 0 1.1rem; }
+    .refx-cap { display: flex; align-items: center; gap: .5rem; padding: .5rem .9rem; font-size: var(--t-xs); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: #fcfdfe; border-bottom: 1px solid var(--border); }
+    .refx-row { border-bottom: 1px solid var(--border); }
+    .refx-row:last-child { border-bottom: 0; }
+    .refx-line { display: flex; align-items: center; gap: .7rem; width: 100%; min-height: 46px; padding: .7rem .9rem; margin: 0; cursor: pointer; user-select: none; text-align: left; background: none; border: 0; color: var(--text); font: inherit; }
+    .refx-line:hover { background: #f8fafc; }
+    details.refx-row > summary.refx-line { list-style: none; }
+    details.refx-row > summary.refx-line::-webkit-details-marker { display: none; }
+    .refx-ico { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; background: #f1f5f9; border: 1px solid #e7edf3; font-size: .82rem; line-height: 1; }
+    .refx-tt { flex: 0 0 auto; font-weight: 600; font-size: var(--t-md); color: var(--text); }
+    .refx-count { flex: 0 0 auto; background: #eef2f7; color: #475569; font-size: var(--t-sm); font-weight: 700; padding: .1rem .5rem; border-radius: 999px; font-variant-numeric: tabular-nums; }
+    .refx-sub { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--t-sm); font-weight: 400; }
+    .refx-chev { flex: 0 0 auto; color: var(--muted); font-size: .95rem; transition: transform .18s var(--easeo); }
+    details.refx-row[open] > summary .refx-chev { transform: rotate(90deg); color: var(--text); }
+    .refx-go { flex: 0 0 auto; color: var(--muted); font-size: .95rem; transition: color .15s var(--easeo); }
+    .refx-row:hover .refx-go { color: var(--primary); }
+    .refx-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+    .refx-body { padding: .15rem .9rem .95rem; }
+    .refx-body .table-wrap { max-height: 340px; overflow: auto; margin-top: .35rem; }
+    details.refx-row.refx-warn > summary { box-shadow: inset 3px 0 0 var(--warn); }
+    details.refx-row.refx-warn .refx-ico { background: #fff7ed; border-color: #fdba74; }
+    .refx-count--warn { background: #fef3c7; color: #b45309; }
+    .req-view { display: none; }
+    .req-view.active { display: block; }
+    .req-audit-head { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; margin: 0 0 .8rem; }
+    .req-back { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid var(--border); background: var(--card); border-radius: 8px; padding: .42rem .7rem; font: 600 var(--t-sm)/1 inherit; color: var(--text); cursor: pointer; }
+    .req-back:hover { border-color: #cbd5e1; background: #f8fafc; }
+    .req-audit-head h3 { margin: 0; font-size: var(--t-lg); font-weight: 700; color: var(--header); }
+    .req-audit-head .muted { color: var(--muted); font-size: var(--t-sm); }
+    .req-scrollhint { display: none; font-size: var(--t-sm); color: var(--muted); margin: 0 0 .5rem; }
+    .req-audit { overflow: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 12px; background: var(--card); max-height: calc(100vh - 250px); min-height: 300px; }
+    .req-audit table { border-collapse: collapse; width: 100%; min-width: 840px; }
+    .req-audit--wide table { min-width: 1040px; }
+    .req-audit thead th { position: sticky; top: 0; z-index: 1; background: #f8fafc; box-shadow: inset 0 -1px 0 var(--border); }
+    @media (max-width: 640px) {
+      .refx-sub { display: none; }
+      .refx-line { gap: .55rem; padding: .7rem .8rem; }
+      .req-audit { max-height: calc(100vh - 200px); }
+      .req-scrollhint { display: block; }
+    }
+    @media print {
+      .req-view { display: block !important; }
+      details.refx-row:not([open]) > .refx-body { display: block !important; }
+      .req-back, .refx-go { display: none !important; }
+    }
     .empty-state { text-align: center; padding: 3rem 1rem; color: var(--muted); }
     .empty-state h3 { margin-bottom: 0.5rem; color: var(--text); }
     /* Modal */
@@ -2750,7 +2796,10 @@
         pop.innerHTML = items.map((l, i) => { const h = hintFn ? hintFn(l) : ''; return `<div data-i="${i}" style="padding:0.35rem 0.6rem;font-size:0.8rem;cursor:pointer;white-space:nowrap">${escapeHtml(l)}${h ? ` <span style="color:var(--muted);font-size:0.68rem">${escapeHtml(h)}</span>` : ''}</div>`; }).join('');
         place(); pop.style.display = 'block';
         [...pop.children].forEach(el => {
-          el.addEventListener('mousedown', e => { e.preventDefault(); pick(+el.dataset.i); }); // preventDefault keeps focus → no blur-commit mid-pick
+          // pointerdown fires for BOTH mouse and touch (mousedown alone is
+          // unreliable on phones — the tap can blur-commit before it lands);
+          // preventDefault keeps focus so the pick wins over the blur handler.
+          el.addEventListener('pointerdown', e => { e.preventDefault(); pick(+el.dataset.i); });
           el.addEventListener('mouseenter', () => highlight(+el.dataset.i));
         });
       };
@@ -6719,7 +6768,7 @@
       const uncovered = leaves.filter(t => !covered.has(t.id));
       const allWarns = stories.reduce((n, s) => n + storyLint(s).length, 0);
       const acCount = stories.reduce((n, s) => n + (s.ac || []).length, 0);
-      let html = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:0.75rem;margin-bottom:1rem">
+      const tiles = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:0.75rem;margin-bottom:1rem">
         <div class="stat-card" style="cursor:pointer" onclick="reqScrollTo('reqEpicsAnchor')" title="Click to jump to the epic groupings below"><div class="value">${epics.length}</div><div class="label">Epics</div></div>
         <div class="stat-card" style="cursor:pointer" onclick="reqScrollTo('reqEpicsAnchor')" title="Click to jump to the story cards — each shows its ACs, NFRs, trace and lint findings"><div class="value">${stories.length}</div><div class="label">User stories</div></div>
         <div class="stat-card" style="cursor:pointer" onclick="reqScrollTo('traceMatrix', true)" title="Click to open the traceability matrix — one row per criterion with its test cases and status"><div class="value">${acCount}</div><div class="label">Acceptance criteria</div></div>
@@ -6727,6 +6776,7 @@
         <div class="stat-card ${allWarns ? 'critical' : 'success'}" style="cursor:pointer" onclick="${allWarns ? `reqScrollTo('lintBanner')` : `void(0)`}" title="${allWarns ? 'Click for the lint findings and the one-click AI repair' : 'INVEST/testability lint is clean: every story has error/edge paths, real personas, measurable criteria'}"><div class="value">${allWarns}</div><div class="label">Lint warnings</div></div>
         ${(() => { const tcs = tasks.filter(isTestCaseTask); const shallow = tcs.filter(t => !hasRealSteps(t)).length; return `<div class="stat-card ${shallow ? 'warn' : ''}" style="cursor:pointer" onclick="reqScrollTo('tcListPanel', true)" title="${tcs.length ? 'Click for the full on-screen test-case sheet — steps, pass conditions, owners, schedule' + (shallow ? ' (⚠ ' + shallow + ' shallow — re-run 🧪 Generate test plan)' : '') : 'No test cases yet — 🧪 Generate test plan creates one per UAT-testable criterion'}"><div class="value">🧪 ${tcs.length}</div><div class="label">Test cases</div></div>`; })()}
       </div>`;
+      let rowPersonas = '';
       if (reqs.personas && (reqs.personas.length || (reqs.stories || []).length)) {
         // glossary hygiene: personas must be who USES/ACCEPTS the capability —
         // an entry that is really the delivery roster (or a generic delivery
@@ -6745,7 +6795,15 @@
           return !uses.length || uses.some(s => !isProcessStory(s));
         };
         const suspects = reqs.personas.filter(suspectP);
-        html += `<details ${suspects.length || personaGlossOpen ? 'open' : ''} ontoggle="personaGlossOpen=this.open" style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:${suspects.length ? 'var(--warn)' : 'var(--primary)'}">👥 Personas glossary (${reqs.personas.length}) — copy into the SOW; “as a user” stories are unpriceable${suspects.length ? ' — ⚠ ' + suspects.length + ' look like the delivery team' : ''}</summary>
+        rowPersonas = `<details class="refx-row${suspects.length ? ' refx-warn' : ''}" ${suspects.length || personaGlossOpen ? 'open' : ''} ontoggle="personaGlossOpen=this.open">
+          <summary class="refx-line">
+            <span class="refx-ico" aria-hidden="true">👥</span>
+            <span class="refx-tt">Personas glossary</span>
+            <span class="refx-count${suspects.length ? ' refx-count--warn' : ''}">${suspects.length ? '⚠ ' + suspects.length : reqs.personas.length}</span>
+            <span class="refx-sub">Copy into the SOW · “as a user” stories are unpriceable${suspects.length ? ' · ⚠ ' + suspects.length + ' look like the delivery team' : ''}</span>
+            <span class="refx-chev" aria-hidden="true">›</span>
+          </summary>
+          <div class="refx-body">
           ${suspects.length ? `<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:0.6rem 0.8rem;margin-top:0.5rem;font-size:0.82rem">
             <strong>⚠ ${suspects.length} glossary entr${suspects.length === 1 ? 'y is' : 'ies are'} delivery-team role${suspects.length === 1 ? '' : 's'}</strong> (${suspects.map(p => escapeHtml(p.name)).join(', ')}) — these are the people <em>building</em> the solution, from the resources roster, not the users who accept it. Stories written “as a developer” cannot be accepted by the client.
             <button class="btn-sm btn-primary no-print" style="margin-left:0.5rem" onclick="rederivePersonas()" title="AI rewrites the glossary with real client-side personas (keeping any that are already right) and reassigns every affected story to the persona who actually accepts that capability">🤖 Re-derive personas</button>
@@ -6756,8 +6814,9 @@
             <td style="font-size:0.85rem"><input class="mini-inp" style="width:100%;min-width:260px" value="${escapeHtml(p.definition || '')}" placeholder="one-line definition for the SOW" onchange="personaEdit(${pi}, 'definition', this.value)" /></td>
             <td class="no-print"><button class="btn-sm btn-danger" onclick="personaDelete(${pi})" title="Remove this glossary entry (stories keep their persona text)">✕</button></td></tr>`).join('')}
           </tbody></table></div>
-          <button class="btn-sm btn-secondary no-print" style="margin-top:0.4rem" onclick="personaAdd()">+ Add persona</button></details>`;
+          <button class="btn-sm btn-secondary no-print" style="margin-top:0.4rem" onclick="personaAdd()">+ Add persona</button></div></details>`;
       }
+      let html = '';
       if (allWarns) {
         const flaggedN = stories.filter(s => storyLint(s).length).length;
         html += `<div id="lintBanner" style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
@@ -6851,10 +6910,24 @@
           <td style="font-size:0.75rem;white-space:nowrap">${(t.percentComplete || 0)}% · ${escapeHtml(taskStatus(t).label)}</td>
         </tr>`);
       });
-      html += `<details id="traceMatrix" style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">▦ Traceability matrix — ${matrixRows.length} rows: epic → story → acceptance criterion → WBS activity → status${uncovered.length ? ` · <span style="color:#b45309">⚠ incl. ${uncovered.length} activit${uncovered.length === 1 ? 'y' : 'ies'} with no story</span>` : ''} <span class="help-text" style="font-weight:400">(this is the audit view; the CSV export matches it)</span></summary>
-        <div class="table-wrap" style="margin-top:0.5rem;max-height:420px;overflow:auto"><table>
+      const rowTrace = `<div class="refx-row"><button type="button" class="refx-line" data-open="trace" onclick="reqOpenView('trace')">
+          <span class="refx-ico" aria-hidden="true">▦</span>
+          <span class="refx-tt">Traceability matrix</span>
+          <span class="refx-count">${matrixRows.length}</span>
+          <span class="refx-sub">Audit view · epic → story → criterion → WBS → status${uncovered.length ? ` · ⚠ ${uncovered.length} gap` : ''}</span>
+          ${uncovered.length ? '<span class="refx-dot" aria-hidden="true"></span>' : ''}
+          <span class="refx-go" aria-hidden="true">↗</span></button></div>`;
+      const traceView = `<div id="reqTraceView" class="req-view${reqView === 'trace' ? ' active' : ''}" data-view="trace" role="region" aria-label="Traceability matrix">
+        <div class="req-audit-head">
+          <button type="button" class="req-back" onclick="reqCloseView('trace')">← Back to stories</button>
+          <h3>Traceability matrix</h3>
+          <span class="muted">${matrixRows.length} rows · epic → story → criterion → WBS → status${uncovered.length ? ` · ⚠ ${uncovered.length} with no story` : ''}</span>
+        </div>
+        <p class="req-scrollhint">Wide audit table — scroll sideways, or export the CSV from the tab header.</p>
+        <div id="traceMatrix" class="req-audit req-audit--wide"><table>
           <thead><tr><th>Epic</th><th>Story</th><th>User story</th><th>AC</th><th title="happy / error / edge / perf path">Type</th><th>Acceptance criterion</th><th title="WBS tasks named 'TC <AC-id> — …' that verify this criterion (⑂ decompose your UAT task to test-case level to generate them)">Test cases</th><th title="Click to open the activity">WBS trace</th><th>Owner</th><th>Status</th></tr></thead>
-          <tbody>${matrixRows.join('')}</tbody></table></div></details>`;
+          <tbody>${matrixRows.join('')}</tbody></table></div>
+      </div>`;
 
       // 🧪 on-screen test-case sheet — the full spec of every TC without exporting
       const tcAll = tasks.filter(isTestCaseTask);
@@ -6882,16 +6955,21 @@
       stories.forEach(s => (s.nfrs || []).forEach(nf => { const k = String(nf).trim(); if (!k) return; const e = nfrMap.get(k) || []; e.push(s.id); nfrMap.set(k, e); }));
       const nfrRows = [...nfrMap.entries()].map(([text, refs]) => ({ cat: (text.match(/^([A-Za-z /-]{3,28}):/) || [])[1] || 'Other', text, refs }));
       nfrRows.sort((a, b) => a.cat.localeCompare(b.cat) || a.text.localeCompare(b.text));
-      html += `<details id="nfrPanel" style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">📏 Non-functional requirements — ${nfrRows.length} distinct across ${stories.filter(s => (s.nfrs || []).length).length} stor${stories.filter(s => (s.nfrs || []).length).length === 1 ? 'y' : 'ies'} <span class="help-text" style="font-weight:400">(drafted per story from the guide's NFR checklist; this is the exact list SOW §6 prints — edit them on the story via ✎)</span></summary>
-        ${nfrRows.length
-          ? `<div class="table-wrap" style="margin-top:0.5rem;max-height:420px;overflow:auto"><table>
+      const rowNfr = `<details id="nfrPanel" class="refx-row"><summary class="refx-line">
+          <span class="refx-ico" aria-hidden="true">📏</span>
+          <span class="refx-tt">Non-functional requirements</span>
+          <span class="refx-count">${nfrRows.length}</span>
+          <span class="refx-sub">SOW §6 · edit on the story via ✎</span>
+          <span class="refx-chev" aria-hidden="true">›</span></summary>
+        <div class="refx-body">${nfrRows.length
+          ? `<div class="table-wrap"><table>
               <thead><tr><th style="white-space:nowrap">Category</th><th>Requirement</th><th style="white-space:nowrap">Applies to</th></tr></thead>
               <tbody>${nfrRows.map(r => `<tr>
                 <td style="font-size:0.75rem;white-space:nowrap;font-weight:600">${escapeHtml(r.cat)}</td>
                 <td style="font-size:0.78rem;min-width:280px">${escapeHtml(r.text)}</td>
                 <td style="font-size:0.75rem;white-space:nowrap">${r.refs.map(id => `<a href="#" onclick="event.preventDefault();openReqStory('${escapeHtml(id)}')" style="color:var(--primary)" title="Open ${escapeHtml(id)}">${escapeHtml(id)}</a>`).join(', ')}</td>
               </tr>`).join('')}</tbody></table></div>`
-          : '<p class="help-text" style="margin-top:0.5rem">None yet — NFRs are attached per story when drafting (🤖 Draft from WBS) or by hand in the story editor (✎), one per line with a number: “Performance: p95 load ≤ 2 s at 50 users”.</p>'}
+          : '<p class="help-text" style="margin-top:0.5rem">None yet — NFRs are attached per story when drafting (🤖 Draft from WBS) or by hand in the story editor (✎), one per line with a number: “Performance: p95 load ≤ 2 s at 50 users”.</p>'}</div>
       </details>`;
       // 🤝 consolidated assumptions (A:) & client dependencies (D:) — what SOW §7/§9 print
       const adRows = [];
@@ -6902,9 +6980,14 @@
       }));
       adRows.sort((a, b) => a.kind.localeCompare(b.kind) || a.ref.localeCompare(b.ref, undefined, { numeric: true }));
       const depN = adRows.filter(r => r.kind === 'D').length;
-      html += `<details id="depPanel" style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)">🤝 Assumptions &amp; client dependencies — ${depN} client dependenc${depN === 1 ? 'y' : 'ies'}, ${adRows.length - depN} assumption${adRows.length - depN === 1 ? '' : 's'} <span class="help-text" style="font-weight:400">(drafted per story: every D: names the slip consequence, every A: the impact if false — exactly what SOW §7 and §9 print; edit on the story via ✎)</span></summary>
-        ${adRows.length
-          ? `<div class="table-wrap" style="margin-top:0.5rem;max-height:420px;overflow:auto"><table>
+      const rowDep = `<details id="depPanel" class="refx-row"><summary class="refx-line">
+          <span class="refx-ico" aria-hidden="true">🤝</span>
+          <span class="refx-tt">Assumptions &amp; client dependencies</span>
+          <span class="refx-count">${adRows.length}</span>
+          <span class="refx-sub">SOW §7 &amp; §9 · ${depN} client dependenc${depN === 1 ? 'y' : 'ies'}</span>
+          <span class="refx-chev" aria-hidden="true">›</span></summary>
+        <div class="refx-body">${adRows.length
+          ? `<div class="table-wrap"><table>
               <thead><tr><th style="white-space:nowrap" title="D = client dependency (schedule protection); A = assumption (pricing protection)">Type</th><th>Statement (with consequence)</th><th style="white-space:nowrap">Story</th></tr></thead>
               <tbody>${adRows.map(r => `<tr>
                 <td style="font-size:0.75rem;white-space:nowrap"><span class="badge ${r.kind === 'D' ? 'badge-prog' : 'badge-info'}" title="${r.kind === 'D' ? 'Client dependency — if the client slips this, the stated consequence applies' : 'Assumption — if this proves false, the stated impact applies'}">${r.kind === 'D' ? '🤝 D — client' : 'A — assumption'}</span></td>
@@ -6912,22 +6995,37 @@
                 <td style="font-size:0.75rem;white-space:nowrap"><a href="#" onclick="event.preventDefault();openReqStory('${escapeHtml(r.ref)}')" style="color:var(--primary)">${escapeHtml(r.ref)}</a></td>
               </tr>`).join('')}</tbody></table></div>
             <p class="help-text" style="margin-top:0.4rem">Project-level risks/assumptions live in the RAID tab; these story-level ones are contract armor — the D: rows become §7 “Client Responsibilities &amp; Dependencies” in the SOW.</p>`
-          : '<p class="help-text" style="margin-top:0.5rem">None yet — added per story when drafting, or by hand in the story editor: “A: … — impact if false: …” / “D: … — if slipped: …”.</p>'}
+          : '<p class="help-text" style="margin-top:0.5rem">None yet — added per story when drafting, or by hand in the story editor: “A: … — impact if false: …” / “D: … — if slipped: …”.</p>'}</div>
       </details>`;
       const fatTcs = oversizedTcList();
-      html += `<details id="tcListPanel" style="margin-bottom:0.9rem"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)"><span class="ico" aria-hidden="true">🧪</span> Test cases — ${tcAll.length} scheduled${tcAll.length ? ' (' + tcAll.filter(t => (t.percentComplete || 0) >= 100).length + ' executed)' : ''} <span class="help-text" style="font-weight:400">(the on-screen execution sheet — the CSV/Excel exports match it; click a name to open the task)</span></summary>
+      const legacyN = tcAll.filter(t => (t.percentComplete || 0) < 100 && (!/→/.test(t.name) || !((t.p || 0) > (t.o || 0)) || !hasRealSteps(t))).length;
+      const rowTc = `<div class="refx-row"><button type="button" class="refx-line" data-open="tc" onclick="reqOpenView('tc')">
+          <span class="refx-ico" aria-hidden="true">🧪</span>
+          <span class="refx-tt">Test cases</span>
+          <span class="refx-count${(fatTcs.length + legacyN) ? ' refx-count--warn' : ''}">${tcAll.length}</span>
+          <span class="refx-sub">Execution sheet · CSV/Excel match it${(fatTcs.length + legacyN) ? ` · ✍ ${fatTcs.length + legacyN} to fix` : ''}</span>
+          ${(fatTcs.length + legacyN) ? '<span class="refx-dot" aria-hidden="true"></span>' : ''}
+          <span class="refx-go" aria-hidden="true">↗</span></button></div>`;
+      const tcView = `<div id="reqTcView" class="req-view${reqView === 'tc' ? ' active' : ''}" data-view="tc" role="region" aria-label="Test cases">
+        <div class="req-audit-head">
+          <button type="button" class="req-back" onclick="reqCloseView('tc')">← Back to stories</button>
+          <h3>Test-case execution sheet</h3>
+          <span class="muted">${tcAll.length} scheduled${tcAll.length ? ` · ${tcAll.filter(t => (t.percentComplete || 0) >= 100).length} executed` : ''}</span>
+        </div>
         ${fatTcs.length ? `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:0.5rem 0.75rem;margin-top:0.5rem;font-size:0.8rem">
           <strong>⏱ ${fatTcs.length} test case(s) look oversized</strong> — each estimated above ~1 hour of execution. A scripted UAT case is a 5–30 minute walkthrough; oversizing inflates the UAT window, the resource peaks and the price.
           <div style="margin-top:0.4rem"><button class="btn-sm btn-primary" onclick="rightSizeTestCases()" title="Sets each oversized test case's O/M/P to ≈10 min likely / ~1 h worst case. Steps, pass criteria, owners and links stay. ↶ Undo reverses.">⏱ Right-size ${fatTcs.length} test case(s)</button></div></div>` : ''}
-        ${(() => { const legacy = tcAll.filter(t => (t.percentComplete || 0) < 100 && (!/→/.test(t.name) || !((t.p || 0) > (t.o || 0)) || !hasRealSteps(t))); return legacy.length ? `<div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:0.5rem 0.75rem;margin-top:0.5rem;font-size:0.8rem">
-          <strong>✍ ${legacy.length} test case(s) need a rewrite</strong> — topic-style name (no action → outcome), flat O=M=P estimate, or missing executable steps. E.g. “attribute agent meeting ownership-duration threshold” describes the FEATURE; the test is “classify a case with multiple sequential agents → only the agent meeting the threshold is attributed”.
-          <div style="margin-top:0.4rem"><button class="btn-sm btn-primary" onclick="generateTestPlan()" title="Heals each one IN PLACE from its acceptance criterion: action → outcome name, numbered steps, pass criterion, real O<M<P spread. Same task, schedule position and links — nothing is duplicated."><span class="ico" aria-hidden="true">🧪</span> Rewrite ${legacy.length} in place (AI)</button></div></div>` : ''; })()}
+        ${legacyN ? `<div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:0.5rem 0.75rem;margin-top:0.5rem;font-size:0.8rem">
+          <strong>✍ ${legacyN} test case(s) need a rewrite</strong> — topic-style name (no action → outcome), flat O=M=P estimate, or missing executable steps. E.g. “attribute agent meeting ownership-duration threshold” describes the FEATURE; the test is “classify a case with multiple sequential agents → only the agent meeting the threshold is attributed”.
+          <div style="margin-top:0.4rem"><button class="btn-sm btn-primary" onclick="generateTestPlan()" title="Heals each one IN PLACE from its acceptance criterion: action → outcome name, numbered steps, pass criterion, real O<M<P spread. Same task, schedule position and links — nothing is duplicated."><span class="ico" aria-hidden="true">🧪</span> Rewrite ${legacyN} in place (AI)</button></div></div>` : ''}
+        <p class="req-scrollhint">Wide execution sheet — scroll sideways.</p>
         ${tcAll.length
-          ? `<div class="table-wrap" style="margin-top:0.5rem;max-height:460px;overflow:auto"><table>
+          ? `<div id="tcListPanel" class="req-audit"><table>
               <thead><tr><th>Test case</th><th title="The acceptance criterion this verifies — hover for the Given/When/Then">Verifies</th><th>Steps for the tester</th><th>Pass when</th><th>Owner</th><th>Scheduled window</th><th>Status</th></tr></thead>
               <tbody>${tcRows}</tbody></table></div>`
-          : '<p class="help-text" style="margin-top:0.5rem">None yet — 🧪 Generate test plan creates one executable test case per UAT-testable acceptance criterion, scheduled under your UAT activities.</p>'}
-      </details>`;
+          : '<div id="tcListPanel"><p class="help-text" style="margin-top:0.5rem">None yet — 🧪 Generate test plan creates one executable test case per UAT-testable acceptance criterion, scheduled under your UAT activities.</p></div>'}
+      </div>`;
+      html += `<section class="refx" aria-label="Reference & audit"><div class="refx-cap">Reference &amp; audit</div>${rowPersonas}${rowNfr}${rowDep}${rowTrace}${rowTc}</section>`;
 
       html += `<div id="reqEpicsAnchor" class="toolbar no-print" style="margin:0 0 0.5rem;align-items:center">
         <button class="btn-sm btn-secondary" onclick="reqSetAll(true)" title="Open every story to show its acceptance criteria, NFRs and assumptions">▾ Expand all</button>
@@ -6952,7 +7050,10 @@
       epics.forEach(ep => { html += epicBlock(ep.id, ep.title, ep.businessNeed); });
       const leftovers = stories.filter(s => !rendered.has(s.id));
       if (leftovers.length) html += `<div style="margin-bottom:1.1rem"><h3 style="font-size:0.95rem;margin:0 0 0.5rem">Ungrouped stories</h3>${leftovers.map(s => storyCardHtml(s, idToTask, typeIcon, typeTip)).join('')}</div>`;
-      cont.innerHTML = html;
+      cont.innerHTML = tiles
+        + `<div id="reqStoriesView" class="req-view${reqView === 'stories' ? ' active' : ''}" data-view="stories" role="region" aria-label="Stories workflow">`
+        + html + `</div>`
+        + traceView + tcView;
       // buttons live inside <summary> — stop the click from toggling the row
       cont.querySelectorAll('[data-story-edit]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); openStoryModal(b.dataset.storyEdit); }));
       cont.querySelectorAll('[data-story-mk]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); createTaskFromStory(b.dataset.storyMk); }));
@@ -7589,17 +7690,46 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       flashSaved('🧹 ' + junk.length + ' story(ies) + ' + junkTcs.length + ' derived test case(s) removed — ↶ Undo restores them');
     }
     function reqSetAll(open) { document.querySelectorAll('#reqContainer details.story-card').forEach(d => { d.open = open; }); }
-    // headline-card drill-in: scroll to (and open) a section of the req tab
+    // The Requirements tab has three sibling views under the persistent stat
+    // tiles: the primary Stories workflow, and two promoted full-width audit
+    // views (Traceability, Test cases). The tiles + two ledger launchers switch
+    // between them — deliberately no second tab bar. reqView persists across the
+    // many renderReqs() re-renders so the current view survives a data change.
+    let reqView = 'stories';                        // 'stories' | 'trace' | 'tc'
+    const REQ_VIEW_OF = { traceMatrix: 'trace', tcListPanel: 'tc' };
+    function reqSetView(name) {
+      reqView = (name === 'trace' || name === 'tc') ? name : 'stories';
+      const c = document.getElementById('reqContainer'); if (!c) return;
+      c.querySelectorAll('.req-view').forEach(v => v.classList.toggle('active', v.dataset.view === reqView));
+    }
+    function reqOpenView(v) {                        // ledger launcher: switch + move focus into the view
+      reqSetView(v);
+      const bk = document.querySelector('#req' + (v === 'trace' ? 'Trace' : 'Tc') + 'View .req-back');
+      if (bk) bk.focus();
+      const c = document.getElementById('reqContainer'); if (c) c.scrollIntoView({ block: 'start' });
+    }
+    function reqCloseView(v) {                       // Back button: return to stories + focus the launcher
+      reqSetView('stories');
+      const b = document.querySelector('.refx-line[data-open="' + v + '"]'); if (b) b.focus();
+    }
+    // headline-card drill-in: switch to the tab AND the right sub-view, then
+    // scroll to (and open) the target section.
     function reqScrollTo(id, openIt) {
-      const el = document.getElementById(id);
-      if (!el) return;
-      if (openIt && el.tagName === 'DETAILS') el.open = true;
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const view = document.getElementById('view-req');
+      if (view && !view.classList.contains('active')) switchTab('req');
+      reqSetView(REQ_VIEW_OF[id] || 'stories');
+      requestAnimationFrame(() => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (openIt && el.tagName === 'DETAILS') el.open = true;
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
     }
     // Deep link: open the Requirements tab AND land on a specific story,
     // scrolled into view with a brief highlight — used by every drill-in.
     function openReqStory(storyId) {
       switchTab('req');
+      reqSetView('stories');            // story cards live in the stories view
       setTimeout(() => {
         const el = document.getElementById('story-card-' + storyId);
         if (!el) return;
