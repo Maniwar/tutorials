@@ -515,6 +515,12 @@
     /* working-week day toggles: on = working (blue), off = non-working (greyed) */
     .wk-day { border: 1px solid var(--primary); background: var(--primary); color: #fff; border-radius: 6px; padding: 0.28rem 0.6rem; font-size: 0.78rem; font-weight: 600; cursor: pointer; min-width: 3rem; }
     .wk-day.off { background: #f1f5f9; color: #94a3b8; border-color: #cbd5e1; text-decoration: line-through; }
+    /* collapsible project settings: compact one-line summary, expands to edit */
+    .config-summary { list-style: none; cursor: pointer; display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem; font-size: var(--t-md); color: var(--text); padding: 0.35rem 0.1rem; user-select: none; }
+    .config-summary::-webkit-details-marker { display: none; }
+    .config-summary .config-sum-edit { margin-left: auto; color: var(--primary); font-weight: 600; font-size: var(--t-sm); white-space: nowrap; }
+    details#configDetails[open] .config-summary .config-sum-edit::after { content: ''; }
+    details#configDetails[open] .config-summary { border-bottom: 1px solid var(--border); margin-bottom: 0.2rem; }
     @media (hover: hover) { .wk-day:hover { filter: brightness(1.05); } .wk-day.off:hover { background: #e2e8f0; } }
     #helpPop { position: fixed; z-index: 300; max-width: 300px; background: #fff; border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--sh-3); padding: 0.6rem 0.75rem; font-size: var(--t-md); color: var(--text); line-height: 1.45; }
     /* W19: contained iconography */
@@ -675,19 +681,22 @@
   <main>
     <!-- Project settings -->
     <div class="card" style="margin-bottom:1rem">
-      <div class="card-body" style="padding:1rem 1.25rem">
+      <div class="card-body" style="padding:0.5rem 1.25rem">
+        <details id="configDetails" class="config-details">
+        <summary class="config-summary" id="configSummary" title="Project name, start date, duration unit and working calendar — click to edit">⚙ Settings</summary>
+        <div style="margin-top:0.85rem">
         <div class="config-grid">
           <div>
             <label for="projectName">Engagement name</label>
-            <input id="projectName" type="text" value="Client Engagement – Q3 Delivery" />
+            <input id="projectName" type="text" value="Client Engagement – Q3 Delivery" oninput="renderConfigSummary()" />
           </div>
           <div>
             <label for="projectStart">Project start date</label>
-            <input id="projectStart" type="date" onchange="markDirty(); refreshAll()" />
+            <input id="projectStart" type="date" onchange="markDirty(); renderConfigSummary(); refreshAll()" />
           </div>
           <div>
             <label for="durationUnit">Duration unit</label>
-            <select id="durationUnit" onchange="markDirty(); refreshAll()">
+            <select id="durationUnit" onchange="markDirty(); renderConfigSummary(); refreshAll()">
               <option value="days">Working days</option>
               <option value="weeks">Weeks</option>
               <option value="hours">Hours</option>
@@ -714,6 +723,8 @@
         <div class="config-actions" style="display:flex;justify-content:flex-end;margin-top:0.75rem">
           <button id="calcBtn" class="btn-primary" onclick="calculate()">Calculate schedule</button>
         </div>
+        </div>
+        </details>
       </div>
     </div>
 
@@ -2216,6 +2227,7 @@
       el.innerHTML = list.length
         ? isoRanges(list).map(([a, b]) => `<span class="pto-chip" style="background:#fee2e2;color:#b91c1c" title="Non-working: scheduling skips ${a === b ? 'this day' : 'these days'} like a weekend">${escapeHtml(a === b ? fmtNice(new Date(a + 'T00:00:00')) : fmtNice(new Date(a + 'T00:00:00')) + ' – ' + fmtNice(new Date(b + 'T00:00:00')))}<button onclick="removeHolidayRange('${a}','${b}')" title="Remove" style="color:#b91c1c">×</button></span>`).join('')
         : '<span class="help-text" style="font-size:var(--t-sm)">None yet. Weekends are skipped automatically.</span>';
+      renderConfigSummary();
     }
     function fmtISO(d) {
       const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
@@ -2257,6 +2269,24 @@
         const work = [...Array(7).keys()].filter(i => !weekendDays.has(i)).map(i => names[i]);
         hint.textContent = `${workingDaysPerWeek()}-day week: ${work.join(', ')} working. ${weekendDays.size ? 'Non-working: ' + [...weekendDays].sort().map(i => names[i]).join(', ') + '.' : 'Every day is a working day.'}`;
       }
+      renderConfigSummary();
+    }
+    // one-line summary shown when the settings panel is collapsed, so the header
+    // stays compact but still tells you the plan's name, start and calendar.
+    function renderConfigSummary() {
+      const el = document.getElementById('configSummary'); if (!el) return;
+      const nm = (document.getElementById('projectName').value || 'Untitled').trim();
+      const startV = document.getElementById('projectStart').value;
+      const start = startV ? fmtNice(new Date(startV + 'T00:00:00')) : '—';
+      const us = document.getElementById('durationUnit');
+      const unitTxt = us ? us.options[us.selectedIndex].text : '';
+      const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const work = [...Array(7).keys()].filter(i => !weekendDays.has(i));
+      const isMonFri = work.length === 5 && [1, 2, 3, 4, 5].every(i => work.includes(i));
+      const wk = isMonFri ? 'Mon–Fri' : work.map(i => names[i]).join(',');
+      const holCount = [...new Set((document.getElementById('holidays').value || '').split(',').map(s => s.trim()).filter(s => /^\d{4}-\d{2}-\d{2}$/.test(s)))].length;
+      const sep = ' <span style="color:#cbd5e1">·</span> ';
+      el.innerHTML = `<span style="font-weight:400;color:var(--muted)">⚙</span> <b>${escapeHtml(nm)}</b>${sep}starts ${escapeHtml(start)}${sep}${escapeHtml(unitTxt)}${sep}${escapeHtml(wk)}${holCount ? sep + holCount + ' holiday' + (holCount > 1 ? 's' : '') : ''} <span class="config-sum-edit">edit ▾</span>`;
     }
     function isWorkingDay(d, holidays) {
       if (weekendDays.has(d.getDay())) return false;
