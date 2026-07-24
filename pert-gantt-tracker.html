@@ -1406,15 +1406,16 @@
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
               <div class="form-group">
                 <label>Actual start (if begun)</label>
-                <input id="mActualStart" type="date" />
+                <input id="mActualStart" type="date" onchange="refreshAutoActualCost()" />
               </div>
               <div class="form-group">
                 <label>Actual finish (if done)</label>
-                <input id="mActualFinish" type="date" />
+                <input id="mActualFinish" type="date" onchange="refreshAutoActualCost()" />
               </div>
               <div class="form-group">
-                <label for="mActualCost">Actual cost $</label><button type="button" class="info-icon" aria-label="About Actual cost $" data-help="Cost actually incurred so far — feeds CPI / EAC forecasting.">i</button>
-                <input id="mActualCost" type="number" min="0" step="100" value="0" />
+                <span class="fg-head"><label for="mActualCost">Actual cost $</label><button type="button" class="info-icon" aria-label="About Actual cost $" data-help="What the work actually cost. Auto-derived from the actual time spent — actual working days between the dates above × the participants' day-rates (client-kind people $0) + fixed cost. Type a number to override; ↺ returns to auto. Feeds CPI / EAC and the historical archive.">i</button></span>
+                <input id="mActualCost" type="number" min="0" step="100" value="0" oninput="mActualCostManual = true; refreshAutoActualCost()" />
+                <div id="mActualCostHint" class="help-text" style="font-size:var(--t-xs);margin-top:2px"></div>
               </div>
             </div>
             <div class="form-group" style="margin-bottom:0">
@@ -1571,7 +1572,7 @@
         owner: '', units: 100, attendees: [], levelDelay: 0, percentComplete: 0, predecessors: [],
         startNoEarlier: '', deadline: '', jira: '', autoActualStart: false, autoActualFinish: false,
         parentId: null, description: '', deliverable: '', acceptance: '',
-        actualStart: '', actualFinish: '', fixedCost: 0, actualCost: 0,
+        actualStart: '', actualFinish: '', fixedCost: 0, actualCost: 0, autoActualCost: true,
         baseStart: null, baseFinish: null, baseTe: null, baseCost: null,
         te: 0, variance: 0, es: 0, ef: 0, ls: 0, lf: 0, slack: 0, wbs: '', isSummary: false,
         isCritical: false, criticality: 0, startDate: null, finishDate: null, overallocated: false
@@ -2127,7 +2128,7 @@
           percentComplete: t.percentComplete, predecessors: t.predecessors,
           parentId: t.parentId, description: t.description, deliverable: t.deliverable,
           acceptance: t.acceptance, actualStart: t.actualStart, actualFinish: t.actualFinish,
-          fixedCost: t.fixedCost || 0, actualCost: t.actualCost || 0,
+          fixedCost: t.fixedCost || 0, actualCost: t.actualCost || 0, autoActualCost: t.autoActualCost !== false,
           baseStart: t.baseStart ? fmtISO(new Date(t.baseStart)) : null,
           baseFinish: t.baseFinish ? fmtISO(new Date(t.baseFinish)) : null,
           baseTe: t.baseTe, baseCost: (t.baseCost == null ? null : t.baseCost),
@@ -2162,7 +2163,7 @@
         startNoEarlier: /^\d{4}-\d{2}-\d{2}$/.test(t.startNoEarlier || '') ? t.startNoEarlier : '',
         jira: String(t.jira || '').trim(),
         deadline: /^\d{4}-\d{2}-\d{2}$/.test(t.deadline || '') ? t.deadline : '',
-        fixedCost: Number(t.fixedCost) || 0, actualCost: Number(t.actualCost) || 0,
+        fixedCost: Number(t.fixedCost) || 0, actualCost: Number(t.actualCost) || 0, autoActualCost: t.autoActualCost !== false,
         baseStart: t.baseStart ? new Date(t.baseStart + 'T00:00:00') : null,
         baseFinish: t.baseFinish ? new Date(t.baseFinish + 'T00:00:00') : null,
         baseTe: (t.baseTe == null ? null : Number(t.baseTe)),
@@ -2399,6 +2400,35 @@
       const ag = document.getElementById('attGroup'); if (ag) ag.style.display = isSum ? 'none' : '';
       const sh = document.getElementById('mSummaryHint'); if (sh) sh.style.display = isSum ? '' : 'none';
     }
+    // actual-cost auto-derivation inside the editor. mActualCostManual tracks
+    // whether the user has typed a value this session; when auto, the field mirrors
+    // the cost computed from the actual dates + the modal's current people/rates.
+    let mActualCostManual = false;
+    function modalActualParticipants() {
+      const out = [], seen = new Set();
+      const add = (name, units) => { name = (name || '').trim(); if (!name || seen.has(name.toLowerCase())) return; seen.add(name.toLowerCase()); out.push({ name, units: Number.isFinite(+units) ? +units : 100 }); };
+      add(document.getElementById('mOwner').value, parseFloat(document.getElementById('mUnits').value));
+      const owner = (document.getElementById('mOwner').value || '').trim();
+      document.querySelectorAll('#attRows .dep-row').forEach(r => { const nm = (r.querySelector('.att-name').value || '').trim(); if (nm && nm !== owner) add(nm, parseFloat(r.querySelector('.att-units').value)); });
+      return out;
+    }
+    function refreshAutoActualCost() {
+      const inp = document.getElementById('mActualCost'); const hint = document.getElementById('mActualCostHint');
+      if (!inp) return;
+      const sV = document.getElementById('mActualStart').value, fV = document.getElementById('mActualFinish').value;
+      let days = null;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(sV) && /^\d{4}-\d{2}-\d{2}$/.test(fV)) {
+        const start = new Date(sV + 'T00:00:00'), fin = new Date(fV + 'T00:00:00');
+        if (fin >= start) days = workingDaysBetween(start, fin, getHolidaySet()) + 1;
+      }
+      if (days == null) { if (hint) hint.textContent = mActualCostManual ? 'Manual value. Add actual start + finish to auto-derive from time spent.' : 'Auto — set actual start + finish above and this fills from time × rates.'; return; }
+      const labor = modalActualParticipants().reduce((sx, p) => sx + (isClientResource(p.name) ? 0 : getRate(p.name) * days * p.units / 100), 0);
+      const auto = Math.round(labor + (Math.max(0, parseFloat(document.getElementById('mFixedCost').value) || 0)));
+      if (!mActualCostManual) inp.value = auto;
+      if (hint) hint.innerHTML = mActualCostManual
+        ? `Manual. Auto from ${days} working day${days !== 1 ? 's' : ''} × rates = $${auto.toLocaleString()}. <a href="#" onclick="event.preventDefault();mActualCostManual=false;refreshAutoActualCost()">↺ use auto</a>`
+        : `Auto: ${days} working day${days !== 1 ? 's' : ''} × rates + fixed = $${auto.toLocaleString()}. Type to override.`;
+    }
     function openAddModal(isMilestone) {
       editingId = null;
       applySummaryLock(false);
@@ -2426,6 +2456,7 @@
       document.getElementById('mActualStart').value = '';
       document.getElementById('mActualFinish').value = '';
       document.getElementById('mActualCost').value = 0;
+      mActualCostManual = false; refreshAutoActualCost();
       populateOwnerList();
       modalRefMap = buildTaskDatalist('predDatalist', t => true);
       buildTaskDatalist('parentDatalist', t => !t.milestone);
@@ -2526,6 +2557,7 @@
       document.getElementById('mActualStart').value = t.actualStart || '';
       document.getElementById('mActualFinish').value = t.actualFinish || '';
       document.getElementById('mActualCost').value = t.actualCost || 0;
+      mActualCostManual = (t.autoActualCost === false); refreshAutoActualCost();
       document.getElementById('mJira').value = t.jira || '';
       populateOwnerList();
       // only offer predecessors that can validly come before this task: not itself,
@@ -2786,7 +2818,7 @@
       }
       const finalPreds = Object.values(seen).filter(pr => pr.id !== editingId);
 
-      const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, actualCost, percentComplete: pct, predecessors: finalPreds, jira: document.getElementById('mJira').value.trim(),
+      const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, actualCost, autoActualCost: !mActualCostManual, percentComplete: pct, predecessors: finalPreds, jira: document.getElementById('mJira').value.trim(),
         parentId, description, deliverable, acceptance, actualStart, actualFinish };
       // roll-up rows: the locked, computed-from-children fields never save
       if (isSum) ['o', 'm', 'p', 'milestone', 'owner', 'units', 'attendees', 'percentComplete'].forEach(k => delete fields[k]);
@@ -5085,6 +5117,31 @@
       return (Number(t.fixedCost) || 0) + labor;
     }
     function projectCost() { return leafTasks().reduce((s, t) => s + taskCost(t), 0); }
+    // actual working days a task consumed, from its logged actual dates (inclusive)
+    function actualWorkingDays(t) {
+      if (!t || !/^\d{4}-\d{2}-\d{2}$/.test(t.actualStart || '') || !/^\d{4}-\d{2}-\d{2}$/.test(t.actualFinish || '')) return null;
+      const start = new Date(t.actualStart + 'T00:00:00'), fin = new Date(t.actualFinish + 'T00:00:00');
+      if (fin < start) return null;
+      return workingDaysBetween(start, fin, getHolidaySet()) + 1;   // inclusive of both ends
+    }
+    // Actual cost = what the work really cost. By default it's DERIVED from the
+    // actual time spent (actual working days × the same participant day-rates the
+    // plan uses, client-kind people $0, plus the task's fixed cost) — so logging
+    // actual start/finish is enough, no hand-entry. A manually typed value wins
+    // (autoActualCost === false). This feeds CPI/EAC and the historical archive.
+    function computedActualCost(t) {
+      const days = actualWorkingDays(t);
+      if (days == null) return null;
+      const labor = taskParticipants(t).reduce((sx, pr) => sx + (isClientResource(pr.name) ? 0 : getRate(pr.name) * days * pr.units / 100), 0);
+      return Math.round(labor + (Number(t.fixedCost) || 0));
+    }
+    function actualCostOf(t) {
+      if (!t) return 0;
+      if (t.isSummary) return leafDescendants(t.id).reduce((s, x) => s + actualCostOf(x), 0);
+      if (t.autoActualCost === false) return Number(t.actualCost) || 0;   // manual override
+      const c = computedActualCost(t);
+      return c != null ? c : (Number(t.actualCost) || 0);
+    }
     // 💰 who is billed, who is not, and why — the audit data for pricing.
     // Mirrors taskCost() exactly: cost = rate × TE-days × units%, client-kind
     // people always $0, plus per-task fixed costs.
@@ -5666,7 +5723,7 @@
           const todayT = stripTime(new Date()).getTime();
           const usingBaseline = hasBaseline();
           const BAC = usingBaseline ? leafTasks().reduce((sx, t) => sx + (Number(t.baseCost) || 0), 0) || cost : cost;
-          const AC = leafTasks().reduce((sx, t) => sx + (Number(t.actualCost) || 0), 0);
+          const AC = leafTasks().reduce((sx, t) => sx + actualCostOf(t), 0);   // derived from actual time unless manually overridden
           const PV = leafTasks().reduce((sx, t) => {
             if (t.milestone) return sx;
             const s1 = usingBaseline ? t.baseStart : t.startDate;
@@ -12216,14 +12273,19 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
       if (!calculated) { alert('Calculate first.'); return; }
       if (!confirm('Append this project\'s estimates-vs-actuals to the 📚 historical data (used to calibrate future AI estimates)?')) return;
       const u = unitLabel();
+      const plannedTot = projectCost();
+      const actualTot = leafTasks().reduce((s, t) => s + actualCostOf(t), 0);
       const lines = [`\n--- Archived project: ${projName()} (${fmtISO(new Date())}) ---`,
-        `Overall: planned ${Math.max(0, ...leafTasks().map(t => t.ef), 0).toFixed(1)} ${u}, ${Math.round(overallProgress())}% complete at archive time.`];
+        `Overall: planned ${Math.max(0, ...leafTasks().map(t => t.ef), 0).toFixed(1)} ${u}, ${Math.round(overallProgress())}% complete at archive time.`,
+        `Cost: planned ${fmtMoney(plannedTot)}${actualTot > 0 ? ', actual-to-date ' + fmtMoney(actualTot) + (plannedTot > 0 ? ' (' + (actualTot / plannedTot).toFixed(2) + '× plan)' : '') : ''}.`];
       leafTasks().filter(t => !t.milestone).forEach(t => {
         let actual = '';
         if (t.actualStart && t.actualFinish) {
-          const wd = calDaysBetween(new Date(t.actualStart + 'T00:00:00'), new Date(t.actualFinish + 'T00:00:00')) + 1;
-          const ratio = t.te > 0 ? (wd / unitToWorkingDays(t.te)).toFixed(2) : '?';
-          actual = ` — actual ~${wd} calendar days (${ratio}x estimate)`;
+          const awd = actualWorkingDays(t);
+          const ratio = t.te > 0 && awd != null ? (awd / unitToWorkingDays(t.te)).toFixed(2) : '?';
+          const pc = taskCost(t), ac = actualCostOf(t);
+          const costBit = ac > 0 ? `, cost est ${fmtMoney(pc)} vs actual ${fmtMoney(ac)}${pc > 0 ? ' (' + (ac / pc).toFixed(2) + '×)' : ''}` : '';
+          actual = ` — actual ${awd != null ? awd + ' working days' : '?'} (${ratio}× estimate)${costBit}`;
         } else if (t.percentComplete >= 100) actual = ' — completed (no actual dates recorded)';
         lines.push(`- ${t.name}: est ${t.o}/${t.m}/${t.p} ${u} (TE ${t.te.toFixed(1)})${t.owner ? ', ' + t.owner : ''}${actual}`);
       });
