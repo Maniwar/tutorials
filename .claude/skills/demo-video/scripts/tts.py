@@ -97,8 +97,16 @@ def _piper_model(cfg):
 # Backends that produce a genuinely human-sounding narrator. Anything outside
 # this set is a formant/diphone synth — fine to hear your timing back, never
 # acceptable in a demo you publish, so it is opt-in only (see ROBOTIC).
-HUMAN = ("elevenlabs", "openai", "edge", "piper")
+HUMAN = ("elevenlabs", "openai", "kokoro", "edge", "piper")
 ROBOTIC = ("espeak",)
+
+
+def _has_kokoro():
+    try:
+        import kokoro_onnx  # noqa: F401
+        return True
+    except Exception:
+        return False
 
 
 def _has_edge():
@@ -115,6 +123,7 @@ def available():
         "elevenlabs": bool(os.environ.get("ELEVENLABS_API_KEY")),
         "openai": bool(os.environ.get("OPENAI_API_KEY")),
         "edge": _has_edge(),
+        "kokoro": _kokoro_paths({})[0] is not None and _has_kokoro(),
         "piper": bool(shutil.which("piper")) and _piper_model({}) is not None,
         "espeak": bool(shutil.which("espeak-ng") or shutil.which("espeak")),
     }
@@ -128,6 +137,8 @@ def pick_backend(cfg):
         return "elevenlabs"
     if os.environ.get("OPENAI_API_KEY"):
         return "openai"
+    if _has_kokoro() and _kokoro_paths(cfg)[0]:
+        return "kokoro"        # best offline quality, no key, no network at render time
     if _has_edge():
         return "edge"          # free, no key, genuinely human
     if shutil.which("piper") and _piper_model(cfg):
@@ -217,6 +228,60 @@ def _elevenlabs(text, out, cfg, tmp):
     return _to_wav(raw, out)
 
 
+def _kokoro_paths(cfg):
+    """Locate the Kokoro ONNX model + voice pack, or (None, None)."""
+    m = cfg.get("kokoro_model") or os.environ.get("KOKORO_MODEL")
+    v = cfg.get("kokoro_voices") or os.environ.get("KOKORO_VOICES")
+    if m and v and os.path.exists(m) and os.path.exists(v):
+        return m, v
+    for base in [cfg.get("kokoro_dir"), os.environ.get("KOKORO_DIR"), ".",
+                 os.path.expanduser("~/.local/share/kokoro")]:
+        if not base:
+            continue
+        mm = os.path.join(base, "kokoro-v1.0.onnx")
+        vv = os.path.join(base, "voices-v1.0.bin")
+        if os.path.exists(mm) and os.path.exists(vv):
+            return mm, vv
+    return None, None
+
+
+def _kokoro(text, out, cfg, tmp):
+    """Kokoro v1.0 — 82M-param neural TTS, 54 voices, fully offline once the two
+    model files are on disk. Best-sounding backend that needs no API key.
+
+    Get the files from GitHub releases (NOT HuggingFace, so it works where HF is
+    blocked):
+      B=https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0
+      curl -fsSL -O $B/kokoro-v1.0.onnx      # ~311 MB
+      curl -fsSL -O $B/voices-v1.0.bin       # ~27 MB
+      pip install kokoro-onnx soundfile
+
+    Point at them with kokoro_model + kokoro_voices (or kokoro_dir / KOKORO_DIR).
+    Voices: af_heart, af_bella, af_nicole, am_michael, am_adam, bf_emma, ... —
+    `Kokoro(...).get_voices()` lists all 54.
+    """
+    try:
+        import soundfile as sf
+        from kokoro_onnx import Kokoro
+    except ImportError:
+        raise RuntimeError("kokoro not installed. pip install kokoro-onnx soundfile")
+    model, voices = _kokoro_paths(cfg)
+    if not model:
+        raise RuntimeError(
+            "kokoro: model files not found. Download them (they are on GitHub releases, "
+            "not HuggingFace):\n"
+            "  B=https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0\n"
+            "  curl -fsSL -O $B/kokoro-v1.0.onnx && curl -fsSL -O $B/voices-v1.0.bin\n"
+            "then set kokoro_model + kokoro_voices (or kokoro_dir / KOKORO_DIR).")
+    k = Kokoro(model, voices)
+    voice = cfg.get("voice") or "af_heart"
+    rate = float(cfg.get("rate") or 1.0)
+    samples, sr = k.create(text, voice=voice, speed=rate, lang=cfg.get("lang") or "en-us")
+    raw = os.path.join(tmp, "kokoro.wav")
+    sf.write(raw, samples, sr)
+    return _to_wav(raw, out)
+
+
 def _edge(text, out, cfg, tmp):
     """Microsoft Edge neural voices: genuinely human, FREE, no API key.
     Needs outbound HTTPS to speech.platform.bing.com. Behind a TLS-inspecting
@@ -260,7 +325,7 @@ def _edge(text, out, cfg, tmp):
     return _to_wav(mp3, out)
 
 
-_BACKENDS = {"espeak": _espeak, "piper": _piper, "openai": _openai, "elevenlabs": _elevenlabs, "edge": _edge}
+_BACKENDS = {"espeak": _espeak, "piper": _piper, "openai": _openai, "elevenlabs": _elevenlabs, "edge": _edge, "kokoro": _kokoro}
 
 
 def synth(text, out, cfg=None):

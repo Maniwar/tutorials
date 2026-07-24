@@ -43,14 +43,27 @@ want a single screenshot, just screenshot; if they want motion, use this.
   `python scripts/tts.py --list` to see what's available. A robotic synth is
   never selected automatically: a demo you publish with a formant voice reads as
   cheap, and no amount of good motion design recovers it. In order of preference:
-  1. **`pip install edge-tts`** — free, no API key, genuinely human Microsoft
+  1. **Kokoro** — the best-sounding option that needs no API key, and fully
+     offline once its two model files are on disk (so it works in sandboxes with
+     no egress at render time). 54 voices; `af_heart` is a strong narrator.
+     ```bash
+     pip install kokoro-onnx soundfile
+     B=https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0
+     curl -fsSL -O $B/kokoro-v1.0.onnx   # ~311 MB
+     curl -fsSL -O $B/voices-v1.0.bin    # ~27 MB
+     ```
+     Then `"tts": {"backend": "kokoro", "voice": "af_heart", "kokoro_dir": "/abs/dir"}`.
+     Note the weights come from **GitHub releases, not HuggingFace** — which is why
+     this works where Piper's and everything else's downloads fail.
+  2. **`pip install edge-tts`** — free, no API key, genuinely human Microsoft
      neural voices (`en-US-AriaNeural`, `en-US-GuyNeural`, …; browse with
      `edge-tts --list-voices`). Needs outbound HTTPS to `speech.platform.bing.com`
      — some locked-down sandboxes block it.
-  2. **`OPENAI_API_KEY` / `ELEVENLABS_API_KEY`** — best control over delivery,
+  3. **`OPENAI_API_KEY` / `ELEVENLABS_API_KEY`** — best control over delivery,
      and works anywhere HTTPS to the vendor is allowed.
-  3. **Piper** (`pip install piper-tts` + a voice model) — offline neural; the
-     model comes from HuggingFace, which some sandboxes block.
+  4. **Piper** (`pip install piper-tts` + a voice model) — offline neural; the
+     model comes from HuggingFace, which some sandboxes block (see gotchas for a
+     GitHub-release workaround).
 
   espeak-ng exists ONLY to hear your timing back while editing. Ask for it
   explicitly (`--backend espeak`, or `allow_robotic: true` in the manifest) and
@@ -188,7 +201,7 @@ don't. `ffmpeg -i out.mp4 -vf fps=1/3 /tmp/qa_%03d.png` then read them.
 - Card text has no typos and matches the app's story.
 - Transitions don't cut mid-motion; total length matches the brief.
 - File plays (has `+faststart`) and is a sane size (≈ crf 22 → a few MB/min).
-- **If narrated:** the voice is a HUMAN-quality backend (edge/openai/elevenlabs/piper) —
+- **If narrated:** the voice is a HUMAN-quality backend (kokoro/edge/openai/elevenlabs/piper) —
   if it sounds robotic, stop and fix the backend rather than shipping it. There's a
   real audio stream (`ffprobe -select_streams a:0 …`),
   it's 48 kHz, and the length matches (segments stretch to fit their voice, so a
