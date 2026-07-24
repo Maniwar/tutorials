@@ -286,6 +286,8 @@ def _cli():
     ap.add_argument("--text"); ap.add_argument("--out")
     ap.add_argument("--backend", default="auto"); ap.add_argument("--voice")
     ap.add_argument("--rate", type=float, default=1.0)
+    ap.add_argument("--piper-model", help="path to a Piper .onnx voice model")
+    ap.add_argument("--piper-data-dir", help="directory holding <voice>.onnx + .onnx.json")
     ap.add_argument("--list", action="store_true")
     a = ap.parse_args()
     if a.list:
@@ -300,6 +302,10 @@ def _cli():
     cfg = {"backend": a.backend, "rate": a.rate}
     if a.voice:
         cfg["voice"] = a.voice
+    if getattr(a, "piper_model", None):
+        cfg["piper_model"] = a.piper_model
+    if getattr(a, "piper_data_dir", None):
+        cfg["piper_data_dir"] = a.piper_data_dir
     out = synth(a.text, a.out, cfg)
     print("wrote", out, "via", pick_backend(cfg))
 

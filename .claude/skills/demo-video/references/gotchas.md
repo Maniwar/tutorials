@@ -241,3 +241,40 @@ HuggingFace. If `huggingface.co` is blocked (common in sandboxes) the model cann
 be fetched, and no pip/npm package bundles one — `piper-tts-web` ships the runtime
 and still downloads voices at run time. Fetch the `.onnx` + `.onnx.json` on an open
 network and point at it with `piper_model`.
+
+
+### Getting a Piper voice when HuggingFace is blocked
+
+Piper's current voices live on HuggingFace (`rhasspy/piper-voices`), and
+`python -m piper.download_voices` fetches from there. In a locked-down network
+that host is often blocked outright — but **GitHub release assets frequently are
+not**, and the early Piper releases published voice models as plain release
+tarballs. That path needs no HuggingFace access:
+
+    curl -fsSL -o voice.tar.gz \
+      https://github.com/rhasspy/piper/releases/download/v0.0.2/voice-en-us-lessac-medium.tar.gz
+    tar -xzf voice.tar.gz          # -> en-us-lessac-medium.onnx + .onnx.json
+
+Then point the renderer at it, either explicitly:
+
+    python scripts/tts.py --text "hello" --out vo.wav \
+      --backend piper --piper-model /abs/en-us-lessac-medium.onnx
+
+or in the manifest: `"tts": {"backend": "piper", "piper_model": "/abs/….onnx"}`.
+
+`_piper_model()` also scans `PIPER_DATA_DIR` for `<voice>.onnx`, but that lookup
+matches Piper's underscore naming (`en_US-lessac-medium.onnx`) while these older
+tarballs use hyphens (`en-us-lessac-medium.onnx`). Either rename the file to the
+underscore form or pass `piper_model` explicitly — the explicit path is less
+surprising.
+
+Worth probing what your network actually allows before concluding a voice is
+unobtainable. A quick reachability sweep is cheap and often finds a way through:
+
+    for H in huggingface.co github.com raw.githubusercontent.com objects.githubusercontent.com; do
+      echo "$H -> $(curl -fsS -o /dev/null -w '%{http_code}' https://$H || echo BLOCKED)"
+    done
+
+A `403`/`400` on a host root does not always mean blocked — the release-asset URL
+above returned 200 and downloaded 58 MB in an environment where `github.com`
+itself answered 403 and every HuggingFace host and mirror was unreachable.
