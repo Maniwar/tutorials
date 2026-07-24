@@ -485,6 +485,11 @@
     .modal .form-group:has(> button.info-icon) > textarea,
     .modal .form-group:has(> button.info-icon) > div { flex: 1 0 100%; }
     .modal .form-group:has(> button.info-icon) > button:not(.info-icon) { flex: 0 0 auto; }
+    /* header wrapper: keeps a field's label and its "i" button on one fixed-height line so
+       inputs across a multi-column row start at the same Y whether or not a field has an icon. */
+    .fg-head { display: flex; align-items: center; gap: 0.3rem; min-height: 1.4rem; margin-bottom: 0.3rem; }
+    .fg-head > label { margin: 0; padding: 0; display: inline-block; }
+    .fg-head > .info-icon { flex: none; }
     #helpPop { position: fixed; z-index: 300; max-width: 300px; background: #fff; border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--sh-3); padding: 0.6rem 0.75rem; font-size: var(--t-md); color: var(--text); line-height: 1.45; }
     /* W19: contained iconography */
     .ico { display: inline-block; width: 1.4em; text-align: center; flex: none; filter: grayscale(1); opacity: .8; }
@@ -1274,23 +1279,23 @@
           </div>
         </div>
         <div id="ompHint" class="help-text" style="display:none;margin:-0.4rem 0 0.8rem"></div>
-        <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:0.75rem">
+        <div class="metric-row" style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:0.75rem">
           <div class="form-group">
-            <label for="mOwner">Owner / resource</label>
+            <span class="fg-head"><label for="mOwner">Owner / resource</label></span>
             <input id="mOwner" type="text" placeholder="e.g. A. Rivera" autocomplete="off" oninput="updateOwnerRoleHint()" onchange="updateOwnerRoleHint()" />
             <datalist id="ownerList"></datalist>
             <div id="mOwnerRole" style="margin-top:2px"></div>
           </div>
           <div class="form-group">
-            <label for="mUnits">Units %</label><button type="button" class="info-icon" aria-label="About Units %" data-help="How much of the resource this task consumes while active. 100 = full-time. Two 100% tasks at once for one person = over-allocated.">i</button>
+            <span class="fg-head"><label for="mUnits">Units %</label><button type="button" class="info-icon" aria-label="About Units %" data-help="How much of the resource this task consumes while active. 100 = full-time. Two 100% tasks at once for one person = over-allocated.">i</button></span>
             <input id="mUnits" type="number" min="0" step="5" value="100" />
           </div>
           <div class="form-group">
-            <label for="mPct">% Complete</label>
+            <span class="fg-head"><label for="mPct">% Complete</label></span>
             <input id="mPct" type="number" min="0" max="100" step="1" value="0" />
           </div>
           <div class="form-group">
-            <label for="mFixedCost">Fixed cost $</label><button type="button" class="info-icon" aria-label="About Fixed cost $" data-help="One-off cost (licences, travel, vendor fee). Labor cost comes from the owner's day rate on the Resources tab.">i</button>
+            <span class="fg-head"><label for="mFixedCost">Fixed cost $</label><button type="button" class="info-icon" aria-label="About Fixed cost $" data-help="One-off cost (licences, travel, vendor fee). Labor cost comes from the owner's day rate on the Resources tab.">i</button></span>
             <input id="mFixedCost" type="number" min="0" step="100" value="0" />
           </div>
         </div>
@@ -11948,7 +11953,15 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
     function closeOverlay(id) {
       const m = document.getElementById(id);
       if (!m || !m.classList.contains('open')) return;
-      const finish = () => { setBackgroundInert(m, false); if (m._returnTo && m._returnTo.focus) { try { m._returnTo.focus(); } catch (e) {} } m._returnTo = null; };
+      const finish = () => {
+        setBackgroundInert(m, false);
+        // if another modal is still open beneath this one (e.g. edit-activity under a
+        // just-closed edit-story), re-arm its inert barrier so the page stays trapped.
+        const beneath = Array.from(document.querySelectorAll('.modal-overlay.open')).filter(o => o !== m);
+        const top = beneath[beneath.length - 1];
+        if (top) { for (let a = top; a && a !== document.body; a = a.parentElement) a.removeAttribute('inert'); setBackgroundInert(top, true); }
+        if (m._returnTo && m._returnTo.focus) { try { m._returnTo.focus(); } catch (e) {} } m._returnTo = null;
+      };
       m.removeEventListener('keydown', trapTab, true);
       if (!motionOK()) { m.classList.remove('open'); finish(); return; }
       m.classList.add('closing');
@@ -11962,6 +11975,11 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
       const already = el.classList.contains('open');
       el.classList.add('open');
       if (!already) el._returnTo = document.activeElement;
+      // a modal opened on top of another (e.g. edit-story from edit-activity) sits inside a
+      // container the first modal marked inert (storyModal lives in <main>, which edit-activity
+      // inerted). inert on ANY ancestor makes the whole modal non-interactive, so clear it along
+      // the entire path to <body> before re-inerting the siblings behind this new top layer.
+      for (let a = el; a && a !== document.body; a = a.parentElement) a.removeAttribute('inert');
       setBackgroundInert(el, true);
       el.addEventListener('keydown', trapTab, true);
       // focus the first real field (skip the ✕ close button so the form is reachable immediately)
