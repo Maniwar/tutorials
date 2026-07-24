@@ -52,6 +52,7 @@
     .btn-secondary:hover { background: #475569; }
     .btn-ghost { background: transparent; color: white; border: 1px solid rgba(255,255,255,0.3); }
     .btn-ghost:hover { background: rgba(255,255,255,0.1); }
+    .header-actions label.btn-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; border-radius: 8px; text-transform: none; letter-spacing: 0; font-weight: 600; cursor: pointer; margin: 0; }
     .btn-danger { background: #fee2e2; color: #b91c1c; }
     .btn-danger:hover { background: #fecaca; }
     .btn-success { background: #dcfce7; color: #15803d; }
@@ -265,6 +266,76 @@
     @keyframes blink { 50% { opacity: 0; } }
     /* AI stream box floats above the page when triggered from a non-Tasks tab */
     #aiStreamBox.stream-float { position: fixed; right: 1rem; bottom: 1rem; width: min(560px, 92vw); max-height: 40vh; z-index: 1200; box-shadow: 0 12px 32px rgba(2,6,23,0.45); }
+
+    /* ================= POLISH: motion & micro-interactions =================
+       Purposeful motion only: 140-350ms, ease-out, transform/opacity — it
+       explains what changed and where it went. prefers-reduced-motion kills
+       all of it. */
+    :root { --sh-1: 0 1px 2px rgb(15 23 42/.06); --sh-2: 0 4px 14px -3px rgb(15 23 42/.12); --sh-3: 0 18px 44px -14px rgb(15 23 42/.28); --easeo: cubic-bezier(.2,.8,.25,1); }
+    button, .btn { transition: transform .14s var(--easeo), box-shadow .14s var(--easeo), background-color .15s ease, color .15s ease, border-color .15s ease, opacity .15s ease; }
+    button:hover:not(:disabled):not(.tab), .btn:hover { transform: translateY(-1px); box-shadow: var(--sh-2); }
+    button:active:not(:disabled):not(.tab), .btn:active { transform: translateY(0) scale(.97); box-shadow: var(--sh-1); }
+    :where(button, .btn, input, select, textarea, summary, a):focus-visible { outline: 3px solid rgb(37 99 235/.35); outline-offset: 1px; }
+    input, select, textarea { transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+    input:focus, select:focus, textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgb(37 99 235/.14); outline: none; }
+    @keyframes shakeX { 10%,90% { transform: translateX(-1px) } 20%,80% { transform: translateX(2px) } 30%,50%,70% { transform: translateX(-4px) } 40%,60% { transform: translateX(4px) } }
+    .shake { animation: shakeX .4s ease; }
+    .modal-overlay.open { animation: ovlIn .18s ease; backdrop-filter: blur(4px); }
+    .modal-overlay.open .modal { animation: modalIn .22s var(--easeo); }
+    @keyframes ovlIn { from { opacity: 0 } }
+    @keyframes modalIn { from { opacity: 0; transform: translateY(12px) scale(.98) } }
+    .export-panel { animation: popIn .16s var(--easeo); transform-origin: top right; }
+    @keyframes popIn { from { opacity: 0; transform: scale(.96) translateY(-4px) } }
+    .saved-dot:not(:empty) { display: inline-block; background: #ecfdf5; border: 1px solid #6ee7b7; color: #065f46; padding: 2px 11px; border-radius: 999px; font-weight: 600; opacity: 1; }
+    .flash-pop { animation: toastIn .32s var(--easeo); }
+    @keyframes toastIn { 0% { opacity: 0; transform: translateY(6px) scale(.9) } 60% { transform: translateY(-1px) scale(1.03) } 100% { opacity: 1; transform: none } }
+    #taskBody tr { transition: background-color .12s ease; content-visibility: auto; contain-intrinsic-size: auto 44px; }
+    @keyframes rowGlow { 0% { background: #fef3c7 } 100% { background: transparent } }
+    tr.row-flash > td { animation: rowGlow 1.3s ease; }
+    details > summary { transition: color .15s ease; }
+    details[open] > summary ~ * { animation: fadeSlide .18s ease; }
+    @keyframes fadeSlide { from { opacity: 0; transform: translateY(-3px) } }
+    .stat-card { transition: transform .16s var(--easeo), box-shadow .16s var(--easeo); }
+    .stat-card:hover { transform: translateY(-2px); box-shadow: var(--sh-2); }
+    .tiles-in .stat-card { animation: tileIn .34s var(--easeo) backwards; }
+    .tiles-in .stat-card:nth-child(2) { animation-delay: .05s } .tiles-in .stat-card:nth-child(3) { animation-delay: .1s }
+    .tiles-in .stat-card:nth-child(4) { animation-delay: .15s } .tiles-in .stat-card:nth-child(5) { animation-delay: .2s }
+    .tiles-in .stat-card:nth-child(6) { animation-delay: .25s }
+    @keyframes tileIn { from { opacity: 0; transform: translateY(9px) } }
+    .progress-fill { transition: width .35s var(--easeo); }
+    .empty-state { animation: fadeSlide .25s ease; }
+    #aiStreamBox:not([style*="display: none"]) { animation: streamPulse 2s ease-in-out infinite; }
+    @keyframes streamPulse { 0%,100% { box-shadow: 0 0 0 0 rgb(37 99 235/0) } 50% { box-shadow: 0 0 0 5px rgb(37 99 235/.12) } }
+    #calcBtn.btn-done { background: var(--success) !important; }
+    .tabs { position: relative; }
+    .tab { position: relative; z-index: 1; }
+    .tab.active { background: transparent; box-shadow: none; }
+    .tab-slider { position: absolute; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgb(0 0 0/.1); z-index: 0; transition: left .26s var(--easeo), top .26s var(--easeo), width .26s var(--easeo), height .26s var(--easeo); }
+    .tabs:not(:has(.tab-slider)) .tab.active { background: white; box-shadow: 0 1px 3px rgb(0 0 0/.1); }
+    ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; }
+    /* ---- mobile: tidy header grid + swipeable tabs ---- */
+    @media (max-width: 640px) {
+      header { padding: 0.9rem 1rem 1.05rem; gap: 0.55rem; }
+      header h1 { font-size: 1.12rem; }
+      header .subtitle { font-size: 0.7rem; margin-left: 0; display: block; }
+      #savedIndicator { display: none; }
+      .header-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.45rem; width: 100%; margin-left: 0; }
+      .header-actions details { width: 100%; }
+      .header-actions .btn-sm, .header-actions summary.btn-sm, .header-actions label.btn-ghost { width: 100%; padding: 0.52rem 0.3rem; font-size: 0.78rem; justify-content: center; white-space: nowrap; }
+      .header-actions summary.btn-sm { display: inline-flex; align-items: center; }
+      .header-actions > :last-child { grid-column: span 2; }
+      main { padding: 0.8rem; }
+      .config-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 768px) {
+      .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+      .tabs::-webkit-scrollbar { display: none; }
+      .tab { flex: 0 0 auto; min-width: 0; padding: 0.55rem 0.85rem; font-size: 0.84rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+      .modal-overlay.open { backdrop-filter: none; }
+    }
     @media print {
       header, .tabs, .header-actions, .card-header button, .no-print { display: none !important; }
       .view { display: block !important; }
@@ -365,7 +436,7 @@
             </div>
           </div>
           <div style="display:flex;align-items:end">
-            <button class="btn-primary" onclick="calculate()" style="width:100%">Calculate &amp; Analyze</button>
+            <button id="calcBtn" class="btn-primary" onclick="calculate()" style="width:100%">Calculate &amp; Analyze</button>
           </div>
         </div>
       </div>
@@ -373,15 +444,15 @@
 
     <!-- Tabs -->
     <div class="tabs">
-      <button class="tab active" data-tab="tasks" onclick="switchTab('tasks')" title="Build the plan: AI from notes, or add activities with 3-point estimates">1. Tasks &amp; Estimates</button>
-      <button class="tab" data-tab="wbs" onclick="switchTab('wbs')" title="Work Breakdown Structure with deliverables, scope and acceptance criteria per element">2. WBS &amp; Dictionary</button>
-      <button class="tab" data-tab="req" onclick="switchTab('req')" title="User stories with Given/When/Then acceptance criteria, NFRs and assumptions — AI-drafted and traced to the WBS">3. Requirements &amp; Stories</button>
-      <button class="tab" data-tab="pert" onclick="switchTab('pert')" title="Dependency network with the critical path — ES/EF/LS/LF/slack per activity">4. PERT Network</button>
-      <button class="tab" data-tab="gantt" onclick="switchTab('gantt')" title="Schedule on real dates with progress, baseline, reserves and dependency arrows — exportable as an image">5. Gantt &amp; Progress</button>
-      <button class="tab" data-tab="resources" onclick="switchTab('resources')" title="Who does what: capacity, rates, PTO, workload heatmap, over-allocation fixes, rate cards">6. Resources</button>
-      <button class="tab" data-tab="baseline" onclick="switchTab('baseline')" title="Snapshot the committed plan and track slippage vs baseline and actuals">7. Baseline &amp; Variance</button>
-      <button class="tab" data-tab="analytics" onclick="switchTab('analytics')" title="Monte-Carlo forecast, health check, reserves, cost/EVM, criticality">8. Analytics &amp; Risk</button>
-      <button class="tab" data-tab="raid" onclick="switchTab('raid')" title="Risk log, pricing & margin, SOW and change-order drafts">9. RAID &amp; SOW</button>
+      <button class="tab active" data-tab="tasks" onclick="switchTabAnimated('tasks')" title="Build the plan: AI from notes, or add activities with 3-point estimates">1. Tasks &amp; Estimates</button>
+      <button class="tab" data-tab="wbs" onclick="switchTabAnimated('wbs')" title="Work Breakdown Structure with deliverables, scope and acceptance criteria per element">2. WBS &amp; Dictionary</button>
+      <button class="tab" data-tab="req" onclick="switchTabAnimated('req')" title="User stories with Given/When/Then acceptance criteria, NFRs and assumptions — AI-drafted and traced to the WBS">3. Requirements &amp; Stories</button>
+      <button class="tab" data-tab="pert" onclick="switchTabAnimated('pert')" title="Dependency network with the critical path — ES/EF/LS/LF/slack per activity">4. PERT Network</button>
+      <button class="tab" data-tab="gantt" onclick="switchTabAnimated('gantt')" title="Schedule on real dates with progress, baseline, reserves and dependency arrows — exportable as an image">5. Gantt &amp; Progress</button>
+      <button class="tab" data-tab="resources" onclick="switchTabAnimated('resources')" title="Who does what: capacity, rates, PTO, workload heatmap, over-allocation fixes, rate cards">6. Resources</button>
+      <button class="tab" data-tab="baseline" onclick="switchTabAnimated('baseline')" title="Snapshot the committed plan and track slippage vs baseline and actuals">7. Baseline &amp; Variance</button>
+      <button class="tab" data-tab="analytics" onclick="switchTabAnimated('analytics')" title="Monte-Carlo forecast, health check, reserves, cost/EVM, criticality">8. Analytics &amp; Risk</button>
+      <button class="tab" data-tab="raid" onclick="switchTabAnimated('raid')" title="Risk log, pricing & margin, SOW and change-order drafts">9. RAID &amp; SOW</button>
     </div>
 
     <!-- TASKS VIEW -->
@@ -1125,6 +1196,22 @@
       if (!s2 || /^\d+(\.\d+)?$/.test(s2)) return '';
       const n = parseDurExpr(s2);
       return Number.isFinite(n) ? '\u201c' + s2 + '\u201d = ' + (+n.toFixed(4)) + ' ' + unitLabel() : '\u201c' + s2 + '\u201d \u2014 not a duration (try 2d, 4h, 30m)';
+    }
+    // compact display for an estimate value in the CURRENT unit — sub-day
+    // work reads as "30m" / "1.5h" (round-trips through parseDurExpr), whole
+    // values stay plain numbers meaning the current unit
+    function fmtDurCell(n) {
+      n = +n;
+      if (!Number.isFinite(n)) return '';
+      if (n === 0) return '0';
+      const unit = document.getElementById('durationUnit').value;
+      if (unit === 'days' && n < 1) {
+        const hrs = n * 8;
+        if (hrs < 1) return Math.round(n * 480) + 'm';
+        return (+hrs.toFixed(1)) + 'h';
+      }
+      if (unit === 'hours' && n < 1) return Math.round(n * 60) + 'm';
+      return String(+n.toFixed(2));
     }
     function ompHintUpd() {
       const el = document.getElementById('ompHint'); if (!el) return;
@@ -1895,6 +1982,7 @@
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
       document.querySelector(`.tab[data-tab="${name}"]`).classList.add('active');
       document.getElementById(`view-${name}`).classList.add('active');
+      updateTabSlider();
       // an in-flight AI stream follows you: inline on the Tasks tab, floating
       // bottom-right on every other tab
       const sbox = document.getElementById('aiStreamBox');
@@ -2019,9 +2107,9 @@
       document.getElementById('modalTitle').textContent = t.milestone ? 'Edit Milestone' : isSum ? 'Edit Phase (roll-up)' : 'Edit Activity';
       document.getElementById('mName').value = t.name;
       // summary rows show the rolled-up spans (read-only) instead of their own 0s
-      document.getElementById('mO').value = isSum ? (t.oUp != null ? +(+t.oUp).toFixed(2) : '') : t.o;
-      document.getElementById('mM').value = isSum ? (t.mUp != null ? +(+t.mUp).toFixed(2) : '') : t.m;
-      document.getElementById('mP').value = isSum ? (t.pUp != null ? +(+t.pUp).toFixed(2) : '') : t.p;
+      document.getElementById('mO').value = isSum ? (t.oUp != null ? +(+t.oUp).toFixed(2) : '') : fmtDurCell(t.o);
+      document.getElementById('mM').value = isSum ? (t.mUp != null ? +(+t.mUp).toFixed(2) : '') : fmtDurCell(t.m);
+      document.getElementById('mP').value = isSum ? (t.pUp != null ? +(+t.pUp).toFixed(2) : '') : fmtDurCell(t.p);
       document.getElementById('mOwner').value = t.owner || '';
       updateOwnerRoleHint();
       ompHintUpd();
@@ -2054,7 +2142,7 @@
       // say which unit O/M/P are in — it's set on the main page (working days /
       // hours / weeks) and easy to forget mid-edit
       document.querySelectorAll('#modal .m-unit-hint').forEach(el => {
-        el.textContent = 'in ' + unitLabel();
+        el.textContent = 'in ' + unitLabel() + ' — or 2d / 4h / 30m';
         // sub-day cheat sheet: fine-grained work (test cases, small sub-tasks)
         // is entered as a fraction of a day but thought about in hours/minutes
         if (document.getElementById('durationUnit').value === 'days') el.title = 'Fractions of a day for fine-grained work (1 day = 8 h): 0.06 ≈ 30 min · 0.12 ≈ 1 h · 0.25 = 2 h · 0.5 = half a day. Tables display sub-day values in hours/minutes automatically.';
@@ -2204,7 +2292,7 @@
       const isMs = document.getElementById('mMilestone').checked;
       let o, m, p;
       const errEl = document.getElementById('modalError');
-      const showErr = (msg) => { errEl.textContent = msg; errEl.style.display = 'block'; };
+      const showErr = (msg) => { errEl.textContent = msg; errEl.style.display = 'block'; errEl.classList.remove('shake'); void errEl.offsetWidth; errEl.classList.add('shake'); };
 
       if (!name) return showErr('Activity name is required.');
 
@@ -2214,6 +2302,12 @@
         o = parseDurExpr(document.getElementById('mO').value);
         m = parseDurExpr(document.getElementById('mM').value);
         p = parseDurExpr(document.getElementById('mP').value);
+        const t0 = editingId != null ? tasks.find(x => x.id === editingId) : null;
+        if (t0) { // untouched compact display strings keep the exact stored values
+          if (document.getElementById('mO').value.trim() === fmtDurCell(t0.o)) o = t0.o;
+          if (document.getElementById('mM').value.trim() === fmtDurCell(t0.m)) m = t0.m;
+          if (document.getElementById('mP').value.trim() === fmtDurCell(t0.p)) p = t0.p;
+        }
         if ([o,m,p].some(v => isNaN(v) || v < 0)) return showErr('Estimates must be numbers in ' + unitLabel() + ' or durations like 2d, 4h, 30m (combos work too: 1d 4h).');
         if (o > m || m > p) return showErr('Must satisfy Optimistic ≤ Most Likely ≤ Pessimistic.');
         if (p === 0) return showErr('Pessimistic must be greater than 0 for a real activity (or mark it a milestone).');
@@ -2570,13 +2664,15 @@
     }
     function beginOmpEdit(td, id, f) {
       const t = tasks.find(x => x.id === id); if (!t) return;
-      beginCellEdit(td, `<input type="text" inputmode="decimal" value="${t[f]}" style="width:84px;padding:0.3rem 0.4rem;font-size:0.8rem" title="A number in ${unitLabel()} — or a duration: 2d, 4h, 30m, 1d 4h" />`, v => {
+      beginCellEdit(td, `<input type="text" inputmode="decimal" value="${fmtDurCell(t[f])}" style="width:84px;padding:0.3rem 0.4rem;font-size:0.8rem" title="A number in ${unitLabel()} — or a duration: 2d, 4h, 30m, 1d 4h" />`, v => {
+        if (v.trim() === fmtDurCell(t[f])) return ''; // untouched — keep the exact stored value
         const n = parseDurExpr(v);
         if (isNaN(n) || n < 0) return 'Enter a number (' + unitLabel() + ') or a duration like 2d / 4h / 30m';
         const trial = { o: t.o, m: t.m, p: t.p }; trial[f] = n;
         if (trial.o > trial.m || trial.m > trial.p) return 'Must keep O ≤ M ≤ P (' + trial.o + ' / ' + trial.m + ' / ' + trial.p + ') — adjust the other cells too';
         if (f === 'p' && n <= 0) return 'Pessimistic must be > 0 for a real activity';
         t[f] = n;
+        window.__rowFlash = id;
         return '';
       });
     }
@@ -2846,9 +2942,9 @@
           ${(() => { const noEst = !summary && !t.milestone && !(t.p > 0);
             const a = noEst ? ' style="background:#fee2e2;color:#b91c1c;font-weight:700" title="NO ESTIMATE — this work package contributes nothing to the schedule, the critical path or the price. Click the cell and type the estimate right here."' : '';
             const ed = f => (!summary && !t.milestone) ? ` data-omp="${f}" onclick="beginOmpEdit(this, ${t.id}, '${f}')"${noEst ? '' : ' style="cursor:text"'}` : '';
-            return `<td${a}${ed('o')}>${summary ? rollCell(t.oUp, 'optimistic') : t.milestone ? '—' : t.o}</td>
-          <td${a}${ed('m')}>${summary ? rollCell(t.mUp, 'most-likely') : t.milestone ? '—' : t.m}</td>
-          <td${a}${ed('p')}>${summary ? rollCell(t.pUp, 'pessimistic') : t.milestone ? '—' : t.p}</td>
+            return `<td${a}${ed('o')}>${summary ? rollCell(t.oUp, 'optimistic') : t.milestone ? '—' : fmtDurCell(t.o)}</td>
+          <td${a}${ed('m')}>${summary ? rollCell(t.mUp, 'most-likely') : t.milestone ? '—' : fmtDurCell(t.m)}</td>
+          <td${a}${ed('p')}>${summary ? rollCell(t.pUp, 'pessimistic') : t.milestone ? '—' : fmtDurCell(t.p)}</td>
           <td${a}><strong>${noEst ? '⚠ 0' : teStr}</strong></td>`; })()}
           <td data-pred-id="${t.id}" style="font-size:0.8rem${summary ? '' : ';cursor:text'}" title="${escapeHtml(summary ? predTitle(t) : (predTitle(t) ? predTitle(t) + '\n' : '') + 'Click to edit right here — comma-separated WBS codes or names, optional FS/SS/FF/SF±lag (e.g. “1.2, 2.1SS+1”). Enter saves, Esc cancels.')}"${summary ? '' : ` onclick="beginPredEdit(${t.id}, this)"`}>${summary ? '—' : (t.predecessors.length ? escapeHtml(predLabel(t)) : '<span class="help-text" style="font-style:italic">+ link</span>')}</td>
           ${(() => { if (summary) return `<td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.startDate) : '—'}</td>
@@ -4663,6 +4759,7 @@
         <div class="stat-card" style="cursor:pointer" onclick="switchTab('pert')" title="How many activities have zero slack — each one can delay the whole project. Click to see them on the network."><div class="value">${criticalTasks.length}/${leaves.filter(t=>!t.milestone).length}</div><div class="label">Critical / Total</div></div>
         ${overCard}
       `;
+      animateTiles();
 
       // target date probability
       const tgt = document.getElementById('targetDate').value;
@@ -7150,13 +7247,13 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       computeWbsCodes();
       const acIndex = {};
       (reqs && reqs.stories || []).forEach(s => (s.ac || []).forEach(a => acIndex[a.id.toLowerCase()] = { s, a }));
-      const rows = [['Test case', 'Verifies AC', 'Acceptance criterion', 'Story', 'Steps', 'Expected result (pass)', 'Owner', 'Estimate (' + unitLabel() + ')', '% done', 'Status', 'Scheduled', 'Result (fill in)', 'Defect ID / notes (fill in)']];
+      const rows = [['Test case', 'Verifies AC', 'Acceptance criterion', 'Story', 'Steps', 'Expected result (pass)', 'Owner', 'Estimate (' + unitLabel() + ')', '% done', 'Status', 'Scheduled', 'Jira / evidence', 'Result (fill in)', 'Defect ID / notes (fill in)']];
       tcs.forEach(tc => {
         const acId = ((tc.name.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').toLowerCase();
         const hit = acIndex[acId];
         rows.push([tc.name, hit ? hit.a.id : acId.toUpperCase(), hit ? gwtLines(hit.a.text) : '', hit ? hit.s.id + '\nAs a ' + (hit.s.persona || '?') + ', I want to ' + (hit.s.want || '?') : '',
           hasRealSteps(tc) ? tcStepLines(tc.description) : '⚠ NO EXECUTABLE STEPS — run 🧪 Generate test plan (re-specifies shallow TCs)' + (tc.description ? '\nCurrent note: ' + tc.description : ''), gwtLines(tc.acceptance), tc.owner || '', fmtDurText(tc.te), (tc.percentComplete || 0) + '%', taskStatus(tc).label,
-          tc.startDate ? fmtISO(tc.startDate) : '', '', '']);
+          tc.startDate ? fmtISO(tc.startDate) : '', tc.jira || '', '', '']);
       });
       return rows;
     }
@@ -7963,10 +8060,10 @@ ${existingBatch.length ? 'EXISTING STORIES FOR THIS BRANCH — keep their IDs, i
     function traceSheetRows() {
       computeWbsCodes();
       const idToTask = {}; tasks.forEach(t => idToTask[t.id] = t);
-      const rows = [['Epic', 'Story ID', 'User story', 'Persona', 'AC ID', 'AC type', 'Acceptance criterion', 'Test cases', 'WBS', 'Activity', 'Owner', '% complete', 'Status']];
+      const rows = [['Epic', 'Story ID', 'User story', 'Persona', 'Jira', 'AC ID', 'AC type', 'Acceptance criterion', 'Test cases', 'WBS', 'Activity', 'Owner', '% complete', 'Status']];
       reqs.stories.forEach(s => {
         const t = s.wbsId != null ? idToTask[s.wbsId] : null;
-        const base = [s.epicId || '', s.id, 'As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?'), s.persona || ''];
+        const base = [s.epicId || '', s.id, 'As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?'), s.persona || '', s.jira || ''];
         const tail = t ? [t.wbs, t.name, t.owner || '', (t.percentComplete || 0) + '%', taskStatus(t).label] : ['', '', '', '', 'unlinked'];
         if (!(s.ac || []).length) rows.push([...base, '', '', '', '', ...tail]);
         (s.ac || []).forEach(a => rows.push([...base, a.id, a.type, gwtLines(a.text),
@@ -8499,7 +8596,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         rows.push([t.id, isSum ? 'phase' : t.milestone ? 'milestone' : 'activity', t.wbs || '', parent, t.name,
           t.milestone ? 'yes' : 'no', isSum ? '' : (t.owner || ''), isSum ? '' : (t.units == null ? 100 : t.units),
           isSum ? '' : (t.attendees || []).map(a => a.name + (a.units !== 100 ? '@' + a.units : '')).join(', '),
-          isSum ? '' : t.o, isSum ? '' : t.m, isSum ? '' : t.p, isSum ? '' : (t.percentComplete || 0), t.fixedCost || 0,
+          isSum ? '' : fmtDurCell(t.o), isSum ? '' : fmtDurCell(t.m), isSum ? '' : fmtDurCell(t.p), isSum ? '' : (t.percentComplete || 0), t.fixedCost || 0,
           predText(t), t.startNoEarlier || '', t.deadline || '', t.deliverable || '', t.description || '', t.acceptance || '',
           t.actualStart || '', t.actualFinish || '', t.jira || '']);
       });
@@ -8527,7 +8624,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       const rows = [['Task ID (do not change)', 'Verifies AC', 'Test case name', 'Steps (numbered, one per line)', 'Expected result', 'Owner', 'Optimistic (' + u + ')', 'Most likely (' + u + ')', 'Pessimistic (' + u + ')', '% complete', 'Result (pass/fail/blocked)', 'Defect / notes (a fail row becomes a RAID issue)', 'Jira / evidence link']];
       tcs.forEach(tc => rows.push([tc.id, ((tc.name || '').match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '', tc.name,
         hasRealSteps(tc) ? tcStepLines(tc.description) : (tc.description || ''), tc.acceptance || '', tc.owner || '',
-        tc.o, tc.m, tc.p, tc.percentComplete || 0, (tc.percentComplete || 0) >= 100 ? 'pass' : '', '', tc.jira || '']));
+        fmtDurCell(tc.o), fmtDurCell(tc.m), fmtDurCell(tc.p), tc.percentComplete || 0, (tc.percentComplete || 0) >= 100 ? 'pass' : '', '', tc.jira || '']));
       dlCsv('-test-cases-editable.csv', rows);
     }
     function exportRaidEditableCSV() {
@@ -8702,7 +8799,10 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         if (c.jira >= 0 && (cell(c.jira) || t.jira)) t.jira = cell(c.jira);
         if (!isSum) { // phases roll up — their own estimate/owner/% are display-only
           t.milestone = isMs;
-          t.o = o; t.m = m; t.p = p;
+          // untouched compact cells ("10m", "1.33") keep the exact stored value — no drift on a no-op round trip
+          t.o = cell(c.o) === fmtDurCell(t.o) ? t.o : o;
+          t.m = cell(c.m) === fmtDurCell(t.m) ? t.m : m;
+          t.p = cell(c.p) === fmtDurCell(t.p) ? t.p : p;
           t.owner = cell(c.owner); t.units = numOf(c.units, t.units == null ? 100 : t.units);
           t.attendees = ownerParts;
           const newPct = Math.min(100, Math.max(0, numOf(c.pct, t.percentComplete || 0)));
@@ -8842,7 +8942,10 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           if (cell(c.steps)) tc.description = cell(c.steps);
           if (cell(c.exp)) tc.acceptance = cell(c.exp);
           if (cell(c.owner)) tc.owner = cell(c.owner);
-          tc.o = o; tc.m = m; tc.p = p;
+          // untouched compact cells ("10m") keep the exact stored value — no drift on a no-op round trip
+          tc.o = cell(c.o) === fmtDurCell(tc.o) ? tc.o : o;
+          tc.m = cell(c.m) === fmtDurCell(tc.m) ? tc.m : m;
+          tc.p = cell(c.p) === fmtDurCell(tc.p) ? tc.p : p;
           rep.updated++;
         }
         if (c.jira >= 0 && (cell(c.jira) || tc.jira)) tc.jira = cell(c.jira);
@@ -8904,7 +9007,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     function exportCSV() {
       if (!ensureCalc()) return;
       const u = unitLabel();
-      const rows = [['WBS','Type','Activity','Owner','Units%','Milestone','O','M','P','TE ('+u+')','Variance','Predecessors','Start','Finish','Baseline Start','Baseline Finish','Actual Start','Actual Finish','ES','EF','Slack','% Complete','Critical','Criticality %','Deliverable','Description','Acceptance','Status','User stories']];
+      const rows = [['WBS','Type','Activity','Owner','Units%','Milestone','O','M','P','TE ('+u+')','Variance','Predecessors','Start','Finish','Baseline Start','Baseline Finish','Actual Start','Actual Finish','ES','EF','Slack','% Complete','Critical','Criticality %','Deliverable','Description','Acceptance','Status','User stories','Jira / evidence']];
       tasksInWbsOrder().forEach(({ task: t }) => rows.push([
         t.wbs, t.isSummary ? 'Summary' : (t.milestone ? 'Milestone' : 'Task'), t.name, t.owner, t.isSummary ? '' : t.units,
         t.milestone ? 'Yes' : '', (t.milestone||t.isSummary)?'':t.o, (t.milestone||t.isSummary)?'':t.m, (t.milestone||t.isSummary)?'':t.p,
@@ -8914,7 +9017,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         (t.es||0).toFixed(2), (t.ef||0).toFixed(2), (t.slack||0).toFixed(2), t.percentComplete||0,
         t.isCritical ? 'Yes' : '', ((t.criticality||0)*100).toFixed(0),
         t.deliverable||'', t.description||'', t.acceptance||'', t.isSummary?'Summary':taskStatus(t).label,
-        storiesForTask(t.id).map(s => s.id).join(', ')
+        storiesForTask(t.id).map(s => s.id).join(', '), t.jira || ''
       ]));
       download(safeName() + '.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
     }
@@ -8934,7 +9037,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     }
     function exportWBSDictionaryCSV() {
       if (!ensureCalc()) return;
-      const rows = [['WBS','Level','Element','Type','Owner','Start','Finish','Duration','% Complete','Deliverable','Description / scope','Acceptance criteria','Predecessors','Successors','User stories (trace)','Story acceptance criteria','Verified by (test cases)']];
+      const rows = [['WBS','Level','Element','Type','Owner','Start','Finish','Duration','% Complete','Deliverable','Description / scope','Acceptance criteria','Predecessors','Successors','User stories (trace)','Story acceptance criteria','Verified by (test cases)','Jira / evidence']];
       const idTo = {}; tasks.forEach(x => { idTo[x.id] = x; });
       const fmtLink = (x, type, lag) => (x.wbs ? x.wbs + ' ' : '') + x.name + ' (' + type + (lag ? (lag > 0 ? '+' : '') + lag : '') + ')';
       const succOf = {}; tasks.forEach(x => (x.predecessors || []).forEach(pd => { (succOf[pd.id] = succOf[pd.id] || []).push(fmtLink(x, pd.type, pd.lag)); }));
@@ -8950,7 +9053,8 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           (succOf[t.id] || []).join(' || '),
           st.map(s => s.id + ' — As a ' + (s.persona||'?') + ', I want to ' + (s.want||'?') + ', so that ' + (s.soThat||'?')).join(' || '),
           st.flatMap(s => (s.ac||[]).map(a => a.id + ' (' + a.type + ') ' + a.text)).join(' || '),
-          verif.join(' || ') || (st.length && st.every(isProcessStory) ? 'Process — verified by the deliverable/sign-off artifact itself' : '')
+          verif.join(' || ') || (st.length && st.every(isProcessStory) ? 'Process — verified by the deliverable/sign-off artifact itself' : ''),
+          t.jira || ''
         ]);
       });
       download(safeName() + '-wbs-dictionary.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
@@ -8981,7 +9085,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           dateStr(t.startDate), dateStr(t.finishDate),
           ((t.percentComplete||0)/100).toFixed(2),
           preds, taskParticipants(t).map(pr => pr.name).join(', ') || '',
-          [t.isSummary ? 'Summary' : '', t.milestone ? 'Milestone' : '', (!t.milestone && !t.isSummary && t.units !== 100) ? ('Allocation ' + t.units + '%') : '', t.deliverable ? ('Deliverable: ' + t.deliverable) : '', storiesForTask(t.id).length ? ('Stories: ' + storyTraceText(t.id, true)) : ''].filter(Boolean).join('; ')
+          [t.isSummary ? 'Summary' : '', t.milestone ? 'Milestone' : '', (!t.milestone && !t.isSummary && t.units !== 100) ? ('Allocation ' + t.units + '%') : '', t.deliverable ? ('Deliverable: ' + t.deliverable) : '', storiesForTask(t.id).length ? ('Stories: ' + storyTraceText(t.id, true)) : '', t.jira ? ('Jira: ' + t.jira) : ''].filter(Boolean).join('; ')
         ]);
       });
       download(safeName() + '-smartsheet.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
@@ -9078,7 +9182,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         <Milestone>${t.milestone ? 1 : 0}</Milestone>
         <PercentComplete>${Math.round(t.percentComplete || 0)}</PercentComplete>
         <PercentWorkComplete>${Math.round(t.percentComplete || 0)}</PercentWorkComplete>${storiesForTask(t.id).length ? `
-        <Notes>${escapeXml('User stories — ' + storyTraceText(t.id, true))}</Notes>` : ''}${preds}
+        <Notes>${escapeXml('User stories — ' + storyTraceText(t.id, true) + (t.jira ? ' | Jira: ' + t.jira : ''))}</Notes>` : ''}${t.jira && !storiesForTask(t.id).length ? `\n        <Notes>${escapeXml('Jira: ' + t.jira)}</Notes>` : ''}${preds}
       </Task>`;
       });
 
@@ -11303,6 +11407,141 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
     }
 
     // ========================= INIT =========================
+
+    // ================= POLISH: reactive behaviors =================
+    function motionOK() { return !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches); }
+    function switchTabAnimated(name) {
+      if (document.startViewTransition && motionOK() && !document.querySelector('.modal-overlay.open')) document.startViewTransition(() => switchTab(name));
+      else switchTab(name);
+    }
+    // sliding pill under the active tab
+    function updateTabSlider() {
+      const bar = document.querySelector('.tabs'); if (!bar) return;
+      let sl = bar.querySelector('.tab-slider');
+      const act = bar.querySelector('.tab.active'); if (!act) return;
+      if (!sl) { sl = document.createElement('div'); sl.className = 'tab-slider'; bar.prepend(sl); }
+      sl.style.left = act.offsetLeft + 'px';
+      sl.style.top = act.offsetTop + 'px';
+      sl.style.width = act.offsetWidth + 'px';
+      sl.style.height = act.offsetHeight + 'px';
+      if (bar.scrollWidth > bar.clientWidth + 4) { // swipeable mobile bar: keep the active tab in view
+        const target = Math.max(0, Math.min(act.offsetLeft - (bar.clientWidth - act.offsetWidth) / 2, bar.scrollWidth - bar.clientWidth));
+        bar.scrollTo({ left: target, behavior: motionOK() ? 'smooth' : 'auto' });
+      }
+    }
+    window.addEventListener('resize', () => updateTabSlider());
+    // KPI tiles: stagger in + count-animate changed values
+    let _tileVals = {};
+    function animateTiles() {
+      const grid = document.getElementById('summaryGrid'); if (!grid || !grid.children.length) return;
+      grid.classList.remove('tiles-in'); void grid.offsetWidth; grid.classList.add('tiles-in');
+      grid.querySelectorAll('.stat-card').forEach(card => {
+        const vEl = card.querySelector('.value'); if (!vEl) return;
+        const key = (card.querySelector('.label') || { textContent: '' }).textContent;
+        const m = String(vEl.textContent).match(/^(-?\d+(?:\.\d+)?)(.*)$/);
+        if (!m) { _tileVals[key] = null; return; }
+        const to = parseFloat(m[1]), suffix = m[2], from = _tileVals[key];
+        _tileVals[key] = to;
+        if (key.indexOf('Overall Complete') >= 0 && to >= 100) celebrate100();
+        if (!motionOK() || !Number.isFinite(from) || from === to) return;
+        const dec = (m[1].split('.')[1] || '').length;
+        const t0 = performance.now();
+        const step = now => { const k = Math.min(1, (now - t0) / 380), e = 1 - Math.pow(1 - k, 3);
+          vEl.textContent = (from + (to - from) * e).toFixed(dec) + suffix;
+          if (k < 1) requestAnimationFrame(step); };
+        requestAnimationFrame(step);
+      });
+    }
+    // one tasteful celebration, once per session, when the plan reaches 100%
+    function celebrate100() {
+      if (celebrate100._done || !motionOK()) return;
+      celebrate100._done = true;
+      flashSaved('🎉 100% complete — every acceptance criterion earned');
+      const cv = document.createElement('canvas');
+      cv.width = innerWidth; cv.height = innerHeight;
+      cv.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483000';
+      document.body.appendChild(cv);
+      const cx = cv.getContext('2d');
+      const cols = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed'];
+      const ps = Array.from({ length: 70 }, () => ({ x: innerWidth / 2, y: innerHeight * 0.35, vx: (Math.random() - .5) * 14, vy: -Math.random() * 11 - 3, r: Math.random() * 5 + 2, c: cols[Math.floor(Math.random() * cols.length)], a: Math.random() * Math.PI }));
+      const t0 = performance.now();
+      const tick = now => {
+        const k = (now - t0) / 1300;
+        cx.clearRect(0, 0, cv.width, cv.height);
+        ps.forEach(pp => { pp.x += pp.vx; pp.y += pp.vy; pp.vy += 0.35; pp.a += 0.2;
+          cx.save(); cx.translate(pp.x, pp.y); cx.rotate(pp.a); cx.globalAlpha = Math.max(0, 1 - k);
+          cx.fillStyle = pp.c; cx.fillRect(-pp.r, -pp.r / 2, pp.r * 2, pp.r); cx.restore(); });
+        if (k < 1) requestAnimationFrame(tick); else cv.remove();
+      };
+      requestAnimationFrame(tick);
+    }
+    // Gantt bars GLIDE to their new positions after a recalc (translate-only
+    // FLIP on the per-task <g> groups — widths snap, positions animate)
+    let _gGeom = null;
+    function ganttGlide() {
+      const cont = document.getElementById('ganttContainer'); if (!cont) { _gGeom = null; return; }
+      const groups = [...cont.querySelectorAll('g[data-gopen]')];
+      const next = {};
+      groups.forEach(g => { try { const bb = g.getBBox(); next[g.dataset.gopen] = { x: bb.x, y: bb.y }; } catch (e) {} });
+      if (_gGeom && motionOK()) {
+        groups.forEach(g => {
+          const prev = _gGeom[g.dataset.gopen], now2 = next[g.dataset.gopen];
+          if (!prev || !now2) return;
+          const dx = prev.x - now2.x, dy = prev.y - now2.y;
+          if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+          const t0 = performance.now();
+          const step = nw => { const k = Math.min(1, (nw - t0) / 300), e = 1 - Math.pow(1 - k, 3);
+            g.setAttribute('transform', 'translate(' + (dx * (1 - e)) + ',' + (dy * (1 - e)) + ')');
+            if (k < 1) requestAnimationFrame(step); else g.removeAttribute('transform'); };
+          requestAnimationFrame(step);
+        });
+      }
+      _gGeom = next;
+    }
+    // scroll + row-flash preserving wrappers (rebuilt tables no longer jump)
+    window.__rowFlash = null;
+    { const _rtt = renderTaskTable;
+      renderTaskTable = function() {
+        const tb = document.getElementById('taskBody');
+        const w = tb ? tb.closest('.table-wrap') : null;
+        const st = w ? w.scrollTop : 0, sl = w ? w.scrollLeft : 0;
+        _rtt.apply(this, arguments);
+        const w2 = document.getElementById('taskBody') ? document.getElementById('taskBody').closest('.table-wrap') : null;
+        if (w2) { w2.scrollTop = st; w2.scrollLeft = sl; }
+        if (window.__rowFlash != null) {
+          const cell = document.querySelector('#taskBody td[data-pred-id="' + window.__rowFlash + '"]');
+          const tr = cell && cell.closest('tr');
+          if (tr) { tr.classList.add('row-flash'); setTimeout(() => tr.classList.remove('row-flash'), 1400); }
+          window.__rowFlash = null;
+        }
+      }; }
+    { const _rg = renderGantt;
+      renderGantt = function() { _rg.apply(this, arguments); ganttGlide(); }; }
+    { const _rr = renderReqs;
+      renderReqs = function() {
+        const active = document.getElementById('view-req').classList.contains('active');
+        const y = active ? window.scrollY : null;
+        _rr.apply(this, arguments);
+        if (y != null) window.scrollTo(0, y);
+      }; }
+    { const _calc = calculate;
+      calculate = function() {
+        _calc.apply(this, arguments);
+        const b = document.getElementById('calcBtn');
+        if (b && calculated) {
+          const tx = b.textContent;
+          b.classList.add('btn-done'); b.textContent = '✓ Calculated';
+          clearTimeout(calculate._t);
+          calculate._t = setTimeout(() => { b.classList.remove('btn-done'); b.textContent = tx; }, 950);
+        }
+      }; }
+    { const _fs = flashSaved;
+      flashSaved = function(msg) {
+        _fs.apply(this, arguments);
+        const el = document.getElementById('savedIndicator');
+        if (el) { el.classList.remove('flash-pop'); void el.offsetWidth; el.classList.add('flash-pop'); }
+      }; }
+
     (async function init() {
       // header dropdowns (Export / Projects) close on an outside tap, and on
       // picking an action inside — essential on phones, where the panel is a
@@ -11324,6 +11563,7 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
       renderHolidayChips();
       renderTaskTable();
       renderProjectMenu();
+      updateTabSlider();
       renderRaid();
       updateClientSafeBtn();
       renderNarrativePanel();
