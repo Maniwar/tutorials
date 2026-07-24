@@ -410,7 +410,19 @@
     details.help-details { margin-bottom: 0.75rem; }
     .info-icon { cursor: pointer; border: none; }
     label:has(+ .info-icon) { display: inline-block; margin-right: 0.3rem; }
-    label + .info-icon { vertical-align: baseline; }
+    label + .info-icon { vertical-align: middle; }
+    /* a field's label + its "i" button share one line; the field(s) drop to full-width
+       rows below. Flex-wrap keeps the button beside even a wrapping label, and works for
+       multi-field groups (e.g. attendees) — inside the modal's flex-column .form-group the
+       button would otherwise stack as its own row, splitting the label from its field. */
+    .modal .form-group:has(> button.info-icon) { flex-direction: row; flex-wrap: wrap; align-items: center; row-gap: 0.3rem; }
+    .modal .form-group:has(> button.info-icon) > label { flex: 0 1 auto; min-width: 0; margin: 0; padding: 0; }
+    .modal .form-group:has(> button.info-icon) > button.info-icon { flex: none; align-self: center; }
+    .modal .form-group:has(> button.info-icon) > input,
+    .modal .form-group:has(> button.info-icon) > select,
+    .modal .form-group:has(> button.info-icon) > textarea,
+    .modal .form-group:has(> button.info-icon) > div { flex: 1 0 100%; }
+    .modal .form-group:has(> button.info-icon) > button:not(.info-icon) { flex: 0 0 auto; }
     #helpPop { position: fixed; z-index: 300; max-width: 300px; background: #fff; border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--sh-3); padding: 0.6rem 0.75rem; font-size: var(--t-md); color: var(--text); line-height: 1.45; }
     /* W19: contained iconography */
     .ico { display: inline-block; width: 1.4em; text-align: center; flex: none; filter: grayscale(1); opacity: .8; }
@@ -815,7 +827,7 @@
           <div style="display:grid;grid-template-columns:110px 1fr 1.35fr;gap:0.75rem">
             <div class="form-group" style="margin-bottom:0"><label for="stId">ID</label><input id="stId" type="text" placeholder="US-1" /></div>
             <div class="form-group" style="margin-bottom:0"><label for="stEpic">Epic</label><select id="stEpic"></select></div>
-            <div class="form-group" style="margin-bottom:0"><label for="stWbs">WBS activity (traces to)</label><button type="button" class="info-icon" aria-label="About WBS activity (traces to)" data-help="The plan task that builds this story — status and completeness roll up from it">i</button><select id="stWbs"></select></div>
+            <div class="form-group" style="margin-bottom:0"><label for="stWbs">WBS activity</label><button type="button" class="info-icon" aria-label="About WBS activity (traces to)" data-help="The plan task that builds this story — status and completeness roll up from it">i</button><select id="stWbs"></select></div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1.35fr 0.85fr;gap:0.75rem;margin-top:0.7rem">
             <div class="form-group" style="margin-bottom:0"><label for="stPersona">As a… (persona)</label><button type="button" class="info-icon" aria-label="About As a… (persona)" data-help="WHO accepts the value — a client-side user, manager or stakeholder. Delivery-team roles are flagged by the lint on product stories.">i</button><input id="stPersona" type="text" placeholder="billing administrator" oninput="updateStoryPreview()" /></div>
