@@ -39,13 +39,22 @@ want a single screenshot, just screenshot; if they want motion, use this.
   `PW_CHROME=/abs/path/to/chrome`. See `references/gotchas.md`.
 - **ffmpeg + ffprobe**: `ffmpeg -version`. If missing: `apt-get install -y ffmpeg`
   (npm `ffmpeg-static` is often blocked behind proxies — prefer the system pkg).
-- **A TTS backend — only if you want voiceover.** Run
-  `python scripts/tts.py --list` to see what's available. Order of preference:
-  a premium API (`OPENAI_API_KEY` or `ELEVENLABS_API_KEY`) for a human voice →
-  Piper (`pip install piper-tts`, neural, free, offline once its voice model is
-  fetched) → **espeak-ng** (`apt-get install -y espeak-ng`, robotic but always
-  works offline, no download). Install at least espeak-ng and narration will
-  never hard-fail. See `references/gotchas.md` for the voice-model-download quirk.
+- **A human-quality TTS backend — required for voiceover.** Run
+  `python scripts/tts.py --list` to see what's available. A robotic synth is
+  never selected automatically: a demo you publish with a formant voice reads as
+  cheap, and no amount of good motion design recovers it. In order of preference:
+  1. **`pip install edge-tts`** — free, no API key, genuinely human Microsoft
+     neural voices (`en-US-AriaNeural`, `en-US-GuyNeural`, …; browse with
+     `edge-tts --list-voices`). Needs outbound HTTPS to `speech.platform.bing.com`
+     — some locked-down sandboxes block it.
+  2. **`OPENAI_API_KEY` / `ELEVENLABS_API_KEY`** — best control over delivery,
+     and works anywhere HTTPS to the vendor is allowed.
+  3. **Piper** (`pip install piper-tts` + a voice model) — offline neural; the
+     model comes from HuggingFace, which some sandboxes block.
+
+  espeak-ng exists ONLY to hear your timing back while editing. Ask for it
+  explicitly (`--backend espeak`, or `allow_robotic: true` in the manifest) and
+  never ship it. See `references/gotchas.md`.
 - **A scratch dir** for `clips/`, `cards/`, and the manifest — use the session
   scratchpad, not the repo.
 
@@ -179,7 +188,9 @@ don't. `ffmpeg -i out.mp4 -vf fps=1/3 /tmp/qa_%03d.png` then read them.
 - Card text has no typos and matches the app's story.
 - Transitions don't cut mid-motion; total length matches the brief.
 - File plays (has `+faststart`) and is a sane size (≈ crf 22 → a few MB/min).
-- **If narrated:** there's a real audio stream (`ffprobe -select_streams a:0 …`),
+- **If narrated:** the voice is a HUMAN-quality backend (edge/openai/elevenlabs/piper) —
+  if it sounds robotic, stop and fix the backend rather than shipping it. There's a
+  real audio stream (`ffprobe -select_streams a:0 …`),
   it's 48 kHz, and the length matches (segments stretch to fit their voice, so a
   narrated demo is usually longer than the raw clips). Play it or at least check
   `ffmpeg -i out.mp4 -af volumedetect -f null -` for a sane level (max near the

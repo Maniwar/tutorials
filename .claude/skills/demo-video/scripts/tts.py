@@ -94,11 +94,27 @@ def _piper_model(cfg):
     return None
 
 
+# Backends that produce a genuinely human-sounding narrator. Anything outside
+# this set is a formant/diphone synth — fine to hear your timing back, never
+# acceptable in a demo you publish, so it is opt-in only (see ROBOTIC).
+HUMAN = ("elevenlabs", "openai", "edge", "piper")
+ROBOTIC = ("espeak",)
+
+
+def _has_edge():
+    try:
+        import edge_tts  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
 def available():
     """Report which backends can run right now (for --list and auto)."""
     return {
         "elevenlabs": bool(os.environ.get("ELEVENLABS_API_KEY")),
         "openai": bool(os.environ.get("OPENAI_API_KEY")),
+        "edge": _has_edge(),
         "piper": bool(shutil.which("piper")) and _piper_model({}) is not None,
         "espeak": bool(shutil.which("espeak-ng") or shutil.which("espeak")),
     }
@@ -112,15 +128,24 @@ def pick_backend(cfg):
         return "elevenlabs"
     if os.environ.get("OPENAI_API_KEY"):
         return "openai"
+    if _has_edge():
+        return "edge"          # free, no key, genuinely human
     if shutil.which("piper") and _piper_model(cfg):
         return "piper"
-    if shutil.which("espeak-ng") or shutil.which("espeak"):
+    # A robotic synth is NEVER chosen automatically — it would quietly ship a
+    # voice nobody wants to publish. Ask for it explicitly if you just want to
+    # hear the timing: backend "espeak", or allow_robotic: true in the manifest.
+    if cfg.get("allow_robotic") and (shutil.which("espeak-ng") or shutil.which("espeak")):
         return "espeak"
     raise RuntimeError(
-        "No TTS backend available. Install one:\n"
-        "  apt-get install -y espeak-ng           # always-works fallback\n"
-        "  pip install piper-tts                   # neural, needs a voice model\n"
-        "  export OPENAI_API_KEY=... (or ELEVENLABS_API_KEY=...)  # premium")
+        "No human-quality TTS backend available — refusing to narrate with a robotic voice.\n"
+        "Pick one:\n"
+        "  pip install edge-tts                    # FREE, no API key, real neural voices (needs outbound HTTPS\n"
+        "                                          #   to speech.platform.bing.com — blocked in some sandboxes)\n"
+        "  export OPENAI_API_KEY=...               # or ELEVENLABS_API_KEY=... for the best control\n"
+        "  pip install piper-tts + a voice model   # offline neural; model is fetched from HuggingFace\n"
+        "\n"
+        "To hear timing only (NOT for publishing), re-run with backend 'espeak' or allow_robotic: true.")
 
 
 # ---- backends ---------------------------------------------------------------
@@ -192,7 +217,50 @@ def _elevenlabs(text, out, cfg, tmp):
     return _to_wav(raw, out)
 
 
-_BACKENDS = {"espeak": _espeak, "piper": _piper, "openai": _openai, "elevenlabs": _elevenlabs}
+def _edge(text, out, cfg, tmp):
+    """Microsoft Edge neural voices: genuinely human, FREE, no API key.
+    Needs outbound HTTPS to speech.platform.bing.com. Behind a TLS-inspecting
+    proxy, add its CA to certifi's bundle (never disable verification):
+      cat /path/to/proxy-ca.crt >> "$(python -c 'import certifi;print(certifi.where())')"
+    Browse voices with: edge-tts --list-voices
+    """
+    import asyncio
+    try:
+        import edge_tts
+    except ImportError:
+        raise RuntimeError("edge-tts not installed. pip install edge-tts")
+    voice = cfg.get("voice") or "en-US-AriaNeural"
+    rate = float(cfg.get("rate") or 1.0)
+    # edge-tts wants a relative percentage, e.g. "+10%" / "-5%"
+    pct = int(round((rate - 1.0) * 100))
+    rate_s = ("+" if pct >= 0 else "") + str(pct) + "%"
+    mp3 = os.path.join(tmp, "edge.mp3")
+
+    async def _go():
+        comm = edge_tts.Communicate(text, voice, rate=rate_s)
+        await comm.save(mp3)
+
+    try:
+        asyncio.run(_go())
+    except Exception as e:
+        msg = str(e)
+        hint = ""
+        if "403" in msg or "Handshake" in msg or "WSServerHandshake" in msg:
+            hint = ("\n  The gateway refused the connection to speech.platform.bing.com."
+                    "\n  Locked-down sandboxes commonly block it. Run this where outbound HTTPS"
+                    "\n  to that host is allowed, or set OPENAI_API_KEY / ELEVENLABS_API_KEY.")
+        elif "CERTIFICATE_VERIFY_FAILED" in msg or "self-signed" in msg:
+            hint = ("\n  A TLS-inspecting proxy is in the way. Add its CA to certifi (do NOT disable"
+                    "\n  verification):  cat <proxy-ca.crt> >> \"$(python -c 'import certifi;print(certifi.where())')\"")
+        raise RuntimeError("edge-tts could not synthesize: " + msg.split("\n")[0] + hint)
+    if not os.path.exists(mp3) or os.path.getsize(mp3) == 0:
+        raise RuntimeError(
+            "edge-tts produced no audio — the speech endpoint was unreachable "
+            "(some sandboxes/proxies block it). Use an API key backend, or run where it is reachable.")
+    return _to_wav(mp3, out)
+
+
+_BACKENDS = {"espeak": _espeak, "piper": _piper, "openai": _openai, "elevenlabs": _elevenlabs, "edge": _edge}
 
 
 def synth(text, out, cfg=None):
@@ -202,6 +270,8 @@ def synth(text, out, cfg=None):
     if not text:
         raise ValueError("empty narration text")
     backend = pick_backend(cfg)
+    if backend in ROBOTIC and not cfg.get("allow_robotic") and (cfg.get("backend") or "auto").lower() == "auto":
+        raise RuntimeError("refusing to auto-select a robotic voice; see pick_backend guidance")
     fn = _BACKENDS.get(backend)
     if not fn:
         raise RuntimeError("unknown TTS backend: " + backend)

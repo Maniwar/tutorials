@@ -53,12 +53,18 @@ echo "Optional tools (the skill guides you if one is missing):"
 check() { if command -v "$1" >/dev/null 2>&1; then echo "  ✓ $1"; else echo "  · $1   ($2)"; fi; }
 check node   "needed to record — install Node.js"
 check ffmpeg "needed to assemble — apt-get install -y ffmpeg / brew install ffmpeg"
-check espeak-ng "offline voiceover fallback — apt-get install -y espeak-ng (optional)"
+check espeak-ng "TIMING PREVIEW ONLY — never publish this voice (apt-get install -y espeak-ng)"
+if python3 -c "import edge_tts" >/dev/null 2>&1; then
+  echo "  ✓ edge-tts   (free human neural voice — the recommended narrator)"
+else
+  echo "  · edge-tts   (RECOMMENDED for voiceover: pip install edge-tts — free, no API key)"
+fi
 if node -e "require('playwright-core')" >/dev/null 2>&1 || node -e "require('playwright')" >/dev/null 2>&1; then
   echo "  ✓ playwright"
 else
   echo "  · playwright   (npm i -g playwright-core, or in your recording dir)"
 fi
 echo
-echo "Tip: for a real voiceover set OPENAI_API_KEY or ELEVENLABS_API_KEY, or"
-echo "     'pip install piper-tts' + download a voice. espeak-ng is the fallback."
+echo "Voiceover: 'pip install edge-tts' gives a free, genuinely human narrator with no"
+echo "     API key. OPENAI_API_KEY / ELEVENLABS_API_KEY give more control. espeak is"
+echo "     for hearing your timing back while editing — never for a published cut."

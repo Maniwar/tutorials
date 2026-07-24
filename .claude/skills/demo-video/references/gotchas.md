@@ -210,3 +210,34 @@ voice model won't download.
   the script — see the environment's proxy README. Mock the calls you don't need
   (`mockSSE`) so a flaky upstream can't break the shoot.
 - Never disable TLS verification to "fix" a recording; mock or prime instead.
+
+
+## Voiceover: getting a voice that doesn't sound like a robot
+
+`espeak` is a formant synthesizer. It is useful for hearing your pacing while you
+cut, and unacceptable in anything you publish — so `tts.py` never selects it
+automatically. If the assembler stops with "No human-quality TTS backend
+available", that guard is doing its job; install a real voice rather than forcing
+the robotic one.
+
+**edge-tts is the best free option.** `pip install edge-tts` gives Microsoft's
+neural voices with no API key and no model download. Browse them with
+`edge-tts --list-voices`; `en-US-AriaNeural` and `en-US-GuyNeural` are safe
+narrator picks. Set it per-render with `"tts": {"backend": "edge", "voice": "en-US-AriaNeural"}`.
+
+Two failure modes worth recognizing:
+
+- **`CERTIFICATE_VERIFY_FAILED` / self-signed certificate.** A TLS-inspecting
+  proxy sits in front of you, and `edge-tts` pins certifi's bundle so `SSL_CERT_FILE`
+  is ignored. Append the proxy's CA to certifi — add a trusted CA, never disable
+  verification:
+  `cat /path/to/proxy-ca.crt >> "$(python -c 'import certifi;print(certifi.where())')"`
+- **`403` on the websocket to `speech.platform.bing.com`.** The gateway is denying
+  that host outright; no client-side fix exists. Use `OPENAI_API_KEY` /
+  `ELEVENLABS_API_KEY`, or run the render somewhere with open egress.
+
+**Piper** is the offline neural option, but its voice models come from
+HuggingFace. If `huggingface.co` is blocked (common in sandboxes) the model cannot
+be fetched, and no pip/npm package bundles one — `piper-tts-web` ships the runtime
+and still downloads voices at run time. Fetch the `.onnx` + `.onnx.json` on an open
+network and point at it with `piper_model`.
