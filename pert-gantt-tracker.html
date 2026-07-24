@@ -5139,7 +5139,14 @@
         p50: pct(0.5), p80: pct(0.8), p90: pct(0.9), p95: pct(0.95),
         min: durations[0], max: durations[durations.length - 1],
         costP50: pctOf(costS, 0.5), costP80: pctOf(costS, 0.8), costP90: pctOf(costS, 0.9),
-        revP50: pctOf(revS, 0.5), revP80: pctOf(revS, 0.8), revP90: pctOf(revS, 0.9)
+        revP50: pctOf(revS, 0.5), revP80: pctOf(revS, 0.8), revP90: pctOf(revS, 0.9),
+        // Keep the sorted MONEY distributions, not just three percentiles off them.
+        // Pricing is the one place the spread itself is the argument — "this bid
+        // absorbs risk up to here" needs the curve, and drawing a smooth line
+        // through three saved points would invent shape the simulation never had.
+        // Same lifetime as `durations` above, and mcResult is memory-only (never
+        // serialised), so this costs nothing on disk.
+        costDist: costS, revDist: revS
       };
       mcRand = Math.random;
     }
