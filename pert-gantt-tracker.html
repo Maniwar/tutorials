@@ -951,17 +951,18 @@
         <div id="estFields" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
           <div class="form-group">
             <label>Optimistic (O) * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label>
-            <input id="mO" type="number" min="0" step="0.1" placeholder="Best case" />
+            <input id="mO" type="text" inputmode="decimal" placeholder="Best case — 2d · 4h · 30m" oninput="ompHintUpd()" />
           </div>
           <div class="form-group">
             <label>Most Likely (M) * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label>
-            <input id="mM" type="number" min="0" step="0.1" placeholder="Expected" />
+            <input id="mM" type="text" inputmode="decimal" placeholder="Expected — 2d · 4h · 30m" oninput="ompHintUpd()" />
           </div>
           <div class="form-group">
             <label>Pessimistic (P) * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label>
-            <input id="mP" type="number" min="0" step="0.1" placeholder="Worst case" />
+            <input id="mP" type="text" inputmode="decimal" placeholder="Worst case — 2d · 4h · 30m" oninput="ompHintUpd()" />
           </div>
         </div>
+        <div id="ompHint" class="help-text" style="display:none;margin:-0.4rem 0 0.8rem"></div>
         <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:0.75rem">
           <div class="form-group">
             <label>Owner / Resource</label>
@@ -1095,6 +1096,41 @@
     function unitLabel() {
       const u = document.getElementById('durationUnit').value;
       return u === 'weeks' ? 'wks' : u === 'hours' ? 'hrs' : 'days';
+    }
+    // Duration EXPRESSIONS anywhere an estimate is typed: "2d", "4h", "30m",
+    // "90 min", "1.5 days", "1d 4h", "2w" — converted into the project's
+    // current unit (1 day = 8 h; 1 week = 5 working days). A plain number
+    // stays exactly what it always was: a value in the current unit.
+    function parseDurExpr(v) {
+      const s0 = String(v == null ? '' : v).trim().toLowerCase();
+      if (s0 === '') return NaN;
+      if (/^\d+(\.\d+)?$/.test(s0)) return parseFloat(s0); // plain number = current unit
+      const TOK = /(\d+(?:\.\d+)?)\s*(weeks|week|wks|wk|w|days|day|d|hours|hour|hrs|hr|h|minutes|minute|mins|min|m)(?![a-z])/g;
+      let m2, total = 0, matched = false;
+      while ((m2 = TOK.exec(s0))) {
+        matched = true;
+        const n = parseFloat(m2[1]);
+        const u = m2[2][0];
+        total += u === 'w' ? n * 5 : u === 'd' ? n : u === 'h' ? n / 8 : n / 480; // working days
+      }
+      if (!matched) return NaN;
+      const leftover = s0.replace(/(\d+(?:\.\d+)?)\s*(weeks|week|wks|wk|w|days|day|d|hours|hour|hrs|hr|h|minutes|minute|mins|min|m)(?![a-z])/g, '').replace(/[\s,+and]+/g, '');
+      if (leftover) return NaN; // stray text → reject rather than guess
+      const unit = document.getElementById('durationUnit').value;
+      return unit === 'hours' ? total * 8 : unit === 'weeks' ? total / 5 : total;
+    }
+    // live hint under estimate fields: what "4h" became in project units
+    function durExprEcho(raw) {
+      const s2 = String(raw || '').trim();
+      if (!s2 || /^\d+(\.\d+)?$/.test(s2)) return '';
+      const n = parseDurExpr(s2);
+      return Number.isFinite(n) ? '\u201c' + s2 + '\u201d = ' + (+n.toFixed(4)) + ' ' + unitLabel() : '\u201c' + s2 + '\u201d \u2014 not a duration (try 2d, 4h, 30m)';
+    }
+    function ompHintUpd() {
+      const el = document.getElementById('ompHint'); if (!el) return;
+      const parts = ['mO', 'mM', 'mP'].map(id => durExprEcho(document.getElementById(id).value)).filter(Boolean);
+      el.textContent = parts.join('  \u00b7  ');
+      el.style.display = parts.length ? 'block' : 'none';
     }
     // Auto-scaling duration display: the MATH stays in the project unit (one
     // canonical unit, no mixed-unit scheduling), but sub-day values READ as
@@ -1905,6 +1941,7 @@
       document.getElementById('mP').value = '';
       document.getElementById('mOwner').value = '';
       updateOwnerRoleHint();
+      ompHintUpd();
       document.getElementById('mUnits').value = 100;
       document.getElementById('mPct').value = 0;
       document.getElementById('mFixedCost').value = 0;
@@ -1987,6 +2024,7 @@
       document.getElementById('mP').value = isSum ? (t.pUp != null ? +(+t.pUp).toFixed(2) : '') : t.p;
       document.getElementById('mOwner').value = t.owner || '';
       updateOwnerRoleHint();
+      ompHintUpd();
       document.getElementById('mUnits').value = (t.units == null ? 100 : t.units);
       document.getElementById('mPct').value = t.percentComplete || 0;
       document.getElementById('mFixedCost').value = t.fixedCost || 0;
@@ -2173,10 +2211,10 @@
       const isSum = editingId != null && isSummaryId(editingId);
       if (isMs || isSum) { o = m = p = 0; } // summary: fields are display-only rollups — real values preserved below
       else {
-        o = parseFloat(document.getElementById('mO').value);
-        m = parseFloat(document.getElementById('mM').value);
-        p = parseFloat(document.getElementById('mP').value);
-        if ([o,m,p].some(v => isNaN(v) || v < 0)) return showErr('All three estimates must be non-negative numbers.');
+        o = parseDurExpr(document.getElementById('mO').value);
+        m = parseDurExpr(document.getElementById('mM').value);
+        p = parseDurExpr(document.getElementById('mP').value);
+        if ([o,m,p].some(v => isNaN(v) || v < 0)) return showErr('Estimates must be numbers in ' + unitLabel() + ' or durations like 2d, 4h, 30m (combos work too: 1d 4h).');
         if (o > m || m > p) return showErr('Must satisfy Optimistic ≤ Most Likely ≤ Pessimistic.');
         if (p === 0) return showErr('Pessimistic must be greater than 0 for a real activity (or mark it a milestone).');
       }
@@ -2532,9 +2570,9 @@
     }
     function beginOmpEdit(td, id, f) {
       const t = tasks.find(x => x.id === id); if (!t) return;
-      beginCellEdit(td, `<input type="number" min="0" step="0.1" value="${t[f]}" style="width:74px;padding:0.3rem 0.4rem;font-size:0.8rem" />`, v => {
-        const n = parseFloat(v);
-        if (isNaN(n) || n < 0) return 'Enter a non-negative number';
+      beginCellEdit(td, `<input type="text" inputmode="decimal" value="${t[f]}" style="width:84px;padding:0.3rem 0.4rem;font-size:0.8rem" title="A number in ${unitLabel()} — or a duration: 2d, 4h, 30m, 1d 4h" />`, v => {
+        const n = parseDurExpr(v);
+        if (isNaN(n) || n < 0) return 'Enter a number (' + unitLabel() + ') or a duration like 2d / 4h / 30m';
         const trial = { o: t.o, m: t.m, p: t.p }; trial[f] = n;
         if (trial.o > trial.m || trial.m > trial.p) return 'Must keep O ≤ M ≤ P (' + trial.o + ' / ' + trial.m + ' / ' + trial.p + ') — adjust the other cells too';
         if (f === 'p' && n <= 0) return 'Pessimistic must be > 0 for a real activity';
@@ -8625,9 +8663,10 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         const { cell, ri } = pr;
         const errs = [];
         const numOf = (i, dflt) => { const v = cell(i); if (v === '') return dflt; const n = parseFloat(v); if (!Number.isFinite(n)) { errs.push('"' + v + '" is not a number'); return dflt; } return n; };
+        const durOf = (i, dflt) => { const v = cell(i); if (v === '') return dflt; const n = parseDurExpr(v); if (!Number.isFinite(n)) { errs.push('"' + v + '" is not a duration (use 2, 2d, 4h or 30m)'); return dflt; } return n; };
         const isMs = /^(yes|true|1|milestone)$/i.test(cell(c.ms)) || cell(1) === 'milestone';
         const isSum = pr.t ? isSummaryId(pr.t.id) : false;
-        const o = numOf(c.o, isMs ? 0 : 1), m = numOf(c.m, isMs ? 0 : o), p = numOf(c.p, isMs ? 0 : m);
+        const o = durOf(c.o, isMs ? 0 : 1), m = durOf(c.m, isMs ? 0 : o), p = durOf(c.p, isMs ? 0 : m);
         if (!isMs && !isSum && !(o <= m && m <= p)) errs.push('estimates must satisfy O ≤ M ≤ P (got ' + o + '/' + m + '/' + p + ')');
         const preds = []; const badPred = [];
         cell(c.preds).split(/[,;]+/).map(x => x.trim()).filter(Boolean).forEach(tok => {
@@ -8783,7 +8822,8 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         }
         const errs = [];
         const numOf = (i, dflt) => { const v = cell(i); if (v === '') return dflt; const n = parseFloat(v); if (!Number.isFinite(n)) { errs.push('"' + v + '" is not a number'); return dflt; } return n; };
-        const o = numOf(c.o, tc ? tc.o : 0.02), m = numOf(c.m, tc ? tc.m : 0.04), p = numOf(c.p, tc ? tc.p : 0.09);
+        const durOf = (i, dflt) => { const v = cell(i); if (v === '') return dflt; const n = parseDurExpr(v); if (!Number.isFinite(n)) { errs.push('"' + v + '" is not a duration (use 2, 2d, 4h or 30m)'); return dflt; } return n; };
+        const o = durOf(c.o, tc ? tc.o : 0.02), m = durOf(c.m, tc ? tc.m : 0.04), p = durOf(c.p, tc ? tc.p : 0.09);
         if (!(o <= m && m <= p)) errs.push('estimates must satisfy O \u2264 M \u2264 P');
         if (errs.length) { rep.rejected.push('row ' + (ri + 2) + ' ("' + (cell(c.name) || idRaw) + '"): ' + errs.join('; ')); return; }
         if (!tc) { // new test case, placed with its siblings under the AC's story
@@ -10130,7 +10170,8 @@ Estimate rules: an estimates[] entry ONLY for rows where new O/M/P numbers were 
         (res.estimates || []).forEach(up => {
           const t = leafTasks().find(x => x.name.toLowerCase() === String(up.task || '').trim().toLowerCase());
           if (!t || t.milestone) return;
-          const o = +up.optimistic, m = +up.mostLikely, p = +up.pessimistic;
+          const numOrDur = x => Number.isFinite(+x) ? +x : parseDurExpr(x);
+          const o = numOrDur(up.optimistic), m = numOrDur(up.mostLikely), p = numOrDur(up.pessimistic);
           if (![o, m, p].every(Number.isFinite)) return;
           if (o < 0 || o > m || m > p || !(p > 0)) { badEst.push(t.name); return; } // reject nonsense rather than guessing
           if (o !== t.o || m !== t.m || p !== t.p) { t.o = o; t.m = m; t.p = p; estChanged++; }
