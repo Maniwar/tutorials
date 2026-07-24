@@ -34,10 +34,10 @@ Every new web session then has the skill from the first turn.
 ### Prerequisites (the installer reports what's missing)
 
 - **Node + Playwright** and **ffmpeg** are required to record and assemble.
-- **A TTS backend is optional** and only for voiceover: a premium API
-  (`OPENAI_API_KEY` / `ELEVENLABS_API_KEY`) for a human voice, or Piper
-  (`pip install piper-tts` + a voice model) for a free neural voice, or
-  `espeak-ng` as an always-offline fallback. Run
+- **A human-quality TTS backend** is needed for voiceover. Easiest: `pip install
+  edge-tts` — free, no API key, real neural voices. Or set `OPENAI_API_KEY` /
+  `ELEVENLABS_API_KEY`, or install Piper plus a voice model. Robotic synths
+  (espeak) are preview-only and never chosen automatically. Run
   `python ~/.claude/skills/demo-video/scripts/tts.py --list` to see what's on the
   machine.
 
