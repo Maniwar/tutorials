@@ -505,6 +505,17 @@
     .chip-edit .chip-x { border: none; background: transparent; color: #64748b; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 0.25rem; border-radius: 999px; }
     .chip-edit .chip-x:hover { background: #dbeafe; color: #b91c1c; }
     .chip-edit .chip-input { flex: 1 1 60px; min-width: 60px; border: none; outline: none; padding: 0.2rem 0.25rem; font-size: 0.8rem; background: transparent; }
+    /* static chip row (story ↔ activity links in the story editor) */
+    .chip-static { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+    .chip-static .chip { display: inline-flex; align-items: center; gap: 0.2rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; border-radius: 999px; padding: 0.1rem 0.2rem 0.1rem 0.55rem; font-size: 0.78rem; line-height: 1.5; max-width: 100%; }
+    .chip-static .chip-lbl { overflow: hidden; text-overflow: ellipsis; }
+    .chip-static .chip-x { border: none; background: transparent; color: #64748b; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 0.25rem; border-radius: 999px; }
+    .chip-static .chip-x:hover { background: #dbeafe; color: #b91c1c; }
+    /* story sentence: each clause on its own line so a long story reads cleanly */
+    .story-sentence { display: flex; flex-direction: column; gap: 0.15rem; line-height: 1.4; }
+    .story-sentence .sc-id { font-size: 0.72rem; color: var(--muted); font-weight: 700; letter-spacing: 0.02em; }
+    .story-sentence .sc-lead { color: var(--muted); font-weight: 700; font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 0.3rem; }
+    .story-sentence .sc-muted { color: var(--muted); }
     /* API key: a masked TEXT field, not a password field — browsers offer to
        "save password" on real password inputs (and then the key is viewable in
        the password manager). -webkit-text-security masks it on screen in
@@ -960,10 +971,16 @@
       <div class="modal" style="max-width:940px" role="dialog" aria-modal="true" aria-labelledby="storyModalTitle">
         <div class="modal-header"><h3 id="storyModalTitle">Edit user story</h3><button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeStoryModal()" aria-label="Close dialog">✕</button></div>
         <div class="modal-body">
-          <div style="display:grid;grid-template-columns:110px 1fr 1.35fr;gap:0.75rem">
+          <div style="display:grid;grid-template-columns:110px 1fr;gap:0.75rem">
             <div class="form-group" style="margin-bottom:0"><label for="stId">ID</label><input id="stId" type="text" placeholder="US-1" /></div>
             <div class="form-group" style="margin-bottom:0"><label for="stEpic">Epic</label><select id="stEpic"></select></div>
-            <div class="form-group" style="margin-bottom:0"><label for="stWbs">WBS activity</label><button type="button" class="info-icon" aria-label="About WBS activity (traces to)" data-help="The plan task that builds this story — status and completeness roll up from it">i</button><select id="stWbs"></select></div>
+          </div>
+          <div class="form-group" style="margin:0.7rem 0 0">
+            <span class="fg-head"><label for="stWbsInput">WBS activities (traces to)</label><button type="button" class="info-icon" aria-label="About WBS activities" data-help="Every plan activity this story builds. A story can trace to several — status and completeness roll up from all of them. Type a name or WBS code and pick to link; ✕ removes a link. The first is the primary.">i</button></span>
+            <div id="stWbsChips" class="chip-static" style="margin-bottom:0.35rem"></div>
+            <input id="stWbsInput" type="text" placeholder="Type an activity name or WBS code to link…" autocomplete="off" />
+            <!-- kept for back-compat with code that reads a single value; mirrors the primary link -->
+            <input id="stWbs" type="hidden" />
           </div>
           <div style="display:grid;grid-template-columns:1.35fr 0.85fr;gap:0.75rem;margin-top:0.7rem">
             <div class="form-group" style="margin-bottom:0"><label for="stVerif">Verified by</label><button type="button" class="info-icon" aria-label="About Verified by" data-help="UAT test cases = a tester executes steps against the built product (features, data rules, dashboards, access control). Artifact = acceptance is evidenced by the deliverable or record itself (meetings, requirements docs, design approvals, documentation, training, QA/UAT execution) — real acceptance criteria for billing, but 🧪 Generate test plan will NOT create test tasks for it.">i</button>
@@ -2175,6 +2192,7 @@
         epics: Array.isArray(data.reqs.epics) ? data.reqs.epics : [],
         stories: data.reqs.stories
       } : null;
+      normalizeStoryLinks();   // give every story a wbsIds[] (migrates old single wbsId)
       coLog = Array.isArray(data.coLog) ? data.coLog : [];
       collapsedIds = new Set(Array.isArray(data.collapsedIds) ? data.collapsedIds : []);
       nextId = data.nextId || (Math.max(0, ...tasks.map(t => t.id)) + 1);
@@ -7125,7 +7143,7 @@
       const idToTask = {}; tasks.forEach(t => idToTask[t.id] = t);
       const stories = reqs.stories, epics = reqs.epics || [];
       const leaves = storyableLeaves(); // test cases verify ACs — they never need stories themselves
-      const covered = new Set(stories.map(s => s.wbsId).filter(id => id != null));
+      const covered = new Set(stories.flatMap(storyWbsIds));
       const uncovered = leaves.filter(t => !covered.has(t.id));
       const allWarns = stories.reduce((n, s) => n + storyLint(s).length, 0);
       const acCount = stories.reduce((n, s) => n + (s.ac || []).length, 0);
@@ -7432,7 +7450,8 @@
     // AC-mix · trace · status), expandable for the Given/When/Then detail.
     // Stories with lint findings start expanded so problems are never hidden.
     function storyCardHtml(s, idToTask, typeIcon, typeTip) {
-      const t = s.wbsId != null ? idToTask[s.wbsId] : null;
+      const linkTasks = storyWbsIds(s).map(id => idToTask[id]).filter(Boolean);
+      const t = linkTasks[0] || null;
       const pct = t ? (t.percentComplete || 0) : null;
       const warns = storyLint(s);
       const acHtml = (s.ac || []).map(a => {
@@ -7442,7 +7461,7 @@
       }).join('');
       const nAc = k => (s.ac || []).filter(a => a.type === k).length;
       const mix = `✅${nAc('happy')} ⚠️${nAc('error')} 🧪${nAc('edge')}${nAc('perf') ? ' 📏' + nAc('perf') : ''}`;
-      const sentence = `<b>${escapeHtml(s.id)}</b> — As a <b>${escapeHtml(s.persona || '?')}</b>, I want to ${escapeHtml(s.want || '?')}<span style="color:var(--muted)">, so that ${escapeHtml(s.soThat || '?')}</span>`;
+      const sentence = `<span class="story-sentence"><b class="sc-id">${escapeHtml(s.id)}</b><span class="sc-clause"><span class="sc-lead">As a</span> <b>${escapeHtml(s.persona || '?')}</b></span><span class="sc-clause"><span class="sc-lead">I want to</span> ${escapeHtml(s.want || '?')}</span><span class="sc-clause sc-muted"><span class="sc-lead">so that</span> ${escapeHtml(s.soThat || '?')}</span></span>`;
       return `<details class="story-card" id="story-card-${escapeHtml(s.id)}" ${warns.length ? 'open' : ''} style="background:#fff;border:1px solid var(--border);border-left:4px solid ${warns.length ? 'var(--warn)' : 'transparent'};border-radius:10px;margin-bottom:0.5rem">
         <summary style="list-style:none;cursor:pointer;display:flex;justify-content:space-between;gap:0.6rem;align-items:center;flex-wrap:wrap;padding:0.5rem 1rem">
           <span style="flex:1;min-width:240px;font-size:0.85rem">${sentence}</span>
@@ -7450,8 +7469,8 @@
             <span class="story-chip" style="cursor:help" title="Acceptance-criteria mix: ${nAc('happy')} happy path · ${nAc('error')} error path · ${nAc('edge')} edge case${nAc('perf') ? ' · ' + nAc('perf') + ' performance' : ''}${(s.nfrs || []).length ? ' — plus ' + s.nfrs.length + ' NFR(s)' : ''}. Click the row to expand.">AC ${(s.ac || []).length}</span>
             ${jiraChip(s.jira)}
             ${warns.length ? `<span class="risk-tag" style="background:#fef3c7;color:#b45309;cursor:help" title="${escapeHtml(warns.join('\n'))}">${warns.length} lint</span>` : ''}
-            ${t ? `<span class="badge badge-info" style="cursor:pointer" onclick="event.preventDefault();event.stopPropagation();openEditModal(${t.id}, true)" title="Traces to WBS ${escapeHtml(t.wbs)} ${escapeHtml(t.name)} — click to open the activity (dictionary inside)">↳ ${escapeHtml(t.wbs)} ${escapeHtml(t.name.length > 22 ? t.name.slice(0, 20) + '…' : t.name)}</span>
-              <span class="badge ${pct >= 100 ? 'badge-done' : pct > 0 ? 'badge-prog' : 'badge-notstarted'}" title="Status inherited from the linked WBS activity — check work off on the Tasks tab and this follows">${pct >= 100 ? '✓ done' : pct > 0 ? pct + '%' : 'not started'}</span>`
+            ${linkTasks.length ? `${linkTasks.map(lt => `<span class="badge badge-info" style="cursor:pointer" onclick="event.preventDefault();event.stopPropagation();openEditModal(${lt.id}, true)" title="Traces to WBS ${escapeHtml(lt.wbs)} ${escapeHtml(lt.name)} — click to open the activity (dictionary inside)">↳ ${escapeHtml(lt.wbs)} ${escapeHtml(lt.name.length > 22 ? lt.name.slice(0, 20) + '…' : lt.name)}</span>`).join('')}
+              <span class="badge ${pct >= 100 ? 'badge-done' : pct > 0 ? 'badge-prog' : 'badge-notstarted'}" title="Status inherited from the primary linked activity${linkTasks.length > 1 ? ' (first of ' + linkTasks.length + ')' : ''} — check work off on the Tasks tab and this follows">${pct >= 100 ? '✓ done' : pct > 0 ? pct + '%' : 'not started'}</span>`
             : `<span class="badge badge-blocked" title="No linked WBS activity — this scope is NOT in the plan or the price. Link it in the editor, or create the missing activity from the story.">unlinked</span>
                <button class="btn-sm btn-secondary" data-story-mk="${escapeHtml(s.id)}" title="Create the missing WBS activity from this story: name from 'I want…', dictionary from the story + happy-path AC, nested under the epic's phase. It then needs an O/M/P estimate.">➕</button>`}
             <span class="story-actions"><button class="btn-sm btn-secondary" data-story-edit="${escapeHtml(s.id)}" title="Edit this story">✎</button>${(s.ac || []).some(a => testCasesForAC(a.id).length) ? `<button class="btn-sm btn-secondary" data-story-retc="${escapeHtml(s.id)}" title="Regenerate this story's test cases from the CURRENT acceptance criteria (AI). Rewritten IN PLACE — id, schedule position and links survive; % complete resets to 0. Use after editing the story or its criteria.">🧪↻</button>` : ''}</span>
@@ -7532,8 +7551,37 @@
       });
     }
     // stories traced to a given WBS task — used by every export for traceability
+    // ---- story ↔ activity links (MANY-to-many) ----------------------------
+    // A story can trace to several activities. `wbsIds` (array) is the source of
+    // truth; `wbsId` is kept as a synced mirror of the PRIMARY link (wbsIds[0])
+    // so all the existing single-link reads (SOW, exports, matrix) keep working.
+    function storyWbsIds(s) {
+      if (!s) return [];
+      if (Array.isArray(s.wbsIds)) return s.wbsIds.filter(id => id != null);
+      return s.wbsId != null ? [s.wbsId] : [];
+    }
+    function storyLinksTask(s, taskId) { return storyWbsIds(s).includes(taskId); }
+    // set a story's links from an id list: de-dupe, keep order, sync wbsId + wbsName
+    function setStoryLinks(s, ids) {
+      const clean = [...new Set((ids || []).filter(id => id != null && tasks.some(t => t.id === id)))];
+      s.wbsIds = clean;
+      s.wbsId = clean.length ? clean[0] : null;
+      const primary = clean.length ? tasks.find(t => t.id === clean[0]) : null;
+      if (primary) s.wbsName = primary.name;
+      return s;
+    }
+    // normalize every story to carry a wbsIds array (called on load / after AI)
+    function normalizeStoryLinks() {
+      if (!reqs || !Array.isArray(reqs.stories)) return;
+      reqs.stories.forEach(s => {
+        const ids = storyWbsIds(s).filter(id => tasks.some(t => t.id === id));
+        s.wbsIds = ids;
+        s.wbsId = ids.length ? ids[0] : (s.wbsId != null && tasks.some(t => t.id === s.wbsId) ? s.wbsId : (ids.length ? ids[0] : (s.wbsId ?? null)));
+        if (s.wbsId != null && !ids.includes(s.wbsId)) s.wbsIds = [s.wbsId, ...ids];
+      });
+    }
     function storiesForTask(taskId) {
-      return (reqs && Array.isArray(reqs.stories)) ? reqs.stories.filter(s => s.wbsId === taskId) : [];
+      return (reqs && Array.isArray(reqs.stories)) ? reqs.stories.filter(s => storyLinksTask(s, taskId)) : [];
     }
     function storyTraceText(taskId, withAc) {
       return storiesForTask(taskId).map(s =>
@@ -8169,6 +8217,44 @@ Write the test cases for the criteria above, following the contract exactly. Ret
         stAddAssumeRow(m ? { kind: m[1].toUpperCase(), text: m[2] } : { kind: 'A', text: l });
       });
     }
+    // ---- story editor: multi-activity link widget (chips + type-ahead) ----
+    let storyModalWbsIds = [];
+    let storyLinkMap = {};   // label → task id, rebuilt on each suggestion render
+    function storyLinkOptions() {
+      // activities a story can trace to: real activities, not milestones or test
+      // cases; a summary qualifies only if it itself hosts test cases (or is
+      // already linked). Same rule the old single-select used.
+      storyLinkMap = {};
+      return tasksInWbsOrder()
+        .filter(({ task: t }) => !t.milestone && !isTestCaseTask(t) && (!isSummaryId(t.id) || leafDescendants(t.id).every(isTestCaseTask) || storyModalWbsIds.includes(t.id)))
+        .map(({ task: t }) => { const label = (t.wbs ? t.wbs + ' · ' : '') + t.name; storyLinkMap[label] = t.id; return label; });
+    }
+    function renderStoryWbsChips() {
+      const wrap = document.getElementById('stWbsChips'); if (!wrap) return;
+      const hidden = document.getElementById('stWbs');
+      if (hidden) hidden.value = storyModalWbsIds.length ? String(storyModalWbsIds[0]) : '';
+      if (!storyModalWbsIds.length) { wrap.innerHTML = '<span class="help-text" style="font-size:var(--t-sm)">Not linked to any activity yet — this story has no home in the schedule.</span>'; return; }
+      wrap.innerHTML = storyModalWbsIds.map((id, i) => {
+        const t = tasks.find(x => x.id === id);
+        const label = t ? ((t.wbs ? t.wbs + ' · ' : '') + t.name) : ('#' + id);
+        return `<span class="chip" data-id="${id}"><span class="chip-lbl" title="${i === 0 ? 'Primary link' : ''}">${i === 0 ? '★ ' : ''}${escapeHtml(label)}</span><button type="button" class="chip-x" data-rm="${id}" aria-label="Unlink ${escapeHtml(label)}">×</button></span>`;
+      }).join('');
+      wrap.querySelectorAll('[data-rm]').forEach(btn => btn.addEventListener('click', e => {
+        e.preventDefault(); const id = +btn.dataset.rm;
+        storyModalWbsIds = storyModalWbsIds.filter(x => x !== id);
+        renderStoryWbsChips();
+        const inp = document.getElementById('stWbsInput'); if (inp && inp._suggestPop) inp.dispatchEvent(new Event('input'));
+      }));
+    }
+    function ensureStoryWbsSuggest() {
+      const inp = document.getElementById('stWbsInput'); if (!inp || inp._suggestAttached) return;
+      inp._suggestAttached = true;
+      attachTokenSuggest(inp, () => storyLinkOptions(), null, {
+        persist: true, single: true,
+        exclude: l => { const id = storyLinkMap[l]; return id != null && storyModalWbsIds.includes(id); },
+        onPick: l => { const id = storyLinkMap[l]; if (id != null && !storyModalWbsIds.includes(id)) { storyModalWbsIds.push(id); renderStoryWbsChips(); } inp.value = ''; },
+      });
+    }
     function openStoryModal(storyId) {
       if (!reqs) reqs = { personas: [], epics: [], stories: [] };
       editingStoryId = storyId;
@@ -8177,14 +8263,12 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       const epicSel = document.getElementById('stEpic');
       epicSel.innerHTML = '<option value="">(no epic)</option>' + (reqs.epics || []).map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.id + ' — ' + (e.title || ''))}</option>`).join('');
       computeWbsCodes();
-      const wbsSel = document.getElementById('stWbs');
-      // an activity hosting test-case sub-tasks is still a REAL activity a
-      // story traces to (🧪 nests TCs under it, which makes it LOOK like a
-      // summary) — excluding those silently dropped the trace on save
-      wbsSel.innerHTML = '<option value="">(not linked)</option>' + tasksInWbsOrder().filter(({ task: t }) => !t.milestone && !isTestCaseTask(t) && (!isSummaryId(t.id) || leafDescendants(t.id).every(isTestCaseTask) || (s && s.wbsId === t.id))).map(({ task: t, depth }) => `<option value="${t.id}">${' '.repeat(depth * 3)}${escapeHtml(t.wbs + ' ' + t.name)}</option>`).join('');
+      // multi-link: a story can trace to several activities (chips + type-ahead)
+      storyModalWbsIds = s ? storyWbsIds(s).filter(id => tasks.some(t => t.id === id)) : [];
+      renderStoryWbsChips();
+      ensureStoryWbsSuggest();
       document.getElementById('stId').value = s ? s.id : nextStoryId();
       epicSel.value = s ? (s.epicId || '') : '';
-      wbsSel.value = s && s.wbsId != null ? String(s.wbsId) : '';
       document.getElementById('stPersona').value = s ? (s.persona || '') : '';
       document.getElementById('stJira').value = s ? (s.jira || '') : '';
       document.getElementById('stWant').value = s ? (s.want || '') : '';
@@ -8227,8 +8311,8 @@ Write the test cases for the criteria above, following the contract exactly. Ret
     // STACKED, already linked to this task, with its phase's epic preselected
     function addStoryForTask(taskId) {
       openStoryModal(null);
-      const sel = document.getElementById('stWbs');
-      if (sel) sel.value = String(taskId);
+      storyModalWbsIds = tasks.some(t => t.id === taskId) ? [taskId] : [];
+      renderStoryWbsChips();
       let cur = tasks.find(x => x.id === taskId), root = cur;
       let guard = 0;
       while (cur && cur.parentId != null && guard++ < 50) { cur = tasks.find(x => x.id === cur.parentId); if (cur) root = cur; }
@@ -8256,12 +8340,13 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       const splitLines = elId => document.getElementById(elId).value.split('\n').map(l => l.trim()).filter(Boolean);
       const acBase = id.replace(/^US/i, 'AC');
       const ac = stAcEntries().map((x, i) => ({ id: acBase + '.' + (i + 1), type: x.type, text: x.text }));
-      const wbsIdVal = document.getElementById('stWbs').value ? Number(document.getElementById('stWbs').value) : null;
-      const wbsTask = wbsIdVal != null ? tasks.find(t => t.id === wbsIdVal) : null;
+      const linkIds = [...new Set(storyModalWbsIds.filter(x => tasks.some(t => t.id === x)))];
+      const primaryTask = linkIds.length ? tasks.find(t => t.id === linkIds[0]) : null;
       const story = {
         id, epicId: document.getElementById('stEpic').value || null,
-        wbsId: wbsIdVal,
-        wbsName: wbsTask ? wbsTask.name : '',
+        wbsIds: linkIds,
+        wbsId: linkIds.length ? linkIds[0] : null,
+        wbsName: primaryTask ? primaryTask.name : '',
         persona: document.getElementById('stPersona').value.trim(),
         want, soThat: document.getElementById('stSoThat').value.trim(),
         verification: document.getElementById('stVerif').value || null,
@@ -8598,7 +8683,7 @@ ${existing}`;
       if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) { alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
       if (!reqs) reqs = { personas: [], epics: [], stories: [] };
       computeWbsCodes();
-      const coveredIds = new Set(reqs.stories.map(s => s.wbsId).filter(id => id != null));
+      const coveredIds = new Set(reqs.stories.flatMap(storyWbsIds));
       const gaps = storyableLeaves().filter(t => !coveredIds.has(t.id));
       if (!gaps.length) { flashSaved('✓ Every activity already has a story — no gaps.'); return; }
       const batches = [];
@@ -8626,7 +8711,7 @@ STORY IDs ALREADY TAKEN — never reuse: ${reqs.stories.map(s => s.id).join(', '
           saveLocal(); renderReqs();
         }
       } catch (e) { streamHide(false); alert('Gap drafting failed: ' + (e.message || e) + '\nCompleted batches were kept — re-run to continue.'); return; }
-      const still = storyableLeaves().filter(t => !reqs.stories.some(s => s.wbsId === t.id));
+      const still = storyableLeaves().filter(t => !reqs.stories.some(s => storyLinksTask(s, t.id)));
       renderReqs();
       if (still.length) {
         alert('⚠ ' + still.length + ' activit' + (still.length === 1 ? 'y' : 'ies') + ' STILL have no linked story — the AI most likely retitled them, so its stories landed in the red "not linked" banner instead. Use 🔗 Auto-relink there (or the story editor), or re-run this button:\n\n• ' + still.slice(0, 12).map(t => t.name).join('\n• ') + (still.length > 12 ? '\n…' : ''));
@@ -8650,7 +8735,7 @@ STORY IDs ALREADY TAKEN — never reuse: ${reqs.stories.map(s => s.id).join(', '
         done++;
         const entries = tasksInWbsOrder().filter(({ task }) => b.ids.has(task.id) && !isTestCaseTask(task));
         if (!entries.some(({ task }) => !task.milestone && !isSummaryId(task.id))) continue; // nothing storyable here (e.g. the Test Execution branch)
-        const existingBatch = reqs.stories.filter(s => s.wbsId != null && b.ids.has(s.wbsId));
+        const existingBatch = reqs.stories.filter(s => storyWbsIds(s).some(id => b.ids.has(id)));
         const prompt = `You are a senior business analyst and delivery lead writing the requirements layer for a billable engagement. This is PART ${done} of ${batches.length}: draft user stories ONLY for the activities listed below (one branch of the WBS). Other branches are handled separately.
 
 PROJECT: ${projName()} — branch: ${b.name}
@@ -8789,7 +8874,7 @@ ${existingBatch.length ? 'EXISTING STORIES FOR THIS BRANCH — keep their IDs, i
           testCasesForAC(a.id).map(tc => tc.name + ' (' + (tc.percentComplete || 0) + '%)').join('\n') || (isProcessStory(s) ? '📋 process — verified by its artifact' : ''), ...tail]));
       });
       // gap rows: WBS activities with no story — the audit view must show them
-      const covered = new Set(reqs.stories.map(s => s.wbsId).filter(x => x != null));
+      const covered = new Set(reqs.stories.flatMap(storyWbsIds));
       storyableLeaves().filter(t => !covered.has(t.id)).forEach(t => {
         rows.push(['', '', '⚠ NO STORY YET — scoped & priced work with no agreed acceptance criteria', '', '', '', '', '',
           t.wbs, t.name, t.owner || '', (t.percentComplete || 0) + '%', taskStatus(t).label]);
@@ -11871,9 +11956,9 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         if (!t.o && !t.m && !t.p) findings.push({ severity: 'high', area: 'Estimates', finding: `"${t.name}" has no O/M/P estimate at all`, recommendation: 'Give it a 3-point estimate — or let the AI propose one calibrated to the plan and your history.' });
       });
       if (reqs && Array.isArray(reqs.stories) && reqs.stories.length) {
-        const orphans = reqs.stories.filter(s => s.wbsId == null || !tasks.some(t => t.id === s.wbsId));
+        const orphans = reqs.stories.filter(s => storyWbsIds(s).length === 0);
         if (orphans.length) findings.push({ severity: 'medium', area: 'Requirements', finding: `${orphans.length} user stor${orphans.length === 1 ? 'y is' : 'ies are'} not linked to any WBS activity (its task was deleted or renamed): ${orphans.slice(0, 6).map(s => s.id).join(', ')}${orphans.length > 6 ? '…' : ''}`, recommendation: 'Auto-relink matches by remembered task name; relink the rest in the story editor.', relink: true });
-        const covered = new Set(reqs.stories.map(s => s.wbsId));
+        const covered = new Set(reqs.stories.flatMap(storyWbsIds));
         const untold = leaves.filter(t => !covered.has(t.id) && !isTestCaseTask(t)); // TCs verify ACs — they never need stories
         if (untold.length) findings.push({ severity: 'low', area: 'Requirements', finding: `${untold.length} activit${untold.length === 1 ? 'y has' : 'ies have'} no user story`, recommendation: 'Requirements tab ▸ 🤖 Draft from WBS adds the missing stories while keeping existing ones.', jump: 'req' });
       }
