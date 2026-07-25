@@ -565,6 +565,31 @@
       border-radius: 6px; background: var(--card); color: var(--text); }
     .stu-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-top: 0.6rem; }
     .stu-none { font-size: var(--t-md); color: var(--muted); line-height: 1.55; margin: 0.4rem 0 0; }
+
+    /* ---- SLICE 5 — THE WORKLIST. The plan already knows what each person can
+       start today; it had never once said so in those words. */
+    /* min() so the track can never be wider than its own container: a plain
+       minmax(320px, 1fr) forces a 320px column inside a 307px phone and pushes
+       a horizontal scrollbar into the tab */
+    .wl { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+      gap: 0.6rem; margin: 0.4rem 0 0.9rem; }
+    .wl-p { border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 0.55rem 0.7rem; }
+    .wl-p[data-alert="1"] { border-color: #fecaca; background: #fff7f7; }
+    .wl-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.5rem; margin-bottom: 0.3rem; }
+    .wl-nm { font-weight: 700; font-size: var(--t-md); color: var(--text); }
+    .wl-role { font-size: var(--t-xs); color: var(--muted); }
+    .wl-sp { flex: 1; }
+    .wl-gh { font-size: var(--t-xs); font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+      color: var(--muted); margin: 0.4rem 0 0.15rem; }
+    .wl-l { list-style: none; margin: 0; padding: 0; }
+    .wl-li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; padding: 1px 0;
+      font-size: var(--t-sm); color: var(--muted); line-height: 1.5; }
+    .wl-when { font-variant-numeric: tabular-nums; }
+    .wl-late { color: var(--critical); font-weight: 700; }
+    .wl-crit { color: var(--warn); font-weight: 700; }
+    .wl-wait { font-size: var(--t-xs); color: var(--muted); }
+    .wl-none { font-size: var(--t-sm); color: var(--muted); font-style: italic; }
+    .wl-more { font-size: var(--t-xs); color: var(--muted); font-style: italic; }
     @media print { .rdg-fix { display: none !important; } }
     .rdg-unver { border-bottom: 1px dotted var(--warn); color: var(--warn); cursor: help; }
     @media print { .rdg-go, .rdg-act, .rdg-stale, .rdg-chip { display: none !important; }
@@ -2592,7 +2617,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1752</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1757</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -11040,6 +11065,7 @@
         ${levelBanner}
         ${renderRateCardPanel(names)}
         ${roster}
+        ${worklistHtml()}
         <h3 style="font-size:0.95rem;margin-bottom:0.4rem">Daily workload heatmap <span class="help-text" style="font-weight:400">(click any loaded day to drill into its tasks)</span></h3>
         <div id="rlDrill"></div>
         <div class="rl-wrap">
@@ -19623,6 +19649,168 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       if (!t) return;
       try { await navigator.clipboard.writeText(t); flashSaved('📋 Stand-up copied'); }
       catch (e) { download(safeName() + '-standup.txt', t, 'text/plain'); }
+    }
+
+    /* ===================== SLICE 5 — THE WORKLIST ===========================
+       The plan holds every fact needed to answer "what should I do next" — the
+       dependency network, the progress, the dates, the roster — and had never
+       once put them together in that order. Everything here is a re-reading of
+       what CPM already computed; nothing is estimated, nothing is invented, and
+       there is no second model of the work to drift out of step.
+
+       READY is answered from the dependency types rather than from a
+       simplification: FS and FF need the predecessor FINISHED, SS and SF only
+       need it STARTED. Anything not ready is BLOCKED and names what by, and who
+       owns that — which is the sentence a stand-up actually needs, because the
+       person who can unblock you is rarely the person who is blocked. */
+    function wlBlockers(t) {
+      const out = [];
+      effectivePreds(t).forEach(p => {
+        const q = tasks.find(x => x.id === p.id);
+        if (!q) return;
+        const pct = Number(q.percentComplete) || 0;
+        const ok = (p.type === 'SS' || p.type === 'SF') ? pct > 0 : pct >= 100;
+        if (!ok) out.push({ id: q.id, name: q.name || '(unnamed)', wbs: q.wbs || '',
+                            owners: taskParticipants(q).map(x => x.name), type: p.type, pct: pct });
+      });
+      return out;
+    }
+    const WL_NOBODY = 'Nobody assigned';
+    function worklistData() {
+      const today = stripTime(new Date());
+      const leaves = leafTasks();
+      const P = new Map();
+      const at = n => { if (!P.has(n)) P.set(n, { name: n, now: [], soon: [], blocked: [], done: 0,
+        overdue: 0, effort: 0, blocking: 0 }); return P.get(n); };
+      leaves.forEach(t => {
+        const pct = Number(t.percentComplete) || 0;
+        const parts = taskParticipants(t);
+        const names = parts.length ? parts.map(x => x.name) : [WL_NOBODY];
+        const done = pct >= 100;
+        const blockers = done ? [] : wlBlockers(t);
+        const fin = isRealDate(t.finishDate) ? stripTime(t.finishDate) : null;
+        const st = isRealDate(t.startDate) ? stripTime(t.startDate) : null;
+        const overdue = !done && !!fin && fin < today;
+        const row = { id: t.id, name: t.name || '(unnamed)', wbs: t.wbs || '', kind: ekKindOf(t),
+          pct: pct, crit: !!t.isCritical, slack: Number(t.slack) || 0, start: st, finish: fin,
+          overdue: overdue, milestone: !!t.milestone, blockers: blockers };
+        // whoever owns a blocker is, by definition, in somebody else's way
+        blockers.forEach(b => (b.owners.length ? b.owners : [WL_NOBODY]).forEach(n => { at(n).blocking++; }));
+        names.forEach(n => {
+          const b = at(n);
+          if (done) { b.done++; return; }
+          b.effort += (Number(t.te) || 0) * (1 - pct / 100);
+          if (overdue) b.overdue++;
+          if (blockers.length) b.blocked.push(row);
+          // started, late, undated or due to start by today = pick it up now
+          else if (overdue || pct > 0 || !st || st <= today) b.now.push(row);
+          else b.soon.push(row);
+        });
+      });
+      const rank = (a, b) => (b.overdue - a.overdue) || (b.crit - a.crit)
+        || ((a.finish ? a.finish.getTime() : 8e15) - (b.finish ? b.finish.getTime() : 8e15))
+        || (a.slack - b.slack);
+      const out = [...P.values()];
+      out.forEach(p => { p.now.sort(rank); p.blocked.sort(rank); p.soon.sort(rank); });
+      // the person with the most overdue work leads; "Nobody assigned" is a
+      // finding rather than a person, so it goes last whatever it holds
+      out.sort((a, b) => (a.name === WL_NOBODY) - (b.name === WL_NOBODY)
+        || (b.overdue - a.overdue) || (b.now.length - a.now.length) || a.name.localeCompare(b.name));
+      return out;
+    }
+    function wlRow(r) {
+      const when = r.overdue
+        ? '<span class="wl-late">' + escapeHtml(Math.abs(calDaysBetween(r.finish, stripTime(new Date()))))
+          + 'd late</span>'
+        : r.finish ? '<span class="wl-when">by ' + escapeHtml(fmtNice(r.finish)) + '</span>'
+        : '<span class="wl-when">no date</span>';
+      return '<li class="wl-li"><button type="button" class="ptr-sc-rbtn no-print" onclick="openEditModal('
+        + r.id + ', true)" title="Open it">' + ekTok(r.kind, r.wbs, r.name, { xs: true, max: 26 }) + '</button>'
+        + when + (r.pct > 0 && r.pct < 100 ? '<span class="wl-when">· ' + Math.round(r.pct) + '%</span>' : '')
+        + (r.crit ? '<span class="wl-crit" title="Zero slack — this one moves the finish date">critical</span>' : '')
+        + '</li>';
+    }
+    function wlBlockedRow(r) {
+      const b = r.blockers[0];
+      const who = b.owners.length ? b.owners.join(', ') : 'nobody';
+      return '<li class="wl-li"><button type="button" class="ptr-sc-rbtn no-print" onclick="openEditModal('
+        + r.id + ', true)" title="Open it">' + ekTok(r.kind, r.wbs, r.name, { xs: true, max: 22 }) + '</button>'
+        + '<span class="wl-wait">waiting on</span>'
+        + '<button type="button" class="ptr-sc-rbtn no-print" onclick="openEditModal(' + b.id + ', true)" title="'
+        + escapeHtml('Open ' + b.name + ' — owned by ' + who) + '">'
+        + ekTok('wp', b.wbs, b.name, { xs: true, max: 20 }) + '</button>'
+        + '<span class="wl-wait">' + escapeHtml('(' + who + (r.blockers.length > 1
+            ? ', +' + (r.blockers.length - 1) + ' more' : '') + ')') + '</span></li>';
+    }
+    function worklistHtml() {
+      const people = worklistData();
+      if (!people.length) return '';
+      const u = unitLabel();
+      const MAXN = 6, MAXB = 4;
+      const cards = people.map(p => {
+        const alert = p.overdue > 0 ? '1' : '0';
+        const role = p.name === WL_NOBODY ? 'these have no owner at all'
+          : ((resources[p.name] || {}).role || '');
+        const bits = [];
+        bits.push('<b>' + p.now.length + '</b> to pick up');
+        if (p.blocked.length) bits.push('<b>' + p.blocked.length + '</b> blocked');
+        if (p.overdue) bits.push('<b class="wl-late">' + p.overdue + '</b> overdue');
+        if (p.blocking) bits.push('<b>' + p.blocking + '</b> holding others up');
+        return '<div class="wl-p" data-alert="' + alert + '">'
+          + '<div class="wl-h"><span class="wl-nm">' + escapeHtml(p.name) + '</span>'
+          + (role ? '<span class="wl-role">' + escapeHtml(role) + '</span>' : '')
+          + '<span class="wl-sp"></span>'
+          + '<button class="btn-sm btn-secondary no-print" onclick="wlCopy(' + ekJs2(p.name) + ')" '
+          + 'title="Plain text for this person — ready to paste into a message">📋</button></div>'
+          + '<p class="wl-li" style="margin:0">' + bits.join(' · ') + ' · <span class="wl-when">'
+          + (Math.round(p.effort * 10) / 10) + ' ' + escapeHtml(u) + ' of work left</span></p>'
+          + '<p class="wl-gh">Can start now</p>'
+          + (p.now.length ? '<ul class="wl-l">' + p.now.slice(0, MAXN).map(wlRow).join('') + '</ul>'
+              + (p.now.length > MAXN ? '<p class="wl-more">and ' + (p.now.length - MAXN) + ' more</p>' : '')
+            : '<p class="wl-none">' + (p.blocked.length
+                ? 'Everything open for them is waiting on somebody else.'
+                : p.soon.length ? 'Nothing yet — their next activity starts '
+                    + escapeHtml(fmtNice(p.soon[0].start)) + '.'
+                    : 'Nothing open at all.') + '</p>')
+          + (p.blocked.length ? '<p class="wl-gh">Blocked</p><ul class="wl-l">'
+              + p.blocked.slice(0, MAXB).map(wlBlockedRow).join('') + '</ul>'
+              + (p.blocked.length > MAXB ? '<p class="wl-more">and ' + (p.blocked.length - MAXB) + ' more</p>' : '') : '')
+          + (p.soon.length && p.now.length ? '<p class="wl-more">Next up: ' + escapeHtml(p.soon[0].name)
+              + ' on ' + escapeHtml(fmtNice(p.soon[0].start)) + '</p>' : '')
+          + '</div>';
+      }).join('');
+      return '<h3 style="font-size:0.95rem;margin:0.9rem 0 0.2rem">Worklist — what each person can start now'
+        + ' <span class="help-text" style="font-weight:400">(read straight off the dependency network: '
+        + 'finish-to-start needs its predecessor finished, start-to-start only needs it started)</span></h3>'
+        + '<div class="wl">' + cards + '</div>';
+    }
+    // ekJs escapes FOR a single-quoted attribute; this wraps it, so a name with
+    // an apostrophe survives the round trip into the handler
+    function ekJs2(v) { return "'" + ekJs(v) + "'"; }
+    function wlText(name) {
+      const p = worklistData().find(x => x.name === name);
+      if (!p) return '';
+      const line = r => '  · ' + (r.wbs ? r.wbs + ' ' : '') + r.name
+        + (r.overdue ? ' — ' + Math.abs(calDaysBetween(r.finish, stripTime(new Date()))) + ' days late'
+           : r.finish ? ' — by ' + fmtNice(r.finish) : '')
+        + (r.pct > 0 && r.pct < 100 ? ' (' + Math.round(r.pct) + '% done)' : '')
+        + (r.crit ? ' [critical path]' : '');
+      const L = ['WORKLIST — ' + name + ' · ' + (document.getElementById('projectName').value || 'project'),
+        p.now.length + ' to pick up, ' + p.blocked.length + ' blocked, ' + p.overdue + ' overdue', '', 'CAN START NOW'];
+      if (p.now.length) p.now.forEach(r => L.push(line(r)));
+      else L.push('  (nothing)');
+      if (p.blocked.length) {
+        L.push('', 'BLOCKED');
+        p.blocked.forEach(r => L.push(line(r) + ' — waiting on ' + r.blockers[0].name
+          + ' (' + (r.blockers[0].owners.join(', ') || 'nobody') + ')'));
+      }
+      return L.join('\n');
+    }
+    async function wlCopy(name) {
+      const t = wlText(name);
+      if (!t) return;
+      try { await navigator.clipboard.writeText(t); flashSaved('📋 Worklist for ' + name + ' copied'); }
+      catch (e) { download(safeName() + '-worklist.txt', t, 'text/plain'); }
     }
 
     // ========================= PLAN HEALTH CHECK =========================
