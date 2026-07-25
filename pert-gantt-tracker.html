@@ -486,6 +486,33 @@
 
     .ptr-note { grid-column: 1 / -1; font-size: var(--t-sm); color: var(--muted); line-height: 1.55; margin-top: 0.1rem; }
     .ptr-note b { color: var(--text); }
+    /* ---- readings: borrows .ptr-note's muted body + --text bold entirely */
+    .rdg { border-left: 3px solid var(--primary-200); background: var(--primary-50);
+           border-radius: 0 8px 8px 0; padding: 0.5rem 0.75rem 0.55rem; margin: 0.5rem 0 0.85rem; }
+    .rdg[data-state="stale"] { border-left-color: var(--slack); background: #f8fafc; }
+    .rdg[data-state="nokey"], .rdg[data-state="none"], .rdg[data-state="busy"] { border-left-color: var(--border); background: #f8fafc; }
+    .rdg-head { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.35rem; }
+    .rdg-what { font-size: var(--t-sm); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--primary-700); }
+    .rdg-age { font-size: var(--t-xs); color: var(--muted); flex: 1; }
+    .rdg-sum { font-size: var(--t-sm); color: var(--muted); cursor: pointer; }
+    .rdg-text, .rdg-item { font-size: var(--t-md); color: var(--muted); line-height: 1.55; margin: 0 0 0.35rem; }
+    .rdg-item b, .rdg-text b { color: var(--text); }
+    .rdg-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 0.4rem; vertical-align: 1px; background: var(--slack); }
+    .rdg-act .rdg-dot { background: var(--critical); }
+    .rdg-item.rdg-act { color: var(--text); }
+    .rdg-figs { display: flex; gap: 1rem; flex-wrap: wrap; font-size: var(--t-sm); color: var(--muted); margin: 0 0 0.4rem; }
+    .rdg-figs b { color: var(--text); font-variant-numeric: tabular-nums; }
+    .rdg-warn { color: var(--warn); font-weight: 600; }
+    .rdg-refs { display: inline-flex; gap: 0.3rem; flex-wrap: wrap; margin-left: 0.35rem; vertical-align: middle; }
+    .rdg-chip { font-size: var(--t-xs); }
+    .rdg-chip-raid { background: var(--critical-bg); color: #b91c1c; }
+    .rdg-act { margin-left: 0.4rem; }
+    .rdg-stale { font-size: var(--t-sm); color: var(--warn); background: #fffbeb; border: 1px solid #fde68a;
+                 border-radius: 6px; padding: 0.3rem 0.5rem; margin: 0 0 0.45rem; }
+    .rdg-drop { font-size: var(--t-xs); color: var(--muted); margin: 0.3rem 0 0; font-style: italic; }
+    .rdg-unver { border-bottom: 1px dotted var(--warn); color: var(--warn); cursor: help; }
+    @media print { .rdg-go, .rdg-act, .rdg-stale, .rdg-chip { display: none !important; }
+                   .rdg { background: #fff; border-left-color: #cbd5e1; } }
     .ptr-needs > b:first-child { color: var(--warn); }
     .ptr-cta { vertical-align: middle; margin-left: 0.2rem; }
 
@@ -2354,7 +2381,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0702</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0726</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -2805,6 +2832,7 @@
       delete projCache[act];
       await idbDel(PROJ_PREFIX + act);
       await idbDel('snap.' + act);
+      await idbDel(PT_PREFIX + act); delete ptStore[act];   // readings are per-project too
       const remaining = Object.keys(idx);
       if (remaining.length) { localStorage.removeItem(PROJ_ACTIVE_KEY); await switchProjectForce(remaining[0]); }
       else { localStorage.removeItem(PROJ_ACTIVE_KEY); await newProject(false); }
@@ -8477,7 +8505,10 @@
       const denoms = d.rows.filter(r => r.denom)
         .map(r => escapeHtml(r.dim.toLowerCase() + ' ÷ ' + r.denom)).join(' · ');
 
-      host.innerHTML = '<div class="ptr-wrap">' + lead
+      // Painted, never fired: this reads ptStore synchronously and costs nothing.
+      // renderPlanTruth is re-entered from renderAnalytics (8525) on every
+      // recompute — a call here would be a call per Calculate.
+      host.innerHTML = '<div class="ptr-wrap">' + lead + ptReadingHtml('truth')
         + '<div class="ptr-row ptr-axis">'
         + '<div class="ptr-head ptr-end"><span>◀ under plan</span></div>'
         + '<div class="ptr-plot ptr-axisplot">' + ticks + '<i class="ptr-zero"></i></div>'
@@ -10110,7 +10141,7 @@
       const usedTxt = (used, plan, noun) => (plan > 0 && used > 0)
         ? Math.round(used / plan * 100) + '% of ' + noun + ' used at ' + Math.round(donePct) + '% complete' : '';
 
-      cont.innerHTML = `${banner}
+      cont.innerHTML = `${banner}${ptReadingHtml('base')}
         <div class="summary-grid bl-cards" style="margin-bottom:1rem">
           ${card('Schedule', hb ? fmtNice(baseFinishAll) : 'no baseline', fmtNice(curFinishAll),
             projVar == null ? '' : (projVar > 0 ? '+' + projVar + 'd late vs baseline' : projVar < 0 ? -projVar + 'd early vs baseline' : 'on the baseline date'), projVar,
@@ -14669,7 +14700,8 @@ ${uatStylePref() === 'bigbang'
       return `Return ONLY a JSON DELTA — never re-emit the whole plan. Unchanged tasks must NOT appear in your response.
 {
   "changedTasks": [
-    { "name": "task name", "optimistic": n, "mostLikely": n, "pessimistic": n,  // durations in ${unit}, optimistic <= mostLikely <= pessimistic
+    { "id": 42,   // OPTIONAL but STRONGLY PREFERRED: the numeric id shown as T#42 in the digest. An id is matched exactly; a name is matched loosely and can hit the wrong twin.
+      "name": "task name", "optimistic": n, "mostLikely": n, "pessimistic": n,  // durations in ${unit}, optimistic <= mostLikely <= pessimistic
       "milestone": false, "owner": "", "units": 100, "attendees": [],
       "parent": "exact name of the phase it nests under (or \\"\\" for top level)",
       "deliverable": "", "description": "", "acceptance": "",
@@ -14692,7 +14724,10 @@ Rules:
       opts = opts || {};
       const key = (document.getElementById('aiKey').value.trim()) || localStorage.getItem(AI_KEY_STORE);
       if (!key) throw new Error('No API key. Click “⚙ API Key”, paste your Anthropic key, and Save.');
-      const model = document.getElementById('aiModel').value || 'claude-sonnet-5';
+      // opts.model lets one flow pick a cheaper/stronger model without touching
+      // the global select — mutating that select would silently re-point every
+      // other flow AND invalidate their prompt cache, which is model-scoped.
+      const model = opts.model || document.getElementById('aiModel').value || 'claude-sonnet-5';
       // per-model output ceilings: Sonnet 5 / Opus 4.8 allow 128k output tokens, Haiku 4.5 64k
       const maxTok = opts.maxTokens || (model.indexOf('haiku') >= 0 ? 64000 : 128000);
       const ctrl = new AbortController();
@@ -14783,7 +14818,11 @@ Rules:
                 if (ev.type === 'message_start' && ev.message && ev.message.usage) {
                   const u = ev.message.usage;
                   const rd = u.cache_read_input_tokens || 0, wr = u.cache_creation_input_tokens || 0;
-                  if (rd > 0) flashSaved('🗃 prompt cache HIT — ' + (rd >= 1000 ? (rd / 1000).toFixed(1) + 'k' : rd) + ' tokens read at ~10% cost');
+                  // opts.quiet: an UNPROMPTED call must not narrate its own
+                  // plumbing into the save indicator. The numbers still reach
+                  // the caller's log — they are just not flashed.
+                  if (opts.quiet) { /* counted by the caller, not announced */ }
+                  else if (rd > 0) flashSaved('🗃 prompt cache HIT — ' + (rd >= 1000 ? (rd / 1000).toFixed(1) + 'k' : rd) + ' tokens read at ~10% cost');
                   else if (wr > 0) flashSaved('🗃 prompt cache primed (' + (wr >= 1000 ? (wr / 1000).toFixed(1) + 'k' : wr) + ' tokens) — calls in the next 5 min reuse it');
                 }
                 if (ev.type === 'content_block_delta' && ev.delta && ev.delta.text) {
@@ -14816,6 +14855,13 @@ Rules:
           if (prefill) full = prefill;
           const r = await once(messages, full);
           full += r.text;
+          // Short-output flows (readings, briefings) opt OUT of continuation.
+          // The continuation resend uses an assistant prefill, which returns 400
+          // on claude-sonnet-5 and claude-opus-4-8 — so for a flow with a small
+          // maxTokens the loop is not a safety net, it is a guaranteed failure
+          // one round later. Mark the output truncated and let
+          // parseAIJsonStrict refuse it, which applies nothing.
+          if (opts.noContinue && r.stopReason === 'max_tokens') return full + '\n/*TRUNCATED*/';
           if (r.stopReason !== 'max_tokens') return full;
         }
         return full + '\n/*TRUNCATED*/';
@@ -14868,6 +14914,524 @@ Rules:
         throw new Error('The AI response for ' + what + ' arrived incomplete (output or connection was cut). NOTHING was changed — please retry.');
       return res;
     }
+    /* ===================== READINGS =====================================
+       Nine panels in this file print a number and stop. planTruthData() never
+       reads `pricing`; pricingFigures() never reads `raid`; nothing in the file
+       joins scp.unpriced (7803) to raidForTask() to the margin. A reading is
+       the join, written as one sentence per panel by a model that has all of it
+       at once — and NOTHING ELSE. It never writes a figure; the strip under it
+       renders every figure from the same functions the panel uses.
+
+       THREE STRUCTURAL RULES, each fixing a real defect in this file:
+
+       1. Readings are RENDER-PAINTED, EVENT-FIRED. renderPricing() is re-entered
+          from renderRaid() (15618, 15641) and from setPricing() (15690, 15707);
+          renderPlanTruth() from renderAnalytics() (8525). A refresh hook inside
+          a render function would fire an API call on every RAID dropdown change.
+          Painting reads ptStore synchronously and costs nothing.
+
+       2. Readings live OUTSIDE serialize(). If they were inside it, every
+          reading would push an undo frame (saveLocal -> trackUndo, 3179) and
+          evict a real plan state from the 15-deep snapshotKeep ring (3023) — so
+          six readings a day would burn 40% of the other safety net. Worse,
+          restoreSnapshot() replays a serialized payload, so ↶ after a reading
+          would DELETE the reading. Separate IDB key, in-memory mirror.
+
+       3. ONE cached block. histPromptBlock() returns '' with no pasted history
+          and bankPromptBlock() returns '' until a project is archived — and
+          callAnthropic filters empty blocks (14717). Two marks would leave a
+          default user's only mark under the 1024-token minimum on sonnet-5 and
+          opus-4-8, silently caching nothing forever. Merging history + bank +
+          contract into ONE block puts the mark at >=1.2k tokens for everyone. */
+
+    const PT_PREFIX   = 'pertGantt.reading.';
+    const PT_CONTRACT_V = 1;
+    const PT_PANELS   = ['truth', 'price', 'base', 'health', 'bank'];
+    const PT_ORPHANS  = ['bank', 'ask'];   // valid panels with no anchor of their own yet
+    const PT_TABS     = ['tasks','wbs','req','pert','gantt','resources','baseline','analytics','raid'];
+    let   ptStore     = {};      // { [projectId]: {items, quiet, at, model, fp, cost, drops} }
+    let   ptBusy      = false;   // single-flight: aiAbortCtrl is ONE global (14688),
+                                 // so two concurrent calls make ⏹ Stop abort the wrong one
+    let   ptErr       = '';
+
+    // ---- the board fingerprint. Cheap, synchronous, and derived only from
+    // objects already in memory. NEVER calls recompute().
+    function ptFp() {
+      let price = 0, margin = 'x', stale = 0;
+      if (calculated) { try { const f = pricingFigures(); price = Math.round(f.price); margin = (f.margin == null ? 'x' : f.margin.toFixed(1)); stale = f.staleSim ? 1 : 0; } catch (e) {} }
+      const lv = leafTasks();
+      return [tasks.length, lv.length,
+        lv.reduce((s, t) => s + (t.te || 0), 0).toFixed(2),
+        lv.reduce((s, t) => s + (t.percentComplete || 0), 0),
+        Math.round(projectCost()), price, margin, stale,
+        baselineDate || '', pricing.model, pricing.basis,
+        raid.filter(r => r.status !== 'Closed').length,
+        ((reqs && reqs.stories) || []).length,
+        healthFindings ? healthFindings.findings.length : -1,
+        clientSafeReports ? 1 : 0].join('|');
+    }
+    // A named, human-readable diff between two fingerprints — this is what the
+    // stale bar says instead of blanking the reading.
+    const PT_FP_LABELS = ['activities','leaves','effort','progress','cost','price','margin','sim','baseline','model','basis','open RAID','stories','findings','client-safe'];
+    function ptFpDelta(a, b) {
+      const x = String(a || '').split('|'), y = String(b || '').split('|'), out = [];
+      PT_FP_LABELS.forEach((lab, i) => { if (x[i] !== y[i] && x[i] != null && y[i] != null) out.push(lab + ' ' + x[i] + ' → ' + y[i]); });
+      return out.slice(0, 4).join(' · ');
+    }
+
+    // ---- side store. Never in serialize(); never an undo frame.
+    function ptSave() {
+      const id = activeProjectId();
+      try { idbSet(PT_PREFIX + id, JSON.stringify(ptStore[id] || null)); } catch (e) {}
+    }
+    async function ptHydrate() {
+      const id = activeProjectId();
+      try { const raw = await idbGet(PT_PREFIX + id); ptStore[id] = raw ? JSON.parse(raw) : null; } catch (e) { ptStore[id] = null; }
+      // repaint whatever is on screen now that the store is warm
+      if (calculated) { try { renderPlanTruth(); renderPricing(); renderBaseline(); renderHealth(); } catch (e) {} }
+    }
+
+    // ---- the digest. Deterministic. Zero tokens. Hard-capped by construction.
+    function ptDigest() {
+      const safe = !!clientSafeReports;              // screen-share mode is honoured HERE,
+      const money = v => safe ? '(withheld)' : fmtMoney(v);   // before anything leaves the browser
+      const refs = new Set(), figs = new Set(), L = [];
+      const num = v => { const s = String(v); s.split(/[^0-9.,]+/).forEach(t => { if (/\d/.test(t)) figs.add(t.replace(/[.,]$/, '')); }); return s; };
+      // Panel prose is written for the DOM — planTruthData's `why` carries <b>
+      // and &nbsp;. Sent raw, the model reads markup as content and hands it
+      // back inside a sentence we then escape and print as literal "<b>".
+      const plain = v => String(v == null ? '' : v).replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/\s+/g, ' ').trim();
+      const line = s => L.push(s);
+      const u = unitLabel();
+
+      line(`PROJECT "${document.getElementById('projectName').value}" · unit ${u} · ${num(Math.round(overallProgress()))}% complete · baseline ${baselineDate || 'none'}`);
+      line(safe ? 'MODE client-safe: all money withheld — do not infer amounts, margins or rates'
+                : 'MODE money-visible');
+
+      // TRUTH — reuse the panel's own numbers. This walk is O(leaves) and reaches
+      // actualCostOf(); it is a user-pressed action, not a render path.
+      let d = null; try { d = planTruthData(); } catch (e) {}
+      if (d) {
+        line('\nTRUTH (rendered on the Plan-truth panel)');
+        d.rows.forEach(r => {
+          line(`  ${r.key.padEnd(9)} ${r.state === 'ok'
+            ? 'plan ' + num(r.planTxt) + ' → actual ' + num(r.actTxt) + '  ' + num((r.pct >= 0 ? '+' : '') + (r.pct || 0).toFixed(1)) + '%  state ok'
+            : 'state ' + r.state + ' — ' + num(plain(r.why).slice(0, 200))}`);
+          // The drill-in already worked out WHICH activities move each row. Those
+          // are the only rows on this panel a reading can point a finger at, so
+          // they go in the digest and their ids go on the citable list.
+          (r.drivers || []).forEach(x => { refs.add('T#' + x.id);
+            line(`    ↳ T#${x.id} ${x.wbs} "${x.name}"${x.crit ? ' [critical path]' : ''}  ${num(plain(x.txt))}`); });
+        });
+      }
+
+      if (calculated) {
+        try {
+          const f = pricingFigures();
+          line('\nPRICE (rendered on the Price-build panel)');
+          // staleSim gate: the Pricing panel itself WARNS on these figures
+          // (16135). A reading that reasons confidently about a number the app
+          // does not trust is worse than no reading. Withhold, and say so.
+          if (f.staleSim) line('  the simulation predates a rate or scope change — price and margin are WITHHELD this round; the only correct comment is that Calculate needs re-running');
+          else if (safe)  line(`  model ${f.isTM ? 'T&M' : 'fixed'} · basis ${f.basis} · money withheld · margin band ${f.margin == null ? 'unknown' : (f.margin < 0 ? 'loss' : f.margin < 25 ? 'thin' : 'healthy')}`);
+          else line(`  model ${f.isTM ? 'T&M' : 'fixed'} · basis ${f.basis} · bid ${num(money(f.price))} · delivery cost ${num(money(f.cost))} · margin ${f.margin == null ? 'unknown' : num(f.margin.toFixed(1)) + '%'}`);
+        } catch (e) {}
+      }
+
+      /* THE CITABLE FLOOR. Everything else in this digest is conditional: the
+         drill-in drivers only exist once something is off plan, the baseline
+         block needs a baseline, RAID links need somebody to have made one. On a
+         healthy plan with no baseline — which is every plan on day one — that
+         left the ref list holding risks and stories and NOT ONE ACTIVITY, so
+         every sentence naming a piece of work was dropped as a hallucination
+         and the reading could only speak in generalities. These rows are the
+         plan's own spine: what is on the critical path, what is in flight, and
+         what is simply biggest. Capped, so a 300-activity plan costs the same
+         as a 30-activity one. */
+      const spine = [], seen = new Set();
+      // Per-bucket caps, not one shared cap: this plan chains 22 test cases end
+      // to end, so every one of them is critical and a single cap of 14 filled
+      // the whole roster with 0.1-day retest scripts while "Solution Design"
+      // and "Data Mapping" fell off. Each bucket answers a different question
+      // and each gets its own room.
+      const take = (arr, n) => arr.forEach(t => { if (n-- <= 0 || seen.size >= 14 || seen.has(t.id)) return; seen.add(t.id); spine.push(t); });
+      const byTe = a => a.sort((x, y) => (y.te || 0) - (x.te || 0));
+      const lv2 = leafTasks().filter(t => !t.milestone);
+      take(byTe(lv2.filter(t => t.isCritical)), 7);
+      take(byTe(lv2.filter(t => (t.percentComplete || 0) > 0 && (t.percentComplete || 0) < 100)), 4);
+      take(byTe(lv2.slice()), 14);
+      if (spine.length) {
+        line(`\nACTIVITIES  the ${num(spine.length)} that carry this plan, of ${num(lv2.length)} — critical path first, then in flight, then largest`);
+        spine.forEach(t => { refs.add('T#' + t.id);
+          const tx = taxonomyOf(t);
+          line(`  T#${t.id} ${t.wbs || ''} "${t.name}"  ${num((t.te || 0).toFixed(1))} ${u}`
+            + `  ${num(Math.round(t.percentComplete || 0))}% done  ${t.owner || '(unassigned)'}`
+            + (t.isCritical ? '  [critical path]' : '  float ' + num(Math.round(t.slack || 0)) + ' ' + u)
+            + (tx.id ? '  work type ' + tx.id : '')
+            + (raidForTask(t.id, true).length ? '  ⚠ open RAID' : ''));
+        });
+      }
+
+      if (hasBaseline()) {
+        const v = leafTasks().filter(t => t.baseTe != null)
+          .map(t => ({ t, dv: (t.te || 0) - (t.baseTe || 0) }))
+          .sort((a, b) => Math.abs(b.dv) - Math.abs(a.dv));
+        line('\nBASELINE  worst variances');
+        v.slice(0, 8).forEach(({ t, dv }) => { refs.add('T#' + t.id);
+          line(`  T#${t.id} ${t.wbs || ''} "${t.name}"  plan ${num((t.baseTe || 0).toFixed(1))} → now ${num((t.te || 0).toFixed(1))} ${u}  ${num((dv >= 0 ? '+' : '') + dv.toFixed(1))}`); });
+        if (v.length > 8) line(`  …(${v.length - 8} more, smaller, omitted)`);
+      }
+      if (resourceLoad && resourceLoad.overResourceDays) line(`\nRESOURCES  over-allocated resource-${u} ${num(resourceLoad.overResourceDays)}`);
+
+      const open = (raid || []).filter(r => r.status !== 'Closed')
+        .sort((a, b) => (b.probability || 3) * (b.impact || 3) - (a.probability || 3) * (a.impact || 3));
+      if (open.length) {
+        line(`\nRAID  ${num(open.length)} open of ${num((raid || []).length)}, worst first`);
+        open.slice(0, 6).forEach(r => { refs.add('R#' + r.id);
+          const lk = raidLinks(r).filter(l => l.k === 'act').map(l => { refs.add('T#' + l.id); return 'T#' + l.id; }).join(',');
+          line(`  R#${r.id} ${r.type}  P${num(r.probability || 3)}×I${num(r.impact || 3)}  ${r.owner || '(no owner)'}  ${lk ? '→' + lk : '(unlinked)'}  "${r.title}"`); });
+      }
+
+      let lf = []; try { lf = lintPlan(); } catch (e) {}
+      if (lf.length) {
+        const rank = { high: 0, medium: 1, low: 2, info: 3 };
+        lf.sort((a, b) => rank[a.severity] - rank[b.severity]);
+        line(`\nLINT  ${num(lf.length)} findings — top 6:`);
+        lf.slice(0, 6).forEach(x => { const f = plain(x.finding); line(`  ${x.severity.padEnd(6)} ${x.area}  ${num(f.length > 220 ? f.slice(0, 219) + '…' : f)}`); });
+      }
+
+      const st = (reqs && reqs.stories) || [];
+      if (st.length) {
+        st.slice(0, 40).forEach(s => refs.add('S#' + s.id));
+        line(`\nSTORIES  ${num(st.length)}, ${num(st.filter(s => !storyWbsIds(s).length).length)} with no activity link`);
+      }
+
+      const c = bankCalibration();
+      if (c) {
+        line(`\nBANK  ${num(c.n)} rows across ${num(c.projects)} projects · overall median ${num(c.overall)}×`);
+        if (c.byTax.length) line('  by work type — ' + c.byTax.slice(0, 3).map(x => `${x.k} ${num(x.median)}× (n=${num(x.n)})`).join(' | '));
+        const rem = {};
+        leafTasks().forEach(t => { const k = taxonomyOf(t).id; if (k && (t.percentComplete || 0) < 100) rem[k] = (rem[k] || 0) + (t.te || 0); });
+        const rl = Object.entries(rem).map(([k, v]) => `${k} ${num(v.toFixed(1))} ${u}`).join(' | ');
+        if (rl) line('  THIS PLAN remaining effort by work type — ' + rl);
+      }
+
+      if (statusHistory.length >= 2) {
+        const p = statusHistory.slice(-26);
+        line('\nTREND  ' + num(p.length) + ' snapshots');
+        line('  finish ' + p.map(x => num(String(x.finish).slice(5))).join(','));
+        line('  pct ' + p.map(x => num(x.pct)).join(','));
+        if (!safe && p.some(x => x.margin != null)) line('  margin ' + p.map(x => x.margin == null ? '-' : num(x.margin)).join(','));
+      }
+
+      line('\nREFS YOU MAY CITE: ' + [...refs].join(' '));
+      line('FIGURES THAT APPEAR ABOVE: ' + [...figs].slice(0, 400).join(' '));
+      const text = L.join('\n');
+      return { text, refs, figs: new Set([...figs]) };
+    }
+
+    // ---- the ONE cached block. hist + bank + contract, in that order, so the
+    // volatile digest is never inside a cache-marked block.
+    function ptPrefix() { return histPromptBlock() + bankPromptBlock() + PT_CONTRACT; }
+
+    // ---- validation
+    function ptValidate(res, dg) {
+      const out = [], drops = [];
+      const norm = s => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      const hay = norm(dg.text);
+      const per = {};
+      (Array.isArray(res && res.readings) ? res.readings : []).forEach(it => {
+        if (!it || PT_PANELS.indexOf(it.panel) < 0 && it.panel !== 'ask') { drops.push('unknown panel'); return; }
+        const cite = String(it.cite || '');
+        if (cite.length < 20 || hay.indexOf(norm(cite)) < 0) { drops.push('cited nothing in this panel’s own data'); return; }
+        let text = String(it.text || '').trim();
+        if (!text) { drops.push('empty'); return; }
+        if (text.length > 220) text = text.slice(0, 219) + '…';
+        const claimed = Array.isArray(it.refs) ? it.refs.map(String) : [];
+        const kept = claimed.filter(r => dg.refs.has(r));
+        if (claimed.length && !kept.length) { drops.push('every reference it made is not in this plan'); return; }
+        // figure audit — the contract forbids digits; a stray one is MARKED, not hidden
+        const unver = (text.match(/\d[\d.,]*/g) || []).filter(t => !dg.figs.has(t.replace(/[.,]$/, '')));
+        let a = it.act && typeof it.act === 'object' ? it.act : null;
+        if (a) {
+          const v = String(a.v || 'none');
+          if (v === 'goto') { if (PT_TABS.indexOf(String(a.ref)) < 0) a = null; }
+          else if (v === 'open' || v === 'raid') { const n = +String(a.ref || '').replace('T#', ''); if (!tasks.some(t => t.id === n)) a = null; else a = { v, id: n, label: String(a.label || '').slice(0, 22) }; }
+          else if (v !== 'none') a = null;
+          if (a && a.v === 'goto') a = { v: 'goto', tab: String(a.ref), label: String(a.label || '').slice(0, 22) };
+        }
+        const p = it.panel;
+        per[p] = (per[p] || 0) + 1;
+        if (per[p] > 4 || out.length >= 10) return;
+        out.push({ panel: p, sev: ['act', 'watch', 'ok'].indexOf(it.sev) >= 0 ? it.sev : 'watch',
+                   text, refs: kept, unver, act: a });
+      });
+      return { items: out, drops, quiet: String((res && res.quiet) || '').slice(0, 200) };
+    }
+
+    // ---- the call. ONE per press. Single-flight. Short output, no continuation.
+    async function ptRead() {
+      if (ptBusy) return;
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) {
+        document.getElementById('aiSettings').style.display = 'block';
+        switchTab('tasks'); return;
+      }
+      if (!calculated || !tasks.length) { ptErr = 'Press Calculate first — a reading needs computed numbers.'; ptRepaint(); return; }
+      ptBusy = true; ptErr = ''; ptRepaint();
+      const dg = ptDigest();
+      const fp = ptFp();
+      const onDelta = streamShow('Reading the board');
+      try {
+        const text = await callAnthropic(dg.text, {
+          onDelta, cachePrefix: [ptPrefix()],   // ONE block; the digest stays uncached
+          maxTokens: 2000, noContinue: true
+        });
+        const res = parseAIJsonStrict(text, 'the reading');   // repaired/truncated -> nothing written
+        const v = ptValidate(res, dg);
+        ptStore[activeProjectId()] = { items: v.items, drops: v.drops, quiet: v.quiet, fp,
+          at: new Date().toISOString(), model: (document.getElementById('aiModel').value || 'claude-sonnet-5'),
+          contractV: PT_CONTRACT_V };
+        ptSave();
+        streamHide(true);
+      } catch (e) {
+        streamHide(false);
+        ptErr = (e && e.message) || String(e);       // prior reading survives untouched
+      } finally {
+        ptBusy = false;
+        try { renderPlanTruth(); renderPricing(); renderBaseline(); renderHealth(); } catch (e) {}
+      }
+    }
+    function ptRepaint() { try { renderPlanTruth(); renderPricing(); renderBaseline(); renderHealth(); } catch (e) {} }
+
+    // ---- SYNCHRONOUS paint. This is what the render anchors call.
+    function ptReadingHtml(panel) {
+      const hasKey = !!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE));
+      const S = ptStore[activeProjectId()];
+      if (!hasKey) return '<div class="rdg" data-state="nokey"><p class="rdg-text"><b>Readings are off — no API key.</b> '
+        + 'This panel’s numbers, thresholds, warnings and buttons all work exactly as they do now. What you don’t get is the '
+        + 'sentence saying what they mean for this engagement, or the action worth taking. '
+        + '<button class="btn-sm btn-secondary no-print" onclick="switchTab(\'tasks\');document.getElementById(\'aiSettings\').style.display=\'block\'">⚙ Add a key</button></p></div>';
+      if (ptBusy) return '<div class="rdg" data-state="busy"><p class="rdg-text">⏳ Reading the board…</p></div>';
+      if (!S) return '<div class="rdg" data-state="none"><p class="rdg-text">'
+        + (ptErr ? '<b>Last reading failed.</b> ' + escapeHtml(ptErr) + ' Nothing was changed. ' : 'These numbers have no reading yet. ')
+        + '<button class="btn-sm btn-secondary no-print" onclick="ptRead()">✨ Read the board</button></p></div>';
+      /* The digest carries BANK calibration, and the model is allowed to answer
+         on the 'ask' panel, but neither has a surface of its own yet. An item
+         that validated and then rendered nowhere is worse than one that was
+         dropped: the drop counter at least says it happened. So Plan truth —
+         the panel about whether THIS plan's estimates hold — adopts every
+         orphan. When the bank gets its own panel, delete it from PT_ORPHANS. */
+      const mine = S.items.filter(i => i.panel === panel
+        || (panel === 'truth' && PT_ORPHANS.indexOf(i.panel) >= 0));
+      const stale = S.fp !== ptFp();
+      const figs = ptFiguresHtml(panel);   // ALWAYS code-rendered, never model-written
+      const head = '<div class="rdg-head"><span class="rdg-what">What this means</span>'
+        + '<span class="rdg-age">' + escapeHtml(ptAgo(S.at)) + ' · ' + escapeHtml(S.model) + '</span>'
+        + '<button class="btn-sm btn-secondary rdg-go no-print" onclick="ptRead()" title="Re-read against the numbers as they stand now">⟳</button></div>';
+      const bar = stale ? '<p class="rdg-stale no-print"><b>Numbers moved since this reading:</b> '
+        + escapeHtml(ptFpDelta(S.fp, ptFp()) || 'the plan changed') + '. <button class="btn-sm btn-secondary" onclick="ptRead()">Re-read</button></p>' : '';
+      if (!mine.length) {
+        const q = S.quiet ? '<p class="rdg-text">' + escapeHtml(S.quiet) + '</p>' : '<p class="rdg-text">Nothing on this panel needed comment in the last reading.</p>';
+        return '<details class="rdg" data-state="' + (stale ? 'stale' : 'quiet') + '"><summary class="rdg-sum">What this means — nothing flagged here</summary>' + bar + q + '</details>';
+      }
+      const body = mine.map(i => '<p class="rdg-item rdg-' + i.sev + '">'
+        + '<span class="rdg-dot" aria-hidden="true"></span>'
+        + ptMarkUnverified(i)
+        + (i.refs.length ? '<span class="rdg-refs">' + i.refs.map(ptChip).join('') + '</span>' : '')
+        + (i.act ? ptActBtn(i.act) : '') + '</p>').join('');
+      const drop = S.drops.length ? '<p class="rdg-drop">' + S.drops.length + ' suggestion' + (S.drops.length === 1 ? '' : 's')
+        + ' discarded before you saw ' + (S.drops.length === 1 ? 'it' : 'them') + ' — ' + escapeHtml(S.drops.slice(0, 3).join('; ')) + '.</p>' : '';
+      return '<div class="rdg" data-state="' + (stale ? 'stale' : 'fresh') + '">' + head + bar + figs + body + drop + '</div>';
+    }
+    // Every figure on a reading comes from the same function the panel uses.
+    function ptFiguresHtml(panel) {
+      try {
+        if (panel === 'price' && calculated) {
+          const f = pricingFigures();
+          if (clientSafeReports) return '';
+          return '<p class="rdg-figs"><span>bid <b>' + fmtMoney(f.price) + '</b></span><span>cost <b>' + fmtMoney(f.cost)
+            + '</b></span><span>margin <b>' + (f.margin == null ? '—' : f.margin.toFixed(1) + '%') + '</b></span>'
+            + (f.staleSim ? '<span class="rdg-warn">simulation stale</span>' : '') + '</p>';
+        }
+      } catch (e) {}
+      return '';
+    }
+    function ptMarkUnverified(i) {
+      let h = escapeHtml(i.text);
+      i.unver.forEach(t => { h = h.split(escapeHtml(t)).join('<span class="rdg-unver" title="This figure is not in this panel’s own data — check it before quoting it.">' + escapeHtml(t) + '</span>'); });
+      return h;
+    }
+    // Our OWN chip. renderHealth's linkify (16800) is a local closure that
+    // escapes internally and regex-matches quoted names out of prose; reusing it
+    // would double-escape and silently kill every link. Chips are emitted from
+    // VALIDATED refs, never pattern-matched out of model text.
+    function ptChip(ref) {
+      if (ref.indexOf('T#') === 0) {
+        const t = tasks.find(x => x.id === +ref.slice(2));
+        if (!t) return '';
+        // ekTok, not hand-rolled markup: a chip here has to carry the same
+        // entity mark, the same truncation and the same tooltip grammar as the
+        // id in every other list, or the reading looks like a different app.
+        return ekTok(ekKindOf(t), t.wbs || '', t.name,
+          { onclick: 'openEditModal(' + t.id + ', true)', cls: 'rdg-chip no-print', xs: true, max: 30 });
+      }
+      if (ref.indexOf('R#') === 0) {
+        const r = (raid || []).find(x => x.id === +ref.slice(2));
+        if (!r) return '';
+        return '<button type="button" class="ek rdg-chip rdg-chip-raid no-print" onclick="switchTab(\'raid\');openRaidForm(' + r.id + ')">⚠ '
+          + escapeHtml(r.type + ': ' + String(r.title).slice(0, 40)) + '</button>';
+      }
+      if (ref.indexOf('S#') === 0) {
+        const s = ((reqs && reqs.stories) || []).find(x => x.id === ref.slice(2));
+        if (!s) return '';
+        return ekTok('us', s.id, '',
+          { onclick: 'switchTab(\'req\');openReqStory(\'' + ekJs(s.id) + '\')', cls: 'rdg-chip no-print', xs: true });
+      }
+      return '';
+    }
+    function ptActBtn(a) {
+      const lab = escapeHtml(a.label || (a.v === 'raid' ? 'Log a RAID entry' : a.v === 'goto' ? 'Open' : 'Open'));
+      if (a.v === 'goto') return '<button class="btn-sm btn-secondary rdg-act no-print" onclick="switchTab(\'' + a.tab + '\')">' + lab + '</button>';
+      if (a.v === 'open') return '<button class="btn-sm btn-secondary rdg-act no-print" onclick="ptActOpen(' + a.id + ')">' + lab + '</button>';
+      if (a.v === 'raid') return '<button class="btn-sm btn-secondary rdg-act no-print" onclick="ptActRaid(' + a.id + ')">' + lab + '</button>';
+      return '';
+    }
+    function ptActOpen(id) {
+      if (!tasks.some(t => t.id === id)) { flashSaved('That activity was deleted since this reading — ⟳ to re-read.'); return; }
+      openEditModal(id, true);
+    }
+    // raidDraftLinks is reset to [] by openRaidForm (15538) and saveRaidEntry
+    // derives taskId FROM links (15558) — so a pre-filled taskId is always
+    // overwritten to null. Push the link AFTER the form opens, then re-render.
+    function ptActRaid(id) {
+      const t = tasks.find(x => x.id === id);
+      if (!t) { flashSaved('That activity was deleted since this reading — ⟳ to re-read.'); return; }
+      switchTab('raid');
+      openRaidForm(null);
+      document.getElementById('rType').value = 'Issue';
+      raidDraftLinks = [{ k: 'act', id: t.id, was: (t.wbs ? t.wbs + ' ' : '') + t.name }];
+      raidRenderDraft();
+      document.getElementById('rTitle').focus();
+    }
+    function ptAgo(iso) {
+      const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+      return s < 90 ? 'read just now' : s < 5400 ? 'read ' + Math.round(s / 60) + ' min ago' : 'read ' + Math.round(s / 3600) + ' h ago';
+    }
+
+    /* One saveLocal, therefore exactly one undo frame — verified against
+       trackUndo (2879): with undoGuard true every nested saveLocal only updates
+       lastSnapshot and pushes nothing; setting lastSnapshot back to `before` and
+       saving once with the guard down pushes `before` exactly once. This also
+       swallows the SECOND frame that applyAIMergeDelta causes on the first
+       recompute of each day, when takeStatusSnapshot(false) (5981) fires its own
+       saveLocal (16572). Used from Slice 3 onward. */
+    function withOneUndoFrame(fn) {
+      const before = JSON.stringify(serialize());
+      undoGuard = true;
+      let out;
+      try { out = fn(); }
+      finally {
+        undoGuard = false;
+        lastSnapshot = before;
+        saveLocal();
+        ptRevertMark = undoStack.length ? undoStack[undoStack.length - 1] : null;
+      }
+      return out;
+    }
+    // Identity, not depth: undoStack.length is wrong once the 60-frame stack
+    // shifts (2883), and wrong again after resetUndo() on a project switch (2750).
+    let ptRevertMark = null;
+    function ptCanRevert() { return ptRevertMark != null && undoStack.length > 0 && undoStack[undoStack.length - 1] === ptRevertMark; }
+    /* ===================== end READINGS ================================= */
+
+    const PT_CONTRACT = `You are the reading that sits under the numbers on one delivery engagement's own
+dashboard. You are not a chatbot, not a report, and not a second dashboard. Once
+per press of a button the tool hands you a DIGEST of everything it currently
+computes about this engagement. Your only job is to say, for each panel, what its
+numbers MEAN for THIS engagement and what the manager should do about it.
+
+HARD RULES — a response that breaks any of these is discarded whole or in part.
+
+1. NEVER WRITE A NUMBER. Not a date, not a dollar amount, not a percentage, not a
+   count, not a duration. The tool renders every figure itself, directly under
+   your sentence, from the same code that printed it on the panel. Write "the
+   slip", "the new ceiling", "the margin drop", "most of the overrun". A digit in
+   your text is a bug and the item will be flagged as unverified.
+
+2. EVERY ITEM CARRIES A VERBATIM CITE. \`cite\` must be a span of at least twenty
+   characters copied EXACTLY out of the DIGEST above. Not paraphrased, not
+   reconstructed. An item whose cite does not appear in the digest is discarded,
+   because it is the shape a fabricated claim takes.
+
+3. CITE ONLY LISTED REFS. You may reference only the tokens under "REFS YOU MAY
+   CITE". A ref you invent is stripped, and if every ref on an item is stripped
+   the item goes with them.
+
+4. AT MOST FOUR ITEMS PER PANEL AND TEN IN TOTAL. Fewer is better and usually
+   correct. A panel may have zero items and often should. If a panel's numbers
+   need no comment, say nothing about it — do not manufacture an observation to
+   fill a slot. If NOTHING on this engagement deserves a manager's attention,
+   return {"readings":[],"quiet":"<one short line saying what you looked at and
+   why it was fine>"}. That is a good answer, not a failure.
+
+5. ONE SENTENCE EACH, MAX 220 CHARACTERS. No markdown, no HTML, no lists, no
+   hedging, no "it may be worth considering". Write like a colleague who has read
+   the plan, to a manager who has thirty seconds.
+
+6. THE VALUABLE ITEM IS THE ONE THAT CROSSES PANELS. Anything a single panel
+   already states in its own words is not worth an item. What no panel can say is
+   WHY a number moved, WHAT it costs elsewhere, and WHETHER something already
+   logged explains it. Prefer causation to description. Prefer a consequence the
+   reader has not connected to a fact the reader can already see.
+
+7. WHERE MONEY IS WITHHELD (client-safe mode), do not infer, estimate or describe
+   amounts, margins or rates. Comment on schedule, scope, risk and resourcing only.
+
+8. NEVER RECOMMEND AN ACTION THE TOOL CANNOT TAKE. \`act.v\` must be one of the
+   verbs below or "none".
+
+Return ONLY this JSON. No prose before or after, no code fence.
+
+{"readings":[
+  {"panel":"truth|price|base|health|bank",
+   "sev":"act|watch|ok",
+   "text":"one sentence, no digits, max 220 chars",
+   "cite":"verbatim span of >=20 chars copied from the DIGEST",
+   "refs":["T#42","R#12"],
+   "act":{"v":"open|goto|raid|none","ref":"T#42","label":"max 22 chars"}}
+ ],
+ "quiet":""}
+
+Verbs:
+  open  — open that activity's editor.  ref must be a T# from the ref list.
+  goto  — switch to a tab. ref is one of tasks|wbs|req|pert|gantt|resources|
+          baseline|analytics|raid.
+  raid  — start a RAID entry pre-linked to that activity. ref must be a T#.
+  none  — no button. Use it whenever no button would genuinely help.
+
+Severity: "act" = needs a decision this week. "watch" = true and worth knowing,
+no decision yet. "ok" = a reassurance the reader would otherwise not be sure of.
+
+WORKED EXAMPLE — the shape of a good item and a bad one.
+
+GOOD  {"panel":"truth","sev":"act",
+       "text":"The whole slip is the SAP integration build, and because it now
+                sits on the critical path every further day it moves takes the
+                go-live with it.",
+       "cite":"T#42 4.3.1 \\"Integration build — SAP\\"  plan 8.0 → actual 13.0",
+       "refs":["T#42","T#61"],
+       "act":{"v":"open","ref":"T#42","label":"Open 4.3.1"}}
+  Why it is good: it names a cause, not a value; it connects two panels the tool
+  never connects; its cite is copied exactly; every ref is on the list.
+
+BAD   {"panel":"price","sev":"watch",
+       "text":"Margin has fallen to 20.4%, down from 31.2% at baseline.",
+       "cite":"margin is down","refs":["T#99"],"act":{"v":"reprice","ref":"x"}}
+  Four separate failures: it writes numbers the tool already prints; its cite is
+  a paraphrase; T#99 is not on the ref list; "reprice" is not a verb.`;
+
     async function generateWithAI() {
       const btn = document.getElementById('aiGenerateBtn');
       const status = document.getElementById('aiStatus');
@@ -14979,11 +15543,21 @@ ${aiSchemaHint()}`];
         const name = String((pt && pt.name) || '').trim();
         if (!name) return;
         const wasKey = String(pt.was || '').trim().toLowerCase();
-        let t = (wasKey && byLower[wasKey]) || byLower[name.toLowerCase()];
+        // ID FIRST. byLower is last-wins over lowercased names (14947), so two
+        // leaves called "Sign-off" under different workstreams collapse to one
+        // and both proposals land on the second. An id cannot collide.
+        const _pid = (pt && pt.id != null && Number.isFinite(+pt.id)) ? tasks.find(x => x.id === +pt.id) : null;
+        let t = _pid || (wasKey && byLower[wasKey]) || byLower[name.toLowerCase()];
         let o = Number(pt.optimistic) || 0, m = Number(pt.mostLikely) || 0, p = Number(pt.pessimistic) || 0;
         const arr = [o, m, p].sort((a, b) => a - b); o = arr[0]; m = arr[1]; p = arr[2];
         const attendees = Array.isArray(pt.attendees) ? pt.attendees.map(a => ({ name: String(typeof a === 'string' ? a : (a && a.name) || '').trim(), units: 100 })).filter(a => a.name) : null;
         if (!t) {
+          // plan.strictIds is set by any flow whose delta was generated FROM a
+          // digest of ids. On that path an unresolved name is a hallucination,
+          // not an insert — and creating it here is how "Payment Gateway
+          // Hardening" becomes a real zero-duration milestone that renumbers
+          // every WBS code beneath it. Refuse, and report the refusal.
+          if (plan.strictIds) { (applyAIMergeDelta._rejected = applyAIMergeDelta._rejected || []).push(name); return; }
           t = makeTask({ id: nextId++, name, o, m, p,
             milestone: (!!pt.milestone || (o === 0 && m === 0 && p === 0)) && !parentNames.has(name.toLowerCase()),
             owner: String(pt.owner || '').trim(), units: (Number.isFinite(+pt.units) && +pt.units > 0) ? +pt.units : 100,
@@ -16087,7 +16661,7 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       const dsMargin = (f.haveSim && !f.costBlind && f.price > 0)
         ? (f.price - pctOfSorted(f.costDist, 0.8)) / f.price * 100 : null;
 
-      cont.innerHTML = controls + `
+      cont.innerHTML = controls + ptReadingHtml('price') + `
         <div class="pb-wrap" data-model="${f.isTM ? 'tm' : 'fixed'}" data-state="${state}">
           <div class="pb-head">
             <span class="pb-title">Price build</span>
@@ -16564,7 +17138,15 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         p80: mcResult ? fmtISO(durationToDate(mcResult.p80)) : null,
         cost: Math.round(projectCost()),
         over: resourceLoad ? resourceLoad.overResourceDays : 0,
-        openRisks: raid.filter(r => r.type === 'Risk' && r.status !== 'Closed').length
+        openRisks: raid.filter(r => r.type === 'Risk' && r.status !== 'Closed').length,
+        // The commercial trend, recorded at the same moment as the schedule
+        // trend. Without these three, "margin fell since last week" has no
+        // source in this file at all: reconstructing them means hydrating an old
+        // snapshot and calling recompute(), which re-runs the simulation AND
+        // writes the old plan back over the live project.
+        price: (function () { try { const f = pricingFigures(); return Math.round(f.price); } catch (e) { return null; } })(),
+        margin: (function () { try { const f = pricingFigures(); return f.margin == null ? null : +f.margin.toFixed(1); } catch (e) { return null; } })(),
+        basis: (pricing && pricing.model === 'tm') ? 'tm' : ((pricing && pricing.basis) || 'p80')
       };
       const i = statusHistory.findIndex(x => x.date === today);
       if (i >= 0) statusHistory[i] = entry; else statusHistory.push(entry);
@@ -16778,7 +17360,10 @@ IMPORTANT: rows marked [ROLL-UP] are WBS summary rows — the tool schedules and
     function renderHealth() {
       const cont = document.getElementById('healthContainer');
       if (!cont) return;
-      const trend = `<h3 style="font-size:0.95rem;margin:0 0 0.5rem">Forecast trend</h3>${trendChartSvg()}`;
+      // Attached to `trend` rather than to one innerHTML branch, because this
+      // function has three exits (16782 no-findings, 16837 clean, 16844 table)
+      // and all three deserve the reading.
+      const trend = ptReadingHtml('health') + `<h3 style="font-size:0.95rem;margin:0 0 0.5rem">Forecast trend</h3>${trendChartSvg()}`;
       if (!healthFindings) { cont.innerHTML = trend + '<p class="help-text" style="margin-top:0.75rem">Run the health check to lint estimate quality and (with an API key) get an AI plan review calibrated to your historical data.</p>'; return; }
       const sevCol = { high: ['#fee2e2', '#b91c1c'], medium: ['#fef3c7', '#b45309'], low: ['#e2e8f0', '#475569'], info: ['#dbeafe', '#1e40af'] };
       // drill-in: task names ("…" or '…') and WBS codes (4.2, 4.2.31) inside a
@@ -17300,6 +17885,12 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
           calculate._t = setTimeout(() => { b.classList.remove('btn-done'); b.textContent = tx; }, 950);
         }
       }; }
+    /* Every path that loads a project — init/loadLocal, switchProject,
+       switchProjectForce, restoreSnapshot, the JSON importer — goes through
+       hydrate(). Wrapping it is the ONE hook that covers all of them, in the
+       same idiom this file already uses for calculate and flashSaved below. */
+    { const _hyd = hydrate;
+      hydrate = function () { const r = _hyd.apply(this, arguments); ptHydrate(); return r; }; }
     { const _fs = flashSaved;
       flashSaved = function(msg) {
         _fs.apply(this, arguments);
