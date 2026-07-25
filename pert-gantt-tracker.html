@@ -519,6 +519,21 @@
     .rdg-stale { font-size: var(--t-sm); color: var(--warn); background: #fffbeb; border: 1px solid #fde68a;
                  border-radius: 6px; padding: 0.3rem 0.5rem; margin: 0 0 0.45rem; }
     .rdg-drop { font-size: var(--t-xs); color: var(--muted); margin: 0.3rem 0 0; font-style: italic; }
+
+    /* ---- ASK THIS PANEL. The reading answers the question the tool thought to
+       ask. This is the one the reader actually has, put where the numbers are
+       rather than in a chat window that has never seen them. */
+    .rdg-ask { border-left: 3px solid var(--border); background: #f8fafc; border-radius: 0 8px 8px 0;
+      padding: 0.5rem 0.7rem; margin: 0.4rem 0 0; }
+    .rdg-ask[data-state="answered"] { border-left-color: var(--primary-200); background: var(--primary-50); }
+    .rdg-askrow { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+    .rdg-askin { flex: 1; min-width: 180px; font: inherit; font-size: var(--t-sm); padding: 0.3rem 0.5rem;
+      border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text); }
+    .rdg-askin:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+    .rdg-askq { font-size: var(--t-sm); color: var(--text); font-weight: 600; margin: 0 0 0.3rem; }
+    .rdg-askq::before { content: "You asked: "; color: var(--muted); font-weight: 400; }
+    .rdg-askhint { font-size: var(--t-xs); color: var(--muted); margin: 0.3rem 0 0; }
+    @media print { .rdg-askrow { display: none !important; } .rdg-ask { background: #fff; } }
     .rdg-unver { border-bottom: 1px dotted var(--warn); color: var(--warn); cursor: help; }
     @media print { .rdg-go, .rdg-act, .rdg-stale, .rdg-chip { display: none !important; }
                    .rdg { background: #fff; border-left-color: #cbd5e1; } }
@@ -2540,7 +2555,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1726</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1733</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -16395,6 +16410,10 @@ Rules:
     const PT_ORPHANS  = ['bank', 'ask'];   // valid panels with no anchor of their own yet
     const PT_TABS     = ['tasks','wbs','req','pert','gantt','resources','baseline','analytics','raid'];
     let   ptStore     = {};      // { [projectId]: {items, quiet, at, model, fp, cost, drops} }
+    let   ptAskStore  = {};      // { [projectId]: {panel, q, items, drops, quiet, at, model, fp} }
+    let   ptAskErr    = '';
+    let   ptBusyKind  = '';      // 'read' | 'ask' — so the busy line names what is running
+    let   ptBusyPanel = '';
     let   ptBusy      = false;   // single-flight: aiAbortCtrl is ONE global (14688),
                                  // so two concurrent calls make ⏹ Stop abort the wrong one
     let   ptErr       = '';
@@ -16429,8 +16448,16 @@ Rules:
       const id = activeProjectId();
       try { idbSet(PT_PREFIX + id, JSON.stringify(ptStore[id] || null)); } catch (e) {}
     }
+    // The answer to a question is kept in its OWN key, not inside the reading:
+    // a reading and a question have different lifetimes, and folding them
+    // together would make an unanswered panel look like it had been read.
+    function ptAskSave() {
+      const id = activeProjectId();
+      try { idbSet(PT_PREFIX + id + '.ask', JSON.stringify(ptAskStore[id] || null)); } catch (e) {}
+    }
     async function ptHydrate() {
       const id = activeProjectId();
+      try { const raw = await idbGet(PT_PREFIX + id + '.ask'); ptAskStore[id] = raw ? JSON.parse(raw) : null; } catch (e) { ptAskStore[id] = null; }
       try { const raw = await idbGet(PT_PREFIX + id); ptStore[id] = raw ? JSON.parse(raw) : null; } catch (e) { ptStore[id] = null; }
       // repaint whatever is on screen now that the store is warm
       if (calculated) { try { renderPlanTruth(); renderPricing(); renderBaseline(); renderHealth(); } catch (e) {} }
@@ -16582,13 +16609,18 @@ Rules:
     function ptPrefix() { return histPromptBlock() + bankPromptBlock() + PT_CONTRACT; }
 
     // ---- validation
-    function ptValidate(res, dg) {
+    function ptValidate(res, dg, opt) {
+      const ask = !!(opt && opt.askOnly);
       const out = [], drops = [];
       const norm = s => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
       const hay = norm(dg.text);
       const per = {};
       (Array.isArray(res && res.readings) ? res.readings : []).forEach(it => {
         if (!it || PT_PANELS.indexOf(it.panel) < 0 && it.panel !== 'ask') { drops.push('unknown panel'); return; }
+        // A question press must not quietly rewrite the whole board: an item
+        // that wandered onto another panel is dropped by name rather than
+        // appearing somewhere the reader never looked.
+        if (ask && it.panel !== 'ask') { drops.push('answered a panel instead of the question'); return; }
         const cite = String(it.cite || '');
         if (cite.length < 20 || hay.indexOf(norm(cite)) < 0) { drops.push('cited nothing in this panel’s own data'); return; }
         let text = String(it.text || '').trim();
@@ -16609,7 +16641,7 @@ Rules:
         }
         const p = it.panel;
         per[p] = (per[p] || 0) + 1;
-        if (per[p] > 4 || out.length >= 10) return;
+        if (per[p] > (ask ? 3 : 4) || out.length >= (ask ? 3 : 10)) return;
         out.push({ panel: p, sev: ['act', 'watch', 'ok'].indexOf(it.sev) >= 0 ? it.sev : 'watch',
                    text, refs: kept, unver, act: a });
       });
@@ -16667,14 +16699,20 @@ Rules:
     function ptReadingHtml(panel) {
       const hasKey = !!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE));
       const S = ptStore[activeProjectId()];
+      // The ask row rides on every state that has a key — including "no reading
+      // yet", because a question is a perfectly good first press.
       if (!hasKey) return '<div class="rdg" data-state="nokey"><p class="rdg-text"><b>Readings are off — no API key.</b> '
         + 'This panel’s numbers, thresholds, warnings and buttons all work exactly as they do now. What you don’t get is the '
         + 'sentence saying what they mean for this engagement, or the action worth taking. '
         + '<button class="btn-sm btn-secondary no-print" onclick="switchTab(\'tasks\');document.getElementById(\'aiSettings\').style.display=\'block\'">⚙ Add a key</button></p></div>';
-      if (ptBusy) return '<div class="rdg" data-state="busy"><p class="rdg-text">⏳ Reading the board…</p></div>';
+      if (ptBusy) return '<div class="rdg" data-state="busy"><p class="rdg-text">⏳ '
+        + (ptBusyKind === 'ask'
+            ? (ptBusyPanel === panel ? 'Answering your question…' : 'Answering a question on another panel…')
+            : 'Reading the board…') + '</p></div>' + ptAskHtml(panel);
       if (!S) return '<div class="rdg" data-state="none"><p class="rdg-text">'
         + (ptErr ? '<b>Last reading failed.</b> ' + escapeHtml(ptErr) + ' Nothing was changed. ' : 'These numbers have no reading yet. ')
-        + '<button class="btn-sm btn-secondary no-print" onclick="ptRead()">✨ Read the board</button></p></div>';
+        + '<button class="btn-sm btn-secondary no-print" onclick="ptRead()">✨ Read the board</button></p></div>'
+        + ptAskHtml(panel);
       /* The digest carries BANK calibration, and the model is allowed to answer
          on the 'ask' panel, but neither has a surface of its own yet. An item
          that validated and then rendered nowhere is worse than one that was
@@ -16692,7 +16730,8 @@ Rules:
         + escapeHtml(ptFpDelta(S.fp, ptFp()) || 'the plan changed') + '. <button class="btn-sm btn-secondary" onclick="ptRead()">Re-read</button></p>' : '';
       if (!mine.length) {
         const q = S.quiet ? '<p class="rdg-text">' + escapeHtml(S.quiet) + '</p>' : '<p class="rdg-text">Nothing on this panel needed comment in the last reading.</p>';
-        return '<details class="rdg" data-state="' + (stale ? 'stale' : 'quiet') + '"><summary class="rdg-sum">What this means — nothing flagged here</summary>' + bar + q + '</details>';
+        return '<details class="rdg" data-state="' + (stale ? 'stale' : 'quiet') + '"><summary class="rdg-sum">What this means — nothing flagged here</summary>'
+          + bar + q + '</details>' + ptAskHtml(panel);
       }
       const body = mine.map(i => '<p class="rdg-item rdg-' + i.sev + '">'
         + '<span class="rdg-dot" aria-hidden="true"></span>'
@@ -16701,7 +16740,122 @@ Rules:
         + (i.act ? ptActBtn(i.act) : '') + '</p>').join('');
       const drop = S.drops.length ? '<p class="rdg-drop">' + S.drops.length + ' suggestion' + (S.drops.length === 1 ? '' : 's')
         + ' discarded before you saw ' + (S.drops.length === 1 ? 'it' : 'them') + ' — ' + escapeHtml(S.drops.slice(0, 3).join('; ')) + '.</p>' : '';
-      return '<div class="rdg" data-state="' + (stale ? 'stale' : 'fresh') + '">' + head + bar + figs + body + drop + '</div>';
+      return '<div class="rdg" data-state="' + (stale ? 'stale' : 'fresh') + '">' + head + bar + figs + body + drop + '</div>'
+        + ptAskHtml(panel);
+    }
+
+    /* ===================== SLICE 2 — ASK THIS PANEL =========================
+       The reading answers the question the tool thought to ask. This answers
+       the one the reader actually has, and it does it WHERE THE NUMBERS ARE:
+       the same digest, the same contract, the same validator, the same chips
+       and buttons. A chat window would have none of that context and no way to
+       prove what it was reading.
+
+       One deliberate difference from the reading's rules: a reading may never
+       write a figure, because the tool prints every figure itself directly
+       under the sentence. An ANSWER often is a figure — "how far over are we?"
+       — so a figure that appears verbatim in the digest is allowed here, and
+       anything else is still marked unverified in the same dotted underline.
+       The audit is unchanged; only the default moves. */
+    const PT_ASK_PANEL = { truth: 'Plan truth (schedule, budget and scope against the baseline)',
+      price: 'Pricing (bid, cost, margin)', base: 'Baseline (plan versus actual, activity by activity)',
+      health: 'Plan health (estimate quality, findings and the forecast trend)', bank: 'Estimate bank (past engagements)' };
+    function ptAskHtml(panel) {
+      const hasKey = !!(document.getElementById('aiKey') && (document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE)));
+      if (!hasKey) return '';
+      const A = ptAskStore[activeProjectId()];
+      const mine = A && A.panel === panel ? A : null;
+      const row = '<div class="rdg-askrow no-print">'
+        + '<input class="rdg-askin" id="ptAskIn-' + panel + '" type="text" maxlength="300" '
+        + 'placeholder="Ask about this panel — “why is the budget row amber?”" '
+        + 'onkeydown="if(event.key===\'Enter\'){event.preventDefault();ptAsk(\'' + panel + '\')}">'
+        + '<button class="btn-sm btn-secondary" onclick="ptAsk(\'' + panel + '\')"'
+        + (ptBusy ? ' disabled' : '') + '>Ask</button>'
+        + (mine ? '<button class="btn-sm btn-lite" onclick="ptAskClear()" title="Clear this answer">✕</button>' : '')
+        + '</div>';
+      if (!mine) {
+        return '<div class="rdg-ask" data-state="empty">' + row
+          + (ptAskErr ? '<p class="rdg-askhint"><b>That question failed.</b> ' + escapeHtml(ptAskErr)
+              + ' Nothing was changed.</p>' : '')
+          + '<p class="rdg-askhint">Answered from this panel’s own numbers only — the same digest the reading '
+          + 'uses. If the answer is not in there, it says so instead of guessing.</p></div>';
+      }
+      const stale = mine.fp !== ptFp();
+      const body = mine.items.length
+        ? mine.items.map(i => '<p class="rdg-item rdg-' + i.sev + '">'
+            + '<span class="rdg-dot" aria-hidden="true"></span>' + ptMarkUnverified(i)
+            + (i.refs.length ? '<span class="rdg-refs">' + i.refs.map(ptChip).join('') + '</span>' : '')
+            + (i.act ? ptActBtn(i.act) : '') + '</p>').join('')
+        : '<p class="rdg-text">' + escapeHtml(mine.quiet
+            || 'The digest behind this panel does not hold what that question needs, so nothing was invented.') + '</p>';
+      const drop = mine.drops.length ? '<p class="rdg-drop">' + mine.drops.length + ' part'
+        + (mine.drops.length === 1 ? '' : 's') + ' of the answer discarded before you saw '
+        + (mine.drops.length === 1 ? 'it' : 'them') + ' — ' + escapeHtml(mine.drops.slice(0, 3).join('; ')) + '.</p>' : '';
+      return '<div class="rdg-ask" data-state="answered">'
+        // a question that failed with an answer already on screen used to give
+        // no feedback at all — the press looked ignored
+        + (ptAskErr ? '<p class="rdg-stale no-print"><b>That question failed.</b> ' + escapeHtml(ptAskErr)
+            + ' Nothing was changed, and the answer below is the previous one.</p>' : '')
+        + '<p class="rdg-askq">' + escapeHtml(mine.q) + '</p>'
+        + '<p class="rdg-askhint" style="margin:0 0 0.35rem">' + escapeHtml(ptAgo(mine.at) + ' · ' + mine.model) + '</p>'
+        + (stale ? '<p class="rdg-stale no-print"><b>Numbers moved since this answer:</b> '
+            + escapeHtml(ptFpDelta(mine.fp, ptFp()) || 'the plan changed') + '.</p>' : '')
+        + body + drop + row + '</div>';
+    }
+    function ptAskClear() {
+      ptAskStore[activeProjectId()] = null; ptAskErr = ''; ptAskSave(); ptRepaint();
+    }
+    async function ptAsk(panel) {
+      if (ptBusy) return;
+      const el = document.getElementById('ptAskIn-' + panel);
+      const q = ((el && el.value) || '').trim().slice(0, 300);
+      if (!q) { if (el) el.focus(); return; }
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) {
+        document.getElementById('aiSettings').style.display = 'block';
+        switchTab('tasks'); return;
+      }
+      if (!calculated || !tasks.length) { ptAskErr = 'Press Calculate first — a question needs computed numbers.'; ptRepaint(); return; }
+      ptBusy = true; ptBusyKind = 'ask'; ptBusyPanel = panel; ptAskErr = ''; ptRepaint();
+      const dg = ptDigest();
+      const fp = ptFp();
+      const onDelta = streamShow('Answering: ' + q.slice(0, 60));
+      try {
+        const text = await callAnthropic(dg.text + '\n\n' + ptAskInstruction(panel, q), {
+          onDelta, cachePrefix: [ptPrefix()],      // the contract block stays cached across every press
+          noContinue: true
+        });
+        const res = parseAIJsonStrict(text, 'the answer', { noContinue: true });
+        const v = ptValidate(res, dg, { askOnly: true });
+        ptAskStore[activeProjectId()] = { panel, q, items: v.items, drops: v.drops, quiet: v.quiet, fp,
+          at: new Date().toISOString(), model: (document.getElementById('aiModel').value || 'claude-sonnet-5') };
+        ptAskSave();
+        streamHide(true);
+      } catch (e) {
+        streamHide(false);
+        ptAskErr = (e && e.message) || String(e);   // the previous answer survives untouched
+      } finally {
+        ptBusy = false; ptBusyKind = ''; ptBusyPanel = '';
+        ptRepaint();
+      }
+    }
+    function ptAskInstruction(panel, q) {
+      const Q3 = '"""';           // the fence the contract's own examples use
+      return 'THIS PRESS IS A QUESTION, NOT A READING.\n'
+        + 'The manager is looking at the ' + (PT_ASK_PANEL[panel] || panel) + ' panel and asked:\n' + Q3
+        + q.replace(/["]{3}/g, '"') + Q3 + '\n\n'
+        + 'Answer THAT question and nothing else, from the digest above and nothing else. Every hard rule '
+        + 'above still applies, with these changes:\n'
+        + '  A. At most THREE items, and every one must carry "panel":"ask". An item on any other panel is '
+        + 'discarded — this press must not rewrite the board.\n'
+        + '  B. Rule 1 is relaxed exactly this far: you MAY state a figure if it appears VERBATIM in the '
+        + 'digest above, because an answer is often a figure. Any figure that is not in the digest is marked '
+        + 'as unverified to the reader, so do not compute, round, convert or estimate one.\n'
+        + '  C. If the digest does not contain what the question needs, return {"readings":[],"quiet":"one '
+        + 'short line naming what the tool does not hold"}. Refusing is a good answer and is expected often. '
+        + 'Do not answer from general project-management knowledge — the reader can get that anywhere; what '
+        + 'only you can do is read THIS engagement.\n'
+        + '  D. If the question asks you to change the plan, do not: say what you would change and offer the '
+        + 'act button that opens it.';
     }
     // Every figure on a reading comes from the same function the panel uses.
     function ptFiguresHtml(panel) {
