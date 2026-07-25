@@ -815,6 +815,18 @@
       flex: none; font-size: var(--t-xs); font-weight: 700; color: var(--text);
       font-variant-numeric: tabular-nums; white-space: nowrap;
     }
+    /* The contribution to the bar is a quantity, not a judgement, so it stays in
+       body colour. Only a row whose SECOND line found something takes a tint,
+       and it takes the second line's tint — never the first line's sign. */
+    .ptr-drv-v-bad { color: var(--critical); }
+    .ptr-drv-v-good { color: var(--success); }
+    .ptr-drv-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
+    .ptr-drv-sub {
+      font-size: var(--t-xs); font-weight: 500; color: var(--muted);
+      line-height: 1.35; white-space: normal;
+    }
+    .ptr-drv-sub-bad { color: var(--critical); font-weight: 600; }
+    .ptr-drv-sub-good { color: var(--success); }
     /* critical work is the only sub-set where the variance moves the finish
        date, so it is the only thing here that earns an alarm colour */
     .ptr-drv-crit { color: var(--critical); }
@@ -2776,7 +2788,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.2017</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.2031</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -9096,14 +9108,17 @@
          answer too, and it is usually a more interesting one: under-spend
          against a dated plan generally means work has not started, not that
          money was saved. `dir` is +1 to rank overruns, -1 to rank the shortfall. */
-      const drivers = (arr, valueOf, label, dir) => {
+      // `extra` lets a dimension attach its own per-row reading — the budget row
+      // uses it to say which PART of a number is a problem, because "booked
+      // minus what was due by today" is two different findings added together.
+      const drivers = (arr, valueOf, label, dir, extra) => {
         dir = dir || 1;
         return arr
           .map(t => ({ t: t, v: valueOf(t) }))
           .filter(x => Number.isFinite(x.v) && x.v * dir > 0.0001)
           .sort((a, b) => (b.v - a.v) * dir)
           .slice(0, DRIVER_MAX)
-          .map(x => ({ id: x.t.id, name: x.t.name, wbs: x.t.wbs || '', kind: ekKindOf(x.t),
+          .map(x => Object.assign({ id: x.t.id, name: x.t.name, wbs: x.t.wbs || '', kind: ekKindOf(x.t),
                        crit: !!x.t.isCritical, txt: label(x.v, x.t),
                        // if somebody already logged why this went wrong, show it HERE,
                        // beside the number it explains, not one tab away. The two
@@ -9112,7 +9127,8 @@
                        raid: raidCauseChipFor(x.t.id), watch: raidWatchChipFor(x.t.id),
                        // a decision explains the work, not this number, so it
                        // never silences the offer to say what actually happened
-                       unexplained: !raidHasFaultCause(x.t.id) }));
+                       unexplained: !raidHasFaultCause(x.t.id) },
+                     extra ? extra(x.t, x.v) : null));
       };
 
       // Schedule: activities finishing later than the baseline froze them. Only
@@ -9200,16 +9216,80 @@
         const planToDate = t => { try { return accrualAt(pvSpread(hb, [t]).segs, budToday); } catch (e) { return 0; } };
         const gap = t => (actOf.get(t.id) || 0) - planToDate(t);
         const overspent = (bud.pct || 0) >= 0;
+        /* ═══ ONE NUMBER, TWO FINDINGS ══════════════════════════════════════
+           This row's figure is booked minus what was due by today, which is the
+           right subtraction to explain the bar — it is literally the bar, per
+           activity. But it is not a finding, because two completely different
+           things add up to it, and on a plan running early they point opposite
+           ways.
+
+           Take the activity that prompted this. Solution Design was budgeted at
+           $8,233 and came in at $7,822: four hundred dollars UNDER, finished on
+           its estimate, an unambiguously good result. Its baseline window had
+           barely opened, so only $4,574 was due by today, and it appeared at the
+           top of this list at +$3,248 in red — the largest apparent problem on a
+           panel whose own bar said, two lines above, "Timing, not overspend".
+
+           The identity that fixes it is exact:
+
+               booked − dueByToday  =  (earned − dueByToday) + (booked − earned)
+                     gap            =        TIMING          +      OVERRUN
+
+           where earned is the budgeted value of the work actually finished.
+           TIMING is work happening off its planned dates and costs nothing; it
+           is the whole of Solution Design's $3,248 and then some. OVERRUN is
+           finished work costing more than it was budgeted, which is the only
+           half anyone should be alarmed by, and here it is −$411.
+
+           budgetVerdict() already draws exactly this line for the bar (overCurve
+           vs overValue). The list never inherited it, so the panel contradicted
+           itself in the space of three lines. */
+        const evOf = t => plannedCostOf(t, hb) * ((t.percentComplete || 0) / 100);
+        const budDetail = (t, v) => {
+          const ac = actOf.get(t.id) || 0, ev = evOf(t), pv = planToDate(t);
+          const timing = ev - pv, over = ac - ev;
+          const tol = Math.max(1, plannedCostOf(t, hb) * 0.005);
+          const bits = [];
+          if (Math.abs(timing) > tol) bits.push('<b>' + money(Math.abs(Math.round(timing))) + '</b> '
+            + (timing > 0 ? 'ahead of its dates' : 'behind its dates'));
+          if (Math.abs(over) > tol) bits.push('<b>' + money(Math.abs(Math.round(over))) + '</b> '
+            + (over > 0 ? 'over its own budget' : 'under its own budget'));
+          return { timing: timing, over: over,
+                   // the tone of the ROW is the tone of the overrun, never of the
+                   // total: being early is not a fault and must not read as one
+                   tone: over > tol ? 'bad' : over < -tol ? 'good' : 'flat',
+                   sub: bits.length ? bits.join(' · ')
+                     : 'booked at exactly what it was budgeted, on its planned dates' };
+        };
         bud.drivers = drivers(work, gap,
-          v => (v > 0 ? '+' : '−') + money(Math.abs(Math.round(v))), overspent ? 1 : -1);
-        bud.driverNote = overspent
-          ? 'Booked above what the baseline says should have been spent on each one BY TODAY — the same subtraction as'
-            + ' the bar, so these add up to it. An activity whose baseline window has not opened yet contributes'
-            + ' everything booked against it: that is work running ahead of the plan, not an overrun. Dollars, not'
-            + ' percentages, because a 300% overrun on a $200 task is noise beside 8% on a $90k one.'
-          : 'Booked BELOW what the baseline says should have been spent on each one by today, biggest shortfall first.'
-            + ' Under a dated plan this usually means the work has not started rather than that money was saved —'
-            + ' check these against the progress column before reporting an underspend to anyone.';
+          v => (v > 0 ? '+' : '−') + money(Math.abs(Math.round(v))), overspent ? 1 : -1, budDetail);
+        // Whether the rows actually add up is a fact, not a claim: the list is
+        // capped at five and one-sided, so on a plan with activities on both
+        // sides a single row can be larger than the total it sits under. Say
+        // which it is rather than asserting the tidy case.
+        const budAll = work.map(t => gap(t)).filter(Number.isFinite);
+        const budShownSum = budAll.filter(v => overspent ? v > 0 : v < 0)
+          .sort((a, b) => overspent ? b - a : a - b).slice(0, DRIVER_MAX).reduce((a, c) => a + c, 0);
+        // measured against the BAR's own gap, not a re-derived one, so the
+        // sentence can never disagree with the figure printed above it
+        const budRest = (actCostAll - pvNow) - budShownSum;
+        bud.driverNote = (overspent
+          ? 'Booked above what the baseline says should have been spent on each one BY TODAY — the same subtraction'
+            + ' as the bar, per activity.'
+          : 'Booked BELOW what the baseline says should have been spent on each one by today, biggest shortfall first.')
+          + ' <b>Read the second line, not the first.</b> The big number is booked minus what was due by today, and'
+          + ' two different things add up to it: work happening <em>off its planned dates</em>, which costs nothing,'
+          + ' and finished work <em>costing more than it was budgeted</em>, which is the only half worth worrying'
+          + ' about. An activity that finished early and under budget can top this list on the first and still be a'
+          + ' good result on the second, so only the second one is coloured.'
+          + (Math.abs(budRest) > Math.max(1, Math.abs(budShownSum) * 0.02)
+              ? ' These are the top ' + Math.min(DRIVER_MAX, budAll.filter(v => overspent ? v > 0 : v < 0).length)
+                + '; the rest of the plan accounts for the other <b>'
+                + (budRest > 0 ? '+' : '−') + money(Math.abs(Math.round(budRest))) + '</b>, so they do not sum to'
+                + ' the bar on their own.'
+              : ' Between them they account for the whole of the bar.')
+          + (overspent ? '' : ' Under a dated plan a shortfall usually means the work has not started rather than'
+              + ' that money was saved — check these against the progress column before reporting an underspend.');
       }
       // Scope: work that was not in the baseline at all, then work that was
       // re-estimated upward. Two different conversations with a client, so they
@@ -9260,11 +9340,19 @@
       // "open the activity" and, when something is logged against it, "open the
       // RAID log". A button inside a button is invalid and swallows one of the
       // two clicks.
+      /* The big figure is what this activity contributes to the bar. It is not
+         a verdict, and on the budget row it is emphatically not one: an activity
+         that came in UNDER its own budget can top the list simply for having
+         happened before its baseline window opened. So the figure is neutral
+         unless the dimension supplies a tone, and the reading that IS a verdict
+         goes on a second line underneath, in the words of the finding. */
       const rows = r.drivers.map(d =>
         '<li class="ptr-drv-li"><button type="button" class="ptr-drv-row" onclick="openEditModal(' + d.id + ', true)" '
         + 'title="Open ' + escapeHtml(d.name) + '">'
-        + ekTok(d.kind, d.wbs, d.name, { xs: true })
-        + '<span class="ptr-drv-v' + (d.crit ? ' ptr-drv-crit' : '') + '">' + d.txt
+        + '<span class="ptr-drv-main">' + ekTok(d.kind, d.wbs, d.name, { xs: true })
+        + (d.sub ? '<span class="ptr-drv-sub ptr-drv-sub-' + (d.tone || 'flat') + '">' + d.sub + '</span>' : '')
+        + '</span>'
+        + '<span class="ptr-drv-v ptr-drv-v-' + (d.tone || 'plain') + (d.crit ? ' ptr-drv-crit' : '') + '">' + d.txt
         + (d.crit ? ' <span title="Zero slack — this activity is on the critical path, so any delay here moves the finish date too">⚠</span>' : '')
         + '</span></button>'
         // an activity with a variance and no CAUSE logged against it is itself a
