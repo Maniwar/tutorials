@@ -2018,7 +2018,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0311</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0321</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -9030,8 +9030,14 @@
         const impl = impliedLeaf.has(L.id + ':' + p.id);
         const key = f + '>' + t2;
         const ex = eMap.get(key);
-        if (!ex) eMap.set(key, { id: f, to: t2, type: p.type, lag: p.lag, _crit: !!crit, _impl: impl });
-        else { if (crit) ex._crit = true; if (!impl) ex._impl = false; if (ex.type !== p.type || ex.lag !== p.lag) { ex.type = 'FS'; ex.lag = 0; } }
+        // _nonPlain sticks if ANY leaf link folded into this aggregate edge is
+        // lagged or is not finish-to-start. Two different leaf links collapsing
+        // onto one aggregate pair reset the label to FS/0, which would otherwise
+        // let a lagged constraint masquerade as a plain link and get suppressed
+        // as implied — the arrow would vanish while still holding a date.
+        const np = p.type !== 'FS' || !!p.lag;
+        if (!ex) eMap.set(key, { id: f, to: t2, type: p.type, lag: p.lag, _crit: !!crit, _impl: impl, _nonPlain: np });
+        else { if (crit) ex._crit = true; if (!impl) ex._impl = false; if (np) ex._nonPlain = true; if (ex.type !== p.type || ex.lag !== p.lag) { ex.type = 'FS'; ex.lag = 0; ex._nonPlain = true; } }
       }));
       let edges = [...eMap.values()];
       if (pertCritOnly) {
@@ -9039,6 +9045,46 @@
         const okIds = new Set(nodes.map(n => n.id));
         edges = edges.filter(e => okIds.has(e.id) && okIds.has(e.to) && e._crit);
       }
+      // SECOND implied test, on the graph actually being drawn. redundantLinkList
+      // reads raw `predecessors`, so it is blind to the biggest source of extra
+      // arrows here: a dependency written against a SUMMARY. effectivePreds hands
+      // that one link down to every entry leaf of the summary, so one authored
+      // dependency on a phase fans out into an arrow per activity in it — and
+      // wherever those activities are chained to each other, all but the first
+      // arrow is already gated. Integration Testing → UAT & Training was drawing
+      // three arrows where the plan holds one. Transitive reduction over the
+      // aggregate edges catches those; the raw test above still catches links a
+      // person really can delete.
+      {
+        // Only a plain finish-to-start link with no lag can be implied, and only
+        // by a bypass built entirely of plain FS hops with no lead. A lead makes
+        // the bypass WEAKER than the direct link (u→w FS−3 lets w start before u
+        // finishes), and SS/FF anchor different ends, so neither can stand in for
+        // the edge it appears to duplicate. Hiding one of those would delete a
+        // constraint from the picture that is still holding a date.
+        const plain = e => e.type === 'FS' && !e.lag && !e._nonPlain;
+        const succ = new Map();
+        edges.forEach(e => { if (!plain(e)) return; if (!succ.has(e.id)) succ.set(e.id, []); succ.get(e.id).push(e.to); });
+        const memo = new Map();
+        const canReach = (from, to) => {                 // levels make this a DAG
+          const k = from + '>' + to;
+          if (memo.has(k)) return memo.get(k);
+          let r = false;
+          for (const n of (succ.get(from) || [])) { if (n === to || canReach(n, to)) { r = true; break; } }
+          memo.set(k, r);
+          return r;
+        };
+        edges.forEach(e => {
+          if (e._impl || !plain(e)) return;
+          // implied when some OTHER successor of the source also reaches the target
+          if ((succ.get(e.id) || []).some(n => n !== e.to && canReach(n, e.to))) {
+            e._impl = true; e._inherited = true;
+          }
+        });
+      }
+      // the raw-link test above can also fire on a lagged or SS/FF link, and
+      // deleting one of those DOES move dates — draw it, whatever the list says
+      edges.forEach(e => { if (e._impl && (e._nonPlain || e.type !== 'FS' || e.lag)) e._impl = false; });
       // count AFTER every other filter, so the tally always matches what is on screen
       const impliedN = edges.filter(e => e._impl).length;
       if (!pertShowImplied) edges = edges.filter(e => !e._impl);
@@ -9119,7 +9165,7 @@
       // onto one point, and per-gap vertical lanes so parallel edges don't overlap.
       const edges = [];
       nodes.forEach(t => predsOf[t.id].forEach(p => {
-        if (pos[p.id] && pos[t.id]) edges.push({ from: p.id, to: t.id, type: p.type, lag: p.lag, crit: !!p._crit, impl: !!p._impl });
+        if (pos[p.id] && pos[t.id]) edges.push({ from: p.id, to: t.id, type: p.type, lag: p.lag, crit: !!p._crit, impl: !!p._impl, inherited: !!p._inherited });
       }));
       const outCnt = {}, inCnt = {};
       edges.forEach(e => { outCnt[e.from] = (outCnt[e.from] || 0) + 1; inCnt[e.to] = (inCnt[e.to] || 0) + 1; });
@@ -9184,7 +9230,11 @@
         }
         const lbl = e.type + (e.lag ? (e.lag > 0 ? '+' + e.lag : e.lag) : '');
         const plainFS = e.type === 'FS' && !e.lag;
-        const tip = 'Dependency: ' + (idToTask[e.from] ? idToTask[e.from].name : '?') + ' → ' + (idToTask[e.to] ? idToTask[e.to].name : '?') + ' (' + lbl + (e.lag ? ', ' + Math.abs(e.lag) + ' ' + unitLabel() + (e.lag > 0 ? ' lag/wait' : ' lead/overlap') : '') + ')' + (e.impl ? ' — IMPLIED: a longer chain already gates this, so deleting it moves no date' : '') + ' — FS finish→start, SS start→start, FF finish→finish, SF start→finish';
+        const why = !e.impl ? ''
+          : e.inherited
+            ? ' — IMPLIED: a longer chain between these two already gates it. Nothing to delete — this arrow exists because a dependency was written against the parent phase and handed down to every activity inside it.'
+            : ' — IMPLIED: a longer chain already gates this link, so deleting it moves no date. Scan & repair on the Tasks tab can remove it.';
+        const tip = 'Dependency: ' + (idToTask[e.from] ? idToTask[e.from].name : '?') + ' → ' + (idToTask[e.to] ? idToTask[e.to].name : '?') + ' (' + lbl + (e.lag ? ', ' + Math.abs(e.lag) + ' ' + unitLabel() + (e.lag > 0 ? ' lag/wait' : ' lead/overlap') : '') + ')' + why + ' — FS finish→start, SS start→start, FF finish→finish, SF start→finish';
         svg += `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${w}" opacity="${e.impl ? 0.85 : e.crit ? 0.95 : 0.65}"${e.impl ? ' stroke-dasharray="5 4"' : ''} marker-end="url(#${e.impl ? 'p-arrI' : e.crit ? 'p-arrC' : 'p-arr'})"><title>${escapeXml(tip + (e.crit ? '  — critical path' : ''))}</title></path>`;
         // Annotate EVERY arrow, not just the exotic ones. A plan whose links are
         // all plain finish-to-start used to render 25 bare lines with nothing to
