@@ -770,7 +770,37 @@
     .raid-chip:hover:not(:disabled), .raid-chip:active:not(:disabled) {
       background: #fee2e2; transform: none; box-shadow: none;
     }
-    @media print { .raid-chip { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+    /* A cause that is not a fault: a decision that shaped this work. It earns a
+       chip because it genuinely explains the number, but not the red one — red
+       beside a variance reads as "something went wrong", and a decision taken on
+       purpose is the opposite of that. */
+    .raid-chip-ctx {
+      border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8;   /* 7.0:1 */
+    }
+    .raid-chip-ctx:hover:not(:disabled), .raid-chip-ctx:active:not(:disabled) { background: #dbeafe; }
+
+    /* Something being WATCHED against this activity, not blamed for it. Never
+       red: red beside a number reads as "here is why", and an assumption that is
+       still holding is the opposite of that. The unanswered variant is the only
+       one that asks for anything, so it is the only one with any colour. */
+    .raid-watch-chip {
+      flex: none; display: inline-flex; align-items: center; gap: 0.2rem;
+      min-height: 24px; padding: 1px 0.4rem; border-radius: 999px; cursor: pointer;
+      border: 1px solid var(--border); background: var(--card); color: var(--muted);
+      font-size: var(--t-xs); font-weight: 600; line-height: 1.5; white-space: nowrap;
+      box-shadow: none;
+    }
+    .raid-watch-chip:hover:not(:disabled), .raid-watch-chip:active:not(:disabled) {
+      border-color: var(--primary); color: var(--primary); transform: none; box-shadow: none;
+    }
+    .raid-watch-ask {
+      border-color: #fcd34d; background: #fffbeb; color: #92400e;   /* 7.4:1 */
+      font-weight: 700;
+    }
+    .raid-watch-ask:hover:not(:disabled), .raid-watch-ask:active:not(:disabled) {
+      background: #fef3c7; border-color: #f59e0b; color: #92400e;
+    }
+    @media print { .raid-chip, .raid-watch-chip { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
     .ptr-drv-row {
       /* a real button so it inherits the zero-specificity focus-visible ring */
       display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
@@ -785,6 +815,18 @@
       flex: none; font-size: var(--t-xs); font-weight: 700; color: var(--text);
       font-variant-numeric: tabular-nums; white-space: nowrap;
     }
+    /* The contribution to the bar is a quantity, not a judgement, so it stays in
+       body colour. Only a row whose SECOND line found something takes a tint,
+       and it takes the second line's tint — never the first line's sign. */
+    .ptr-drv-v-bad { color: var(--critical); }
+    .ptr-drv-v-good { color: var(--success); }
+    .ptr-drv-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
+    .ptr-drv-sub {
+      font-size: var(--t-xs); font-weight: 500; color: var(--muted);
+      line-height: 1.35; white-space: normal;
+    }
+    .ptr-drv-sub-bad { color: var(--critical); font-weight: 600; }
+    .ptr-drv-sub-good { color: var(--success); }
     /* critical work is the only sub-set where the variance moves the finish
        date, so it is the only thing here that earns an alarm colour */
     .ptr-drv-crit { color: var(--critical); }
@@ -2601,7 +2643,7 @@
           </div>
           <div id="raidForm" style="display:none;background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:1rem">
             <div style="display:grid;grid-template-columns:1fr 3fr;gap:0.75rem;margin-bottom:0.75rem">
-              <div><label for="rType">Type</label><select id="rType">
+              <div><label for="rType">Type</label><select id="rType" onchange="raidOutcomeFormSync()">
                 <option>Risk</option><option>Assumption</option><option>Issue</option><option>Decision</option><option>Exclusion</option></select></div>
               <div><label for="rTitle">Title *</label><input id="rTitle" type="text" placeholder="e.g. Client sandbox access may be delayed" /></div>
             </div>
@@ -2615,6 +2657,14 @@
               <span class="fg-head"><label for="rLinkPick">Linked to</label><button type="button" class="info-icon" aria-label="About links" data-help="What this entry actually touches. A risk usually hits several activities, is raised against a story or one of its acceptance criteria, is evidenced by a failing test case, and may end up justifying a change order — link all of them. Every link works in both directions: the entry appears on the activity, in the Plan-truth drill-in beside that activity's variance, and here. The first activity you link is also written to the old single-task field, so a file saved here still opens in an older copy of this tool. If something you linked is later deleted the link is shown broken rather than quietly dropped — a link that disappears silently is how test cases once ended up pointing at the wrong criteria.">i</button></span>
               <div id="rLinks" class="chip-static" style="display:flex;flex-wrap:wrap;gap:0.3rem;align-items:center;margin-bottom:0.4rem"></div>
               <select id="rLinkPick" class="mini-inp" style="width:100%;max-width:34rem" onchange="raidAddLinkFromPicker()"></select>
+            </div>
+            <div class="form-group" id="rOutcomeRow" style="display:none">
+              <span class="fg-head"><label for="rOutcome">Did it happen?</label><button type="button" class="info-icon" aria-label="About outcomes" data-help="Status tracks how much attention an entry still needs. This tracks how it TURNED OUT, which is a different fact recorded on a different day. It matters because only an entry that turned explains a number: a risk that materialised, or an assumption that did not hold, is a cause and is shown in red beside the variance it caused. One that is still pending, was avoided, or is holding is being watched, not blamed, and is shown in grey so it never stands in for a reason. Leaving this blank is itself reported — on an activity that is finished or overdue, nobody having said whether a linked risk turned is a gap the health check will name.">i</button></span>
+              <div style="display:grid;grid-template-columns:1fr 2fr;gap:0.75rem">
+                <select id="rOutcome" onchange="this.dataset.want=this.value;raidOutcomeFormSync()"></select>
+                <input id="rOutcomeNote" type="text" placeholder="What actually happened — the sentence you would say on the call" />
+              </div>
+              <p class="help-text" id="rOutcomeHint" style="margin:0.3rem 0 0"></p>
             </div>
             <div class="form-group"><label for="rDesc">Description / context</label><textarea id="rDesc" rows="2" placeholder="What is actually going on — the detail you would want six months from now"></textarea></div>
             <div class="form-group"><label for="rMitigation">Mitigation / response / detail</label><textarea id="rMitigation" rows="2"></textarea></div>
@@ -2738,7 +2788,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1943</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.2031</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3833,7 +3883,7 @@
       baselineDate = data.baselineDate || '';
       levelMode = ['none','slack','extend'].includes(data.levelMode) ? data.levelMode : 'none';
       projectBudget = Number(data.projectBudget) || 0;
-      raid = Array.isArray(data.raid) ? data.raid.map(r => Object.assign({ id: 0, type: 'Risk', title: '', description: '', probability: 3, impact: 3, owner: '', status: 'Open', mitigation: '', taskId: null, createdAt: '', links: null, v: 1 }, r)) : [];
+      raid = Array.isArray(data.raid) ? data.raid.map(r => Object.assign({ id: 0, type: 'Risk', title: '', description: '', probability: 3, impact: 3, owner: '', status: 'Open', mitigation: '', taskId: null, createdAt: '', links: null, outcome: '', outcomeNote: '', v: 1 }, r)) : [];
       nextRaidId = data.nextRaidId || (Math.max(0, ...raid.map(r => r.id)) + 1);
       statusHistory = Array.isArray(data.statusHistory) ? data.statusHistory : [];
       reqsBaseline = (data.reqsBaseline && Array.isArray(data.reqsBaseline.stories))
@@ -5277,6 +5327,27 @@
         if (iss.length) add('open-issue', 'high', iss.length + ' open RAID issue' + (iss.length === 1 ? '' : 's')
           + ': ' + iss.slice(0, 2).map(r => r.title).join('; '),
           'Open the RAID log and drive it to closed, or say here why it is parked.');
+        /* A risk that materialised is not a risk any more, and an assumption
+           that broke is not an assumption. Both are live problems, and until
+           this file could tell "it turned" from "we are watching it" neither
+           counted as one: the register held the fact and no surface read it. */
+        const turned = open.filter(r => raidExplains(r) && raidOutcomeOpts(r.type));
+        if (turned.length) add('raid-turned', 'high', turned.length === 1
+            ? raidCauseWord(turned[0]).toLowerCase() + ': ' + turned[0].title
+            : turned.length + ' risks/assumptions have turned: ' + turned.slice(0, 2).map(r => r.title).join('; '),
+          'It has happened, so it is a live problem rather than a watch item. Raise the issue it became '
+          + '(the RAID row offers the button) or close it out with what was done.');
+        /* Nobody has said whether it turned. Only worth asking once the answer
+           is knowable — before the work runs, "pending" is the correct state and
+           nagging about it would train people to ignore the flag. */
+        const unans = open.filter(raidUnanswered);
+        const knowable = pct >= 100 || (calculated && t.finishDate
+          && stripTime(t.finishDate) < stripTime(new Date()));
+        if (unans.length && knowable) add('raid-unanswered', 'medium', unans.length
+            + ' linked ' + (unans.length === 1 ? 'risk/assumption has' : 'risks/assumptions have')
+            + ' no recorded outcome: ' + unans.slice(0, 2).map(r => r.title).join('; '),
+          'This work is done or overdue, so whether these turned is knowable now and will not be in a month. '
+          + 'Answer “Did it happen?” in the RAID log — an unanswered one can never explain a variance here.');
       } catch (e) {}
       return out;
     }
@@ -9037,18 +9108,27 @@
          answer too, and it is usually a more interesting one: under-spend
          against a dated plan generally means work has not started, not that
          money was saved. `dir` is +1 to rank overruns, -1 to rank the shortfall. */
-      const drivers = (arr, valueOf, label, dir) => {
+      // `extra` lets a dimension attach its own per-row reading — the budget row
+      // uses it to say which PART of a number is a problem, because "booked
+      // minus what was due by today" is two different findings added together.
+      const drivers = (arr, valueOf, label, dir, extra) => {
         dir = dir || 1;
         return arr
           .map(t => ({ t: t, v: valueOf(t) }))
           .filter(x => Number.isFinite(x.v) && x.v * dir > 0.0001)
           .sort((a, b) => (b.v - a.v) * dir)
           .slice(0, DRIVER_MAX)
-          .map(x => ({ id: x.t.id, name: x.t.name, wbs: x.t.wbs || '', kind: ekKindOf(x.t),
+          .map(x => Object.assign({ id: x.t.id, name: x.t.name, wbs: x.t.wbs || '', kind: ekKindOf(x.t),
                        crit: !!x.t.isCritical, txt: label(x.v, x.t),
                        // if somebody already logged why this went wrong, show it HERE,
-                       // beside the number it explains, not one tab away
-                       raid: raidChipFor(x.t.id) }));
+                       // beside the number it explains, not one tab away. The two
+                       // chips are separate because only the first one is an
+                       // explanation — see raidCauseChipFor.
+                       raid: raidCauseChipFor(x.t.id), watch: raidWatchChipFor(x.t.id),
+                       // a decision explains the work, not this number, so it
+                       // never silences the offer to say what actually happened
+                       unexplained: !raidHasFaultCause(x.t.id) },
+                     extra ? extra(x.t, x.v) : null));
       };
 
       // Schedule: activities finishing later than the baseline froze them. Only
@@ -9136,16 +9216,80 @@
         const planToDate = t => { try { return accrualAt(pvSpread(hb, [t]).segs, budToday); } catch (e) { return 0; } };
         const gap = t => (actOf.get(t.id) || 0) - planToDate(t);
         const overspent = (bud.pct || 0) >= 0;
+        /* ═══ ONE NUMBER, TWO FINDINGS ══════════════════════════════════════
+           This row's figure is booked minus what was due by today, which is the
+           right subtraction to explain the bar — it is literally the bar, per
+           activity. But it is not a finding, because two completely different
+           things add up to it, and on a plan running early they point opposite
+           ways.
+
+           Take the activity that prompted this. Solution Design was budgeted at
+           $8,233 and came in at $7,822: four hundred dollars UNDER, finished on
+           its estimate, an unambiguously good result. Its baseline window had
+           barely opened, so only $4,574 was due by today, and it appeared at the
+           top of this list at +$3,248 in red — the largest apparent problem on a
+           panel whose own bar said, two lines above, "Timing, not overspend".
+
+           The identity that fixes it is exact:
+
+               booked − dueByToday  =  (earned − dueByToday) + (booked − earned)
+                     gap            =        TIMING          +      OVERRUN
+
+           where earned is the budgeted value of the work actually finished.
+           TIMING is work happening off its planned dates and costs nothing; it
+           is the whole of Solution Design's $3,248 and then some. OVERRUN is
+           finished work costing more than it was budgeted, which is the only
+           half anyone should be alarmed by, and here it is −$411.
+
+           budgetVerdict() already draws exactly this line for the bar (overCurve
+           vs overValue). The list never inherited it, so the panel contradicted
+           itself in the space of three lines. */
+        const evOf = t => plannedCostOf(t, hb) * ((t.percentComplete || 0) / 100);
+        const budDetail = (t, v) => {
+          const ac = actOf.get(t.id) || 0, ev = evOf(t), pv = planToDate(t);
+          const timing = ev - pv, over = ac - ev;
+          const tol = Math.max(1, plannedCostOf(t, hb) * 0.005);
+          const bits = [];
+          if (Math.abs(timing) > tol) bits.push('<b>' + money(Math.abs(Math.round(timing))) + '</b> '
+            + (timing > 0 ? 'ahead of its dates' : 'behind its dates'));
+          if (Math.abs(over) > tol) bits.push('<b>' + money(Math.abs(Math.round(over))) + '</b> '
+            + (over > 0 ? 'over its own budget' : 'under its own budget'));
+          return { timing: timing, over: over,
+                   // the tone of the ROW is the tone of the overrun, never of the
+                   // total: being early is not a fault and must not read as one
+                   tone: over > tol ? 'bad' : over < -tol ? 'good' : 'flat',
+                   sub: bits.length ? bits.join(' · ')
+                     : 'booked at exactly what it was budgeted, on its planned dates' };
+        };
         bud.drivers = drivers(work, gap,
-          v => (v > 0 ? '+' : '−') + money(Math.abs(Math.round(v))), overspent ? 1 : -1);
-        bud.driverNote = overspent
-          ? 'Booked above what the baseline says should have been spent on each one BY TODAY — the same subtraction as'
-            + ' the bar, so these add up to it. An activity whose baseline window has not opened yet contributes'
-            + ' everything booked against it: that is work running ahead of the plan, not an overrun. Dollars, not'
-            + ' percentages, because a 300% overrun on a $200 task is noise beside 8% on a $90k one.'
-          : 'Booked BELOW what the baseline says should have been spent on each one by today, biggest shortfall first.'
-            + ' Under a dated plan this usually means the work has not started rather than that money was saved —'
-            + ' check these against the progress column before reporting an underspend to anyone.';
+          v => (v > 0 ? '+' : '−') + money(Math.abs(Math.round(v))), overspent ? 1 : -1, budDetail);
+        // Whether the rows actually add up is a fact, not a claim: the list is
+        // capped at five and one-sided, so on a plan with activities on both
+        // sides a single row can be larger than the total it sits under. Say
+        // which it is rather than asserting the tidy case.
+        const budAll = work.map(t => gap(t)).filter(Number.isFinite);
+        const budShownSum = budAll.filter(v => overspent ? v > 0 : v < 0)
+          .sort((a, b) => overspent ? b - a : a - b).slice(0, DRIVER_MAX).reduce((a, c) => a + c, 0);
+        // measured against the BAR's own gap, not a re-derived one, so the
+        // sentence can never disagree with the figure printed above it
+        const budRest = (actCostAll - pvNow) - budShownSum;
+        bud.driverNote = (overspent
+          ? 'Booked above what the baseline says should have been spent on each one BY TODAY — the same subtraction'
+            + ' as the bar, per activity.'
+          : 'Booked BELOW what the baseline says should have been spent on each one by today, biggest shortfall first.')
+          + ' <b>Read the second line, not the first.</b> The big number is booked minus what was due by today, and'
+          + ' two different things add up to it: work happening <em>off its planned dates</em>, which costs nothing,'
+          + ' and finished work <em>costing more than it was budgeted</em>, which is the only half worth worrying'
+          + ' about. An activity that finished early and under budget can top this list on the first and still be a'
+          + ' good result on the second, so only the second one is coloured.'
+          + (Math.abs(budRest) > Math.max(1, Math.abs(budShownSum) * 0.02)
+              ? ' These are the top ' + Math.min(DRIVER_MAX, budAll.filter(v => overspent ? v > 0 : v < 0).length)
+                + '; the rest of the plan accounts for the other <b>'
+                + (budRest > 0 ? '+' : '−') + money(Math.abs(Math.round(budRest))) + '</b>, so they do not sum to'
+                + ' the bar on their own.'
+              : ' Between them they account for the whole of the bar.')
+          + (overspent ? '' : ' Under a dated plan a shortfall usually means the work has not started rather than'
+              + ' that money was saved — check these against the progress column before reporting an underspend.');
       }
       // Scope: work that was not in the baseline at all, then work that was
       // re-estimated upward. Two different conversations with a client, so they
@@ -9196,16 +9340,29 @@
       // "open the activity" and, when something is logged against it, "open the
       // RAID log". A button inside a button is invalid and swallows one of the
       // two clicks.
+      /* The big figure is what this activity contributes to the bar. It is not
+         a verdict, and on the budget row it is emphatically not one: an activity
+         that came in UNDER its own budget can top the list simply for having
+         happened before its baseline window opened. So the figure is neutral
+         unless the dimension supplies a tone, and the reading that IS a verdict
+         goes on a second line underneath, in the words of the finding. */
       const rows = r.drivers.map(d =>
         '<li class="ptr-drv-li"><button type="button" class="ptr-drv-row" onclick="openEditModal(' + d.id + ', true)" '
         + 'title="Open ' + escapeHtml(d.name) + '">'
-        + ekTok(d.kind, d.wbs, d.name, { xs: true })
-        + '<span class="ptr-drv-v' + (d.crit ? ' ptr-drv-crit' : '') + '">' + d.txt
+        + '<span class="ptr-drv-main">' + ekTok(d.kind, d.wbs, d.name, { xs: true })
+        + (d.sub ? '<span class="ptr-drv-sub ptr-drv-sub-' + (d.tone || 'flat') + '">' + d.sub + '</span>' : '')
+        + '</span>'
+        + '<span class="ptr-drv-v ptr-drv-v-' + (d.tone || 'plain') + (d.crit ? ' ptr-drv-crit' : '') + '">' + d.txt
         + (d.crit ? ' <span title="Zero slack — this activity is on the critical path, so any delay here moves the finish date too">⚠</span>' : '')
         + '</span></button>'
-        // an activity with a variance and nothing logged against it is itself a
-        // finding, so the empty slot offers to fill itself in
-        + (d.raid || ptrRaidBtn(d.id, d.name, d.txt + ' on ' + String(r.dim).toLowerCase()))
+        // an activity with a variance and no CAUSE logged against it is itself a
+        // finding, so the empty slot offers to fill itself in. A watched entry
+        // sits alongside and never takes that slot: something you are keeping an
+        // eye on is not a reason, and letting it stand in for one left the
+        // activity you knew most about as the one you could not explain.
+        + (d.raid || '')
+        + (d.unexplained ? ptrRaidBtn(d.id, d.name, d.txt + ' on ' + String(r.dim).toLowerCase()) : '')
+        + (d.watch || '')
         + '</li>').join('');
       return '<details class="ptr-drv no-print-open"><summary>Which activities? <span class="ptr-drv-n">'
         + r.drivers.length + '</span></summary>'
@@ -9792,7 +9949,7 @@
         + escapeHtml('Open ' + (p.name || 'this activity')) + '">'
         + (t ? ekTok(ekKindOf(t), t.wbs || '', t.name || '(unnamed)', { xs: true }) : escapeHtml(p.name || ''))
         + '<span class="ptr-sc-rv">' + escapeHtml(txt) + '</span></button>'
-        + (raidChipFor(p.id) || ptrRaidBtn(p.id, p.name, txt + ' against the plan to that date'));
+        + raidChipsFor(p.id, () => ptrRaidBtn(p.id, p.name, txt + ' against the plan to that date'));
     }
 
     /* ONE CLICK FROM A NUMBER TO THE LOG. Every named problem in this panel is
@@ -9814,6 +9971,7 @@
       const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
       const nm = t ? ((t.wbs ? t.wbs + ' ' : '') + ekName(t)) : ('activity ' + taskId);
       set('rType', 'Issue');
+      raidOutcomeFormSync();       // .value does not fire change
       // the TITLE is the headline miss and nothing else — a RAID log whose
       // titles run to three clauses is a log nobody scans
       set('rTitle', (nm + ' — ' + (note || 'off plan')).slice(0, 90));
@@ -10226,7 +10384,7 @@
             <td style="white-space:nowrap">
               <button class="btn-sm btn-secondary" onclick="aiDecompose(${t.id})" title="AI splits this into smaller sub-tasks with tighter ranges — smaller pieces = less aggregate uncertainty"><span class="ico" aria-hidden="true">⑂</span> Decompose</button>
               <button class="btn-sm btn-secondary" onclick="openEditModal(${t.id})" title="Re-estimate O/M/P by hand">✎ Edit</button>
-              ${raidChipFor(t.id) || ptrRaidBtn(t.id, t.name, 'carries ' + share.toFixed(0) + '% of the schedule risk (O–P ' + t.o + '–' + t.p + ', critical in ' + ((t.criticality || 0) * 100).toFixed(0) + '% of simulations)')}
+              ${raidChipsFor(t.id, () => ptrRaidBtn(t.id, t.name, 'carries ' + share.toFixed(0) + '% of the schedule risk (O–P ' + t.o + '–' + t.p + ', critical in ' + ((t.criticality || 0) * 100).toFixed(0) + '% of simulations)'))}
             </td></tr>`;
         }).join('');
         histBlock += `
@@ -18141,6 +18299,7 @@ Rules:
       switchTab('raid');
       openRaidForm(null);
       document.getElementById('rType').value = 'Issue';
+      raidOutcomeFormSync();       // .value does not fire change
       raidDraftLinks = [{ k: 'act', id: t.id, was: (t.wbs ? t.wbs + ' ' : '') + t.name }];
       raidRenderDraft();
       document.getElementById('rTitle').focus();
@@ -19056,11 +19215,53 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
       // mitigation used to fall back to description because there was nowhere to
       // put a description; now there is, so the two stop sharing one box
       document.getElementById('rDesc').value = r ? (r.description || '') : '';
+      document.getElementById('rOutcome').dataset.want = r ? String(r.outcome || '') : '';
+      document.getElementById('rOutcomeNote').value = r ? String(r.outcomeNote || '') : '';
+      raidOutcomeFormSync();
       // draft links live outside `raid` until Save, so cancelling cannot half-link
       raidDraftLinks = r ? raidLinks(r).map(l => ({ k: l.k, id: l.id, was: l.was })) : [];
       raidFillPicker(); raidRenderDraft();
       document.getElementById('raidForm').style.display = 'block';
       document.getElementById('rTitle').focus();
+    }
+    /* The outcome question only exists for the two types that have one, and the
+       wording changes with the type — "it happened" and "it did not hold" are
+       the same event seen from opposite sides, and offering both to both types
+       is how a form teaches nobody anything. Rebuilt on every type change so
+       switching Risk → Assumption never leaves 'materialised' selected on a
+       list that does not contain it. */
+    function raidOutcomeFormSync() {
+      const row = document.getElementById('rOutcomeRow');
+      const sel = document.getElementById('rOutcome');
+      const hint = document.getElementById('rOutcomeHint');
+      if (!row || !sel) return;
+      const type = document.getElementById('rType').value;
+      const opts = raidOutcomeOpts(type);
+      if (!opts) {
+        row.style.display = 'none';
+        // remember nothing across a type it does not apply to
+        sel.innerHTML = ''; sel.dataset.want = '';
+        return;
+      }
+      row.style.display = '';
+      // dataset.want survives a type change; the select itself does not, because
+      // switching Risk → Assumption throws away an option list that never
+      // contained 'holding' in the first place
+      const want = String(sel.dataset.want != null ? sel.dataset.want : (sel.value || ''));
+      const keep = opts.some(o => o.v === want) ? want : '';
+      sel.innerHTML = '<option value="">Not recorded yet</option>'
+        + opts.map(o => '<option value="' + o.v + '"' + (o.v === keep ? ' selected' : '') + '>'
+            + escapeHtml(o.lbl) + '</option>').join('');
+      sel.value = keep;
+      sel.dataset.want = keep;
+      const cur = opts.find(o => o.v === keep);
+      hint.innerHTML = !cur
+        ? 'Until this is answered the entry is shown as something being <b>watched</b>, and it will never '
+          + 'be offered as the reason a number moved.'
+        : (cur.explains
+            ? 'This is now a <b>cause</b>. It will appear in red beside every variance on the activities it is '
+              + 'linked to, and it keeps doing so after you close it.'
+            : 'Still being <b>watched</b>, not blamed. It stays out of the way of the numbers.');
     }
     function closeRaidForm() { document.getElementById('raidForm').style.display = 'none'; editingRaidId = null; }
     function saveRaidEntry() {
@@ -19075,6 +19276,12 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
         mitigation: document.getElementById('rMitigation').value.trim(),
         description: document.getElementById('rDesc').value.trim(),
         links: raidDraftLinks.slice(),
+        // an outcome only means anything on a type that has one; saving one on
+        // an Issue would leave a field that no reader looks at and no writer clears
+        outcome: raidOutcomeOpts(document.getElementById('rType').value)
+          ? String(document.getElementById('rOutcome').value || '') : '',
+        outcomeNote: raidOutcomeOpts(document.getElementById('rType').value)
+          ? document.getElementById('rOutcomeNote').value.trim() : '',
         v: 2
       };
       raidSyncTaskId(entry);   // keep the legacy single-task field a true mirror
@@ -19105,23 +19312,83 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
        link the data model has today; when typed links land it becomes the same
        lookup over a wider edge set, and every caller here is unchanged. */
     function raidForTask(taskId, openOnly) { return raidForEntity('act', taskId, openOnly); }
-    // Open issues are what an overrun most often has behind it, so they lead;
-    // within a kind, the worst score first. One line, so a caller can put it in
-    // a table cell without measuring anything.
-    function raidChipFor(taskId) {
-      const rs = raidForTask(taskId, true);
-      if (!rs.length) return '';
-      const rank = r => (r.type === 'Issue' ? 0 : r.type === 'Risk' ? 1 : 2);
-      rs.sort((a, b) => rank(a) - rank(b)
+    /* ===== THE CHIP BESIDE A NUMBER =======================================
+       This used to be one function, and it was wrong in three ways at once.
+
+       It rendered ANY linked open entry as a red ⚠ chip, so an assumption you
+       were merely relying on appeared beside a $7,800 overrun looking exactly
+       like the logged reason for it. It filtered to open entries only, so
+       CLOSING the issue that explained a number erased the explanation — the
+       cause of an overrun does not stop being the cause once you have dealt
+       with it. And because every call site read `raidChipFor(id) || ptrRaidBtn(id)`,
+       the presence of that irrelevant assumption SUPPRESSED the offer to record
+       the actual cause: the one activity with something watched against it was
+       the one activity where you could no longer say what went wrong.
+
+       So it splits in two, along the line the data model now draws.
+
+       raidCauseChipFor  — entries that EXPLAIN. Red, because a cause is what
+                           you want to see next to a variance. Closed ones
+                           included, deliberately.
+       raidWatchChipFor  — entries merely being WATCHED. Neutral, never red,
+                           and it never stands in for a cause. If nobody has
+                           recorded whether it turned, it asks. */
+    function raidChipSort(rs) {
+      const rank = r => (r.type === 'Issue' ? 0 : r.type === 'Risk' ? 1 : r.type === 'Assumption' ? 2 : 3);
+      return rs.sort((a, b) => rank(a) - rank(b)
         || (b.probability || 3) * (b.impact || 3) - (a.probability || 3) * (a.impact || 3));
+    }
+    function raidCauseChipFor(taskId) {
+      // NOT openOnly. A closed issue is still the recorded reason the number is
+      // what it is, and hiding it the moment somebody ticks Closed is how an
+      // explained overrun turns back into an unexplained one.
+      const rs = raidChipSort(raidForTask(taskId, false).filter(raidExplains));
+      if (!rs.length) return '';
       const top = rs[0];
       const more = rs.length > 1 ? ' +' + (rs.length - 1) : '';
-      const tip = rs.map(r => r.type + ': ' + r.title + (r.status ? ' (' + r.status + ')' : '')).join('\n')
-        + '\n\nClick to open the RAID log.';
-      return '<button type="button" class="raid-chip" onclick="switchTab(\'raid\')" title="'
-        + escapeHtml(tip) + '"><span aria-hidden="true">⚠</span>'
-        + escapeHtml(top.type) + more + '</button>';
+      const tip = rs.map(r => raidCauseWord(r) + ' — ' + r.title
+          + (r.outcomeNote ? ': ' + r.outcomeNote : '')
+          + (r.status === 'Closed' ? ' (closed, still the recorded cause)' : '')).join('\n')
+        + '\n\nClick to open the entry.';
+      const fault = raidIsFault(top);
+      return '<button type="button" class="raid-chip' + (fault ? '' : ' raid-chip-ctx')
+        + '" onclick="switchTab(\'raid\');openRaidForm(' + top.id + ')" title="'
+        + escapeHtml(tip) + '"><span aria-hidden="true">' + (fault ? '⚠' : '◆') + '</span>'
+        + escapeHtml(raidCauseWord(top)) + more + '</button>';
     }
+    function raidWatchChipFor(taskId) {
+      const rs = raidChipSort(raidForTask(taskId, true).filter(raidWatches));
+      if (!rs.length) return '';
+      // an unanswered one leads, because it is the one somebody has to answer
+      const un = rs.filter(raidUnanswered);
+      const top = un[0] || rs[0];
+      const more = rs.length > 1 ? ' +' + (rs.length - 1) : '';
+      const asks = !!un.length;
+      const lbl = asks ? 'Did it happen?' : (raidOutcomeOf(top) || {}).short || top.type;
+      const tip = rs.map(r => {
+          const o = raidOutcomeOf(r);
+          return r.type + ': ' + r.title + ' — ' + (o ? o.lbl.toLowerCase() : 'outcome not recorded');
+        }).join('\n')
+        + (asks
+            ? '\n\nThis is being watched against this activity, not blamed for it. '
+              + 'Nobody has recorded whether it turned. Click to say.'
+            : '\n\nBeing watched against this activity. It is not the cause of the number beside it.');
+      return '<button type="button" class="raid-watch-chip' + (asks ? ' raid-watch-ask' : '')
+        + '" onclick="switchTab(\'raid\');openRaidForm(' + top.id + ')" title="'
+        + escapeHtml(tip) + '"><span aria-hidden="true">' + (asks ? '?' : '👁') + '</span>'
+        + escapeHtml(lbl) + more + '</button>';
+    }
+    /* The whole group in one call, because WHICH chips appear is exactly the
+       policy that was wrong before and it belongs in one place rather than
+       restated at four call sites. mkOffer is passed in rather than built here
+       because each surface words the draft it opens differently. */
+    function raidChipsFor(taskId, mkOffer) {
+      return raidCauseChipFor(taskId)
+        + (raidHasFaultCause(taskId) || !mkOffer ? '' : mkOffer())
+        + raidWatchChipFor(taskId);
+    }
+    // kept so nothing calling the old name breaks
+    function raidChipFor(taskId) { return raidCauseChipFor(taskId) + raidWatchChipFor(taskId); }
     function raidScoreBadge(r) {
       if (r.type !== 'Risk' && r.type !== 'Issue') return '—';
       const score = (r.probability || 3) * (r.impact || 3);
@@ -19131,6 +19398,92 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
     // The three the log understands. Anything else is not silently coerced —
     // the caller says so and leaves the entry as it was.
     const RAID_STATUSES = ['Open', 'Mitigating', 'Closed'];
+    /* ===== DID IT ACTUALLY HAPPEN? ========================================
+       A RAID log holds two completely different kinds of statement, and until
+       now this file could not tell them apart.
+
+       An Issue says "this went wrong". It is a CAUSE: it explains a number.
+       A Risk or an Assumption says "this might go wrong" or "we are counting
+       on this". It is a WATCH: it explains nothing at all until the day it
+       turns. An assumption that a client will provide a data steward is not a
+       reason an activity cost $7,800 more. It becomes one only when the
+       steward never appears — and that is a different fact, recorded on a
+       different day, which the log had nowhere to put.
+
+       `status` cannot carry it. Open → Mitigating → Closed tracks how much
+       ATTENTION an entry still needs, not how it turned out, and "Closed" on a
+       Risk is ambiguous in the worst possible way: it reads the same whether
+       the risk never happened or happened and was dealt with. On an Assumption
+       it means nothing at all. So the outcome is its own field, with its own
+       words per type, and a note for what actually happened.
+
+       `explains: true` is the whole point of the structure. It is what lets
+       the drill-in show a broken assumption beside the money it cost, and keep
+       a holding one out of the way. */
+    const RAID_OUTCOMES = {
+      Risk: [
+        { v: 'pending',      lbl: 'Has not happened',   short: 'watching',     explains: false },
+        { v: 'materialised', lbl: 'It happened',        short: 'Risk hit',     explains: true  },
+        { v: 'avoided',      lbl: 'It did not happen',  short: 'avoided',      explains: false }
+      ],
+      Assumption: [
+        { v: 'holding',   lbl: 'Still holding',   short: 'holding',           explains: false },
+        { v: 'broken',    lbl: 'It did not hold', short: 'Assumption broke',  explains: true  },
+        { v: 'confirmed', lbl: 'Confirmed true',  short: 'confirmed',         explains: false }
+      ]
+    };
+    // Only a Risk and an Assumption have an outcome. An Issue already happened,
+    // a Decision was already taken, an Exclusion is a boundary — none of the
+    // three is waiting to find out how it turned out.
+    function raidOutcomeOpts(type) { return RAID_OUTCOMES[type] || null; }
+    function raidOutcomeOf(r) {
+      const opts = raidOutcomeOpts(r && r.type);
+      if (!opts) return null;
+      const v = String((r && r.outcome) || '').trim().toLowerCase();
+      return opts.find(o => o.v === v) || null;
+    }
+    /* Does this entry EXPLAIN a number, or is it merely watching one?
+       An Issue and a Decision always explain: both are things that already
+       happened. A Risk explains once it materialised, an Assumption once it
+       broke. An Exclusion never explains anything — it is the opposite, a
+       statement about work that was never in scope. */
+    function raidExplains(r) {
+      if (!r) return false;
+      if (r.type === 'Issue' || r.type === 'Decision') return true;
+      const o = raidOutcomeOf(r);
+      return !!(o && o.explains);
+    }
+    function raidWatches(r) { return !!r && !!raidOutcomeOpts(r.type) && !raidExplains(r); }
+    /* Explaining and being a FAULT are two different things, and conflating them
+       makes the red chip lie in the other direction. A decision explains the
+       shape of the work — "single production org, no per-team sandboxes" is a
+       real reason design cost what it did — but it is not a problem and it was
+       written down before the variance existed. So it gets a chip, in its own
+       neutral weight, and it does NOT stand in for the missing account of why
+       this particular number moved: the offer to record that stays. Only an
+       issue, a risk that materialised or an assumption that broke is a fault. */
+    function raidIsFault(r) {
+      if (!r) return false;
+      if (r.type === 'Issue') return true;
+      const o = raidOutcomeOf(r);
+      return !!(o && o.explains);
+    }
+    function raidHasFaultCause(taskId) { return raidForTask(taskId, false).some(raidIsFault); }
+    // Nobody has said whether it turned. This is the question the log should be
+    // asking out loud, not a blank it quietly tolerates.
+    function raidUnanswered(r) { return !!r && !!raidOutcomeOpts(r.type) && !raidOutcomeOf(r); }
+    // what to call it once it HAS turned — 'Risk hit', 'Assumption broke'
+    function raidCauseWord(r) {
+      const o = raidOutcomeOf(r);
+      return (o && o.explains) ? o.short : (r ? r.type : '');
+    }
+    function setRaidOutcome(id, v) {
+      const r = raid.find(x => x.id === id); if (!r) return;
+      r.outcome = String(v || '');
+      saveLocal(); renderRaid();
+      // the chips in the Plan-truth panel and the trend read this directly
+      try { if (typeof renderPlanTruth === 'function') renderPlanTruth(); } catch (e) {}
+    }
     function raidStatusOf(v) {
       const t = String(v == null ? '' : v).trim().toLowerCase();
       return RAID_STATUSES.find(x => x.toLowerCase() === t) || null;
@@ -19158,6 +19511,7 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
           <td style="font-size:0.8rem;max-width:300px">${escapeHtml(r.mitigation || '')}</td>
           <td><select class="mini-inp" style="width:auto" onchange="setRaidStatus(${r.id}, this.value)"${raidStatusOf(r.status) ? '' : ` title="Stored status is “${escapeHtml(String(r.status || ''))}”, which this log does not recognise — pick one of the three to fix it."`}>
             ${(raidStatusOf(r.status) ? '' : `<option selected>${escapeHtml(String(r.status || '(blank)'))}</option>`)}${RAID_STATUSES.map(st => `<option ${st === r.status ? 'selected' : ''}>${st}</option>`).join('')}</select></td>
+          <td>${raidOutcomeCell(r)}</td>
           <td style="white-space:nowrap">
             <button class="btn-sm btn-secondary" onclick="openRaidForm(${r.id})">Edit</button>
             <button class="btn-sm btn-danger" onclick="deleteRaidEntry(${r.id})" aria-label="Delete RAID entry">✕</button>
@@ -19165,14 +19519,69 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
         </tr>`;
       }).join('');
       cont.innerHTML = `<div class="table-wrap"><table>
-        <thead><tr><th title="Risk (might happen) · Assumption (planning on it) · Issue (happening now) · Decision · Exclusion (out of scope — feeds the SOW)">Type</th><th>Title</th><th title="Probability × Impact (1–5 each). 15+ red = act now">Score</th><th>Owner</th><th title="Linked plan task, if any">Task</th><th>Mitigation / detail</th><th title="Open → Mitigating → Closed">Status</th><th></th></tr></thead>
+        <thead><tr><th title="Risk (might happen) · Assumption (planning on it) · Issue (happening now) · Decision · Exclusion (out of scope — feeds the SOW)">Type</th><th>Title</th><th title="Probability × Impact (1–5 each). 15+ red = act now">Score</th><th>Owner</th><th title="Linked plan task, if any">Task</th><th>Mitigation / detail</th><th title="Open → Mitigating → Closed. How much attention it still needs, not how it turned out.">Status</th><th title="How it TURNED OUT, which status cannot say: “Closed” on a risk reads the same whether it never happened or happened and was handled. Only an entry that turned is shown as the cause of a number.">Did it happen?</th><th></th></tr></thead>
         <tbody>${rows}</tbody></table></div>`;
       renderPricing();
     }
+    /* The cell, not a column of empty selects: an Issue has no outcome to
+       record, so it says why rather than showing a control that does nothing. */
+    function raidOutcomeCell(r) {
+      const opts = raidOutcomeOpts(r.type);
+      if (!opts) return '<span class="help-text" style="margin:0" title="'
+        + escapeHtml(r.type === 'Issue' ? 'An issue is something that already happened — it is a cause by definition.'
+            : r.type === 'Decision' ? 'A decision was already taken.'
+            : 'An exclusion is a boundary, not something waiting to turn.')
+        + '">—</span>';
+      const cur = raidOutcomeOf(r);
+      const raise = (cur && cur.explains && !raidLinks(r).some(l => l.k === 'raid'))
+        ? '<button type="button" class="btn-sm btn-secondary" style="margin-top:0.25rem" onclick="raidRaiseFrom('
+            + r.id + ')" title="' + escapeHtml('This turned, so it is now a live problem. Draft the Issue it became, '
+            + 'linked back to this entry and to everything this entry touches.') + '">Raise the issue</button>'
+        : '';
+      return '<select class="mini-inp" style="width:auto" onchange="setRaidOutcome(' + r.id + ', this.value)"'
+        + (cur ? '' : ' title="' + escapeHtml('Nobody has recorded whether this turned. Until somebody does it is '
+            + 'shown as watched, never as the reason a number moved.') + '"')
+        + '><option value=""' + (cur ? '' : ' selected') + '>Not recorded</option>'
+        + opts.map(o => '<option value="' + o.v + '"' + (cur && cur.v === o.v ? ' selected' : '') + '>'
+            + escapeHtml(o.lbl) + '</option>').join('')
+        + '</select>'
+        + (r.outcomeNote ? '<div class="help-text" style="margin:0.2rem 0 0;max-width:16rem">'
+            + escapeHtml(r.outcomeNote) + '</div>' : '')
+        + raise;
+    }
+    /* A risk that materialised is no longer a risk. It is a live problem, and
+       the honest next move is to open the Issue it became rather than quietly
+       reinterpret the risk row as one. Prefilled and linked in both directions:
+       back to the entry it came from, and forward to everything that entry
+       touched, because those are exactly the activities now carrying it. */
+    function raidRaiseFrom(id) {
+      const r = raid.find(x => x.id === id); if (!r) return;
+      const cur = raidOutcomeOf(r);
+      switchTab('raid');
+      openRaidForm(null);
+      const set = (i, v) => { const e = document.getElementById(i); if (e) e.value = v; };
+      set('rType', 'Issue');
+      raidOutcomeFormSync();
+      set('rTitle', String(r.title || '').slice(0, 90));
+      set('rProb', 5);                                   // it happened — certainty, not a guess
+      set('rImpact', r.impact || 3);
+      set('rOwner', r.owner || '');
+      set('rDesc', (cur ? cur.lbl : 'It turned') + ' on ' + fmtISO(new Date()) + '. Raised from '
+        + r.type.toLowerCase() + ' “' + String(r.title || '') + '”'
+        + (r.outcomeNote ? ': ' + r.outcomeNote : '') + '. What is being done about it now?');
+      set('rMitigation', r.mitigation || '');
+      raidDraftLinks = [{ k: 'raid', id: r.id, was: r.type + ': ' + String(r.title || '').slice(0, 40) }]
+        .concat(raidLinks(r).filter(l => l.k !== 'raid').map(l => ({ k: l.k, id: l.id, was: l.was })));
+      raidRenderDraft(); raidFillPicker();
+      const f = document.getElementById('raidForm');
+      if (f && f.scrollIntoView) f.scrollIntoView({ block: 'center' });
+    }
     function exportRaidCSV() {
-      const rows = [['Type','Title','Probability','Impact','Score','Owner','Related task','Mitigation','Status','Created']];
+      const rows = [['Type','Title','Probability','Impact','Score','Owner','Related task','Mitigation','Status','Did it happen','What happened','Created']];
       raid.forEach(r => rows.push([r.type, r.title, r.probability, r.impact, r.probability * r.impact, r.owner,
-        (tasks.find(t => t.id === r.taskId) || {}).name || '', r.mitigation, r.status, r.createdAt]));
+        (tasks.find(t => t.id === r.taskId) || {}).name || '', r.mitigation, r.status,
+        (raidOutcomeOf(r) || {}).lbl || (raidOutcomeOpts(r.type) ? 'Not recorded' : 'n/a'),
+        r.outcomeNote || '', r.createdAt]));
       download(safeName() + '-raid.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
     }
     /* =============== SAY IT IN A SENTENCE — prompt-driven capture ==========
@@ -19300,6 +19709,7 @@ Return ONLY this JSON, no prose, no code fence:
       openRaidForm(null);
       const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
       set('rType', type);
+      raidOutcomeFormSync();       // .value does not fire change
       set('rTitle', (title || sentence).slice(0, 90));
       set('rProb', type === 'Issue' ? 5 : clamp(res && res.probability));
       set('rImpact', clamp(res && res.impact));
@@ -20499,7 +20909,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
             + escapeHtml('Open ' + (t.name || 'this activity')) + '">'
             + ekTok(ekKindOf(t), t.wbs || '', t.name || '(unnamed)', { xs: true })
             + '<span class="ptr-sc-rv">' + escapeHtml(fin) + '</span></button>'
-            + (raidChipFor(t.id) || ptrRaidBtn(t.id, t.name, 'sets the forecast finish date of ' + fin));
+            + raidChipsFor(t.id, () => ptrRaidBtn(t.id, t.name, 'sets the forecast finish date of ' + fin));
         }).join('') + '</div>';
     }
 
@@ -20975,6 +21385,39 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
           recommendation: 'If they were descoped, that belongs in a change order too — a client who is billed for '
             + 'the original scope will ask where they went. If they were renumbered rather than dropped, re-baseline '
             + 'so the committed set matches what you are actually delivering.' });
+      })();
+      /* WHAT WAS BEING WATCHED, AND DID IT TURN. A register is only worth the
+         day somebody goes back and answers it. Two findings, in the order they
+         cost you money: one that turned and was never converted into a live
+         problem, and one nobody ever answered on work that has already run. */
+      (() => {
+        const turned = [], unans = [];
+        (raid || []).forEach(r => {
+          if (!raidOutcomeOpts(r.type)) return;
+          if (r.status === 'Closed') return;
+          if (raidExplains(r)) { if (!raidLinks(r).some(l => l.k === 'raid')) turned.push(r); return; }
+          if (!raidUnanswered(r)) return;
+          // only on work that has already run — before that, "not yet" is right
+          const acts = raidLinks(r).filter(l => l.k === 'act')
+            .map(l => tasks.find(t => t.id === l.id)).filter(Boolean);
+          if (acts.some(t => (t.percentComplete || 0) >= 100
+              || (calculated && t.finishDate && stripTime(t.finishDate) < stripTime(new Date())))) unans.push(r);
+        });
+        if (turned.length) findings.push({ severity: 'high', area: 'RAID outcomes',
+          finding: turned.length + ' ' + (turned.length === 1 ? 'entry has' : 'entries have')
+            + ' turned and ' + (turned.length === 1 ? 'is' : 'are') + ' still filed as something being watched: '
+            + turned.slice(0, 3).map(r => raidCauseWord(r).toLowerCase() + ' — ' + r.title).join('; ')
+            + (turned.length > 3 ? '…' : '') + '.',
+          recommendation: 'A risk that materialised is a live issue and an assumption that broke is a live issue. '
+            + 'Use “Raise the issue” on the RAID row — it drafts one linked back to the entry and forward to every '
+            + 'activity the entry touched, which is exactly the set now carrying it.', jump: 'raid' });
+        if (unans.length) findings.push({ severity: 'medium', area: 'RAID outcomes',
+          finding: unans.length + ' ' + (unans.length === 1 ? 'risk/assumption is' : 'risks/assumptions are')
+            + ' linked to work that has already run, with no outcome recorded: '
+            + unans.slice(0, 3).map(r => r.title).join('; ') + (unans.length > 3 ? '…' : '') + '.',
+          recommendation: 'Answer “Did it happen?” on each. Whether a risk turned is knowable for about a week '
+            + 'after the work and unrecoverable a quarter later, and until it is answered the entry can never be '
+            + 'offered as the reason a number moved — it just sits beside the variance saying nothing.', jump: 'raid' });
       })();
       const chained = tcChainedList();
       if (chained.length) findings.push({ severity: 'medium', area: 'Test plan',
