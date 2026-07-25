@@ -476,6 +476,10 @@
     /* zero variance is a measurement, not an absence — a dot ON the plan line */
     .ptr-dot { position: absolute; left: 50%; top: 50%; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px;
       border-radius: 999px; background: var(--success); box-shadow: 0 0 0 3px var(--card), 0 0 0 4.5px var(--success); }
+    /* a dot ON the line still needs to be able to say "and that is not good
+       news": the committed end date can hold while everything under it moves */
+    .ptr-dot-chg { background: var(--warn); box-shadow: 0 0 0 3px var(--card), 0 0 0 4.5px var(--warn); }
+    .ptr-dot-bad { background: var(--critical); box-shadow: 0 0 0 3px var(--card), 0 0 0 4.5px var(--critical); }
     .ptr-over { position: absolute; top: 50%; transform: translateY(-50%); font-size: 13px; line-height: 1; font-weight: 700; }
     .ptr-over-r { right: 3px; } .ptr-over-l { left: 3px; }
     .ptr-good-t { color: var(--success); } .ptr-bad-t { color: var(--critical); } .ptr-chg-t { color: var(--warn); }
@@ -2536,7 +2540,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1718</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1726</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -8255,6 +8259,67 @@
             ? 'Contingency reserve covers ' + buf + ' calendar ' + ptrPl(buf, 'day')
               + (slip > buf ? ' — you are <b>' + (slip - buf) + '</b> beyond it.' : '.')
             : 'No contingency reserve is set, so every slipped day comes straight off the committed date.');
+
+        /* ---- A MAX HIDES EVERYTHING UNDERNEATH IT -------------------------
+           Both ends of the number above are a Math.max over the whole plan, so
+           it moves only when the LAST activity moves. Every other displacement
+           — a workstream running five weeks early, another running three weeks
+           late, an activity finished before its own baseline opened — is
+           invisible to it, and they cancel against each other by construction.
+           On a real export this row read "on the baseline date · 0%" while
+           fourteen activities sat off their own baseline finish and the budget
+           row read +49%. The headline stays the committed end date, because
+           that is the number a client asks for; what changes is that the row
+           can no longer imply nothing moved. */
+        const dispOf = new Map();
+        leaves.forEach(t => {
+          const bf = t.baseFinish, cf = currentFinish(t);
+          if (!(bf instanceof Date) || isNaN(bf.getTime())) return;   // added after the baseline: scope, not slip
+          if (!cf) return;
+          const d = varianceDays(bf, cf);
+          if (d) dispOf.set(t.id, d);
+        });
+        const disp = [...dispOf.values()];
+        const lateN = disp.filter(d => d > 0).length, earlyN = disp.filter(d => d < 0).length;
+        const absDays = disp.reduce((a, d) => a + Math.abs(d), 0);
+        let worstId = null, worstD = 0;
+        dispOf.forEach((d, id) => { if (Math.abs(d) > Math.abs(worstD)) { worstD = d; worstId = id; } });
+        const worstT = worstId == null ? null : leaves.find(t => t.id === worstId);
+        sch.dispOf = dispOf; sch.offN = disp.length; sch.lateN = lateN; sch.earlyN = earlyN;
+        if (disp.length) {
+          const pieces = [];
+          if (lateN) pieces.push('<b>' + lateN + '</b> ' + (lateN === 1 ? 'is' : 'are') + ' finishing later than '
+            + (lateN === 1 ? 'its' : 'their') + ' own baseline');
+          if (earlyN) pieces.push('<b>' + earlyN + '</b> earlier');
+          sch.note += ' Both ends of that comparison are a <b>max over the whole plan</b>, so it moves only when '
+            + 'the LAST activity moves. Underneath it, <b>' + disp.length + '</b> '
+            + ptrPl(disp.length, 'activity', 'activities') + ' ' + (disp.length === 1 ? 'sits' : 'sit')
+            + ' off ' + (disp.length === 1 ? 'its' : 'their') + ' own baseline finish — ' + pieces.join(' and ')
+            + ', <b>' + absDays + '</b> activity-' + ptrPl(absDays, 'day') + ' of movement in total'
+            + (worstT ? ', worst “' + escapeHtml(ekName(worstT)) + '” at <b>' + Math.abs(worstD) + ' '
+                + ptrPl(Math.abs(worstD), 'day') + ' ' + (worstD > 0 ? 'late' : 'early') + '</b>' : '')
+            + '. Early and late cancel in a max; they do not cancel in the work.';
+          /* The colour follows the VERDICT, never the length — the same split
+             the Budget row makes. A late end date is already red from its
+             direction and stays red; what needs saying is the case the
+             direction gets WRONG: the committed date held or even pulled in,
+             which reads as good news, while activities underneath are late. */
+          if (slip === 0) {
+            sch.tone = 'chg';
+            sch.delta = 'end date held · ' + disp.length + ' off ' + (disp.length === 1 ? 'its' : 'their') + ' own dates';
+            sch.rankByDisp = true;
+          } else if (slip < 0 && lateN) {
+            sch.tone = 'chg';
+            sch.rankByDisp = true;
+            sch.note += ' The committed date pulled IN while <b>' + lateN + '</b> '
+              + ptrPl(lateN, 'activity', 'activities') + ' ' + (lateN === 1 ? 'is' : 'are')
+              + ' late against ' + (lateN === 1 ? 'its' : 'their') + ' own baseline: those slips are being '
+              + 'absorbed by float somewhere else, which is a buffer being spent rather than a schedule being met.';
+          }
+        } else if (hb) {
+          sch.note += ' Every activity that was in the baseline is still finishing on its own baselined date, '
+            + 'so this one number really is the whole schedule story.';
+        }
       })();
 
       // ------------------------------- BUDGET -------------------------------
@@ -8569,7 +8634,23 @@
           return Math.max(0, mine - inherited);
         };
         const behind = (sch.pct || 0) >= 0;
-        if (behind) {
+        /* When the end date held, ranking by "how late" lists nothing on a plan
+           whose movement is all early — and the empty-state line then says "no
+           activity has moved off its baseline finish", which is simply untrue.
+           Rank by the SIZE of the displacement and label it with its sign. */
+        if (sch.rankByDisp && sch.dispOf && sch.dispOf.size) {
+          const pool = leaves.filter(t => sch.dispOf.has(t.id));
+          sch.drivers = drivers(pool, t => Math.abs(sch.dispOf.get(t.id)), (v, t) => {
+            const d = sch.dispOf.get(t.id);
+            return (d > 0 ? '+' : '−') + Math.abs(d) + ' ' + ptrPl(Math.abs(d), 'day');
+          });
+          sch.driverNote = (sch.state === 'flat'
+              ? 'The committed end date did not move, so these are '
+              : 'The committed end date pulled in, so these are ')
+            + 'ranked by how far each activity is from its OWN baseline finish, biggest first, sign kept. '
+            + 'A plan whose parts are all moving while its end date holds is either genuinely re-sequenced or '
+            + 'quietly mis-recorded — the strip above rings the ones whose record does not add up.';
+        } else if (behind) {
           const late = leaves.filter(t => slipOf.get(t.id) > 0);
           sch.drivers = drivers(late, ownSlip,
             v => '+' + Math.round(v) + ' ' + ptrPl(Math.round(v), 'day'));
@@ -8643,7 +8724,11 @@
 
       // what to say when a dimension is measured but has no contributors to list
       if (sch.state !== 'needs' && !(sch.drivers || []).length)
-        sch.driverEmpty = 'No activity has moved off its baseline finish, so there is nothing behind this number yet.';
+        sch.driverEmpty = sch.offN
+          ? sch.offN + ' ' + ptrPl(sch.offN, 'activity', 'activities') + ' moved off '
+            + (sch.offN === 1 ? 'its' : 'their') + ' own baseline finish, but none of it reached the end date — '
+            + 'every move was absorbed by float or cancelled by another one.'
+          : 'No activity has moved off its baseline finish, so there is nothing behind this number yet.';
       if (bud.state !== 'needs' && !(bud.drivers || []).length)
         bud.driverEmpty = 'Every activity is booked at exactly what it was budgeted, so no single one is moving this.';
       if (scp.state !== 'needs' && !(scp.drivers || []).length)
@@ -8721,8 +8806,11 @@
       let shape, badgeCls, pctTxt;
       if (r.state === 'flat') {
         // Zero variance is a measurement, not an absence — a dot ON the line.
-        shape = '<i class="ptr-dot"></i>';
-        badgeCls = 'badge-ok';
+        // But zero is not always GOOD: a committed end date can hold while
+        // everything underneath it moves, and the row says so by colouring the
+        // dot and the badge from its own verdict rather than from the length.
+        shape = '<i class="ptr-dot' + (r.tone === 'bad' ? ' ptr-dot-bad' : r.tone === 'chg' ? ' ptr-dot-chg' : '') + '"></i>';
+        badgeCls = r.tone === 'bad' ? 'badge-blocked' : r.tone === 'chg' ? 'badge-warn' : 'badge-ok';
         pctTxt = '0%';
       } else {
         const over = r.pct > 0;
