@@ -505,6 +505,22 @@
     }
     .ptr-drv-note { font-size: var(--t-xs); color: var(--muted); margin: 0.3rem 0 0.4rem; line-height: 1.5; }
     .ptr-drv-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+    .ptr-drv-li { display: flex; align-items: center; gap: 0.35rem; }
+    .ptr-drv-li > .ptr-drv-row { flex: 1 1 auto; min-width: 0; }
+    /* An explanation already logged against this activity. It sits beside the
+       number it explains rather than one tab away, and it is a real button so
+       it reaches the log in one click and keeps the shared focus ring. */
+    .raid-chip {
+      flex: none; display: inline-flex; align-items: center; gap: 0.2rem;
+      min-height: 24px; padding: 1px 0.4rem; border-radius: 999px; cursor: pointer;
+      border: 1px solid #fca5a5; background: #fef2f2; color: #b91c1c;   /* 6.55:1 */
+      font-size: var(--t-xs); font-weight: 700; line-height: 1.5; white-space: nowrap;
+      box-shadow: none;
+    }
+    .raid-chip:hover:not(:disabled), .raid-chip:active:not(:disabled) {
+      background: #fee2e2; transform: none; box-shadow: none;
+    }
+    @media print { .raid-chip { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
     .ptr-drv-row {
       /* a real button so it inherits the zero-specificity focus-visible ring */
       display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
@@ -2297,7 +2313,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0459</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0507</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3865,7 +3881,26 @@
             </div>
           </details>` : ''}`;
         }
-        sp.innerHTML = tcSpec + (st.length
+        /* Anything already logged against this activity, shown ON the activity.
+           Until now the RAID log could only be read from the RAID tab, so the
+           sentence explaining why an activity went wrong lived one tab away from
+           the activity it explains — and from every number that explains. */
+        const raidHere = raidForTask(id);
+        const raidBlock = raidHere.length
+          ? `<details open style="margin-bottom:1rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:0.5rem 0.75rem">
+              <summary style="cursor:pointer;font-size:0.8rem;font-weight:600;color:#b91c1c"><span class="ico" aria-hidden="true">⚠</span> RAID entries on this activity (${raidHere.length}) — what is known to be affecting it</summary>
+              <ul style="list-style:none;margin:0.5rem 0 0.4rem;padding:0;display:grid;gap:0.35rem;font-size:0.8rem;line-height:1.45">
+              ${raidHere.map(r => `<li style="display:flex;gap:0.5rem;align-items:flex-start">
+                  <span class="badge ${r.status === 'Closed' ? 'badge-ok' : (r.type === 'Issue' ? 'badge-blocked' : 'badge-warn')}" style="flex:none">${escapeHtml(r.type)}</span>
+                  <span style="flex:1;min-width:0"><b>${escapeHtml(r.title)}</b>${r.mitigation ? ` — <span style="color:#475569">${escapeHtml(r.mitigation)}</span>` : ''}
+                  ${r.status && r.status !== 'Open' ? ` <span style="color:var(--muted)">(${escapeHtml(r.status)})</span>` : ''}</span>
+                  <span style="flex:none">${raidScoreBadge(r)}</span>
+                </li>`).join('')}
+              </ul>
+              <button class="btn-lite no-print" onclick="closeModal();switchTab('raid')" title="Open the RAID log to edit these">Open RAID log →</button>
+            </details>`
+          : '';
+        sp.innerHTML = raidBlock + tcSpec + (st.length
           ? `<details open style="margin-bottom:1rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:0.5rem 0.75rem">
               <summary style="cursor:pointer;font-size:0.8rem;font-weight:600;color:#1e40af"><span class="ico" aria-hidden="true">📖</span> User stories traced to this activity (${st.length}) — the acceptance criteria that define “done” for billing</summary>
               ${st.map(s => `<div style="margin:0.6rem 0 0.75rem;font-size:0.8rem;line-height:1.45">
@@ -7747,7 +7782,10 @@
         .sort((a, b) => b.v - a.v)
         .slice(0, DRIVER_MAX)
         .map(x => ({ id: x.t.id, name: x.t.name, wbs: x.t.wbs || '', kind: ekKindOf(x.t),
-                     crit: !!x.t.isCritical, txt: label(x.v, x.t) }));
+                     crit: !!x.t.isCritical, txt: label(x.v, x.t),
+                     // if somebody already logged why this went wrong, show it HERE,
+                     // beside the number it explains, not one tab away
+                     raid: raidChipFor(x.t.id) }));
 
       // Schedule: activities finishing later than the baseline froze them. Only
       // a critical one can actually move the end date, so those lead, but a
@@ -7817,13 +7855,17 @@
        when closed, and it prints open if the reader left it open. */
     function ptrDrivers(r) {
       if (!r.drivers || !r.drivers.length) return '';
+      // The row is a <li> holding up to two SIBLING buttons, never nested ones:
+      // "open the activity" and, when something is logged against it, "open the
+      // RAID log". A button inside a button is invalid and swallows one of the
+      // two clicks.
       const rows = r.drivers.map(d =>
-        '<li><button type="button" class="ptr-drv-row" onclick="openEditModal(' + d.id + ', true)" '
+        '<li class="ptr-drv-li"><button type="button" class="ptr-drv-row" onclick="openEditModal(' + d.id + ', true)" '
         + 'title="Open ' + escapeHtml(d.name) + '">'
         + ekTok(d.kind, d.wbs, d.name, { xs: true })
         + '<span class="ptr-drv-v' + (d.crit ? ' ptr-drv-crit' : '') + '">' + d.txt
         + (d.crit ? ' <span title="Zero slack — this activity is on the critical path, so any delay here moves the finish date too">⚠</span>' : '')
-        + '</span></button></li>').join('');
+        + '</span></button>' + (d.raid || '') + '</li>').join('');
       return '<details class="ptr-drv no-print-open"><summary>Which activities? <span class="ptr-drv-n">'
         + r.drivers.length + '</span></summary>'
         + (r.driverNote ? '<p class="ptr-drv-note">' + r.driverNote + '</p>' : '')
@@ -15058,6 +15100,38 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
     function deleteRaidEntry(id) {
       if (!confirm('Delete this RAID entry?')) return;
       raid = raid.filter(x => x.id !== id); saveLocal(); renderRaid();
+    }
+    /* RAID has always been readable in one direction only. Nine places walk the
+       log — the AI prompt, the SOW, the status report, the exports, the RAID tab
+       itself — and every one of them goes entry → task. Nothing went the other
+       way, so an issue logged against an activity was invisible everywhere the
+       activity appears, including everywhere its variance is reported. Logging
+       "client sandbox arrived three weeks late" against the activity it wrecked
+       put the explanation one tab away from the number it explains.
+
+       This is the reverse index. It is keyed on taskId because that is the only
+       link the data model has today; when typed links land it becomes the same
+       lookup over a wider edge set, and every caller here is unchanged. */
+    function raidForTask(taskId, openOnly) {
+      if (taskId == null) return [];
+      return raid.filter(r => r.taskId === taskId && (!openOnly || r.status !== 'Closed'));
+    }
+    // Open issues are what an overrun most often has behind it, so they lead;
+    // within a kind, the worst score first. One line, so a caller can put it in
+    // a table cell without measuring anything.
+    function raidChipFor(taskId) {
+      const rs = raidForTask(taskId, true);
+      if (!rs.length) return '';
+      const rank = r => (r.type === 'Issue' ? 0 : r.type === 'Risk' ? 1 : 2);
+      rs.sort((a, b) => rank(a) - rank(b)
+        || (b.probability || 3) * (b.impact || 3) - (a.probability || 3) * (a.impact || 3));
+      const top = rs[0];
+      const more = rs.length > 1 ? ' +' + (rs.length - 1) : '';
+      const tip = rs.map(r => r.type + ': ' + r.title + (r.status ? ' (' + r.status + ')' : '')).join('\n')
+        + '\n\nClick to open the RAID log.';
+      return '<button type="button" class="raid-chip" onclick="switchTab(\'raid\')" title="'
+        + escapeHtml(tip) + '"><span aria-hidden="true">⚠</span>'
+        + escapeHtml(top.type) + more + '</button>';
     }
     function raidScoreBadge(r) {
       if (r.type !== 'Risk' && r.type !== 'Issue') return '—';
