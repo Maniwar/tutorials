@@ -2278,7 +2278,7 @@
         <div class="card-header">
           <h2><span class="ico" aria-hidden="true">🩺</span> Plan Health Check &amp; Trend</h2>
           <div class="toolbar no-print">
-            <button class="btn-primary btn-sm" onclick="runHealthCheck()">Run health check</button>
+            <button class="btn-primary btn-sm" id="healthRunBtn" onclick="runHealthCheck()">Run health check</button>
             <button class="btn-secondary btn-sm" onclick="takeStatusSnapshot(true)" title="Record today's forecast for the trend chart"><span class="ico" aria-hidden="true">📸</span> Snapshot status</button>
           </div>
         </div>
@@ -2313,7 +2313,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0507</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0529</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -16210,8 +16210,51 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       }
       return findings;
     }
+    /* This button could look completely dead. Without a plan it fired a bare
+       alert that is easy to dismiss without reading, and with one it did all its
+       work — including, with an API key, a multi-second round trip to the model —
+       while the button sat unchanged and the container kept showing the previous
+       result. Nothing moved until everything was finished. So: say why it cannot
+       run, in place rather than in a dialog; change the button the instant it is
+       pressed; put a running state in the container so something visibly happens
+       at once; and bring the result into view, because the panel sits below the
+       fold on a long Analytics tab. */
+    function healthBusy(on, label) {
+      const b = document.getElementById('healthRunBtn');
+      if (!b) return;
+      if (on) { b.dataset.label = b.dataset.label || b.textContent; b.disabled = true; b.textContent = label || 'Checking…'; }
+      else { b.disabled = false; if (b.dataset.label) b.textContent = b.dataset.label; }
+    }
     async function runHealthCheck() {
-      if (!calculated) { alert('Calculate first.'); return; }
+      const cont = document.getElementById('healthContainer');
+      if (!calculated) {
+        if (cont) {
+          cont.innerHTML = '<p class="help-text" style="margin:0"><b>Nothing to check yet.</b> The health check reads the '
+            + 'calculated schedule — estimate ranges, activity sizes, missing scope, the drivers of the finish date — so it '
+            + 'needs the plan computed first.'
+            + (tasks.length ? ' <button class="btn-secondary btn-sm no-print" onclick="calculate();runHealthCheck()">Calculate and check</button>'
+                            : ' Add activities on the Tasks tab, then press <b>Calculate</b>.')
+            + '</p>';
+          cont.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        } else alert('Calculate first.');
+        return;
+      }
+      const hadKey = !!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE));
+      healthBusy(true, hadKey ? 'Reviewing…' : 'Checking…');
+      if (cont) {
+        cont.innerHTML = '<p class="help-text" style="margin:0">⏳ <b>' + (hadKey ? 'Reviewing the plan' : 'Linting the plan') + '…</b>'
+          + (hadKey ? ' The AI review takes a few seconds; the built-in checks appear either way.' : '') + '</p>';
+        cont.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+      try {
+        return await runHealthCheckInner();
+      } finally {
+        healthBusy(false);
+        const c2 = document.getElementById('healthContainer');
+        if (c2) c2.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }
+    async function runHealthCheckInner() {
       let findings = lintPlan();
       const hasKey = !!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE));
       if (hasKey) {
