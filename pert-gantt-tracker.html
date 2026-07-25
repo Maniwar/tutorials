@@ -825,8 +825,11 @@
       font-size: var(--t-xs); font-weight: 500; color: var(--muted);
       line-height: 1.35; white-space: normal;
     }
-    .ptr-drv-sub-bad { color: var(--critical); font-weight: 600; }
-    .ptr-drv-sub-good { color: var(--success); }
+    /* Only the half that is a verdict takes a colour. The timing half stays
+       muted with the rest of the line, because "three thousand dollars ahead of
+       its dates" is not a finding in either direction. */
+    .ptr-drv-o-bad { color: var(--critical); font-weight: 600; }
+    .ptr-drv-o-good { color: var(--success); }
     /* critical work is the only sub-set where the variance moves the finish
        date, so it is the only thing here that earns an alarm colour */
     .ptr-drv-crit { color: var(--critical); }
@@ -2788,7 +2791,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.2031</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.2106</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -9250,10 +9253,13 @@
           const timing = ev - pv, over = ac - ev;
           const tol = Math.max(1, plannedCostOf(t, hb) * 0.005);
           const bits = [];
+          // TIMING IS NEVER COLOURED. It is the half that costs nothing, and the
+          // whole point of splitting the number was to stop it reading as a fault.
           if (Math.abs(timing) > tol) bits.push('<b>' + money(Math.abs(Math.round(timing))) + '</b> '
             + (timing > 0 ? 'ahead of its dates' : 'behind its dates'));
-          if (Math.abs(over) > tol) bits.push('<b>' + money(Math.abs(Math.round(over))) + '</b> '
-            + (over > 0 ? 'over its own budget' : 'under its own budget'));
+          if (Math.abs(over) > tol) bits.push('<span class="ptr-drv-o-' + (over > 0 ? 'bad' : 'good')
+            + '"><b>' + money(Math.abs(Math.round(over))) + '</b> '
+            + (over > 0 ? 'over its own budget' : 'under its own budget') + '</span>');
           return { timing: timing, over: over,
                    // the tone of the ROW is the tone of the overrun, never of the
                    // total: being early is not a fault and must not read as one
@@ -9350,10 +9356,20 @@
         '<li class="ptr-drv-li"><button type="button" class="ptr-drv-row" onclick="openEditModal(' + d.id + ', true)" '
         + 'title="Open ' + escapeHtml(d.name) + '">'
         + '<span class="ptr-drv-main">' + ekTok(d.kind, d.wbs, d.name, { xs: true })
-        + (d.sub ? '<span class="ptr-drv-sub ptr-drv-sub-' + (d.tone || 'flat') + '">' + d.sub + '</span>' : '')
+        + (d.sub ? '<span class="ptr-drv-sub">' + d.sub + '</span>' : '')
         + '</span>'
-        + '<span class="ptr-drv-v ptr-drv-v-' + (d.tone || 'plain') + (d.crit ? ' ptr-drv-crit' : '') + '">' + d.txt
-        + (d.crit ? ' <span title="Zero slack — this activity is on the critical path, so any delay here moves the finish date too">⚠</span>' : '')
+        /* ONE COLOUR, ONE MEANING. .ptr-drv-crit paints the whole figure red for
+           being on the critical path. On the Schedule row that is exactly right —
+           the number is days of movement, and red means this one can move the end
+           date. On the Budget row it is the original defect walking back in
+           through the cascade: Solution Design came in UNDER its own budget, took
+           the green it had earned, and .ptr-drv-crit (declared later, same
+           specificity) painted it red again for a fact about the schedule. Data
+           Mapping, genuinely $2,167 over, stayed black for not being critical.
+           So a dimension that supplies a tone keeps it, and criticality moves to
+           the ⚠ it was already drawing beside the number. */
+        + '<span class="ptr-drv-v' + (d.tone ? ' ptr-drv-v-' + d.tone : (d.crit ? ' ptr-drv-crit' : '')) + '">' + d.txt
+        + (d.crit ? ' <span class="ptr-drv-crit" title="Zero slack — this activity is on the critical path, so any delay here moves the finish date too">⚠</span>' : '')
         + '</span></button>'
         // an activity with a variance and no CAUSE logged against it is itself a
         // finding, so the empty slot offers to fill itself in. A watched entry
