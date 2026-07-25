@@ -2381,7 +2381,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1542</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1553</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -2620,13 +2620,20 @@
         matched = true;
         const n = parseFloat(m2[1]);
         const u = m2[2][0];
-        total += u === 'w' ? n * 5 : u === 'd' ? n : u === 'h' ? n / 8 : n / 480; // working days
+        // A week is however many working days this project HAS. Every other
+        // week↔day conversion in the file already asks workingDaysPerWeek();
+        // this parser used a literal 5, so on a 6-day week a typed "2w" stored
+        // 10 working days instead of 12 — a silent 20% error that propagated
+        // into the duration, the dates and the price. Harmless on Mon–Fri,
+        // which is why it survived.
+        const wpw = workingDaysPerWeek();
+        total += u === 'w' ? n * wpw : u === 'd' ? n : u === 'h' ? n / 8 : n / 480; // working days
       }
       if (!matched) return NaN;
       const leftover = s0.replace(/(\d+(?:\.\d+)?)\s*(weeks|week|wks|wk|w|days|day|d|hours|hour|hrs|hr|h|minutes|minute|mins|min|m)(?![a-z])/g, '').replace(/[\s,+and]+/g, '');
       if (leftover) return NaN; // stray text → reject rather than guess
       const unit = document.getElementById('durationUnit').value;
-      return unit === 'hours' ? total * 8 : unit === 'weeks' ? total / 5 : total;
+      return unit === 'hours' ? total * 8 : unit === 'weeks' ? total / workingDaysPerWeek() : total;
     }
     // live hint under estimate fields: what "4h" became in project units
     function durExprEcho(raw) {
@@ -2652,7 +2659,7 @@
         return (+n.toFixed(2)) + 'd';
       }
       if (unit === 'hours') return n < 1 ? Math.round(n * 60) + 'm' : (+n.toFixed(2)) + 'h';
-      if (unit === 'weeks') return n < 1 ? (+(n * 5).toFixed(2)) + 'd' : (+n.toFixed(2)) + 'w';
+      if (unit === 'weeks') return n < 1 ? (+(n * workingDaysPerWeek()).toFixed(2)) + 'd' : (+n.toFixed(2)) + 'w';
       return String(+n.toFixed(2));
     }
     function ompHintUpd() {
@@ -9396,7 +9403,12 @@
           svg += `<line x1="${x}" y1="${PAD + TITLE_H}" x2="${x}" y2="${Y0 + bodyH}" stroke="#cbd5e1" stroke-width="1"/>`;
           svg += `<text x="${x + 4}" y="${PAD + TITLE_H + 14}" font-family="${FF}" font-size="11" font-weight="700" fill="#334155">${escapeXml(d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }))}</text>`;
         }
-        const wknd = (d.getDay() === 0 || d.getDay() === 6) || holidays.has(fmtISO(d));
+        // isWorkingDay, not raw weekday indices — the "Working week" toggles
+        // drive weekendDays and the scheduler honours it, so shading a
+        // Sun/Thu weekend as workdays made the calendar background contradict
+        // the bars on the one artefact that gets exported and shown to a
+        // client. The resource heatmap already did this correctly.
+        const wknd = !isWorkingDay(d, holidays);
         if (wknd) svg += `<rect x="${x}" y="${Y0}" width="${dayW}" height="${bodyH}" fill="#f1f5f9"/>`;
         if (dayW >= 13) {
           svg += `<text x="${x + dayW / 2}" y="${PAD + TITLE_H + MON_H + 15}" font-family="${FF}" font-size="10" fill="#475569" text-anchor="middle">${d.getDate()}</text>`;
@@ -9782,7 +9794,18 @@
         } else {
           const done = t.percentComplete >= 100;
           const crit = t.isCritical;
-          const slackW = unitToWorkingDays(t.slack) > 0 ? unitToWorkingDays(t.slack) * dayW : 0;
+          /* dayW is pixels per CALENDAR day, and this multiplied it by a count
+             of WORKING days — so the float bar told the reader a non-critical
+             task had about 2/7 less room to slip than it really has, on the
+             very chart used to decide what can be delayed. The bars beside it
+             are calendar-accurate (they use calDaysBetween), so the picture and
+             the Slack column disagreed. Walk the float forward through the
+             working calendar and measure the calendar distance it covers,
+             which is what the axis is drawn in. */
+          const slackWd = unitToWorkingDays(t.slack);
+          const slackW = slackWd > 0
+            ? calDaysBetween(t.finishDate, addWorkingDays(t.finishDate, Math.round(slackWd), holidays)) * dayW
+            : 0;
           // baseline underbar — only when it DIFFERS from the current schedule;
           // a just-baselined plan otherwise draws a phantom line under every bar
           if (t.baseStart && t.baseFinish && (Math.abs(t.baseStart - t.startDate) > 432e5 || Math.abs(t.baseFinish - t.finishDate) > 432e5)) {
