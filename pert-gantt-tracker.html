@@ -9358,7 +9358,19 @@ Return ONLY JSON:
             persona: clean(cs.persona) || old.persona, want: clean(cs.want) || old.want, soThat: clean(cs.soThat) || old.soThat,
             ac: Array.isArray(cs.ac) ? cs.ac.map((a, j) => ({ id: clean(a.id) || (old.id.replace(/^US/i, 'AC') + '.' + (j + 1)), type: ['happy', 'error', 'edge', 'perf'].includes(clean(a.type)) ? clean(a.type) : 'happy', text: clean(a.text) })).filter(a => a.text) : old.ac,
             nfrs: Array.isArray(cs.nfrs) ? cs.nfrs.map(clean).filter(Boolean) : old.nfrs,
-            assumptions: Array.isArray(cs.assumptions) ? cs.assumptions.map(clean).filter(Boolean) : old.assumptions
+            assumptions: Array.isArray(cs.assumptions) ? cs.assumptions.map(clean).filter(Boolean) : old.assumptions,
+            // This is an ASSIGNMENT, not a merge, so any field absent from this
+            // literal is destroyed. The lint prompt never asks for these four and
+            // the model never returns them, so they must be carried across by hand:
+            //   audience     — the hand-set client/internal tag. It decides whether a
+            //                  story counts toward the scope figure quoted to a client,
+            //                  so losing it silently corrupts a commercial number.
+            //   wbsIds       — the many-to-many story→activity links. Dropping them
+            //                  collapses every multi-activity story to a single link.
+            //   verification — artifact vs UAT, which drives test-case generation.
+            //   jira         — the external ticket, unrecoverable once gone.
+            // One click of "Fix lint findings" used to clear all four project-wide.
+            audience: old.audience, wbsIds: old.wbsIds, verification: old.verification, jira: old.jira
           };
           merged++;
         });
@@ -10565,8 +10577,19 @@ ${existingBatch.length ? 'EXISTING STORIES FOR THIS BRANCH — keep their IDs, i
     function applyReqsFromAI(res) {
       const old = ((reqs && reqs.stories) || []);
       const next = normalizeReqsResponse(res);
-      // a re-draft keeps IDs — the stored Jira link must survive it
-      next.stories.forEach(st => { if (!st.jira) { const ex = old.find(x => x.id === st.id); if (ex && ex.jira) st.jira = ex.jira; } });
+      // A re-draft keeps IDs, so anything the model is never asked for has to be
+      // carried across or `reqs = next` destroys it. Jira was already handled;
+      // audience and wbsIds matter just as much and were not. The audience tag is
+      // what decides whether a story counts toward the scope figure quoted to a
+      // client, and wbsIds holds the many-to-many story→activity links — a
+      // re-draft used to silently reset both across every surviving story.
+      next.stories.forEach(st => {
+        const ex = old.find(x => x.id === st.id);
+        if (!ex) return;
+        if (!st.jira && ex.jira) st.jira = ex.jira;
+        if (st.audience == null && ex.audience != null) st.audience = ex.audience;
+        if (!Array.isArray(st.wbsIds) && Array.isArray(ex.wbsIds) && ex.wbsIds.length) st.wbsIds = ex.wbsIds.slice();
+      });
       reqs = next;
     }
     function exportReqsMarkdown() {
