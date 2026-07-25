@@ -730,6 +730,52 @@
     .ptr-sc-live .ptr-sc-pv { background: var(--slack); }
     .ptr-sc-ac { width: 15px; height: 15px; background: transparent; border: 2.5px solid var(--header); }
 
+    /* ---- THE CROSSHAIR. The chart answered "where are we today" and threw the
+       rest away: it had already computed what was due on every other date, what
+       had been booked by then, and which activities the difference came from.
+       The crosshair reads that back out. Faint on purpose — the two series stay
+       the subject and this is the instrument held up against them. */
+    .ptr-sc-plot { cursor: crosshair; touch-action: pan-y; }
+    .ptr-sc-cross { position: absolute; top: 0; bottom: 0; width: 1px; margin-left: -0.5px;
+      background: var(--text); opacity: .38; pointer-events: none; }
+    .ptr-sc-hm { position: absolute; box-sizing: border-box; border-radius: 999px;
+      transform: translate(-50%, -50%); pointer-events: none; }
+    .ptr-sc-hpv { width: 7px; height: 7px; background: var(--primary); box-shadow: 0 0 0 2px var(--bg); }
+    .ptr-sc-live .ptr-sc-hpv { background: var(--slack); }
+    .ptr-sc-hac { width: 9px; height: 9px; background: var(--bg); border: 2px solid var(--header); }
+
+    /* The readout is TEXT under the plot rather than a floating tooltip: it
+       survives a screenshot, a print and a phone, it can be read aloud, and it
+       can hold BUTTONS — which is the entire point, because the answer to "what
+       is causing this" has to be something you can open. min-height holds the
+       tallest state so nothing below it jumps as the pointer moves. */
+    .ptr-sc-read { margin-top: 0.45rem; padding: 0.4rem 0.55rem; min-height: 4.4rem;
+      border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+      font-size: var(--t-xs); color: var(--muted); line-height: 1.55; }
+    .ptr-sc-read b { color: var(--text); }
+    .ptr-sc-rd { font-variant-numeric: tabular-nums; }
+    .ptr-sc-rrow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.35rem; margin-top: 0.3rem; }
+    .ptr-sc-rbtn { display: inline-flex; align-items: center; gap: 0.3rem; max-width: 100%;
+      min-height: 24px; padding: 1px 0.4rem; border: 1px solid var(--border); border-radius: 5px;
+      background: var(--card); color: var(--text); font: inherit; font-size: var(--t-xs);
+      cursor: pointer; text-align: left; box-shadow: none; }
+    .ptr-sc-rbtn:hover:not(:disabled), .ptr-sc-rbtn:active:not(:disabled) {
+      border-color: var(--primary); transform: none; box-shadow: none; }
+    .ptr-sc-rv { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .ptr-sc-rv-bad { color: var(--critical); }
+    .ptr-sc-rv-good { color: var(--success); }
+
+    /* Nothing logged against a named problem is itself the finding. A dashed
+       outline says "empty slot" beside .raid-chip's solid red "already logged",
+       so the two read as the two states of one thing rather than two controls. */
+    .ptr-log-btn { flex: none; display: inline-flex; align-items: center; gap: 0.2rem;
+      min-height: 24px; padding: 1px 0.4rem; border-radius: 999px; cursor: pointer;
+      border: 1px dashed var(--border); background: var(--card); color: var(--muted);
+      font-size: var(--t-xs); font-weight: 700; line-height: 1.5; white-space: nowrap;
+      box-shadow: none; }
+    .ptr-log-btn:hover:not(:disabled), .ptr-log-btn:active:not(:disabled) {
+      border-color: var(--primary); color: var(--primary); transform: none; box-shadow: none; }
+
     /* min · granularity · max — the same minimal axis the Monte-Carlo histogram
        uses, and it cannot collide with the TODAY pill because that has its own row */
     .ptr-sc-ax { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.3rem;
@@ -801,6 +847,10 @@
       .ptr-sc-head .ptr-pair { flex-basis: 100%; }
       .ptr-sc-ax, .ptr-sc-key, .ptr-sc-sub { font-size: 0.625rem; }
       .ptr-sc-key { gap: 0.15rem 0.7rem; }
+      /* a finger is not a pointer: the readout is taller here because tapping
+         is the only way to move the crosshair, and the rows it holds are the
+         reason to bother */
+      .ptr-sc-read { min-height: 5.6rem; }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
@@ -2420,7 +2470,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1652</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1706</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -8381,6 +8431,21 @@
         today: today, hb: hb, baseCosted: baseCostAll > 0, env: envelope,
         pvNow: pvNow, evNow: evNow
       });
+      /* The same two spreads, one activity at a time, so the crosshair can name
+         WHO is behind the gap at any date rather than only reporting its size.
+         Built here and not on hover because pvSpread reads the live task list:
+         deriving it once, beside the totals it must reconcile with, is what
+         guarantees the named rows add up to the number above them. */
+      if (curve.state === 'ok') {
+        try {
+          const tMs = today.getTime();
+          curve.parts = leaves.map(t => {
+            const ps = pvSpread(hb, [t]).segs, as = acSpread([t], tMs, actOf).segs;
+            return (ps.length || as.length)
+              ? { id: t.id, name: t.name || '(unnamed)', ps: ps, as: as } : null;
+          }).filter(Boolean);
+        } catch (e) { curve.parts = []; }
+      }
 
       /* ---- WHO IS DOING THIS TO YOU -------------------------------------
          A bar that says "8% over" and stops is only half a sentence. Every
@@ -8545,7 +8610,11 @@
         + ekTok(d.kind, d.wbs, d.name, { xs: true })
         + '<span class="ptr-drv-v' + (d.crit ? ' ptr-drv-crit' : '') + '">' + d.txt
         + (d.crit ? ' <span title="Zero slack — this activity is on the critical path, so any delay here moves the finish date too">⚠</span>' : '')
-        + '</span></button>' + (d.raid || '') + '</li>').join('');
+        + '</span></button>'
+        // an activity with a variance and nothing logged against it is itself a
+        // finding, so the empty slot offers to fill itself in
+        + (d.raid || ptrRaidBtn(d.id, d.name, d.txt + ' on ' + String(r.dim).toLowerCase()))
+        + '</li>').join('');
       return '<details class="ptr-drv no-print-open"><summary>Which activities? <span class="ptr-drv-n">'
         + r.drivers.length + '</span></summary>'
         + (r.driverNote ? '<p class="ptr-drv-note">' + r.driverNote + '</p>' : '')
@@ -8763,6 +8832,11 @@
       c.xEnd = (x1 > pF) ? fx(pF - 86400000) : null;      // the plan's last accruing day
       c.dFrom = new Date(x0); c.dTo = new Date(x1 - 86400000);
       c.dPlanStart = new Date(pS); c.dPlanEnd = new Date(pF - 86400000);
+      // ---- everything the crosshair needs to re-derive any other date. It
+      // reads the SAME segment arrays the paths above were built from, so a
+      // hovered reading can never disagree with the ink under it.
+      c.x0 = x0; c.x1 = x1; c.xw = xw; c.spanDays = spanDays;
+      c.segs = sp.segs; c.asegs = acs.segs; c.todayMs = now;
       c.tally = acs;                                     // counts + dollars for the disclosure line
       c.beforeStart = now < pS;
       c.nActs = sp.segs.length;
@@ -8778,6 +8852,7 @@
     // no type shrinks with the box.
     function ptrCurveHtml(d) {
       const c = d && d.curve;
+      ptrScState = null;                                 // a stale state would hover the PREVIOUS project
       if (!c) return '';
       const money = v => d.safe ? '•••' : fmtMoney(v);
       const title = '<span class="ptr-sc-title">Spend over time</span>';
@@ -8841,8 +8916,22 @@
       const aria = 'Cumulative spend. Plan to date ' + money(c.pv) + ', booked ' + money(c.ac) + ', '
         + (flat ? 'level with the plan' : (gap > 0 ? 'over by ' : 'under by ') + money(Math.abs(gap)))
         + '. Whole phased plan ' + money(c.phased) + '.';
-      const plot = '<div class="ptr-sc-plot" role="img" aria-label="' + escapeHtml(aria) + '" title="'
-        + escapeHtml(aria) + '">' + svg + marks + '</div>';
+      /* No `title` on the plot any more: a native tooltip would sit on top of
+         the crosshair readout that replaced it, and the same sentence is the
+         aria-label and the caption. */
+      const hov = '<i class="ptr-sc-cross" id="ptrScCross" style="display:none"></i>'
+        + '<i class="ptr-sc-hm ptr-sc-hpv" id="ptrScHpv" style="display:none"></i>'
+        + '<i class="ptr-sc-hm ptr-sc-hac" id="ptrScHac" style="display:none"></i>';
+      const plot = '<div class="ptr-sc-plot" id="ptrScPlot" role="group" tabindex="0" aria-label="'
+        + escapeHtml(aria) + '" onmousemove="ptrCurveHover(event,this)" onmouseleave="ptrCurveHoverOff()"'
+        + ' ontouchstart="ptrCurveHover(event,this)" ontouchmove="ptrCurveHover(event,this)"'
+        + ' onfocus="ptrCurveHover(null,this)" onblur="ptrCurveHoverOff()"'
+        + ' onkeydown="ptrCurveKey(event,this)">' + svg + marks + hov + '</div>';
+      const read = '<div class="ptr-sc-read" id="ptrScRead" aria-live="polite">' + ptrScIdle() + '</div>';
+      ptrScState = { x0: c.x0, x1: c.x1, xw: c.xw, spanDays: c.spanDays, top: c.top,
+        segs: c.segs, asegs: c.asegs, parts: c.parts || [],
+        todayMs: c.todayMs, endToday: c.todayMs + 86400000,
+        unplaced: c.unplaced, safe: !!d.safe, on: false, lastMs: null };
 
       const ax = '<div class="ptr-sc-ax"><span>' + escapeHtml(fmtNice(c.dFrom)) + '</span>'
         + '<span>' + c.nBuckets + ' × ' + (c.stepD === 1 ? '1 day' : c.stepD + ' days') + '</span>'
@@ -8921,9 +9010,225 @@
 
       return '<div class="ptr-sc' + (c.live ? ' ptr-sc-live' : '') + '">'
         + '<div class="ptr-sc-head">' + title + pair + badge + sub + '</div>'
-        + flag + plot + ax + key
+        + flag + plot + ax + read + key
         + '<p class="ptr-cap">' + cap + '</p>'
         + '<p class="ptr-sc-fine">' + fine + '</p></div>';
+    }
+
+    /* ====================== THE CROSSHAIR ===================================
+       "At today" was the only question this chart could answer, and every other
+       date it had already drawn was unreadable. Three rules keep the readout
+       honest:
+
+         IT RE-DERIVES, IT DOES NOT SAMPLE. accrualAt() over the same arrays the
+           paths were built from, so the number under the pointer is the number
+           the line is at — not a value picked off a pre-baked grid that drifts
+           from the ink between samples.
+         IT DECOMPOSES WITH THE BAR'S OWN SUBTRACTION. Booked against an
+           activity minus what the plan says should have been spent on it BY THE
+           HOVERED DATE. Every leaf is in exactly one of both spreads, so the
+           named rows sum to the figure above them — the reconciliation the
+           Budget drill-in was rebuilt to get.
+         IT REFUSES TO INVENT A FUTURE. Money cannot be booked against a date
+           that has not happened, so past today the staircase marker is hidden
+           and the rows switch to what the plan SPENDS between now and then,
+           which is the only question that date can answer.  */
+    let ptrScState = null;
+
+    function ptrScFx(st, ms) { return 1.4 + (Math.max(st.x0, Math.min(st.x1, ms)) - st.x0) / st.xw * 97.2; }
+    function ptrScFy(st, v) { return 6 + (1 - Math.max(0, Math.min(1, v / st.top))) * 88; }
+    function ptrScIdle() {
+      return 'Hover or tap anywhere on the plot to read that date: what the plan said should have been spent by '
+        + 'then, what was actually booked against it, and which activities the difference is coming from. '
+        + '<span class="ptr-sc-rd">Once the plot has focus, ← → move a day, PgUp/PgDn a week, Home/End the ends, '
+        + 't back to today.</span>';
+    }
+
+    function ptrCurveHover(ev, el) {
+      const st = ptrScState;
+      if (!st || !el) return;
+      let ms = st.todayMs;
+      if (ev) {
+        const box = el.getBoundingClientRect();
+        if (!box.width) return;
+        const t = ev.touches && ev.touches[0];
+        const cx = t ? t.clientX : ev.clientX;
+        if (cx == null) return;
+        /* The <svg> is 1000×100 with preserveAspectRatio="none", so its viewBox
+           is STRETCHED to whatever width the card got: an x must be mapped back
+           through the element's real box, never through the viewBox. The 1.4 /
+           97.2 undo the inset fx() applies, so the date read out is the date the
+           ink at that x was drawn from. */
+        const pct = (cx - box.left) / box.width * 100;
+        const fr = Math.max(0, Math.min(1, (pct - 1.4) / 97.2));
+        ms = st.x0 + Math.round(fr * st.spanDays) * 86400000;
+      }
+      ptrScPaint(ms);
+    }
+    // A chart you can only read with a mouse is a chart half the operators
+    // cannot read at all, so the same readings are reachable from the keyboard.
+    function ptrCurveKey(ev, el) {
+      const st = ptrScState;
+      if (!st) return;
+      const at = (st.on && st.lastMs != null) ? st.lastMs : st.todayMs;
+      const k = ev.key;
+      let ms = null;
+      if (k === 'ArrowLeft') ms = at - 86400000;
+      else if (k === 'ArrowRight') ms = at + 86400000;
+      else if (k === 'PageUp') ms = at - 7 * 86400000;
+      else if (k === 'PageDown') ms = at + 7 * 86400000;
+      else if (k === 'Home') ms = st.x0;
+      else if (k === 'End') ms = st.x1;
+      else if (k === 't' || k === 'T') ms = st.todayMs;
+      else if (k === 'Escape') { ptrCurveHoverOff(); return; }
+      else return;
+      ev.preventDefault();
+      ptrScPaint(Math.max(st.x0, Math.min(st.x1, ms)));
+    }
+    function ptrCurveHoverOff() {
+      ['ptrScCross', 'ptrScHpv', 'ptrScHac'].forEach(id => {
+        const e = document.getElementById(id); if (e) e.style.display = 'none';
+      });
+      const r = document.getElementById('ptrScRead');
+      if (r) r.innerHTML = ptrScIdle();
+      if (ptrScState) { ptrScState.on = false; ptrScState.lastMs = null; }
+    }
+
+    function ptrScPaint(ms) {
+      const st = ptrScState;
+      if (!st) return;
+      // The panel may have been re-rendered under us (a tab switch, a save):
+      // drop the state rather than writing into a detached node.
+      if (!document.getElementById('ptrScPlot')) { ptrScState = null; return; }
+      if (st.on && st.lastMs === ms) return;             // one repaint per day crossed, not per pixel
+      st.on = true; st.lastMs = ms;
+      const money = v => st.safe ? '•••' : fmtMoney(v);
+      const bookMs = Math.min(ms, st.endToday);
+      const plan = accrualAt(st.segs, ms);
+      const book = accrualAt(st.asegs, bookMs);
+      const future = ms > st.todayMs;
+      const gap = book - plan;
+      const x = ptrScFx(st, ms).toFixed(2) + '%';
+      const put = (id, left, top, show) => {
+        const e = document.getElementById(id);
+        if (!e) return;
+        e.style.display = show ? '' : 'none';
+        if (!show) return;
+        e.style.left = left;
+        if (top != null) e.style.top = top;
+      };
+      put('ptrScCross', x, null, true);
+      put('ptrScHpv', x, ptrScFy(st, plan).toFixed(2) + '%', true);
+      put('ptrScHac', x, ptrScFy(st, book).toFixed(2) + '%', !!st.asegs.length && !future);
+
+      const el = document.getElementById('ptrScRead');
+      if (!el) return;
+      const dayN = Math.round((ms - st.x0) / 86400000) + 1;
+      let head = '<b>' + escapeHtml(fmtNice(new Date(ms))) + '</b> <span class="ptr-sc-rd">· day ' + dayN
+        + ' of ' + (st.spanDays + 1) + ' drawn'
+        + (ms === st.todayMs ? ' · today' : future ? ' · still to come' : '') + '</span><br>'
+        + 'the plan says <b>' + escapeHtml(money(plan)) + '</b> should have been spent by then';
+      if (future) {
+        head += ', and nothing can be booked against a day that has not happened — <b>'
+          + escapeHtml(money(book)) + '</b> is what stands booked as at today.';
+      } else if (!st.asegs.length) {
+        head += ', and nothing is booked against it anywhere in this plan.';
+      } else {
+        head += ' · booked <b>' + escapeHtml(money(book)) + '</b> · <b class="'
+          + (Math.abs(gap) < 1 ? '' : gap > 0 ? 'ptr-sc-rv-bad' : 'ptr-sc-rv-good') + '">'
+          + escapeHtml(Math.abs(gap) < 1 ? 'level with the plan'
+            : (gap > 0 ? '+' : '−') + money(Math.abs(gap)) + (gap > 0 ? ' over' : ' under')) + '</b>';
+      }
+      /* The badge at the top of this card counts EVERY booked dollar; the
+         staircase can only count the ones that carry a date. Without this
+         clause the two read as a contradiction on one card — on a real export
+         the header said +$26,760 and the crosshair said +$15,660, and both were
+         right. Say the difference out loud, with the arithmetic that closes it. */
+      if (st.unplaced > 0.5) {
+        // stated at TODAY whatever date is hovered, because that is the date the
+        // badge is measured at — comparing a hovered plan against a booked total
+        // would be a third number agreeing with neither
+        const g = accrualAt(st.asegs, st.endToday) + st.unplaced - accrualAt(st.segs, st.todayMs);
+        head += ' <span class="ptr-sc-rd">Another <b>' + escapeHtml(money(st.unplaced)) + '</b> of booked cost '
+          + 'carries no usable date, so no date on this axis can hold it and the staircase stops that far short. '
+          + 'Counting it, the badge above this chart reads <b>' + escapeHtml((g >= 0 ? '+' : '−') + money(Math.abs(g)))
+          + '</b> at today.</span>';
+      }
+      el.innerHTML = head + ptrScDrivers(st, ms, bookMs, gap, future);
+    }
+
+    function ptrScDrivers(st, ms, bookMs, gap, future) {
+      if (!st.parts.length) return '';
+      const money = v => st.safe ? '•••' : fmtMoney(v);
+      // Past dates rank by the gap they contribute, in the direction the gap
+      // itself points. A future date has no gap to explain, so it ranks by what
+      // the plan is about to spend between today and then — the only honest
+      // question a date in the future can be asked.
+      const dir = future ? 1 : (gap >= 0 ? 1 : -1);
+      const rows = [];
+      st.parts.forEach(p => {
+        const v = future ? accrualAt(p.ps, ms) - accrualAt(p.ps, st.todayMs)
+                         : accrualAt(p.as, bookMs) - accrualAt(p.ps, ms);
+        if (Number.isFinite(v) && v * dir >= 1) rows.push({ p: p, v: v });
+      });
+      rows.sort((a, b) => (b.v - a.v) * dir);
+      if (!rows.length) {
+        return '<div class="ptr-sc-rrow"><span>' + (future
+          ? 'The plan spends nothing at all between today and then.'
+          : 'No single activity is off the plan at this date by as much as a dollar.') + '</span></div>';
+      }
+      const top = rows.slice(0, 3);
+      const rest = rows.slice(3);
+      const restSum = rest.reduce((a, r) => a + r.v, 0);
+      const lab = future ? 'The plan spends this between today and then'
+        : gap >= 0 ? 'Coming from' : 'The shortfall is on';
+      return '<div class="ptr-sc-rrow"><span>' + lab + ':</span>'
+        + top.map(r => ptrScDriverBtn(r.p, r.v, money)).join('')
+        + (rest.length ? '<span class="ptr-sc-rd">+' + rest.length + ' more, '
+            + escapeHtml(money(Math.abs(restSum))) + '</span>' : '') + '</div>';
+    }
+
+    // Name, number, and the two things you would do next: open the activity, or
+    // write down why it is doing this.
+    function ptrScDriverBtn(p, v, money) {
+      const t = tasks.find(x => x.id === p.id);
+      const txt = (v > 0 ? '+' : '−') + money(Math.abs(v));
+      return '<button type="button" class="ptr-sc-rbtn" onclick="openEditModal(' + p.id + ', true)" title="'
+        + escapeHtml('Open ' + (p.name || 'this activity')) + '">'
+        + (t ? ekTok(ekKindOf(t), t.wbs || '', t.name || '(unnamed)', { xs: true }) : escapeHtml(p.name || ''))
+        + '<span class="ptr-sc-rv">' + escapeHtml(txt) + '</span></button>'
+        + (raidChipFor(p.id) || ptrRaidBtn(p.id, p.name, txt + ' against the plan to that date'));
+    }
+
+    /* ONE CLICK FROM A NUMBER TO THE LOG. Every named problem in this panel is
+       an activity carrying a variance, and the honest thing to do about a
+       variance is write down why it happened. This drafts the entry and links
+       it — it deliberately does NOT save one: an entry nobody typed is an entry
+       nobody believes, and the RAID log is the one place in this file a client
+       reads word for word. */
+    function ptrRaidBtn(taskId, name, note) {
+      return '<button type="button" class="ptr-log-btn no-print" onclick="raidLogFor(' + taskId + ', \''
+        + ekJs(note || 'off plan') + '\')" title="'
+        + escapeHtml('Nothing is logged in the RAID log against “' + (name || 'this activity')
+          + '”. Draft an entry linked to it.') + '"><span aria-hidden="true">＋</span>RAID</button>';
+    }
+    function raidLogFor(taskId, note) {
+      const t = tasks.find(x => x.id === taskId);
+      switchTab('raid');
+      openRaidForm(null);
+      const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+      const nm = t ? ((t.wbs ? t.wbs + ' ' : '') + ekName(t)) : ('activity ' + taskId);
+      set('rType', 'Issue');
+      set('rTitle', nm + ' — ' + (note || 'off plan'));
+      set('rDesc', 'Raised from the plan-truth panel on ' + fmtISO(new Date()) + '. The variance is ' + (note || '')
+        + '. What caused it, and what is being done about it?');
+      // link it to the activity it came from, so the entry answers back on every
+      // surface that reads the reverse index
+      const g = raidResolve({ k: 'act', id: taskId });
+      raidDraftLinks = [{ k: 'act', id: taskId, was: g ? g.label : nm }];
+      raidRenderDraft();
+      const f = document.getElementById('raidForm');
+      if (f && f.scrollIntoView) f.scrollIntoView({ block: 'center' });
     }
 
     function ptrStripHtml(d) {
