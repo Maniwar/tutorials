@@ -776,6 +776,59 @@
     .ptr-log-btn:hover:not(:disabled), .ptr-log-btn:active:not(:disabled) {
       border-color: var(--primary); color: var(--primary); transform: none; box-shadow: none; }
 
+    /* ===== FORECAST TREND =================================================
+       Same idiom as the spend curve: the <svg> holds nothing but the two
+       polylines, and every dot, label, rule and figure is HTML at a rem size —
+       so nothing shrinks with the box and the chart reflows from 375px to
+       1400px. It replaces a fixed 560×120 drawing that squashed on a phone,
+       labelled one of its two axes, and could only be read by resting on a
+       2.5px dot. */
+    .trd-plot { position: relative; height: 132px; margin-top: 0.5rem; border-radius: 6px;
+      background: var(--bg); border: 1px solid var(--border); cursor: crosshair; touch-action: pan-y; }
+    .trd-plot > svg { display: block; width: 100%; height: 100%; }
+    .trd-plot:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    .trd-fin { fill: none; stroke: var(--critical); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+    .trd-pct { fill: none; stroke: var(--success); stroke-width: 2; stroke-dasharray: 5 3;
+      stroke-linejoin: round; stroke-linecap: round; }
+    .trd-d { position: absolute; width: 7px; height: 7px; border-radius: 999px;
+      transform: translate(-50%, -50%); pointer-events: none; }
+    .trd-df { background: var(--critical); }
+    .trd-dp { background: var(--success); }
+    .trd-cross { position: absolute; top: 0; bottom: 0; width: 1px; margin-left: -0.5px;
+      background: var(--text); opacity: .38; pointer-events: none; }
+    .trd-m { position: absolute; box-sizing: border-box; border-radius: 999px;
+      transform: translate(-50%, -50%); pointer-events: none; background: var(--bg); }
+    .trd-mf { width: 14px; height: 14px; border: 2px solid var(--critical); }
+    .trd-mp { width: 11px; height: 11px; border: 2px solid var(--success); }
+    /* both axes labelled, which is the difference between two series and two
+       series you can read: the left edge is the forecast date, the right is the
+       percentage, and neither is inferable from the other */
+    .trd-yl, .trd-yr { position: absolute; font-size: var(--t-xs); color: var(--muted);
+      background: var(--bg); padding: 0 2px; line-height: 1.2; pointer-events: none; }
+    .trd-yl { left: 3px; } .trd-yr { right: 3px; }
+    .trd-ax { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.3rem;
+      font-size: var(--t-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+    .trd-read { margin-top: 0.45rem; padding: 0.4rem 0.55rem; min-height: 4.4rem;
+      border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+      font-size: var(--t-xs); color: var(--muted); line-height: 1.55; }
+    .trd-read b { color: var(--text); }
+    .trd-rd { font-variant-numeric: tabular-nums; }
+    .trd-key { display: flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; margin-top: 0.45rem;
+      align-items: center; font-size: var(--t-xs); color: var(--muted); }
+    .trd-key > span { display: inline-flex; align-items: center; gap: 0.32rem; }
+    .trd-key b { color: var(--text); }
+    .trd-sw1 { display: inline-block; width: 17px; height: 0; border-top: 2px solid var(--critical); }
+    .trd-sw2 { display: inline-block; width: 17px; height: 0; border-top: 2px dashed var(--success); }
+    @media print {
+      .trd-d, .trd-m, .trd-yl, .trd-yr, .trd-sw1, .trd-sw2 {
+        -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .trd-plot, .trd-read { break-inside: avoid; }
+    }
+    @media (max-width: 640px) {
+      .trd-plot { height: 104px; }
+      .trd-read { min-height: 5.6rem; }
+    }
+
     /* min · granularity · max — the same minimal axis the Monte-Carlo histogram
        uses, and it cannot collide with the TODAY pill because that has its own row */
     .ptr-sc-ax { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.3rem;
@@ -2470,7 +2523,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1706</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1712</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -18459,34 +18512,227 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       saveLocal();
       if (manual) { renderHealth(); flashSaved('📸 Status snapshot recorded'); }
     }
+    /* The trend was drawn at a fixed 560×120 with two Y scales and one of them
+       labelled, and the only way to read a point was to rest the pointer on a
+       2.5px dot and wait for a native tooltip that said "date: finish date,
+       pct". Everything it knows — the slip since the point before, the slip
+       since the first, what the price and the margin were doing at the same
+       moment, how many risks were open — was recorded and never shown.
+
+       Rebuilt on the spend curve's idiom, and with its honesty: a snapshot
+       stores TOTALS, never activities, so which activity moved the date
+       between two past snapshots is not recorded anywhere in this file. The
+       chart says so, and offers the names it can stand behind — the activities
+       setting the finish date NOW — only on the newest point. */
+    let trdState = null;
+
     function trendChartSvg() {
+      trdState = null;
       if (statusHistory.length < 2) return '<p class="help-text">Snapshots build a trend once you have two or more (one is stored automatically per day when the plan recalculates — or press 📸).</p>';
-      const H = 120, Wc = 560, padL = 44, padB = 18, padT = 12;
       const pts = statusHistory.slice(-26);
-      const xs = i => padL + i * (Wc - padL - 8) / Math.max(1, pts.length - 1);
-      const fins = pts.map(p => new Date(p.finish + 'T00:00:00').getTime());
-      const minF = Math.min(...fins), maxF = Math.max(...fins);
+      const dms = v => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v || ''))) return null;
+        const t = stripTime(new Date(v + 'T00:00:00')).getTime();
+        return Number.isFinite(t) ? t : null;
+      };
+      // A snapshot carrying an unreadable finish date is DROPPED, not drawn as
+      // NaN: one bad import used to take the whole axis with it.
+      const rows = pts.map(p => ({ p: p, f: dms(p.finish) })).filter(r => r.f != null);
+      const dropped = pts.length - rows.length;
+      if (rows.length < 2) return '<p class="help-text">Fewer than two snapshots carry a readable forecast finish date, so there is no trend to draw yet.</p>';
+
+      const n = rows.length;
+      const fsAll = rows.map(r => r.f);
+      const minF = Math.min.apply(null, fsAll), maxF = Math.max.apply(null, fsAll);
       const spanF = Math.max(86400000, maxF - minF);
-      const yF = v => padT + (1 - (v - minF) / spanF) * (H - padT - padB);
-      const yP = v => padT + (1 - v / 100) * (H - padT - padB);
-      const finPath = pts.map((p, i) => (i ? 'L' : 'M') + xs(i).toFixed(1) + ',' + yF(new Date(p.finish + 'T00:00:00').getTime()).toFixed(1)).join(' ');
-      const pctPath = pts.map((p, i) => (i ? 'L' : 'M') + xs(i).toFixed(1) + ',' + yP(p.pct).toFixed(1)).join(' ');
-      const first = pts[0], last = pts[pts.length - 1];
-      const slip = Math.round((new Date(last.finish) - new Date(first.finish)) / 86400000);
-      return `<div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center">
-        <svg width="${Wc}" height="${H}" viewBox="0 0 ${Wc} ${H}" style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;max-width:100%">
-          <text x="6" y="${padT + 8}" font-size="9" fill="#64748b">${escapeHtml(fmtNice(new Date(maxF)))}</text>
-          <text x="6" y="${H - padB}" font-size="9" fill="#64748b">${escapeHtml(fmtNice(new Date(minF)))}</text>
-          <path d="${finPath}" fill="none" stroke="#dc2626" stroke-width="2"/>
-          <path d="${pctPath}" fill="none" stroke="#16a34a" stroke-width="2" stroke-dasharray="4,3"/>
-          ${pts.map((p, i) => `<circle cx="${xs(i)}" cy="${yF(new Date(p.finish + 'T00:00:00').getTime())}" r="2.5" fill="#dc2626"><title>${p.date}: finish ${p.finish}, ${p.pct}%</title></circle>`).join('')}
-          <text x="${Wc - 8}" y="${H - 6}" font-size="9" fill="#64748b" text-anchor="end">${pts.length} snapshots</text>
-        </svg>
-        <div style="font-size:0.85rem">
-          <div><span style="display:inline-block;width:14px;height:3px;background:#dc2626;vertical-align:middle"></span> Forecast finish date</div>
-          <div><span style="display:inline-block;width:14px;height:3px;background:#16a34a;vertical-align:middle;border-bottom:1px dashed #16a34a"></span> % complete</div>
-          <div style="margin-top:0.5rem;font-weight:700;color:${slip > 0 ? 'var(--critical)' : 'var(--success)'}">${slip > 0 ? '▲ Forecast slipped ' + slip + ' calendar day(s)' : slip < 0 ? '▼ Forecast pulled in ' + (-slip) + ' day(s)' : '— Forecast steady'} since ${escapeHtml(first.date)}</div>
-        </div></div>`;
+      // 2 / 96 keeps a 14px marker at either end fully inside the box, the same
+      // inset the spend curve applies for the same reason
+      const fx = i => n === 1 ? 50 : 2 + (i / (n - 1)) * 96;
+      const fyF = v => 6 + (1 - (v - minF) / spanF) * 88;
+      const fyP = v => 6 + (1 - Math.max(0, Math.min(100, Number(v) || 0)) / 100) * 88;
+
+      const path = (yOf, valOf) => 'M' + rows.map((r, i) =>
+        (fx(i) * 10).toFixed(2) + ',' + yOf(valOf(r)).toFixed(2)).join('L');
+      const svg = '<svg viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true" focusable="false">'
+        + '<path class="trd-pct" vector-effect="non-scaling-stroke" d="' + path(fyP, r => r.p.pct) + '"/>'
+        + '<path class="trd-fin" vector-effect="non-scaling-stroke" d="' + path(fyF, r => r.f) + '"/></svg>';
+
+      const dots = rows.map((r, i) =>
+        '<i class="trd-d trd-dp" style="left:' + fx(i).toFixed(2) + '%;top:' + fyP(r.p.pct).toFixed(2) + '%"></i>'
+        + '<i class="trd-d trd-df" style="left:' + fx(i).toFixed(2) + '%;top:' + fyF(r.f).toFixed(2) + '%"></i>').join('');
+      const marks = '<i class="trd-cross" id="trdCross" style="display:none"></i>'
+        + '<i class="trd-m trd-mp" id="trdMp" style="display:none"></i>'
+        + '<i class="trd-m trd-mf" id="trdMf" style="display:none"></i>'
+        + '<span class="trd-yl" style="top:2px">' + escapeHtml(fmtNice(new Date(maxF))) + '</span>'
+        + '<span class="trd-yl" style="bottom:2px">' + escapeHtml(fmtNice(new Date(minF))) + '</span>'
+        + '<span class="trd-yr" style="top:2px">100%</span>'
+        + '<span class="trd-yr" style="bottom:2px">0%</span>';
+
+      const first = rows[0], last = rows[n - 1];
+      const slip = Math.round((last.f - first.f) / 86400000);
+      const badge = '<span class="badge ' + (slip > 0 ? 'badge-blocked' : slip < 0 ? 'badge-ok' : 'badge-slack') + '">'
+        + escapeHtml(slip > 0 ? '▲ forecast slipped ' + slip + ' calendar ' + ptrPl(slip, 'day')
+          : slip < 0 ? '▼ forecast pulled in ' + (-slip) + ' calendar ' + ptrPl(-slip, 'day')
+          : '— forecast steady') + '</span>';
+      const aria = 'Forecast trend across ' + n + ' snapshots from ' + first.p.date + ' to ' + last.p.date
+        + '. Forecast finish moved from ' + first.p.finish + ' to ' + last.p.finish + ', '
+        + (slip > 0 ? slip + ' days later' : slip < 0 ? (-slip) + ' days earlier' : 'unchanged')
+        + '. Progress went from ' + (first.p.pct || 0) + '% to ' + (last.p.pct || 0) + '%.';
+
+      trdState = {
+        rows: rows.map((r, i) => ({ p: r.p, f: r.f, x: fx(i), yf: fyF(r.f), yp: fyP(r.p.pct) })),
+        n: n, safe: !!clientSafeReports, on: false, last: null
+      };
+
+      return '<div class="trd">'
+        + '<div class="trd-head">' + badge + '<span class="trd-sub">' + escapeHtml(n + ' '
+          + ptrPl(n, 'snapshot') + ' · ' + fmtNice(new Date(first.f - 0)) + ' forecast on ' + first.p.date
+          + ' → ' + fmtNice(new Date(last.f - 0)) + ' on ' + last.p.date
+          + (dropped ? ' · ' + dropped + ' snapshot' + (dropped === 1 ? '' : 's') + ' dropped for an unreadable date' : ''))
+        + '</span></div>'
+        + '<div class="trd-plot" id="trdPlot" role="group" tabindex="0" aria-label="' + escapeHtml(aria) + '"'
+        + ' onmousemove="trdHover(event,this)" onmouseleave="trdHoverOff()"'
+        + ' ontouchstart="trdHover(event,this)" ontouchmove="trdHover(event,this)"'
+        + ' onfocus="trdHover(null,this)" onblur="trdHoverOff()" onkeydown="trdKey(event,this)">'
+        + svg + dots + marks + '</div>'
+        + '<div class="trd-ax"><span>' + escapeHtml(first.p.date) + '</span>'
+        + '<span>' + n + ' ' + ptrPl(n, 'snapshot') + '</span>'
+        + '<span>' + escapeHtml(last.p.date) + '</span></div>'
+        + '<div class="trd-read" id="trdRead" aria-live="polite">' + trdIdle() + '</div>'
+        + '<div class="trd-key"><span><i class="trd-sw1"></i>forecast finish date — <b>left edge</b></span>'
+        + '<span><i class="trd-sw2"></i>% complete — <b>right edge</b></span>'
+        + '<span>each dot is one stored snapshot</span></div></div>';
+    }
+
+    function trdIdle() {
+      return 'Hover or tap any snapshot to read it: where the forecast finish stood that day, what had moved '
+        + 'since the snapshot before it, and what the price, the margin and the open risks were doing at the '
+        + 'same moment. <span class="trd-rd">Once the plot has focus, ← → step a snapshot, Home/End the ends.</span>';
+    }
+    function trdHover(ev, el) {
+      const st = trdState;
+      if (!st || !el) return;
+      let i = st.n - 1;
+      if (ev) {
+        const box = el.getBoundingClientRect();
+        if (!box.width) return;
+        const t = ev.touches && ev.touches[0];
+        const cx = t ? t.clientX : ev.clientX;
+        if (cx == null) return;
+        // the viewBox is unit-stretched, so map through the element's real width
+        // and then undo the 2 / 96 inset the points were drawn with
+        const pct = (cx - box.left) / box.width * 100;
+        const fr = Math.max(0, Math.min(1, (pct - 2) / 96));
+        i = Math.round(fr * (st.n - 1));
+      }
+      trdPaint(i);
+    }
+    function trdKey(ev, el) {
+      const st = trdState;
+      if (!st) return;
+      const at = (st.on && st.last != null) ? st.last : st.n - 1;
+      let i = null;
+      if (ev.key === 'ArrowLeft') i = at - 1;
+      else if (ev.key === 'ArrowRight') i = at + 1;
+      else if (ev.key === 'Home') i = 0;
+      else if (ev.key === 'End') i = st.n - 1;
+      else if (ev.key === 'Escape') { trdHoverOff(); return; }
+      else return;
+      ev.preventDefault();
+      trdPaint(Math.max(0, Math.min(st.n - 1, i)));
+    }
+    function trdHoverOff() {
+      ['trdCross', 'trdMf', 'trdMp'].forEach(id => {
+        const e = document.getElementById(id); if (e) e.style.display = 'none';
+      });
+      const r = document.getElementById('trdRead');
+      if (r) r.innerHTML = trdIdle();
+      if (trdState) { trdState.on = false; trdState.last = null; }
+    }
+
+    function trdPaint(i) {
+      const st = trdState;
+      if (!st) return;
+      if (!document.getElementById('trdPlot')) { trdState = null; return; }
+      if (i < 0 || i >= st.n) return;
+      if (st.on && st.last === i) return;
+      st.on = true; st.last = i;
+      const r = st.rows[i], prev = i > 0 ? st.rows[i - 1] : null, first = st.rows[0];
+      const x = r.x.toFixed(2) + '%';
+      const put = (id, top) => {
+        const e = document.getElementById(id);
+        if (!e) return;
+        e.style.display = ''; e.style.left = x;
+        if (top != null) e.style.top = top;
+      };
+      put('trdCross', null);
+      put('trdMf', r.yf.toFixed(2) + '%');
+      put('trdMp', r.yp.toFixed(2) + '%');
+
+      const el = document.getElementById('trdRead');
+      if (!el) return;
+      const money = v => st.safe ? '•••' : fmtMoney(v);
+      const days = (a, b) => Math.round((a - b) / 86400000);
+      const dTxt = (v, unit) => v === 0 ? 'no change'
+        : (v > 0 ? '+' : '−') + Math.abs(v) + (unit ? ' ' + unit : '');
+      const p = r.p;
+      let out = '<b>' + escapeHtml(p.date) + '</b> <span class="trd-rd">· snapshot ' + (i + 1) + ' of ' + st.n
+        + (i === st.n - 1 ? ' · the latest' : '') + '</span><br>'
+        + 'forecast finish <b>' + escapeHtml(fmtNice(new Date(r.f))) + '</b>';
+      if (prev) out += ' · <b>' + escapeHtml(dTxt(days(r.f, prev.f), 'calendar ' + ptrPl(Math.abs(days(r.f, prev.f)), 'day')))
+        + '</b> since the snapshot before';
+      if (i > 0) out += ' · ' + escapeHtml(dTxt(days(r.f, first.f), 'calendar ' + ptrPl(Math.abs(days(r.f, first.f)), 'day')))
+        + ' since ' + escapeHtml(first.p.date);
+      if (p.p80) {
+        const p8 = /^\d{4}-\d{2}-\d{2}$/.test(p.p80) ? fmtNice(new Date(p.p80 + 'T00:00:00')) : p.p80;
+        out += ' · the simulation\u2019s P80 that day was <b>' + escapeHtml(p8) + '</b>';
+      }
+      const bits = [];
+      bits.push('<b>' + (Number(p.pct) || 0) + '%</b> complete'
+        + (prev ? ' (' + escapeHtml(dTxt((Number(p.pct) || 0) - (Number(prev.p.pct) || 0), 'pt')) + ')' : ''));
+      if (p.cost != null) {
+        // "(+$0)" is noise dressed as a measurement — an unchanged figure says
+        // so in words or says nothing
+        const dc = (prev && prev.p.cost != null) ? p.cost - prev.p.cost : null;
+        bits.push('plan priced <b>' + escapeHtml(money(p.cost)) + '</b>'
+          + (dc == null || st.safe ? ''
+            : Math.abs(dc) < 0.5 ? ' (no change)'
+            : ' (' + escapeHtml((dc > 0 ? '+' : '−') + fmtMoney(Math.abs(dc))) + ')'));
+      }
+      if (p.margin != null && !st.safe) bits.push('margin <b>' + p.margin + '%</b>'
+        + (prev && prev.p.margin != null ? ' (' + escapeHtml(dTxt(+(p.margin - prev.p.margin).toFixed(1), 'pt')) + ')' : ''));
+      if (p.openRisks != null) bits.push('<b>' + p.openRisks + '</b> open ' + ptrPl(p.openRisks, 'risk'));
+      if (p.over) bits.push('<b>' + p.over + '</b> over-allocated resource-' + ptrPl(p.over, 'day'));
+      out += '<br>' + bits.join(' · ') + '.';
+      el.innerHTML = out + trdWhy(i === st.n - 1);
+    }
+
+    /* THE HONEST PART. A snapshot is nine scalars; it has never held a single
+       activity id. Which activity moved the date between two past snapshots is
+       therefore unanswerable from this file, and inventing a plausible name
+       would be worse than saying nothing. What CAN be named is what sets the
+       finish date now — so that is offered on the newest point only, and
+       labelled as being about the live plan rather than about that day. */
+    function trdWhy(isLatest) {
+      if (!isLatest) {
+        return '<div class="ptr-sc-rrow"><span>A snapshot stores totals, never activities, so which activity '
+          + 'moved the date that day is not recorded anywhere in this file. Step to the newest snapshot for the '
+          + 'activities setting the date now.</span></div>';
+      }
+      const ls = leafTasks().filter(t => Number.isFinite(Number(t.ef)));
+      if (!ls.length) return '';
+      const crit = ls.filter(t => t.isCritical);
+      const pool = (crit.length ? crit : ls).slice().sort((a, b) => Number(b.ef) - Number(a.ef)).slice(0, 3);
+      if (!pool.length) return '';
+      return '<div class="ptr-sc-rrow"><span>' + (crit.length ? 'Setting the date now' : 'Finishing last')
+        + ':</span>' + pool.map(t => {
+          const fin = (t.finishDate instanceof Date && !isNaN(t.finishDate.getTime())) ? fmtNice(t.finishDate) : '—';
+          return '<button type="button" class="ptr-sc-rbtn" onclick="openEditModal(' + t.id + ', true)" title="'
+            + escapeHtml('Open ' + (t.name || 'this activity')) + '">'
+            + ekTok(ekKindOf(t), t.wbs || '', t.name || '(unnamed)', { xs: true })
+            + '<span class="ptr-sc-rv">' + escapeHtml(fin) + '</span></button>'
+            + (raidChipFor(t.id) || ptrRaidBtn(t.id, t.name, 'sets the forecast finish date of ' + fin));
+        }).join('') + '</div>';
     }
 
     // ========================= PLAN HEALTH CHECK =========================
