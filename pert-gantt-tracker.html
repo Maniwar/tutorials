@@ -2791,7 +2791,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.2205</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.2236</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -15006,12 +15006,48 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           <td style="${td}${bold}text-align:right;color:${varD > 0 ? '#b91c1c' : varD < 0 ? '#15803d' : '#64748b'}">${varD == null ? '—' : (varD > 0 ? '+' : '') + varD + 'd'}</td></tr>`;
       }).join('');
       const cost = projectCost();
+      /* THE ONE NUMBER A CLIENT ACTUALLY ASKS FOR WAS MISSING. This line quoted
+         the planned envelope and the earned value and stopped — so the report
+         said what the finished work was WORTH and never what it had COST. Those
+         are different numbers, the difference between them is the entire
+         over/under question, and a status report that omits it is asking the
+         reader to take the good news on trust. Booked-to-date now sits between
+         them, and the over/under is stated rather than left as an exercise. */
+      const repAC = leafTasks().reduce((a, t) => a + actualCostOf(t), 0);
+      const repEV = earnedValue();
+      const repCV = repEV - repAC;              // positive = the work came in cheaper than budgeted
+      const cvTol = Math.max(1, budgetAtCompletion(hasBaseline()) * 0.005);
+      const cvTxt = repAC > 0
+        ? (repCV > cvTol
+            ? ` — <span style="color:#15803d">${fmtMoney(repCV)} under</span> on the work finished so far`
+            : repCV < -cvTol
+              ? ` — <span style="color:#b91c1c">${fmtMoney(-repCV)} over</span> on the work finished so far`
+              : ' — on budget for the work finished so far')
+        : '';
       const costLine = clientSafeReports ? '' : (cost > 0 || projectBudget > 0)
-        ? `<p style="margin:6px 0;font-size:13px"><b>Cost:</b> planned ${fmtMoney(cost)}${projectBudget ? ` vs budget ${fmtMoney(projectBudget)} (${cost > projectBudget ? '<span style="color:#b91c1c">+' + fmtMoney(cost - projectBudget) + ' over</span>' : fmtMoney(projectBudget - cost) + ' headroom'})` : ''} • earned value to date ${fmtMoney(earnedValue())}</p>` : '';
+        ? `<p style="margin:6px 0;font-size:13px"><b>Cost:</b> planned ${fmtMoney(cost)}${projectBudget ? ` vs budget ${fmtMoney(projectBudget)} (${cost > projectBudget ? '<span style="color:#b91c1c">+' + fmtMoney(cost - projectBudget) + ' over</span>' : fmtMoney(projectBudget - cost) + ' headroom'})` : ''} • <b>${fmtMoney(repAC)} booked to date</b> • earned value to date ${fmtMoney(repEV)}${cvTxt}</p>` : '';
       const overLine = clientSafeReports ? '' : rl.overResourceDays
         ? `<p style="margin:6px 0;font-size:13px;color:#b91c1c"><b>⚠ Resourcing:</b> ${rl.overResourceDays} over-allocated resource-day(s) — ${rl.resourcesOver.map(escapeHtml).join(', ')}. Mitigation in progress (level, add capacity, or extend).</p>` : '';
+      /* Both ends of this comparison are a max over the whole plan, so it only
+         moves when the LAST activity moves. "on plan" therefore went out to a
+         client on a plan where four activities sat 81 activity-days off their
+         own baselines — the same blindness the Plan vs actual Schedule card had,
+         in the document that gets forwarded. A held end date is worth reporting
+         as a held end date; it is not worth reporting as a still plan. */
       const baseLine = hasBaseline()
-        ? `<p style="margin:6px 0;font-size:13px"><b>Baseline (${escapeHtml(baselineDate)}):</b> variance ${(() => { const bf = new Date(Math.max(...tasks.filter(t => t.baseFinish).map(t => t.baseFinish.getTime()))); const lf = latestFinish(leaves); const v = lf ? calDaysBetween(bf, lf) : 0; return (v > 0 ? '<span style="color:#b91c1c">+' + v + 'd late</span>' : v < 0 ? '<span style="color:#15803d">' + v + 'd early</span>' : 'on plan'); })()}</p>` : '';
+        ? `<p style="margin:6px 0;font-size:13px"><b>Baseline (${escapeHtml(baselineDate)}):</b> variance ${(() => {
+            const bf = new Date(Math.max(...tasks.filter(t => t.baseFinish).map(t => t.baseFinish.getTime())));
+            const lf = latestFinish(leaves); const v = lf ? calDaysBetween(bf, lf) : 0;
+            const moved = leaves.filter(t => t.baseFinish && currentFinish(t)
+              && varianceDays(t.baseFinish, currentFinish(t)) !== 0);
+            const days = moved.reduce((a, t) => a + Math.abs(varianceDays(t.baseFinish, currentFinish(t))), 0);
+            const tail = moved.length
+              ? ` — underneath it <b>${moved.length}</b> ${moved.length === 1 ? 'activity is' : 'activities are'} off `
+                + `${moved.length === 1 ? 'its' : 'their'} own baseline finish (${days} activity-day${days === 1 ? '' : 's'} of movement)`
+              : '';
+            return (v > 0 ? '<span style="color:#b91c1c">+' + v + 'd late</span>' : v < 0 ? '<span style="color:#15803d">' + v + 'd early</span>'
+              : (moved.length ? 'end date <b>held</b>' : 'on plan')) + tail;
+          })()}</p>` : '';
       const narrBlock = (statusNarrative && statusNarrative.text)
         ? `<div style="background:#f8fafc;border-left:4px solid #2563eb;padding:8px 12px;margin:8px 0;font-size:13px">${escapeHtml(statusNarrative.text).replace(/\n\n/g, '</p><p style="margin:6px 0 0">').replace(/^/, '<p style="margin:0">')}</p><div style="color:#94a3b8;font-size:10px;margin-top:4px">AI-drafted narrative (${escapeHtml(statusNarrative.date)}) — review before sending</div></div>` : '';
       const openRisks = raid.filter(r => (r.type === 'Risk' || r.type === 'Issue') && r.status !== 'Closed')

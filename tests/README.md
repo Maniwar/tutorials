@@ -27,6 +27,13 @@ delta share a reference — the check that was missing when the Budget card read
 "$54,293 → $27,900" above "$26,760 above the plan to date", where every figure
 was individually correct and the card as a whole said two unrelated things.
 
+`client-facing-sweep.js` checks what LEAVES THE BUILDING — the status report,
+the SOW draft, the exports, and whether client-safe mode actually withholds
+what it claims to. A number wrong on a screen costs an argument; the same
+number wrong in a status report costs money. It caught the report quoting
+earned value with no mention of what had been booked, and reporting "variance
+on plan" while four activities sat 81 activity-days off their own baselines.
+
 ## Read the colour, not the class
 
 `contradiction-sweep.js` reads `getComputedStyle`, not `className`. A class list
