@@ -2381,7 +2381,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1620</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1625</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -15765,14 +15765,20 @@ Rules:
       try {
         const text = await callAnthropic(dg.text, {
           onDelta, cachePrefix: [ptPrefix()],   // ONE block; the digest stays uncached
-          // 2000 was too tight for a real engagement. The contract allows up to
-          // ten items, each with a sentence, a verbatim cite of 20+ characters,
-          // refs and an action — comfortably past 2000 tokens on a 29-activity
-          // plan, and the whole reading was then discarded for being long. The
-          // VALIDATOR caps what is kept (10 items, 4 per panel), so the real
-          // spend is bounded by the contract, not by this number; it only needs
-          // to be big enough that a good answer is never thrown away.
-          maxTokens: 8000, noContinue: true
+          /* NO OUTPUT CAP — this was the only call site in the file that set
+             one, and it is what broke the feature. A ceiling does not make a
+             model concise; it truncates it mid-sentence, and the strict parser
+             then throws the whole answer away. What actually bounds a reading
+             is the contract (ten items, four per panel, a sentence each) and
+             the validator that enforces it. Billing is for tokens GENERATED,
+             not for the ceiling, so leaving it at the model's own maximum —
+             the same one the other eighteen flows use — costs nothing and
+             removes a way to lose good work.
+             noContinue stays, and is a different thing: the continuation round
+             resends with an assistant prefill, which these models reject with
+             a 400, so for a single-answer flow it is a guaranteed failure one
+             round later rather than a safety net. */
+          noContinue: true
         });
         const res = parseAIJsonStrict(text, 'the reading', { noContinue: true });   // repaired/truncated -> nothing written
         const v = ptValidate(res, dg);
