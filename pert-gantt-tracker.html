@@ -2381,7 +2381,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1553</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1604</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4260,6 +4260,23 @@
         <div class="help-text" style="margin-top:.4rem">💡 Changing the WBS parent above changes which phase-level links pull on this task — that is how a test case escapes a dependency loop.</div>
       </details>`;
     }
+    /* The impact panel mutates predecessors and repaints the table behind the
+       modal — but not the modal's own dependency rows. saveActivity rebuilds
+       the task's predecessors FROM those rows, so when the unlinked task is the
+       one open in the editor (and the "Redundant predecessors of THIS task"
+       section always is), the very next Save put the link straight back. The
+       button's tooltip says Undo restores it; instead Save restored it, with no
+       message, while the Gantt and PERT kept drawing the arrow and the
+       redundant-link count never dropped. Rebuild the form's rows too. */
+    function impactRefreshDepRows(taskId) {
+      if (editingId == null || editingId !== taskId) return;
+      const host = document.getElementById('depRows');
+      if (!host) return;
+      const t = tasks.find(x => x.id === taskId);
+      if (!t) return;
+      host.innerHTML = '';
+      (t.predecessors || []).forEach(p => { try { addDepRow(p); } catch (e) {} });
+    }
     function impactUnlink(fromId, predId) {
       const x = tasks.find(z => z.id === fromId);
       if (!x) return;
@@ -4267,6 +4284,7 @@
       saveLocal();
       if (calculated) recompute();
       renderTaskTable();
+      impactRefreshDepRows(fromId);   // or the modal's own Save puts it back
       renderImpactPanel(renderImpactPanel._id);
       flashSaved('🗑 Link removed — ↶ Undo restores it');
     }
@@ -13036,7 +13054,13 @@ ${existingBatch.length ? 'EXISTING STORIES FOR THIS BRANCH — keep their IDs, i
       // gap rows: WBS activities with no story — the audit view must show them
       const covered = new Set(reqs.stories.flatMap(storyWbsIds));
       storyableLeaves().filter(t => !covered.has(t.id)).forEach(t => {
-        rows.push(['', '', '⚠ NO STORY YET — scoped & priced work with no agreed acceptance criteria', '', '', '', '', '',
+        // NINE leading cells, not eight: Epic, Story ID, User story, Persona,
+        // Jira, AC ID, AC type, Acceptance criterion, Test cases. One short and
+        // every remaining value slid left, so in the exported audit CSV/XLS
+        // exactly the rows flagging UNCOVERED SCOPE had their WBS code under
+        // "Test cases", the activity name under "WBS", the owner under
+        // "Activity" and a blank Status.
+        rows.push(['', '', '⚠ NO STORY YET — scoped & priced work with no agreed acceptance criteria', '', '', '', '', '', '',
           t.wbs, t.name, t.owner || '', (t.percentComplete || 0) + '%', taskStatus(t).label]);
       });
       return rows;
@@ -13553,7 +13577,12 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     function exportActivitiesEditableCSV() {
       computeWbsCodes();
       const u = unitLabel();
-      const rows = [['Task ID (do not change)', 'Type', 'WBS', 'Parent WBS', 'Activity name', 'Milestone (yes/no)', 'Owner', 'Owner units %', 'Additional attendees (Name@units)', 'Optimistic (' + u + ')', 'Most likely (' + u + ')', 'Pessimistic (' + u + ')', '% complete', 'Fixed cost $', 'Predecessors (WBS codes, e.g. 1.2, 2.1SS+1)', 'Start no earlier than (YYYY-MM-DD)', 'Deadline (YYYY-MM-DD)', 'Deliverable', 'Description / scope', 'Acceptance (done-when)', 'Actual start (YYYY-MM-DD)', 'Actual finish (YYYY-MM-DD)', 'Jira / evidence link']];
+      const rows = [['Task ID (do not change)', 'Type', 'WBS', 'Parent WBS', 'Activity name', 'Milestone (yes/no)', 'Owner', 'Owner units %', 'Additional attendees (Name@units)', 'Optimistic (' + u + ')', 'Most likely (' + u + ')', 'Pessimistic (' + u + ')', '% complete', 'Fixed cost $', 'Predecessors (WBS codes, e.g. 1.2, 2.1SS+1)', 'Start no earlier than (YYYY-MM-DD)', 'Deadline (YYYY-MM-DD)', 'Deliverable', 'Description / scope', 'Acceptance (done-when)', 'Actual start (YYYY-MM-DD)', 'Actual finish (YYYY-MM-DD)', 'Jira / evidence link',
+        // The 24th value has always been written; it had no header, so Excel
+        // showed a nameless trailing column and csvColIdx could never match it —
+        // which is why the import branch for work type was permanently dead.
+        // A leading ~ marks a value the tagger inferred rather than a person set.
+        'Work type (data/integration/test/govern/delivery — ~ = inferred)']];
       tasksInWbsOrder().forEach(({ task: t }) => {
         if (isTestCaseTask(t)) return; // test cases travel on their own sheet
         const isSum = isSummaryId(t.id);
@@ -13690,7 +13719,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     }
     function importActivitiesRows(head, body) {
       const col = f => csvColIdx(head, f);
-      const c = { id: col('task id'), wbs: col('wbs'), parent: col('parent wbs'), name: col('activity name'), ms: col('milestone'), owner: col('owner'), units: col('owner units'), att: col('attendees'), o: col('optimistic'), m: col('most likely'), p: col('pessimistic'), pct: col('% complete'), fixed: col('fixed cost'), preds: col('predecessors'), snet: col('start no earlier'), dl: col('deadline'), del: col('deliverable'), desc: col('description'), acc: col('acceptance'), as: col('actual start'), af: col('actual finish'), jira: col('jira') };
+      const c = { id: col('task id'), wbs: col('wbs'), parent: col('parent wbs'), name: col('activity name'), ms: col('milestone'), owner: col('owner'), units: col('owner units'), att: col('attendees'), o: col('optimistic'), m: col('most likely'), p: col('pessimistic'), pct: col('% complete'), fixed: col('fixed cost'), preds: col('predecessors'), snet: col('start no earlier'), dl: col('deadline'), del: col('deliverable'), desc: col('description'), acc: col('acceptance'), as: col('actual start'), af: col('actual finish'), jira: col('jira'), tax: col('work type') };
       const rep = { updated: 0, added: 0, rejected: [], notes: [] };
       computeWbsCodes();
       const wbsToId = {}; tasks.forEach(t => { if (t.wbs) wbsToId[t.wbs] = t.id; });
@@ -13984,7 +14013,19 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         if (title) it.title = title;
         it.description = cell(c.desc); it.probability = clamp15(cell(c.prob)); it.impact = clamp15(cell(c.imp));
         it.owner = cell(c.owner); it.mitigation = cell(c.mit);
-        if (cell(c.status)) it.status = cell(c.status);
+        if (cell(c.status)) {
+          // Type is defensively normalised a few lines above; Status was not.
+          // The table builds its dropdown from three fixed options, so a value
+          // matching none of them left no option selected and the browser fell
+          // back to the FIRST — the row rendered "Open" while the data said
+          // something else, the import reported it as updated, and the
+          // closed-row dimming and every `status !== 'Closed'` count (SOW,
+          // status report, open-risk tally) disagreed with the screen. A
+          // genuinely closed risk could stay counted forever.
+          const st = raidStatusOf(cell(c.status));
+          if (st) it.status = st;
+          else rep.notes.push('RAID ' + (it.title || it.id) + ': status "' + cell(c.status) + '" is not Open/Mitigating/Closed — left as ' + it.status);
+        }
         rep.updated++;
       });
       saveLocal(); renderRaid();
@@ -14882,8 +14923,26 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       const byId = new Map(), byLegacy = new Map();
       const place = (r) => {
         const k = bankRowKeys(r);
-        let idx = (k.id && byId.has(k.id)) ? byId.get(k.id)
-          : (byLegacy.has(k.legacy) ? byLegacy.get(k.legacy) : -1);
+        /* The comment above says the name key is consulted "only when one side
+           has no rid to match on first". The control flow did not implement
+           that: the fallback fired whenever the rid MISSED, which is always
+           true for a row filed by a different project — even when both rows
+           carried perfectly good, different rids. Two distinct engagements that
+           merely share a project NAME therefore collided on [proj|wbs|name] and
+           one silently overwrote the other. Half a merged team bank vanished,
+           the surviving median swung, and that median is injected into every AI
+           estimate — so it moved quotes. The toast reported it as a refresh.
+
+           A row that carries a rid HAS an identity. If its rid does not match,
+           it is a different row, full stop. The name key is for rows written
+           before rids existed, on either side. */
+        let idx = -1;
+        if (k.id) {
+          if (byId.has(k.id)) idx = byId.get(k.id);
+          else if (byLegacy.has(k.legacy) && !slots[byLegacy.get(k.legacy)].rid) idx = byLegacy.get(k.legacy);
+        } else if (byLegacy.has(k.legacy)) {
+          idx = byLegacy.get(k.legacy);
+        }
         if (idx < 0) {
           idx = slots.length; slots.push(r);
           if (k.id) byId.set(k.id, idx);
@@ -16782,6 +16841,13 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
       const col = score >= 15 ? ['#fee2e2', '#b91c1c'] : score >= 8 ? ['#fef3c7', '#b45309'] : ['#dcfce7', '#15803d'];
       return `<span class="risk-tag" style="background:${col[0]};color:${col[1]}">${score}</span>`;
     }
+    // The three the log understands. Anything else is not silently coerced —
+    // the caller says so and leaves the entry as it was.
+    const RAID_STATUSES = ['Open', 'Mitigating', 'Closed'];
+    function raidStatusOf(v) {
+      const t = String(v == null ? '' : v).trim().toLowerCase();
+      return RAID_STATUSES.find(x => x.toLowerCase() === t) || null;
+    }
     function renderRaid() {
       const cont = document.getElementById('raidContainer');
       if (!cont) return;
@@ -16801,10 +16867,10 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
           <td style="font-weight:600">${escapeHtml(r.title)}</td>
           <td>${raidScoreBadge(r)}</td>
           <td style="font-size:0.8rem">${escapeHtml(r.owner || '—') + roleSub(r.owner)}</td>
-          <td style="font-size:0.8rem">${t ? ekTask(t, { name: true, max: 28, xs: true, onclick: `openEditModal(${t.id}, true)` }) : '—'}</td>
+          <td style="font-size:0.8rem">${raidLinkChips(r, false)}</td>
           <td style="font-size:0.8rem;max-width:300px">${escapeHtml(r.mitigation || '')}</td>
-          <td><select class="mini-inp" style="width:auto" onchange="setRaidStatus(${r.id}, this.value)">
-            ${['Open','Mitigating','Closed'].map(st => `<option ${st === r.status ? 'selected' : ''}>${st}</option>`).join('')}</select></td>
+          <td><select class="mini-inp" style="width:auto" onchange="setRaidStatus(${r.id}, this.value)"${raidStatusOf(r.status) ? '' : ` title="Stored status is “${escapeHtml(String(r.status || ''))}”, which this log does not recognise — pick one of the three to fix it."`}>
+            ${(raidStatusOf(r.status) ? '' : `<option selected>${escapeHtml(String(r.status || '(blank)'))}</option>`)}${RAID_STATUSES.map(st => `<option ${st === r.status ? 'selected' : ''}>${st}</option>`).join('')}</select></td>
           <td style="white-space:nowrap">
             <button class="btn-sm btn-secondary" onclick="openRaidForm(${r.id})">Edit</button>
             <button class="btn-sm btn-danger" onclick="deleteRaidEntry(${r.id})" aria-label="Delete RAID entry">✕</button>
