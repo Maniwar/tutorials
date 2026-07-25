@@ -535,7 +535,17 @@
        exactly when the three bars above have nothing yet to say. */
     .ptr-strip-wrap { border-top: 1px solid var(--border); margin-top: 0.4rem; padding-top: 0.8rem; }
     .ptr-strip { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
-    .ptr-strip i { width: 11px; height: 11px; border-radius: 2px; flex: none; display: block; }
+    /* was an <i>; it is a button now so a square can be opened and focused.
+       Every visual property is carried over so the strip looks identical. */
+    .ptr-strip i, .ptr-strip .ptr-cell { width: 11px; height: 11px; border-radius: 2px; flex: none; display: block;
+      padding: 0; border: none; cursor: pointer; }
+    .ptr-strip .ptr-cell:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    .ptr-strip .ptr-cell:hover { transform: scale(1.45); }
+    /* the record behind this square contradicts itself — a ring, not another
+       fill, so it reads ON TOP of the progress colour instead of replacing it */
+    .ptr-strip .ptr-flag-medium { box-shadow: 0 0 0 1.5px #b45309; }
+    .ptr-strip .ptr-flag-high { box-shadow: 0 0 0 1.5px #b91c1c, 0 0 0 3px #fecaca; }
+    .ptr-attn-n { color: #b91c1c; }
     .ptr-strip .ptr-ms { border-radius: 999px; }
     .ptr-strip .ptr-ring { box-shadow: 0 0 0 1.5px var(--milestone); }
     .ptr-more { font-size: var(--t-xs); color: var(--muted); margin-left: 0.2rem; }
@@ -548,6 +558,8 @@
       font-size: var(--t-xs); color: var(--muted); }
     .ptr-k { display: inline-flex; align-items: center; gap: 0.3rem; }
     .ptr-k i { width: 9px; height: 9px; border-radius: 2px; flex: none; display: inline-block; }
+    /* the legend swatch for the ring needs room for the ring itself */
+    .ptr-k i.ptr-flag-high { margin: 0 3px; }
     .ptr-cap { font-size: var(--t-sm); color: var(--muted); line-height: 1.55; margin-top: 0.5rem; }
     .ptr-cap b { color: var(--text); }
     /* --- drill-in: the activities carrying a bar's variance -----------------
@@ -2408,7 +2420,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1645</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1652</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4739,6 +4751,73 @@
     }
 
     // ========================= STATUS HELPERS =========================
+    /* ═════════ WHAT IS WRONG WITH THIS ACTIVITY ═══════════════════════════
+       taskStatus answers "how is it going" — complete, in progress, late, not
+       started. That is PROGRESS, and progress is not the same question as
+       whether the record is TRUSTWORTHY. A plan can be all green and still be
+       telling you nothing: on the export that prompted this, four activities
+       carried an actual finish weeks BEFORE their own baseline window opens,
+       one was ticked complete with no cost booked, and two were ticked complete
+       with no dates at all — and every one of them showed as a healthy green
+       square, because none of those is a progress state.
+
+       Those readings then drive everything downstream. The ticks set earned
+       value, the derived costs set the budget bar, and the impossible dates set
+       the forecast. So an activity whose record contradicts itself is not a
+       cosmetic problem; it is the thing quietly moving the numbers a manager
+       takes to a steering committee.
+
+       One detector, three surfaces: the health check reports these, the
+       activity strip marks them, and the plan-truth drill-in can name them.
+       `fix` is what to do, phrased as an instruction, because a finding a user
+       cannot act on is just a complaint. */
+    function activityFlags(t) {
+      const out = [];
+      if (!t || t.isSummary) return out;
+      const pct = Number(t.percentComplete) || 0;
+      const bs = t.baseStart ? fmtISO(t.baseStart) : null;
+      const add = (code, sev, label, fix) => out.push({ code, sev, label, fix });
+
+      if (t.actualFinish && bs && t.actualFinish < bs)
+        add('finish-before-baseline', 'high',
+          'recorded as finished ' + t.actualFinish + ', before its baseline even starts (' + bs + ')',
+          'Either the baseline is stale and wants re-taking, or this finish date is not right. One of the two has to give.');
+      else if (t.actualStart && bs && t.actualStart < bs)
+        add('start-before-baseline', 'medium',
+          'started ' + t.actualStart + ', before its baseline window opens (' + bs + ')',
+          'Work running ahead of the committed plan — re-baseline if this is the new reality.');
+
+      if (pct >= 100 && !t.actualFinish && !t.actualStart)
+        add('done-no-dates', 'high', 'ticked complete with no actual dates',
+          'Log when it actually started and finished, or the schedule variance and the spend curve have nothing to place it on.');
+
+      if (pct > 0 && !t.milestone) {
+        let ac = 0, pc = 0;
+        try { ac = actualCostOf(t); pc = taskCost(t); } catch (e) {}
+        if (pc > 0 && !(ac > 0))
+          add('progress-no-cost', 'medium', Math.round(pct) + '% done with no cost booked at all',
+            'Log the time spent, or this flatters both the burn rate and the budget bar until you do.');
+      }
+
+      if (!t.milestone && !(Number(t.p) > 0))
+        add('no-estimate', 'medium', 'no O/M/P estimate',
+          'Open it and enter a three-point estimate — it is invisible to the schedule, the critical path and the price until you do.');
+
+      try {
+        const open = raidForTask(t.id, true);
+        const iss = open.filter(r => r.type === 'Issue');
+        if (iss.length) add('open-issue', 'high', iss.length + ' open RAID issue' + (iss.length === 1 ? '' : 's')
+          + ': ' + iss.slice(0, 2).map(r => r.title).join('; '),
+          'Open the RAID log and drive it to closed, or say here why it is parked.');
+      } catch (e) {}
+      return out;
+    }
+    // the worst severity across an activity's flags, or null
+    function activityFlagLevel(t) {
+      const f = activityFlags(t);
+      if (!f.length) return null;
+      return f.some(x => x.sev === 'high') ? 'high' : 'medium';
+    }
     function taskStatus(t) {
       if (t.percentComplete >= 100) return { key: 'done', label: 'Complete', cls: 'badge-done' };
       const today = stripTime(new Date());
@@ -8274,6 +8353,22 @@
         else { c.cls = 'ptr-c-todo'; c.ttl = nm + ' — not started' + (fin ? ', due ' + fmtNice(fin) : ''); }
         if (cfGap.has(t.id)) c.ttl += ' · client-facing, no user story';
         if (isNew) c.ttl += ' · added after the baseline';
+        /* PROGRESS is not TRUSTWORTHINESS. A square could be green while the
+           record behind it said the work finished before its baseline opened.
+           The flags ride ALONGSIDE the colour rather than replacing it, so the
+           strip still answers "how far along" at a glance and now answers
+           "and which of these can I believe" in the same look. */
+        c.id = t.id;
+        c.flag = activityFlagLevel(t);
+        if (c.flag) {
+          const fl = activityFlags(t);
+          c.ttl += '\n\n⚠ ' + fl.map(f => f.label).join('\n⚠ ');
+          const rs = raidForTask(t.id, true);
+          c.ttl += rs.length
+            ? '\n\nLogged in RAID: ' + rs.slice(0, 2).map(r => r.type + ' — ' + r.title).join('; ')
+            : '\n\nNothing logged in RAID for this.';
+        }
+        c.ttl += '\n\nClick to open it.';
         return c;
       });
 
@@ -8842,7 +8937,10 @@
       const key = [['ptr-c-done', 'complete'], ['ptr-c-prog', 'in progress'], ['ptr-c-late', 'past planned finish'],
         ['ptr-c-todo', 'not started'], ['ptr-c-none', 'no estimate']]
         .map(k => '<span class="ptr-k"><i class="' + k[0] + '"></i>' + k[1] + '</span>').join('')
-        + (d.added ? '<span class="ptr-k"><i class="ptr-c-todo ptr-ring"></i>added since baseline</span>' : '');
+        + (d.added ? '<span class="ptr-k"><i class="ptr-c-todo ptr-ring"></i>added since baseline</span>' : '')
+        + (d.cells.some(c => c.flag)
+            ? '<span class="ptr-k" title="The colour says how far along it is. The red ring says the RECORD does not add up — finished before its baseline opened, ticked complete with no dates, progress with no cost. Hover a square for which, click to open it.">'
+              + '<i class="ptr-c-done ptr-flag-high"></i>record needs a second look</span>' : '');
 
       // Only non-empty buckets are listed. "0 complete, 0 in progress, 0 not
       // started · 7 overdue" is arithmetically fine and reads as broken.
@@ -8858,11 +8956,21 @@
       // total "activities" made this disagree with the task list's own count,
       // which excludes milestones — the same plan reading 22 in one place and 23
       // in another. Milestones are counted where they are drawn, and named.
+      const flagged = d.cells.filter(c => c.flag);
       const msN = d.cells.filter(c => c.round).length;
       const actN = d.cells.length - msN;
       let cap = '<b>' + actN + '</b> ' + ptrPl(actN, 'activity', 'activities')
         + (msN ? ' <span class="help-text">+ <b>' + msN + '</b> ' + ptrPl(msN, 'milestone', 'milestones') + '</span>' : '')
         + (bits.length ? ' — ' + bits.join(' · ') : '') + '.';
+      /* The count that makes the strip actionable rather than decorative.
+         "6 need a second look" with the rows named beats a wall of green that
+         happens to be built on records nobody can stand behind. */
+      if (flagged.length) {
+        const hi = flagged.filter(c => c.flag === 'high').length;
+        cap += ' <b class="ptr-attn-n">' + flagged.length + '</b> '
+          + (flagged.length === 1 ? 'needs' : 'need') + ' a second look'
+          + (hi ? ' (' + hi + ' serious)' : '') + ' — ringed red above. Click one to open it.';
+      }
       // Story coverage lives here, not on a bar: it measures how well the scope
       // is WRITTEN DOWN, which is a different question from whether the scope
       // GREW, and putting both on one axis would make neither legible.
@@ -8876,8 +8984,11 @@
       return '<div class="ptr-strip-wrap">'
         + '<div class="ptr-strip" role="img" aria-label="' + escapeHtml(d.cells.length
           + ' activities: ' + done + ' complete, ' + prog + ' in progress, ' + late + ' past planned finish') + '">'
-        + shown.map(c => '<i class="' + c.cls + (c.ring ? ' ptr-ring' : '') + (c.round ? ' ptr-ms' : '')
-          + '" title="' + escapeHtml(c.ttl) + '"></i>').join('')
+        + shown.map(c => '<button type="button" class="ptr-cell ' + c.cls + (c.ring ? ' ptr-ring' : '')
+          + (c.round ? ' ptr-ms' : '') + (c.flag ? ' ptr-flag ptr-flag-' + c.flag : '')
+          + '" title="' + escapeHtml(c.ttl) + '"'
+          + (c.id != null ? ' onclick="openEditModal(' + c.id + ', true)"' : '')
+          + '></button>').join('')
         + (hid ? '<span class="ptr-more">+' + hid + ' more</span>' : '')
         + '</div><div class="ptr-key">' + key + '</div>'
         + '<p class="ptr-cap">' + cap + '</p></div>';
@@ -18078,6 +18189,30 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       const u = unitLabel();
       const findings = [];
       const leaves = leafTasks().filter(t => !t.milestone);
+      /* THE RECORD ITSELF. Everything below this asks whether the plan is
+         well-FORMED — estimates wide enough, activities small enough, owners
+         assigned. This asks whether it is TRUE: work recorded as finished
+         before its own baseline opens, ticked complete with no dates, progress
+         with no cost. Those readings drive earned value, the budget bar and the
+         forecast, so a plan can be entirely green here and still be quietly
+         moving the numbers that go to a steering committee. Grouped per kind
+         rather than per activity, so twelve of the same fault read as one
+         finding naming twelve rows instead of twelve findings. */
+      (() => {
+        const byCode = new Map();
+        leafTasks().forEach(t => activityFlags(t).forEach(f => {
+          if (f.code === 'no-estimate') return;   // its own finding, just below
+          if (!byCode.has(f.code)) byCode.set(f.code, { sev: f.sev, fix: f.fix, rows: [] });
+          byCode.get(f.code).rows.push({ t, label: f.label });
+        }));
+        byCode.forEach((g, code) => {
+          const n = g.rows.length;
+          const names = g.rows.slice(0, 4).map(r => `"${r.t.name}" (${r.label})`).join('; ');
+          findings.push({ severity: g.sev, area: 'Record integrity',
+            finding: n + ' activit' + (n === 1 ? 'y' : 'ies') + ' — ' + names + (n > 4 ? `; and ${n - 4} more` : ''),
+            recommendation: g.fix });
+        });
+      })();
       leaves.forEach(t => {
         if (!(t.p > 0)) findings.push({ severity: 'high', area: 'Missing estimate', finding: `"${t.name}" is a work package with NO O/M/P estimate — it is invisible to the schedule, the critical path and the price`, recommendation: 'Open it (✎) and enter a 3-point estimate — or make it a milestone if it is genuinely a zero-duration checkpoint.' });
         if (t.p > 0 && (t.p - t.o) < 0.35 * t.m) findings.push({ severity: 'medium', area: 'Estimate range', finding: `"${t.name}" range ${t.o}–${t.p} is very narrow vs likely ${t.m}`, recommendation: 'Widen O–P (classic overconfidence); ranges usually span ≥ ±30% of M.' });
