@@ -657,6 +657,25 @@
       border-radius: 10px; padding: 0.6rem 0.8rem; margin-top: 0.8rem; }
     .bk-cal-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem 0.8rem; margin-bottom: 0.4rem; }
     .bk-cal-big { font-size: 1.25rem; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+
+    /* ---- THE PEOPLE LIBRARY. Same shape as the estimate bank: a store that
+       lives outside every project and outlives all of them. */
+    .rl-lib { border: 1px solid var(--border); border-radius: 10px; padding: 0.6rem 0.8rem; margin: 0.9rem 0; background: var(--card); }
+    .rl-lib-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem 0.7rem; margin-bottom: 0.4rem; }
+    .rl-lib-t { font-size: var(--t-md); font-weight: 700; color: var(--text); }
+    .rl-lib-n { font-size: var(--t-sm); color: var(--muted); }
+    .rl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 0.4rem; }
+    .rl-p { display: flex; align-items: center; gap: 0.4rem; border: 1px solid var(--border);
+      border-radius: 8px; padding: 0.35rem 0.5rem; background: var(--bg); font-size: var(--t-sm); }
+    .rl-p-main { flex: 1; min-width: 0; }
+    .rl-p-nm { font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .rl-p-sub { font-size: var(--t-xs); color: var(--muted); }
+    .rl-p[data-in="1"] { opacity: 0.72; }
+    .rl-diff { color: var(--warn); font-weight: 700; }
+    .rl-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-top: 0.6rem; }
+    .rl-note { font-size: var(--t-xs); color: var(--muted); line-height: 1.55; margin: 0.5rem 0 0; }
+    .rl-note b { color: var(--text); }
+    @media print { .rl-lib { display: none !important; } }
     .bk-sim { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.35rem 0 0.2rem; }
     .bk-simc { border: 1px solid var(--border); border-radius: 999px; background: var(--card);
       padding: 0.1rem 0.5rem; font-size: var(--t-xs); color: var(--muted); }
@@ -2719,7 +2738,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1934</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1943</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -11198,13 +11217,24 @@
     // ========================= RESOURCES RENDER =========================
     function renderResources() {
       const cont = document.getElementById('resourcesContainer');
-      if (!calculated) { cont.innerHTML = '<div class="empty-state"><h3>Calculate first</h3></div>'; return; }
+      if (!calculated) {
+        // the library belongs to no schedule, so it renders before one exists —
+        // a roster is usually built BEFORE the first Calculate, which is exactly
+        // when not retyping eight people is worth the most
+        cont.innerHTML = '<div class="empty-state"><h3>Calculate first</h3></div><div id="resLibPanel"></div>';
+        try { renderResLib(); } catch (e) {}
+        return;
+      }
       computeResourceLoad();
       const rl = resourceLoad;
       const names = Object.keys(rl.perResource).sort((a, b) => rl.perResource[b].overDays.length - rl.perResource[a].overDays.length || a.localeCompare(b));
       if (!names.length) {
         cont.innerHTML = `<div class="empty-state"><h3>No resources yet</h3><p>Add people/teams here, then assign them as <strong>Owner</strong> on activities — workload and over-allocation are tracked automatically.</p>
-          <button class="btn-primary" style="margin-top:1rem" onclick="addResourcePrompt()"><span class="ico" aria-hidden="true">➕</span> Add resource</button></div>`;
+          <button class="btn-primary" style="margin-top:1rem" onclick="addResourcePrompt()"><span class="ico" aria-hidden="true">➕</span> Add resource</button></div>
+          <div id="resLibPanel"></div>`;
+        // an empty roster is precisely when the library is worth the most, so it
+        // renders here too rather than only under a populated table
+        try { renderResLib(); } catch (e) {}
         return;
       }
       // ---- managed roster table ----
@@ -11380,6 +11410,7 @@
         ${levelBanner}
         ${renderRateCardPanel(names)}
         ${roster}
+        <div id="resLibPanel"></div>
         ${worklistHtml()}
         <h3 style="font-size:0.95rem;margin-bottom:0.4rem">Daily workload heatmap <span class="help-text" style="font-weight:400">(click any loaded day to drill into its tasks)</span></h3>
         <div id="rlDrill"></div>
@@ -11398,6 +11429,7 @@
         ${summary}
         ${billingBreakdownHtml()}`;
 
+      try { renderResLib(); } catch (e) {}
       // reflect the applied leveling mode on the header buttons — "applied"
       // state lives on the button itself, so the banner reads as a receipt
       (() => {
@@ -16140,7 +16172,219 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       reader.readAsText(file);
       ev.target.value = '';
     }
-    // ===== ESTIMATE BANK: a structured, cross-project record of estimate vs actual =====
+    /* ===== PEOPLE LIBRARY: the roster, kept between engagements ==============
+       Every new project started with an empty roster, so the same eight people
+       were retyped — name, kind, role, capacity, cost rate, bill rate, rate
+       unit — on every engagement, and a typo in any of them silently repriced
+       the work. This is the same shape as the estimate bank: its own store,
+       outside every project, never cleared by New project, IndexedDB with a
+       localStorage fallback and a synchronous in-memory cache so no caller has
+       to become async.
+
+       It is a LIBRARY, not a sync. A project's roster stays the project's own:
+       adding from the library copies values in, and a rate that then differs
+       is reported rather than quietly reconciled — the library is what you
+       usually charge, the project is what you agreed this time. */
+    const RES_LIB_STORE = 'pertGantt.resourceLibrary';
+    let resLibCache = null;
+    function loadResLib() {
+      if (resLibCache) return resLibCache;
+      try { const v = JSON.parse(localStorage.getItem(RES_LIB_STORE) || '[]'); if (Array.isArray(v)) return (resLibCache = v); }
+      catch (e) {}
+      return (resLibCache = []);
+    }
+    let resLibDirty = false;
+    async function resLibInit() {
+      try {
+        const v = await idbGet(RES_LIB_STORE);
+        if (resLibDirty) { return; }                   // a real write always wins — same rule as the bank
+        if (v != null) { const p = JSON.parse(v); if (Array.isArray(p)) resLibCache = p; }
+        else {
+          const old = localStorage.getItem(RES_LIB_STORE);
+          if (old) { const p = JSON.parse(old); if (Array.isArray(p) && p.length) {
+            resLibCache = p; await idbSet(RES_LIB_STORE, old); localStorage.removeItem(RES_LIB_STORE); } }
+        }
+      } catch (e) {}
+      try { if (document.getElementById('resLibPanel')) renderResLib(); } catch (e) {}
+    }
+    function saveResLib(rows) {
+      resLibCache = rows; resLibDirty = true;
+      const json = JSON.stringify(rows);
+      idbSet(RES_LIB_STORE, json).catch(() => {
+        try { localStorage.setItem(RES_LIB_STORE, json); }
+        catch (e) { flashSaved('⚠ Could not save the people library — this browser has IndexedDB blocked and the fallback is full.'); }
+      });
+      return true;
+    }
+    // one row per person, in the same vocabulary the roster uses
+    function resLibRowOf(name) {
+      const r = resources[name] || {};
+      return { name: name, kind: isClientResource(name) ? 'client' : 'internal',
+               role: String(r.role || ''), capacity: getCapacity(name),
+               rate: rawRate(name), billRate: rawBillRate(name), rateUnit: resRateUnit(name),
+               at: fmtISO(new Date()) };
+    }
+    function resLibKey(n) { return String(n || '').trim().toLowerCase(); }
+    function resLibFind(name) { const k = resLibKey(name); return loadResLib().find(x => resLibKey(x.name) === k) || null; }
+    /* A person is the same person however many projects they appear on, so the
+       key is the name and the LATER filing wins — the same rule bankMerge
+       settled on, and for the same reason: a second copy of one person pulls
+       every average they are in. */
+    function resLibMerge(existing, incoming) {
+      const out = existing.slice();
+      let added = 0, updated = 0;
+      (incoming || []).forEach(row => {
+        if (!row || !String(row.name || '').trim()) return;
+        const i = out.findIndex(x => resLibKey(x.name) === resLibKey(row.name));
+        if (i < 0) { out.push(row); added++; return; }
+        // keep the newer filing, but never overwrite a real figure with a blank
+        const cur = out[i];
+        const merged = Object.assign({}, cur, row);
+        ['rate', 'billRate'].forEach(k => { if (!(Number(row[k]) > 0) && Number(cur[k]) > 0) merged[k] = cur[k]; });
+        if (!String(row.role || '').trim() && String(cur.role || '').trim()) merged.role = cur.role;
+        if (JSON.stringify(merged) !== JSON.stringify(cur)) { out[i] = merged; updated++; }
+      });
+      return { rows: out, added: added, updated: updated };
+    }
+    // does this project's copy of a person differ from the library's?
+    function resLibDiff(name) {
+      const lib = resLibFind(name);
+      if (!lib) return null;
+      const here = resLibRowOf(name);
+      const d = [];
+      if (Math.abs((+lib.rate || 0) - here.rate) > 0.005 || (lib.rateUnit || 'day') !== here.rateUnit)
+        d.push('cost ' + fmtMoney(+lib.rate || 0) + '/' + (lib.rateUnit || 'day') + ' → ' + fmtMoney(here.rate) + '/' + here.rateUnit);
+      if (Math.abs((+lib.billRate || 0) - here.billRate) > 0.005)
+        d.push('bill ' + fmtMoney(+lib.billRate || 0) + ' → ' + fmtMoney(here.billRate));
+      if ((lib.kind || 'internal') !== here.kind) d.push(lib.kind + ' → ' + here.kind);
+      if (Math.abs((+lib.capacity || 100) - here.capacity) > 0.5) d.push('capacity ' + (lib.capacity || 100) + '% → ' + here.capacity + '%');
+      return d.length ? d : null;
+    }
+    function resLibAdd(name) {
+      const lib = resLibFind(name);
+      if (!lib) return;
+      if (resources[lib.name]) { flashSaved(lib.name + ' is already on this roster.'); return; }
+      resources[lib.name] = { capacity: Number(lib.capacity) || 100, rate: Number(lib.rate) || 0,
+        billRate: Number(lib.billRate) || 0, role: String(lib.role || ''),
+        kind: lib.kind === 'client' ? 'client' : 'internal',
+        rateUnit: lib.rateUnit === 'hour' ? 'hour' : 'day' };
+      saveLocal();
+      if (calculated) recompute();
+      refreshAll();
+      flashSaved('👥 ' + lib.name + ' added to this project’s roster — ↶ Undo removes them again.');
+    }
+    function resLibAddAll() {
+      const missing = loadResLib().filter(x => !resources[x.name]);
+      if (!missing.length) { flashSaved('Everyone in the library is already on this roster.'); return; }
+      if (!confirm('Add all ' + missing.length + ' missing ' + ptrPl(missing.length, 'person', 'people')
+        + ' to this project?\n\n' + missing.slice(0, 10).map(x => '• ' + x.name + (x.role ? ' — ' + x.role : '')).join('\n')
+        + (missing.length > 10 ? '\n…' : '') + '\n\nRates and capacities are copied in; nothing already on the roster is touched.')) return;
+      withOneUndoFrame(() => {
+        missing.forEach(x => {
+          resources[x.name] = { capacity: Number(x.capacity) || 100, rate: Number(x.rate) || 0,
+            billRate: Number(x.billRate) || 0, role: String(x.role || ''),
+            kind: x.kind === 'client' ? 'client' : 'internal',
+            rateUnit: x.rateUnit === 'hour' ? 'hour' : 'day' };
+        });
+        if (calculated) recompute();
+      });
+      refreshAll();
+      flashSaved('👥 ' + missing.length + ' ' + ptrPl(missing.length, 'person', 'people') + ' added — ↶ Undo reverses the batch.');
+    }
+    function resLibSaveRoster() {
+      const names = Object.keys(resources);
+      if (!names.length) { flashSaved('This project has nobody on its roster yet.'); return; }
+      const mg = resLibMerge(loadResLib(), names.map(resLibRowOf));
+      saveResLib(mg.rows);
+      renderResLib();
+      flashSaved('👥 Library: ' + mg.added + ' new, ' + mg.updated + ' updated (' + mg.rows.length + ' total). '
+        + 'Every future project can add them without retyping a rate.');
+    }
+    function resLibForget(name) {
+      const lib = resLibFind(name);
+      if (!lib) return;
+      if (!confirm('Remove ' + lib.name + ' from the people LIBRARY?\n\nThis does not touch any project — '
+        + 'it only stops them being offered on future ones. Not covered by undo.')) return;
+      saveResLib(loadResLib().filter(x => resLibKey(x.name) !== resLibKey(name)));
+      renderResLib();
+      flashSaved('👥 ' + lib.name + ' removed from the library.');
+    }
+    function resLibExport() {
+      const rows = loadResLib();
+      if (!rows.length) { alert('The people library is empty — press “Save this roster to the library” first.'); return; }
+      download('people-library.json', JSON.stringify({ version: 1, exportedAt: fmtISO(new Date()), rows }, null, 2), 'application/json');
+    }
+    function resLibImport(ev) {
+      const f = ev.target.files && ev.target.files[0]; if (!f) return;
+      const rd = new FileReader();
+      rd.onload = () => {
+        try {
+          const d = JSON.parse(rd.result);
+          const incoming = Array.isArray(d) ? d : (d.rows || []);
+          if (!incoming.length) throw new Error('no people in that file');
+          const mg = resLibMerge(loadResLib(), incoming);
+          saveResLib(mg.rows); renderResLib();
+          flashSaved('👥 Library: ' + mg.added + ' new, ' + mg.updated + ' updated (' + mg.rows.length + ' total).');
+        } catch (e) { alert('Could not read that people library: ' + e.message); }
+        ev.target.value = '';
+      };
+      rd.readAsText(f);
+    }
+    function renderResLib() {
+      const host = document.getElementById('resLibPanel');
+      if (!host) return;
+      const rows = loadResLib().slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      const inHere = n => !!resources[n];
+      const bar = '<div class="rl-bar no-print">'
+        + '<button class="btn-sm btn-primary" onclick="resLibSaveRoster()" title="Copy this project’s roster into the library — names, kinds, roles, capacities and both rates">Save this roster to the library</button>'
+        + (rows.some(x => !inHere(x.name)) ? '<button class="btn-sm btn-secondary" onclick="resLibAddAll()">Add everyone missing</button>' : '')
+        + '<button class="btn-sm btn-secondary" onclick="resLibExport()">⬇ .json</button>'
+        + '<label class="btn-sm btn-secondary" style="cursor:pointer;margin:0">⬆ Import<input type="file" accept="application/json,.json" style="display:none" onchange="resLibImport(event)" /></label>'
+        + '</div>';
+      if (!rows.length) {
+        host.innerHTML = '<div class="rl-lib"><div class="rl-lib-h"><span class="rl-lib-t">👥 People library</span>'
+          + '<span class="rl-lib-n">empty</span></div>'
+          + '<p class="rl-note">The same people turn up on engagement after engagement, and every new project starts '
+          + 'with an empty roster — so their rates get retyped, and a typo silently reprices the work. Save this '
+          + 'roster once and every future project can add them back with their kind, role, capacity and both rates '
+          + 'intact. The library lives outside every project and is never cleared by New project.</p>' + bar + '</div>';
+        return;
+      }
+      const cards = rows.map(x => {
+        const here = inHere(x.name);
+        const diff = here ? resLibDiff(x.name) : null;
+        const money = v => fmtMoney(Number(v) || 0);
+        return '<div class="rl-p" data-in="' + (here ? '1' : '0') + '">'
+          + '<div class="rl-p-main"><div class="rl-p-nm">' + escapeHtml(x.name)
+          + (x.kind === 'client' ? ' <span class="risk-tag" style="background:#dbeafe;color:#1e40af">CLIENT</span>' : '')
+          + '</div><div class="rl-p-sub">' + escapeHtml(x.role || 'no role recorded') + ' · '
+          // the unit comes from the LIBRARY row, not from resources[] — the person
+          // may not be on this project at all, and reading the live roster for a
+          // figure the library owns is how the two quietly swap places
+          + (x.kind === 'client'
+              ? 'client-side, unbilled'
+              : money(x.rate) + '/' + (x.rateUnit === 'hour' ? 'hr' : 'day') + ' cost · '
+                + money(x.billRate) + '/' + (x.rateUnit === 'hour' ? 'hr' : 'day') + ' bill')
+          + ' · ' + (Number(x.capacity) || 100) + '%</div>'
+          + (diff ? '<div class="rl-p-sub rl-diff" title="This project holds different figures. The library is what you usually charge; the project is what you agreed this time — neither is overwritten.">differs here: '
+              + escapeHtml(diff.join('; ')) + '</div>' : '') + '</div>'
+          + (here ? '<span class="rl-p-sub">on this project</span>'
+                  : '<button class="btn-sm btn-secondary no-print" onclick="resLibAdd(' + ekJs2(x.name) + ')" title="Copy them into this project’s roster">Add</button>')
+          + '<button class="btn-sm btn-lite no-print" onclick="resLibForget(' + ekJs2(x.name) + ')" title="Remove from the library (does not touch any project)">✕</button>'
+          + '</div>';
+      }).join('');
+      const missing = rows.filter(x => !inHere(x.name)).length;
+      const diffs = rows.filter(x => inHere(x.name) && resLibDiff(x.name)).length;
+      host.innerHTML = '<div class="rl-lib"><div class="rl-lib-h"><span class="rl-lib-t">👥 People library</span>'
+        + '<span class="rl-lib-n">' + rows.length + ' ' + ptrPl(rows.length, 'person', 'people')
+        + ' · ' + (rows.length - missing) + ' on this project'
+        + (diffs ? ' · <b>' + diffs + '</b> with different figures here' : '') + '</span></div>'
+        + '<div class="rl-grid">' + cards + '</div>' + bar
+        + '<p class="rl-note">Adding copies the figures in; it does not link them. A rate that differs is '
+        + '<b>reported, never reconciled</b> — the library is what you usually charge, the project is what you '
+        + 'agreed this time, and quietly overwriting either one is how a signed rate card gets lost. '
+        + '“Save this roster” pushes today’s figures back, newer wins, and a blank never overwrites a real figure.</p></div>';
+    }
     // The free-text history box is what a human writes; this is what the tool
     // measures. Every archived activity becomes a row here, and rows accumulate
     // ACROSS projects (own storage key, never cleared by New project), so each
@@ -21186,6 +21430,7 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
     // the estimate bank now lives in IndexedDB; pull it into the sync cache and
     // migrate a pre-existing localStorage bank on the way
     bankInit();
+    resLibInit();          // the people library warms the same way the bank does
 
     // Enter walks the editor's fields, Shift+Enter saves — see modalKeyFlow.
     (() => {
