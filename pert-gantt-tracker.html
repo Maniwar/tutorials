@@ -2381,7 +2381,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1604</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1620</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -15477,9 +15477,17 @@ Rules:
       if (parseAIJson.repaired) flashSaved('⚠ The response for ' + what + ' arrived malformed and was cut back to the last complete section — re-run it before using this.');
       return res;
     }
-    function parseAIJsonStrict(text, what) {
-      if (String(text).indexOf('/*TRUNCATED*/') >= 0)
+    /* opts.noContinue tells the truth about WHICH failure this was. A flow that
+       opted out of continuation never made eight attempts, and telling its user
+       to "split the request into smaller pieces, e.g. one phase at a time" sends
+       them looking for a control that does not exist — the reading has no
+       per-phase mode. Same guard, honest wording. */
+    function parseAIJsonStrict(text, what, opts) {
+      if (String(text).indexOf('/*TRUNCATED*/') >= 0) {
+        if (opts && opts.noContinue)
+          throw new Error('The response for ' + what + ' ran past the length this request allows, so it arrived incomplete. NOTHING was changed — press ⟳ to ask again; a second attempt on the same numbers is usually shorter.');
         throw new Error('The AI response for ' + what + ' exceeded the maximum output even after 8 auto-continuations. NOTHING was changed. Split the request into smaller pieces (e.g. one phase at a time) and retry.');
+      }
       const res = parseAIJson(text);
       if (parseAIJson.repaired)
         throw new Error('The AI response for ' + what + ' arrived incomplete (output or connection was cut). NOTHING was changed — please retry.');
@@ -15757,9 +15765,16 @@ Rules:
       try {
         const text = await callAnthropic(dg.text, {
           onDelta, cachePrefix: [ptPrefix()],   // ONE block; the digest stays uncached
-          maxTokens: 2000, noContinue: true
+          // 2000 was too tight for a real engagement. The contract allows up to
+          // ten items, each with a sentence, a verbatim cite of 20+ characters,
+          // refs and an action — comfortably past 2000 tokens on a 29-activity
+          // plan, and the whole reading was then discarded for being long. The
+          // VALIDATOR caps what is kept (10 items, 4 per panel), so the real
+          // spend is bounded by the contract, not by this number; it only needs
+          // to be big enough that a good answer is never thrown away.
+          maxTokens: 8000, noContinue: true
         });
-        const res = parseAIJsonStrict(text, 'the reading');   // repaired/truncated -> nothing written
+        const res = parseAIJsonStrict(text, 'the reading', { noContinue: true });   // repaired/truncated -> nothing written
         const v = ptValidate(res, dg);
         ptStore[activeProjectId()] = { items: v.items, drops: v.drops, quiet: v.quiet, fp,
           at: new Date().toISOString(), model: (document.getElementById('aiModel').value || 'claude-sonnet-5'),
