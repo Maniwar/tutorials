@@ -487,16 +487,165 @@
     .ptr-foot { font-size: var(--t-xs); color: var(--muted); line-height: 1.55;
       margin-top: 0.75rem; padding-top: 0.6rem; border-top: 1px dashed var(--border); }
 
+    /* the demoted burn-rate reading, kept as prose and no longer colouring anything */
+    .ptr-aside { display: block; margin-top: 0.35rem; font-style: italic; }
+
+    /* ===== Plan Truth · spend over time — the plan's own S-curve =============
+       The three bars above answer "how far from plan". They cannot answer "how
+       far from plan FOR TODAY", because money is not spent evenly: a plan is an
+       S, cheap at mobilisation and expensive in delivery, so a share-of-budget
+       set against a share-of-work reads red on a plan that is merely
+       front-loaded. This draws the curve and marks the gap at today.
+
+       Full-bleed, NOT a fourth .ptr-row: that grid's middle column is the shared
+       ±% variance axis, and this carries a CALENDAR on x and MONEY on y. Two
+       quantities cannot wear one ruler.
+
+       WHY AN <svg> INSIDE A PERCENT-POSITIONED PANEL. The comment at the top of
+       this block rejects a FIXED-viewBox SVG on two grounds, and both are
+       respected rather than overridden. (1) Text must not scale: there is NO
+       text and no <circle> inside this SVG at all — every label, marker, rule
+       and money figure is HTML at a rem size on the same relative track, which
+       is trendChartSvg's failure mode (font-size="9" rendering ~5px in a narrow
+       panel) designed out rather than inherited. (2) Percentages must reflow:
+       viewBox="0 0 1000 100" with preserveAspectRatio="none" makes the SVG's own
+       coordinates percentages of the box, identical arithmetic to every left:X%
+       here, so the HTML markers land on the paths automatically at any width,
+       and the surrounding HTML still restructures at 640px below.
+       vector-effect="non-scaling-stroke" keeps strokes at true px under the
+       stretch; if an engine ignored it the curve would still be correct, only
+       uglier. What is left in the SVG is the one thing CSS cannot express: a
+       polyline. The dots stay HTML because a <circle> under a 10:1 x/y stretch
+       is an ellipse.
+
+       TEXTURE IS THE HONESTY, AND IT IS NOT COLOUR — nor is it a dash. Dashed
+       already means plan / forecast / target everywhere else in this file
+       (.pb-needle.pb-rec, .pb-needle.pb-cap, the pct line in trendChartSvg), so
+       a dashed ACTUAL would read as the plan and the solid plan as reality —
+       exactly inverted for the client audience this prints for. SHAPE carries it
+       instead, four independent ways: a smooth CURVE is the exact plan, a
+       STAIRCASE is the reconstruction (a step claims only "by the end of this
+       period", which is the strongest claim the data supports), the plan has a
+       filled area and the reconstruction has none, and the markers at today are
+       a filled disc (measured, on the curve) against a hollow ring (a measured
+       total placed on one date). All four survive greyscale, a printer that
+       strips backgrounds, and colour-blindness. The legend says it in words too.
+
+       NO DRAW-IN ANIMATION, DELIBERATELY. The only way to animate an SVG path is
+       stroke-dasharray, and a transient dash on a chart whose whole argument is
+       that dashes mean something specific is a bad trade. Please do not add one. */
+    .ptr-sc { border-top: 1px solid var(--border); margin-top: 0.4rem; padding-top: 0.8rem; }
+    .ptr-sc-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.2rem 0.7rem; }
+    .ptr-sc-title { font-size: var(--t-sm); font-weight: 700; letter-spacing: .04em;
+      text-transform: uppercase; color: var(--muted); flex: none; }
+    .ptr-sc-sub { font-size: var(--t-xs); color: var(--slack); overflow-wrap: anywhere; }
+
+    /* The TODAY pill gets its own reserved strip, so it can never sit on top of
+       the plot's own ink or the dates below it. buildGanttSvg reserves a strip
+       for exactly this reason ("the pill lives in its own reserved strip ... it
+       can never cover a date there"). */
+    .ptr-sc-flagrow { position: relative; height: 1.05rem; margin-top: 0.55rem; }
+    .ptr-sc-flag { position: absolute; top: 0; height: 15px; line-height: 15px; padding: 0 6px;
+      border-radius: 999px; background: var(--header); color: #fff; font-size: var(--t-xs);
+      font-weight: 700; letter-spacing: .04em; white-space: nowrap; }
+
+    .ptr-sc-plot { position: relative; height: 118px; border-radius: 6px;
+      background: var(--bg); border: 1px solid var(--border); }
+    .ptr-sc-plot > svg { display: block; width: 100%; height: 100%; }
+    /* solid + filled = measured. Stroke and fill are CSS paint properties on
+       SVG, not backgrounds, so they print without any opt-in at all. */
+    .ptr-sc-area { fill: var(--primary-100); stroke: none; }
+    .ptr-sc-plan { fill: none; stroke: var(--primary); stroke-width: 2;
+      stroke-linejoin: round; stroke-linecap: round; }
+    /* stepped + unfilled = the totals are measured, the route is not. There is
+       no defensible area under a line whose shape is inferred. */
+    .ptr-sc-book { fill: none; stroke: var(--header); stroke-width: 2;
+      stroke-linejoin: miter; stroke-linecap: butt; }
+    /* with no baseline nothing on this chart was ever committed to, so the plan
+       loses its solid edge as well as its caption */
+    .ptr-sc-live .ptr-sc-plan { stroke: var(--slack); stroke-dasharray: 6 4; }
+    .ptr-sc-live .ptr-sc-area { fill: #eef2f7; }
+
+    .ptr-sc-zero { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--border); }
+    /* the whole envelope, drawn only when the curve cannot reach it — a curve
+       that tops out short must explain itself rather than just look short */
+    .ptr-sc-env { position: absolute; left: 0; right: 0; height: 0;
+      border-top: 1px dashed var(--slack); }
+    .ptr-sc-end { position: absolute; top: 0; bottom: 0; width: 0; margin-left: -1px;
+      border-left: 1px dashed var(--slack); }
+    .ptr-sc-now { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px;
+      background: var(--header); opacity: .85; }
+
+    /* THE FINDING: the vertical distance between the two measured numbers at
+       today. It is a measurement, so it is drawn as a measuring instrument. */
+    .ptr-sc-ib { position: absolute; width: 2px; margin-left: -1px; background: var(--critical); }
+    .ptr-sc-ib::before, .ptr-sc-ib::after { content: ''; position: absolute; left: -4px;
+      width: 10px; height: 2px; background: inherit; }
+    .ptr-sc-ib::before { top: 0; } .ptr-sc-ib::after { bottom: 0; }
+    .ptr-sc-ib-good { background: var(--success); }
+    .ptr-sc-ib-chg { background: var(--warn); }
+
+    /* filled = measured and ON the curve · hollow = a measured TOTAL placed at
+       one date, claiming nothing about any other day. Same instinct as .ptr-dot:
+       the marker states what KIND of number it is, not just where it is. When
+       booked sits exactly on the plan the disc lands inside the ring, which is
+       the clearest possible "on plan" and needs no third symbol. */
+    .ptr-sc-m { position: absolute; box-sizing: border-box; border-radius: 999px;
+      transform: translate(-50%, -50%); }
+    .ptr-sc-pv { width: 9px; height: 9px; background: var(--primary); box-shadow: 0 0 0 2px var(--bg); }
+    .ptr-sc-live .ptr-sc-pv { background: var(--slack); }
+    .ptr-sc-ac { width: 15px; height: 15px; background: transparent; border: 2.5px solid var(--header); }
+
+    /* min · granularity · max — the same minimal axis the Monte-Carlo histogram
+       uses, and it cannot collide with the TODAY pill because that has its own row */
+    .ptr-sc-ax { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.3rem;
+      font-size: var(--t-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+    /* the legend says it in WORDS, not swatches alone — words survive greyscale,
+       a screenshot, and being pasted into an email */
+    .ptr-sc-key { display: flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; margin-top: 0.5rem;
+      align-items: center; font-size: var(--t-xs); color: var(--muted); }
+    .ptr-sc-key > span { display: inline-flex; align-items: center; gap: 0.32rem; }
+    .ptr-sc-key b { color: var(--text); }
+    .ptr-sc-key i { display: inline-block; flex: none; box-sizing: border-box; }
+    .ptr-sc-sw1 { width: 17px; height: 0; border-top: 2px solid var(--primary); }
+    .ptr-sc-live .ptr-sc-sw1 { border-top-style: dashed; border-top-color: var(--slack); }
+    .ptr-sc-sw2 { width: 17px; height: 8px; border-left: 2px solid var(--header);
+      border-top: 2px solid var(--header); border-right: 2px solid var(--header); }
+    .ptr-sc-sw3 { width: 11px; height: 11px; border-radius: 999px; border: 2px solid var(--header); }
+
+    /* A labelled lock box naming the ONE missing input, never an empty plot —
+       coverageHtml()'s refusal grammar rendered in .ptr-void's own hatch so it
+       reads as a sibling of the bars' empty state. */
+    .ptr-sc-lock { font-size: var(--t-md); color: var(--muted); line-height: 1.55; margin-top: 0.5rem;
+      border: 1px dashed var(--border); border-radius: 6px; padding: 0.5rem 0.65rem;
+      background: repeating-linear-gradient(135deg, var(--bg) 0 6px, var(--card) 6px 12px); }
+    .ptr-sc-lock b { color: var(--text); }
+    .ptr-sc-fine { font-size: var(--t-xs); color: var(--muted); line-height: 1.55; margin-top: 0.45rem; }
+    .ptr-sc-fine b { color: var(--text); }
+
+
     /* Bars and cells are background-colours, and browsers strip backgrounds on
        paper unless told otherwise — without this the whole chart prints as a row
        of empty grey tracks. (The app's existing .progress-fill and .pa-fill have
        exactly that bug today; this section opts out of inheriting it.) */
     @media print {
       .ptr-bar, .ptr-dot, .ptr-zero, .ptr-grid, .ptr-void, .ptr-lead,
-      .ptr-strip i, .ptr-k i, .ptr-side .badge {
+      .ptr-strip i, .ptr-k i, .ptr-side .badge,
+      /* The curve's two paths and its fill are SVG stroke/fill — paint
+         properties, not backgrounds — and print with no help at all. These are
+         HTML elements whose BACKGROUND is the data, so they need the same
+         opt-out the bars above take; without it the gap at today, both markers
+         and the TODAY pill vanish on paper and the chart loses its subject. */
+      .ptr-sc-now, .ptr-sc-ib, .ptr-sc-ib::before, .ptr-sc-ib::after,
+      .ptr-sc-m, .ptr-sc-flag, .ptr-sc-lock, .ptr-sc-key i {
         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .ptr-bar { animation: none; }
-      .ptr-row, .ptr-strip-wrap { break-inside: avoid; }
+      .ptr-row, .ptr-strip-wrap, .ptr-sc { break-inside: avoid; }
+      /* Belt and braces, the way .pb- does it: if a printer drops fills anyway
+         the plot still reads, because curve-vs-staircase is a stroke, the ring
+         keeps its border, and every number on this chart is also stated as text
+         underneath it. */
+      .ptr-sc-pv { box-shadow: 0 0 0 1px #fff; }
     }
 
     /* The generic inline-grid collapse exists only inside .modal-body (710) and
@@ -509,6 +658,15 @@
       .ptr-side { justify-content: flex-start; }
       .ptr-axis .ptr-head, .ptr-axis .ptr-side { display: none; }
       .ptr-tick { font-size: 0.625rem; }
+      /* At 375px the plot is ~305px of content. The curve is percent-positioned
+         so it reflows losslessly; what has to give is vertical weight and label
+         size. Nothing is hidden — unlike .pb-flag, every element here is either
+         the finding or the disclaimer, and both have to survive the phone. */
+      .ptr-sc-plot { height: 92px; }
+      .ptr-sc-head { gap: 0.1rem 0.5rem; }
+      .ptr-sc-head .ptr-pair { flex-basis: 100%; }
+      .ptr-sc-ax, .ptr-sc-key, .ptr-sc-sub { font-size: 0.625rem; }
+      .ptr-sc-key { gap: 0.15rem 0.7rem; }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
@@ -2018,7 +2176,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0421</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0428</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -6486,6 +6644,178 @@
       download(safeName() + '-billing.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
     }
     function earnedValue() { return leafTasks().reduce((s, t) => s + taskCost(t) * ((t.percentComplete || 0) / 100), 0); }
+    // ============ TIME-PHASED SPEND — one accrual rule, four callers ==========
+    // This app has exactly one way of turning "a cost and a date range" into
+    // "money due by a date", and until now it existed only as an inline reducer
+    // inside the earned-value card. The moment a second reader wanted that number
+    // at a different date, the reducer had to come out: two copies are two numbers
+    // that can disagree on one screen, which is the defect the phase-row comment
+    // in renderAnalytics was written to close ($23,206 printed against the
+    // project's own $23,180). There is now ONE copy. The EVM card, the Plan-truth
+    // budget bar, the Baseline budget card and the spend curve all call it.
+    //
+    // A segment is {s, f, c}: cost c spread linearly across CALENDAR milliseconds
+    // over the half-open window [s, f). Calendar rather than working days because
+    // that is what the card has always done, and reconciling with a number already
+    // on screen beats theoretical purity in a panel whose whole thesis is that the
+    // numbers must agree. Switching to working days would mean changing the card
+    // in the same edit or acquiring exactly the defect above.
+    function accrualAt(segs, atMs) {
+      let v = 0;
+      for (let i = 0; i < segs.length; i++) {
+        const g = segs[i];
+        // Branch order is the card's own, preserved exactly — including what it
+        // does with a reversed date pair (reachable only through a hand-edited
+        // import): nothing before s, everything after it. The middle branch is
+        // unreachable when f <= s, so there is no division by zero here.
+        v += g.c * (atMs <= g.s ? 0 : atMs >= g.f ? 1 : (atMs - g.s) / (g.f - g.s));
+      }
+      return v;
+    }
+
+    // The PLAN as segments, plus the money that has no span to sit on. Identical
+    // to the EVM card's reducer in every term: leaves only (setBaseline writes a
+    // baseCost onto summaries too, and summing those would double every phase),
+    // milestones skipped (a date, but no span), the frozen triple when a baseline
+    // exists and the live one otherwise, and the finish day counted WHOLE via the
+    // + 86400000 — which is why a one-day activity books its whole cost on that
+    // day instead of nothing.
+    //
+    // `Number(t.baseCost) || taskCost(t)` is a falsy test, not a null test, so an
+    // activity genuinely baselined at $0 quietly picks up today's price. It is
+    // kept deliberately: changing it here without changing the EVM card would make
+    // the curve and the planned-value card disagree, which is the one thing this
+    // refactor exists to prevent. Fix both together or neither.
+    function pvSpread(usingBaseline, leaves) {
+      const ub = usingBaseline === undefined ? hasBaseline() : !!usingBaseline;
+      const out = { segs: [], phased: 0, msN: 0, msCash: 0, offN: 0, offCash: 0 };
+      (leaves || leafTasks()).forEach(t => {
+        const c1 = ub ? (Number(t.baseCost) || taskCost(t)) : taskCost(t);
+        if (t.milestone) { if (c1 > 0) { out.msN++; out.msCash += c1; } return; }
+        const s1 = ub ? t.baseStart : t.startDate;
+        const f1 = ub ? t.baseFinish : t.finishDate;
+        if (!s1 || !f1) { if (c1 > 0) { out.offN++; out.offCash += c1; } return; }
+        const s = stripTime(s1).getTime(), f = stripTime(f1).getTime() + 86400000;
+        // An imported plan can carry a malformed baseline date. The reducer this
+        // replaces turned that into NaN and printed the planned-value card as
+        // "—"; dropping the record instead is a deliberate improvement, and the
+        // money is counted as undatable rather than silently lost.
+        if (!Number.isFinite(s) || !Number.isFinite(f)) {
+          if (c1 > 0) { out.offN++; out.offCash += c1; }
+          return;
+        }
+        out.segs.push({ s: s, f: f, c: c1 });
+        out.phased += c1;
+      });
+      return out;
+    }
+    // Planned value at any instant. pvAt(today) is what the PV card prints.
+    function pvAt(atMs, usingBaseline) { return accrualAt(pvSpread(usingBaseline).segs, atMs); }
+
+    // ---- Reconstructed spend. Read this before trusting the shape. ----------
+    // THERE IS NO PER-DAY RECORD OF ACTUAL COST ANYWHERE IN THIS FILE.
+    // statusHistory stores projectCost() — the PLANNED cost of the live plan —
+    // and per activity the app holds one actualStart, one actualFinish, one
+    // actualEffort and one percentComplete. Scalars, not series. So a spend
+    // history cannot be read; it can only be reconstructed, and every branch
+    // below is a modelling claim rather than an observation. Each is COUNTED so
+    // the chart can state the size of its own guess out loud:
+    //
+    //   span     both dates      -> spread across them. Wrong wherever the work
+    //            happened in bursts: actualEffortDays() knows four days of effort
+    //            fell inside a thirty-five-day window and never which four.
+    //   open     a start only    -> spread from the start to the end of today.
+    //            This is EVERY in-flight activity by construction, because
+    //            applyPctActuals stamps actualStart the moment percentComplete
+    //            leaves 0 and only stamps actualFinish at 100. It is the weakest
+    //            rule here and it is usually doing the most work.
+    //   point    a finish only   -> the whole amount across that one day.
+    //   undated  real money with no date at all (logged effort and no dates, or a
+    //            manual actual-cost override). NOT PLACED, and not invented onto
+    //            a date. It is counted, named in dollars, and the drawn line ends
+    //            below the measured total by exactly that amount — undatable
+    //            money drawn as the gap it actually is.
+    //
+    // Every placed segment is built to be fully accrued at the END of today, so
+    // accrualAt(segs, endOfToday) === placed by construction, not by correction.
+    function acSpread(leaves, todayMs, costOf) {
+      const endToday = todayMs + 86400000;
+      const out = { segs: [], placed: 0, total: 0, span: 0, open: 0, point: 0,
+        undatedN: 0, undatedCash: 0, newN: 0, newCash: 0, unloggedN: 0, firstMs: Infinity };
+      const ms = v => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(v || '')) return null;
+        const x = stripTime(new Date(v + 'T00:00:00')).getTime();
+        // The regex admits '2026-13-01', which an imported sheet can carry (the
+        // spreadsheet round-trip assigns actualStart with no format check). One
+        // such cell would otherwise NaN the whole path and the chart would
+        // silently vanish with no refusal and no explanation.
+        return Number.isFinite(x) ? x : null;
+      };
+      leaves.forEach(t => {
+        const c = costOf.get(t.id) || 0;
+        out.total += c;
+        // Progress ticked with no time logged and no rate-bearing dates: real
+        // work, zero booked cost. It makes the budget row look healthy for the
+        // wrong reason, so it is counted and disclosed rather than assumed away.
+        if ((Number(t.percentComplete) || 0) > 0 && !(c > 0)) out.unloggedN++;
+        if (!(c > 0)) return;                          // incl. a negative manual override
+        // Money booked on activities that did not exist when the baseline was
+        // taken. They have no baseStart, so they are structurally ABSENT from the
+        // plan curve while being present in this one: part of any gap at today is
+        // scope, not overspend. baseTe == null is the app's own "added after the
+        // baseline" test.
+        if (t.baseTe == null) { out.newN++; out.newCash += c; }
+        let s = ms(t.actualStart), f = ms(t.actualFinish);
+        if (s != null && s > todayMs) s = todayMs;     // a hand-typed future start
+        if (f != null && f > todayMs) f = null;        // a finish in the future is not a finish yet
+        let g = null;
+        if (s != null && f != null && f >= s) { out.span++; g = { s: s, f: f + 86400000, c: c }; }
+        else if (s != null) { out.open++; g = { s: s, f: endToday, c: c }; }
+        else if (f != null) { out.point++; g = { s: f, f: f + 86400000, c: c }; }
+        else { out.undatedN++; out.undatedCash += c; }
+        if (g) {
+          out.segs.push(g); out.placed += c;
+          if (g.s < out.firstMs) out.firstMs = g.s;
+        }
+      });
+      return out;
+    }
+
+    // ================== ONE BUDGET VERDICT, TWO SCREENS ======================
+    // WHY THIS IS NOT A BURN RATE. The old rule was planPace(): money used
+    // divided by work finished. Both sides are shares of a TOTAL, so the ratio
+    // silently assumes the plan spends in a straight line. It does not — a plan
+    // is an S: mobilisation is cheap and delivery is not. A project sitting
+    // exactly on its baseline therefore read "51% spent at 49% done" and turned
+    // red through the whole middle of the job, while a project that was quietly
+    // late read green. The old note half-admitted it ("a burn RATE, not a signed
+    // saving") — an accurate caveat attached to the wrong measurement.
+    //
+    // Two independent, time-phased tests replace it, both built from numbers the
+    // app already prints on this same screen:
+    //   ABOVE THE CURVE   AC > PV — more is booked than the frozen baseline said
+    //                     would be spent BY TODAY. This is the user's question.
+    //   ABOVE THE VALUE   AC > EV — the work that is finished cost more than it
+    //                     was budgeted at.
+    // Failing both is an overspend: red. Failing neither: green. Failing exactly
+    // one is amber, and amber is already this panel's word for "this moved and it
+    // is not necessarily a defect" (the Scope row uses it for exactly that). The
+    // false alarm that started all this — a project ahead of its own plan and
+    // therefore ahead of its own spend line — now fails only the first test, goes
+    // amber, and has the reason spelled out beside it.
+    //
+    // Earned value appears here as a signed TEST, never as a ratio and never as a
+    // forecast: see refusal 2 in the Plan-truth header comment.
+    function budgetVerdict(actCost, pvNow, evNow, envelope) {
+      const tol = Math.max(1, (envelope || 0) * 0.005);   // half a percent of the envelope is noise
+      const overCurve = (actCost - pvNow) > tol;
+      const overValue = (actCost - evNow) > tol;
+      return {
+        gap: actCost - pvNow, cv: evNow - actCost, overCurve: overCurve, overValue: overValue,
+        tone: (overCurve && overValue) ? 'bad' : (overCurve || overValue) ? 'chg' : 'good'
+      };
+    }
+
     function fmtMoney(v) {
       if (!Number.isFinite(v)) return '—';
       return '$' + Math.round(v).toLocaleString();
@@ -6941,13 +7271,17 @@
     //     the one action that fills it in. No "are these two bars secretly the
     //     same?" heuristic is needed because the situation cannot arise.
     //
-    //  2. No CPI and no EAC. taskCost() (5740) charges a task's whole fixedCost,
-    //     earnedValue() (5859) prorates that same fixedCost by percent complete,
-    //     and computedActualCost() (5767) charges it in full the moment any
-    //     actual exists. One $10k licence at 10% done therefore yields EV ≈ $1k
-    //     against AC ≈ $10k — CPI 0.10 and a tenfold overrun forecast, from
-    //     arithmetic rather than from the project. Consumption paced by progress
-    //     has no such asymmetry, and it is the rule renderBaseline() already uses.
+    //  2. No CPI and no EAC — still, but not for the old reason. That reason
+    //     (computedActualCost() charged a whole fixedCost the moment any actual
+    //     existed, against an earned value that prorated the same dollar) NO
+    //     LONGER HOLDS: it now accrues fixed cost with progress too, on the same
+    //     clock, so the two terms cancel. What remains is that CPI and EAC are
+    //     RATIOS with earned value underneath, and earned value is a rounding
+    //     error early in a plan — the same reason the SPI card withholds itself
+    //     below a twentieth of budget due. Earned value is used in this panel
+    //     only as a signed second TEST on the budget row's colour (did the
+    //     finished work cost more than it was budgeted at?), never as a ratio and
+    //     never as a forecast.
     //
     //  3. Schedule reads currentFinish() (6087), never t.ef. recompute() (4862)
     //     schedules purely from te and never consults actual dates, so a forecast
@@ -6973,6 +7307,28 @@
       const money = v => safe ? '•••' : fmtMoney(v);
       const donePct = overallProgress();
       const today = stripTime(new Date());
+
+      // ---- the money numbers, walked ONCE and shared by the bar and the curve.
+      // Two reasons, one correctness and one cost. Correctness: the Budget bar IS
+      // the curve's vertical gap at today expressed as a percentage, so they have
+      // to be the same numbers or the panel contradicts itself on one screen.
+      // Cost: actualCostOf() reaches actualWorkingDays() -> getHolidaySet(),
+      // which reads the DOM and allocates a Set, for every leaf that has two
+      // actual dates and no logged effort. The old code made one such pass; a
+      // second consumer computing its own would have made two. This makes one.
+      const actOf = new Map();
+      leaves.forEach(t => actOf.set(t.id, actualCostOf(t)));
+      const planCostAll = projectCost();
+      const baseCostAll = hb ? leaves.reduce((s, t) => s + (Number(t.baseCost) || 0), 0) : 0;
+      const actCostAll = leaves.reduce((s, t) => s + (actOf.get(t.id) || 0), 0);
+      // No silent `|| planCost` while still captioning it "baseline": a baseline
+      // taken before rates were entered froze $0, and claiming to measure against
+      // it would be a lie with a date attached.
+      const envelope = baseCostAll > 0 ? baseCostAll : planCostAll;
+      const sp = pvSpread(hb, leaves);                  // the frozen plan, as datable segments
+      const acs = acSpread(leaves, today.getTime(), actOf);
+      const pvNow = accrualAt(sp.segs, today.getTime());   // === the planned-value card
+      const evNow = earnedValue();                         // === the earned-value card
 
       // ------------------------------ SCHEDULE ------------------------------
       const sch = { key: 'sched', dim: 'Schedule', icon: '📅', kind: 'signed', state: 'needs' };
@@ -7025,9 +7381,9 @@
       // ------------------------------- BUDGET -------------------------------
       const bud = { key: 'budget', dim: 'Budget', icon: '💰', kind: 'signed', state: 'needs' };
       (function () {
-        const planCost = projectCost();
-        const baseCost = hb ? leaves.reduce((s, t) => s + (Number(t.baseCost) || 0), 0) : 0;
-        const actCost = leaves.reduce((s, t) => s + actualCostOf(t), 0);
+        // Hoisted above this IIFE and walked once — see the note at the top of
+        // planTruthData(). The names are kept so every reference below is unchanged.
+        const planCost = planCostAll, baseCost = baseCostAll, actCost = actCostAll;
         // No silent `|| planCost` while still captioning it "baseline": a
         // baseline taken before rates were entered froze $0, and claiming to
         // measure against it would be a lie with a date attached.
@@ -7077,41 +7433,94 @@
           bud.cta = { label: 'Set day rates', act: "switchTab('resources')" };
           return;
         }
-        const pace = planPace(actCost, ref, donePct);
-        if (pace == null) {
-          bud.why = 'Only <b>' + donePct.toFixed(0) + '%</b> of the work is done. <b>' + money(actCost)
-            + '</b> of the <b>' + money(ref) + '</b> envelope is booked, but under a quarter complete the '
-            + 'denominator is too small for a spend pace to mean anything — it would swing wildly on the '
-            + 'next task that closes.';
-          bud.softCta = { label: 'Log actuals', act: "switchTab('baseline')" };
-          return;
-        }
-        bud.planTxt = money(ref);
+        // ---- WHERE THE PLAN SAID WE'D BE, against where we are --------------
+        // LENGTH is the time-phased gap: booked cost minus what the plan's own
+        // spend curve says was due BY TODAY, as a share of the whole envelope.
+        // Denominated by the envelope and never by planned value: PV is a
+        // rounding error in the first fortnight and dividing by it produces
+        // hundreds of percent from one activity (the SPI card withholds itself
+        // for exactly that reason), and the Schedule bar already divides its slip
+        // by the whole baselined span — so both bars read "% of the whole
+        // commitment" and can honestly share one axis. It also means this row is
+        // measurable from day one; the old 25%-complete gate is gone.
+        //
+        // COLOUR is budgetVerdict()'s two independent tests, not the direction of
+        // the bar. See that function for why. Being ahead of the spend line
+        // because you are ahead of the WORK is amber with the reason named, not
+        // red — that was the false alarm this row was rebuilt to stop.
+        const bv = budgetVerdict(actCost, pvNow, evNow, ref);
+        bud.planTxt = money(pvNow);
         bud.actTxt = money(actCost);
-        bud.pct = (pace - 1) * 100;
-        bud.state = Math.abs(bud.pct) < 0.5 ? 'flat' : 'ok';
-        bud.delta = bud.state === 'flat' ? 'on pace'
-          : Math.round(actCost / ref * 100) + '% spent at ' + Math.round(donePct) + '% done';
-        bud.denom = (baseCost > 0 ? 'baselined cost ' : 'planned cost ') + money(ref) + ', paced by progress';
-        bud.note = 'Money actually booked against the ' + (baseCost > 0 ? 'committed' : 'planned')
-          + ' envelope, divided by how much of the work is finished — so it is a burn <em>rate</em>, not a '
-          + 'signed saving. Because both sides run through the same day rates, at fixed rates this largely '
-          + 'tracks effort efficiency: read it <em>with</em> the Scope bar, not as separate confirmation of it.'
+        bud.pct = bv.gap / ref * 100;
+        bud.tone = bv.tone;
+        bud.state = (Math.abs(bud.pct) < 0.5 && bv.tone === 'good') ? 'flat' : 'ok';
+        bud.delta = bud.state === 'flat' ? 'on the plan to date'
+          : (bv.gap > 0 ? '+' : '−') + money(Math.abs(bv.gap)) + ' vs plan to date';
+        bud.denom = money(ref) + ' ' + (baseCost > 0 ? 'baselined' : 'planned') + ' envelope, phased over the '
+          + (baseCost > 0 ? 'baselined' : 'current') + ' dates';
+        bud.note = 'What the ' + (baseCost > 0 ? 'baseline' : 'live plan') + ' says should have been spent <b>by '
+          + 'today</b> — <b>' + money(pvNow) + '</b> of the ' + money(ref) + ' envelope — against what is '
+          + 'actually booked. Spend curves up, so this is <em>not</em> money-spent against work-finished: the '
+          + 'curve below is the same comparison drawn across the whole span, and this bar is its vertical gap at '
+          + 'today. The colour is a second, independent test: red only when the booked total is <b>both</b> above '
+          + 'the plan-to-date <b>and</b> above <b>' + money(evNow) + '</b>, the budgeted value of the work '
+          + 'actually finished.';
+        // The one way a signed gap can still mislead is under-spending because
+        // the work has not happened. Classic EVM disambiguates with an index;
+        // this panel refuses those, and does not need one — the Schedule bar
+        // directly above already measures exactly that, so point at the bar the
+        // reader can already see rather than invent a second metric.
+        const schTxt = (sch.state === 'ok' && Number.isFinite(sch.pct)) ? escapeHtml(sch.delta) : null;
+        if (bv.overCurve && !bv.overValue) {
+          bud.note += ' Here it is above the curve but <b>not</b> above the value of the work done, so you are '
+            + 'spending ahead of the plan because you are working ahead of it'
+            + (schTxt && sch.pct < 0 ? ' — the forecast is ' + schTxt + '. ' : '. ') + 'Timing, not overspend.';
+        } else if (bv.overValue && !bv.overCurve) {
+          bud.note += ' Here it is under the plan-to-date, but the finished work still cost <b>'
+            + money(-bv.cv) + '</b> more than it was budgeted at — under the curve because the work has not '
+            + 'happened yet, not because it is coming in cheap'
+            + (schTxt && sch.pct > 0 ? '; the forecast is ' + schTxt + '.' : '.');
+        } else if (bv.gap < 0 && schTxt && sch.pct > 0) {
+          bud.note += ' Read it with the schedule bar: the forecast is ' + schTxt + ', so part of this '
+            + 'under-spend is money not yet spent because the work has not yet started. Deferred, not saved.';
+        }
         // A baseline taken before rates were entered froze $0 into every
         // baseCost. Saying "vs the baseline of <date>" there would be a lie with
         // a date attached, so the reference falls back to the live plan and says so.
-        + (hb && !(baseCost > 0) ? ' The baseline of ' + escapeHtml(baselineDate) + ' carries no costs — it was '
-          + 'taken before rates were entered — so this measures against the <b>live</b> plan, not against it.' : '');
-        // Fixed costs are charged whole to actuals but prorated into earned
-        // value. On a plan with big licence lines this makes the pace read worse
-        // than reality until those activities close, so it is disclosed rather
-        // than silently averaged away.
+        if (hb && !(baseCost > 0)) {
+          bud.note += ' The baseline of ' + escapeHtml(baselineDate) + ' carries no costs — it was taken before '
+            + 'rates were entered — so this measures against the <b>live</b> plan, not against it.';
+        }
+        // The pace reading survives, because half a budget at 10% done and at 90%
+        // done really are opposite findings and it is the number a client quotes
+        // back. It is demoted to a sentence and no longer colours anything: it
+        // contains no date, which is the entire complaint against it.
+        const pace = planPace(actCost, ref, donePct);
+        if (pace != null) bud.note += ' <span class="ptr-aside">Burn rate, for reference: <b>'
+          + Math.round(actCost / ref * 100) + '%</b> of the envelope spent at <b>' + Math.round(donePct)
+          + '%</b> done. One total over another, with no date in it — it runs hot whenever the money lands later '
+          + 'than the effort, which is most plans. It no longer colours this bar.</span>';
+        // Fixed cost cancels inside AC − EV (computedActualCost and earnedValue
+        // now accrue the same dollar on the same clock), but NOT inside AC − PV:
+        // the curve spreads a baselined licence evenly across the activity's
+        // dates while the actual accrues it with progress, and neither is the day
+        // the invoice landed.
         const fixedOpen = leaves.reduce((s, t) => s + ((Number(t.fixedCost) || 0) > 0
           && actualEffortDays(t) != null && (t.percentComplete || 0) < 100 ? (Number(t.fixedCost) || 0) : 0), 0);
         if (fixedOpen > actCost * 0.1) {
-          bud.note += ' <b>' + money(fixedOpen) + '</b> of that is fixed cost booked in full on activities '
-            + 'that are only part done, so the pace reads high until they close.';
+          bud.note += ' <b>' + money(fixedOpen) + '</b> of the booked total is fixed cost on activities only '
+            + 'part done: the curve spreads it evenly across their dates and the actual accrues it with '
+            + 'progress, and neither is the day the invoice landed.';
         }
+        // The manual override is the one path that records money leaving on day
+        // one, taken exactly as typed — with no date attached to it at all.
+        const ovr = leaves.filter(t => t.autoActualCost === false && (Number(t.actualCost) || 0) > 0).length;
+        if (ovr) bud.note += ' <b>' + ovr + '</b> ' + ptrPl(ovr, 'activity', 'activities') + ' '
+          + (ovr === 1 ? 'carries' : 'carry') + ' a hand-entered actual cost, taken exactly as typed and '
+          + 'carrying no date, so it sits in this bar but not in the curve’s staircase.';
+        if (acs.unloggedN) bud.note += ' <b>' + acs.unloggedN + '</b> '
+          + ptrPl(acs.unloggedN, 'activity', 'activities') + ' ' + (acs.unloggedN === 1 ? 'has' : 'have')
+          + ' progress ticked with <b>no</b> cost booked at all, which flatters both readings until time is logged.';
       })();
 
       // ------------------------------- SCOPE --------------------------------
@@ -7184,8 +7593,19 @@
         return c;
       });
 
+      // ---------- spend over time: the plan's own curve, and the gap ----------
+      // Derived HERE, inside planTruthData()'s try/catch blast radius, because
+      // renderPlanTruth()'s string concat has no error boundary and
+      // renderAnalytics() keeps writing #analyticsContent for another 300 lines
+      // after this call. ptrCurveHtml() only formats already-derived scalars.
+      const curve = ptrCurveData(sp, acs, {
+        today: today, hb: hb, baseCosted: baseCostAll > 0, env: envelope,
+        pvNow: pvNow, evNow: evNow
+      });
+
       return {
         rows: [sch, bud, scp], cells, leaves, cov, hb, donePct, u, safe,
+        curve: curve, budTone: bud.tone || null,
         added: hb ? leaves.filter(t => t.baseTe == null).length : 0
       };
     }
@@ -7229,7 +7649,12 @@
         const over = r.pct > 0;
         // Scope growth is a CHANGE needing a change order, not a defect — amber,
         // escalating to red only when it grew past 5% and nobody ever raised one.
-        const cls = r.kind === 'change' ? (r.unpriced ? 'ptr-bad' : 'ptr-chg') : (over ? 'ptr-bad' : 'ptr-good');
+        // A row may state its own verdict when bar DIRECTION is not the whole
+        // verdict. Budget is the only case: the length is how far booked cost is
+        // from the plan's spend curve for today, the colour is whether that gap
+        // is a problem. Schedule and Scope set no tone and are untouched.
+        const cls = r.tone ? (r.tone === 'bad' ? 'ptr-bad' : r.tone === 'chg' ? 'ptr-chg' : 'ptr-good')
+          : r.kind === 'change' ? (r.unpriced ? 'ptr-bad' : 'ptr-chg') : (over ? 'ptr-bad' : 'ptr-good');
         const xv = at(r.pct);
         const w = Math.max(0.8, Math.abs(xv - 50));   // floor: a real-but-tiny gap must stay visible
         const l = over ? 50 : 50 - w;                 // always anchored exactly on the plan line
@@ -7238,7 +7663,8 @@
           + (Math.abs(r.pct) > R
             ? '<i class="ptr-over ' + (over ? 'ptr-over-r' : 'ptr-over-l') + ' ' + cls + '-t">'
               + (over ? '▸' : '◂') + '</i>' : '');
-        badgeCls = r.kind === 'change' ? (r.unpriced ? 'badge-blocked' : 'badge-warn')
+        badgeCls = r.tone ? (r.tone === 'bad' ? 'badge-blocked' : r.tone === 'chg' ? 'badge-warn' : 'badge-ok')
+          : r.kind === 'change' ? (r.unpriced ? 'badge-blocked' : 'badge-warn')
           : (over ? 'badge-blocked' : 'badge-ok');
         pctTxt = ptrPct(r.pct);
       }
@@ -7248,6 +7674,312 @@
         + '<div class="ptr-side"><span class="badge ' + badgeCls + '">' + escapeHtml(r.delta) + '</span>'
         + '<span class="ptr-pct">' + pctTxt + '</span></div>'
         + '<div class="ptr-note">' + r.note + ptrCta(r.softCta, true) + '</div></div>';
+    }
+
+    // ===================== SPEND OVER TIME — the picture ======================
+    // Drawn full-bleed under the three bars, not as a fourth bar: they share ONE
+    // axis (±% from that dimension's own plan) and this carries a CALENDAR.
+    //
+    // ONE series is measured and ONE is reconstructed, and that difference is the
+    // whole design.
+    //   THE PLAN IS A CURVE. baseStart / baseFinish / baseCost are frozen per
+    //     activity by setBaseline() and never recomputed, so every dollar belongs
+    //     to exactly one leaf and is spread over a closed, fully known range. The
+    //     sum over all days and all activities is a re-association of stored
+    //     numbers — exact to the cent, not to a tolerance — and at today it IS
+    //     the planned-value card, because it calls the same accrualAt().
+    //   THE BOOKED SERIES IS A STAIRCASE. Nothing in this file ever recorded a
+    //     daily spend, so its shape is inferred. Steps at period edges claim only
+    //     "by the end of this period, this much had been booked", which is the
+    //     strongest claim the data supports; a smooth line would assert a route
+    //     through days nobody measured. It stops at today, because money cannot
+    //     be booked in the future, and that asymmetry against a plan curve that
+    //     runs on to the right is itself part of the picture.
+    //
+    // Undatable money is never invented onto a date. The staircase ends at what
+    // could be placed and the hollow ring sits at the measured total, so the gap
+    // between them is drawn to scale and named in dollars.
+    const PTR_SC_STEPS = [1, 7, 14, 28, 91, 364];      // days per bucket; whole weeks so every bucket holds the same weekday mix
+    const PTR_SC_MAXB = 26;                            // ~11px a bucket at 375px — the .ptr-strip cell, this file's smallest legible mark
+    function ptrCurveData(sp, acs, ctx) {
+      const c = { state: 'void', live: !ctx.hb };
+      const now = ctx.today.getTime(), endToday = now + 86400000;
+
+      // Every refusal names the ONE missing input and draws nothing — the lock
+      // box grammar coverageHtml() uses, because an empty plot is indistinguishable
+      // from a plan that spends nothing.
+      if (!sp.segs.length) {
+        c.why = ctx.hb
+          ? 'The baseline of <b>' + escapeHtml(baselineDate) + '</b> froze a usable start/finish pair on no '
+            + 'activity that carries a span, so there are no dates to spread money across.'
+          : 'No activity carries both a start and a finish date yet, so there is no span to spread cost over.';
+        c.cta = ctx.hb ? { label: 'Re-baseline now', act: 'setBaseline();renderAnalytics()' }
+          : { label: 'Add activities', act: "switchTab('tasks')" };
+        return c;
+      }
+      if (!(sp.phased > 0)) {
+        c.why = (ctx.hb && !ctx.baseCosted
+          ? 'The baseline of <b>' + escapeHtml(baselineDate) + '</b> froze <b>$0</b> into every activity — it '
+            + 'was taken before day rates were entered. '
+          : 'Every dated activity prices at <b>$0</b>. ')
+          + 'A curve here would be a flat line on the floor with a date attached, which asserts “we plan to '
+          + 'spend nothing” when the truth is “nobody has entered a rate”.';
+        c.cta = { label: 'Set day rates', act: "switchTab('resources')" };
+        return c;
+      }
+
+      // ---- x domain. Always stretched to include today AND the first booked
+      // cost, so "the plan has not started yet" and "we are past the end of it"
+      // are both VISIBLE rather than silently cropped — two of the states this
+      // chart exists to make readable. The stretch is CAPPED at half the plan's
+      // own span: one stray actual date from two years ago must not squash the
+      // whole curve into a sliver. Past the cap the marker pins to the edge and
+      // says how far outside the drawing today really is.
+      let pS = Infinity, pF = -Infinity;
+      sp.segs.forEach(g => { if (g.s < pS) pS = g.s; if (g.f > pF) pF = g.f; });
+      const planDays = Math.max(1, Math.round((pF - pS) / 86400000));
+      const cap = Math.max(7, Math.round(planDays * 0.5)) * 86400000;
+      const x0 = pS - Math.min(Math.max(0, pS - Math.min(now, acs.firstMs)), cap);
+      const x1 = pF + Math.min(Math.max(0, endToday - pF), cap);
+      const xw = Math.max(86400000, x1 - x0);
+      const spanDays = Math.max(1, Math.round(xw / 86400000));
+
+      // ---- y scale. Topped by whichever of the phased plan, the whole envelope
+      // and the booked total is largest, so an overspend stays on the box and a
+      // curve that cannot reach its own envelope visibly falls short of it.
+      const top = Math.max(sp.phased, acs.total, ctx.env, 1);
+      // The drawing area is inset inside the plot so an 11px or 15px marker at an
+      // extreme value is fully drawn instead of hanging half outside a border.
+      const fx = m => 1.4 + (Math.max(x0, Math.min(x1, m)) - x0) / xw * 97.2;
+      const fy = v => 6 + (1 - Math.max(0, Math.min(1, v / top))) * 88;
+
+      // ---- the plan curve. Planned value is piecewise linear and every bend is
+      // a baselined start or the day after a baselined finish, so drawing the
+      // BENDS makes the polyline the function rather than a smoothing of it.
+      // There can never be more bends than days in the window, so this is bounded
+      // by the span and not by the activity count; past 400 days it strides.
+      const seen = Object.create(null), stamps = [];
+      const push = m => {
+        if (!(m >= x0) || !(m <= x1)) return;
+        const k = Math.round((m - x0) / 86400000);
+        if (seen[k]) return;
+        seen[k] = 1; stamps.push(x0 + k * 86400000);
+      };
+      push(x0); push(x1); push(now);
+      if (spanDays <= 400) sp.segs.forEach(g => { push(g.s); push(g.f); });
+      else { const st = Math.ceil(spanDays / 200); for (let i = 0; i <= spanDays; i += st) push(x0 + i * 86400000); }
+      stamps.sort((a, b) => a - b);
+      const P = [];
+      let lastX = -9;
+      for (let i = 0; i < stamps.length; i++) {
+        const X = fx(stamps[i]);
+        // sub-pixel dedupe, but the first and last stamps are always kept so the
+        // area path always has two ends to close on
+        if (i && i < stamps.length - 1 && X - lastX < 0.12) continue;
+        lastX = X;
+        P.push((X * 10).toFixed(2) + ',' + fy(accrualAt(sp.segs, stamps[i])).toFixed(2));
+      }
+      c.planPath = 'M' + P.join('L');
+      c.areaPath = 'M' + (fx(x0) * 10).toFixed(2) + ',' + fy(0).toFixed(2) + 'L' + P.join('L')
+        + 'L' + (fx(x1) * 10).toFixed(2) + ',' + fy(0).toFixed(2) + 'Z';
+
+      // ---- the booked staircase, at bucket edges only, and only up to today.
+      // Step-AFTER (horizontal then vertical) is the conservative rendering of
+      // "by the end of this period": it never claims money arrived earlier in the
+      // bucket than the edge that proves it.
+      const stepD = PTR_SC_STEPS.find(d => Math.ceil(spanDays / d) <= PTR_SC_MAXB) || 364;
+      c.stepD = stepD;
+      c.nBuckets = Math.ceil(spanDays / stepD);
+      // Money booked BEFORE the drawn window (the domain cap swallowed it) is
+      // the staircase's starting height, not a step inside the first bucket —
+      // otherwise a stray actual from three years ago would read as this
+      // period's spend. It is disclosed by name below.
+      c.preWin = accrualAt(acs.segs, x0);
+      if (acs.placed > 0 && endToday > x0) {
+        const edges = [];
+        for (let m = x0 + stepD * 86400000; m < Math.min(endToday, x1); m += stepD * 86400000) edges.push(m);
+        edges.push(Math.min(endToday, x1));
+        let d = 'M' + (fx(x0) * 10).toFixed(2) + ',' + fy(c.preWin).toFixed(2);
+        edges.forEach(m => {
+          d += 'H' + (fx(m) * 10).toFixed(2) + 'V' + fy(accrualAt(acs.segs, m)).toFixed(2);
+        });
+        c.bookPath = d;
+      }
+
+      c.pv = ctx.pvNow; c.ac = acs.total; c.placed = acs.placed; c.unplaced = acs.total - acs.placed;
+      c.phased = sp.phased; c.env = ctx.env; c.top = top;
+      c.yPv = fy(ctx.pvNow); c.yAc = fy(acs.total); c.yZero = fy(0);
+      // The envelope rule earns its ink only when the curve cannot reach it —
+      // i.e. when money sits on milestones or on undated activities.
+      c.yEnv = ctx.env > sp.phased * 1.005 ? fy(ctx.env) : null;
+      c.xNow = fx(now);
+      c.nowSide = now < x0 ? -1 : now > x1 ? 1 : 0;
+      c.nowOff = c.nowSide === -1 ? calDaysBetween(ctx.today, new Date(x0))
+        : c.nowSide === 1 ? calDaysBetween(new Date(x1), ctx.today) : 0;
+      c.xEnd = (x1 > pF) ? fx(pF - 86400000) : null;      // the plan's last accruing day
+      c.dFrom = new Date(x0); c.dTo = new Date(x1 - 86400000);
+      c.dPlanStart = new Date(pS); c.dPlanEnd = new Date(pF - 86400000);
+      c.tally = acs;                                     // counts + dollars for the disclosure line
+      c.beforeStart = now < pS;
+      c.nActs = sp.segs.length;
+      c.state = 'ok';
+      return c;
+    }
+
+    // Everything is positioned in percentages of ONE relative track — the same
+    // idiom as ptrRowHtml()'s at() and the Monte-Carlo histogram's percentile
+    // markers — so it reflows losslessly from 375px to 1400px. The <svg> holds
+    // nothing but three paths, because a polyline is the one thing CSS cannot
+    // draw; every label, marker, rule and money figure is HTML at a rem size, so
+    // no type shrinks with the box.
+    function ptrCurveHtml(d) {
+      const c = d && d.curve;
+      if (!c) return '';
+      const money = v => d.safe ? '•••' : fmtMoney(v);
+      const title = '<span class="ptr-sc-title">Spend over time</span>';
+      if (c.state !== 'ok') {
+        return '<div class="ptr-sc"><div class="ptr-sc-head">' + title + '</div>'
+          + '<div class="ptr-sc-lock"><b>No spend curve yet.</b> ' + c.why + ptrCta(c.cta) + '</div></div>';
+      }
+
+      const hasAc = c.ac > 0;
+      const gap = c.ac - c.pv, flat = Math.abs(gap) < Math.max(1, c.env * 0.005);
+      const nowL = c.xNow.toFixed(2) + '%';
+      const tone = d.budTone || (flat ? 'good' : gap > 0 ? 'bad' : 'good');
+
+      // plan → actual, the app's own pair grammar (.ptr-pair, and pairCell in
+      // renderBaseline), so this line reads identically to the bars above it.
+      const pair = '<span class="ptr-pair"><span class="ptr-plan">' + escapeHtml(money(c.pv))
+        + ' due by today</span><span class="ptr-arr" aria-hidden="true">→</span><b class="ptr-act">'
+        + escapeHtml(hasAc ? money(c.ac) + ' booked' : 'nothing booked') + '</b></span>';
+      const badge = !hasAc
+        ? '<span class="badge badge-slack">no cost booked yet</span>'
+        : '<span class="badge ' + (tone === 'bad' ? 'badge-blocked' : tone === 'chg' ? 'badge-warn' : 'badge-ok')
+          + '">' + escapeHtml(flat ? 'on the plan to date'
+            : (gap > 0 ? '+' : '−') + money(Math.abs(gap)) + ' vs plan to date') + '</span>';
+      const sub = '<span class="ptr-sc-sub">' + escapeHtml((d.hb ? 'baseline of ' + baselineDate
+        : 'live plan — no baseline saved') + ' · ' + money(c.phased) + ' phased to ' + fmtNice(c.dPlanEnd))
+        + '</span>';
+
+      // The pill is edge-anchored so one at 0% or 100% cannot overhang the card —
+      // the fix .pb-'s flagStyle() already carries and the MC histogram lacks.
+      const fs = c.xNow > 72 ? 'right:0' : c.xNow < 12 ? 'left:0'
+        : 'left:' + nowL + ';transform:translateX(-50%)';
+      const ftxt = c.nowSide === 0 ? 'TODAY'
+        : c.nowSide === -1 ? '◂ TODAY −' + c.nowOff + 'd' : 'TODAY +' + c.nowOff + 'd ▸';
+      const flag = '<div class="ptr-sc-flagrow"><span class="ptr-sc-flag" style="' + fs + '">'
+        + escapeHtml(ftxt) + '</span></div>';
+
+      const svg = '<svg viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true" focusable="false">'
+        + '<path class="ptr-sc-area" d="' + c.areaPath + '"/>'
+        + '<path class="ptr-sc-plan" vector-effect="non-scaling-stroke" d="' + c.planPath + '"/>'
+        + (c.bookPath ? '<path class="ptr-sc-book" vector-effect="non-scaling-stroke" d="' + c.bookPath + '"/>' : '')
+        + '</svg>';
+
+      const gLo = Math.min(c.yPv, c.yAc), gHi = Math.max(c.yPv, c.yAc);
+      const marks = '<i class="ptr-sc-zero" style="top:' + c.yZero.toFixed(2) + '%"></i>'
+        + (c.yEnv != null ? '<i class="ptr-sc-env" style="top:' + c.yEnv.toFixed(2) + '%" title="'
+            + escapeHtml(money(c.env) + ' — the whole envelope. The curve stops short of it because that '
+              + 'much money has no span to sit on.') + '"></i>' : '')
+        + (c.xEnd != null ? '<i class="ptr-sc-end" style="left:' + c.xEnd.toFixed(2) + '%" title="'
+            + escapeHtml('the plan’s last accruing day, ' + fmtNice(c.dPlanEnd)) + '"></i>' : '')
+        + '<i class="ptr-sc-now" style="left:' + nowL + '"></i>'
+        // THE FINDING. Suppressed below 0.7% of the plot, where an I-beam is a
+        // smudge rather than a measurement — and where the disc sitting inside
+        // the ring already says "on the plan to date" more clearly than a bar.
+        + (hasAc && gHi - gLo > 0.7
+            ? '<i class="ptr-sc-ib ' + (tone === 'good' ? 'ptr-sc-ib-good' : tone === 'chg' ? 'ptr-sc-ib-chg' : '')
+              + '" style="left:' + nowL + ';top:' + gLo.toFixed(2) + '%;height:' + (gHi - gLo).toFixed(2) + '%"></i>'
+            : '')
+        + (hasAc ? '<i class="ptr-sc-m ptr-sc-ac" style="left:' + nowL + ';top:' + c.yAc.toFixed(2) + '%"></i>' : '')
+        + '<i class="ptr-sc-m ptr-sc-pv" style="left:' + nowL + ';top:' + c.yPv.toFixed(2) + '%"></i>';
+
+      const aria = 'Cumulative spend. Plan to date ' + money(c.pv) + ', booked ' + money(c.ac) + ', '
+        + (flat ? 'level with the plan' : (gap > 0 ? 'over by ' : 'under by ') + money(Math.abs(gap)))
+        + '. Whole phased plan ' + money(c.phased) + '.';
+      const plot = '<div class="ptr-sc-plot" role="img" aria-label="' + escapeHtml(aria) + '" title="'
+        + escapeHtml(aria) + '">' + svg + marks + '</div>';
+
+      const ax = '<div class="ptr-sc-ax"><span>' + escapeHtml(fmtNice(c.dFrom)) + '</span>'
+        + '<span>' + c.nBuckets + ' × ' + (c.stepD === 1 ? '1 day' : c.stepD + ' days') + '</span>'
+        + '<span>' + escapeHtml(fmtNice(c.dTo)) + '</span></div>';
+
+      const key = '<div class="ptr-sc-key">'
+        + '<span><i class="ptr-sc-sw1"></i>' + (d.hb ? 'baselined plan' : 'live plan')
+        + ' — <b>' + (d.hb ? 'measured' : 'moves when you edit') + '</b></span>'
+        + (hasAc
+          ? '<span><i class="ptr-sc-sw2"></i>booked to date — <b>totals measured, route inferred</b></span>'
+            + '<span><i class="ptr-sc-sw3"></i>booked at today — <b>measured</b></span>'
+          : '<span>no cost booked, so there is nothing to draw against it'
+            + ptrCta({ label: 'Log actuals', act: "switchTab('baseline')" }, true) + '</span>')
+        + '</div>';
+
+      // The finding in one sentence, in the register of .ptr-cap.
+      let cap;
+      if (!hasAc) {
+        cap = 'The plan says <b>' + money(c.pv) + '</b> of the <b>' + money(c.phased) + '</b> should have been '
+          + 'spent by today. Nothing is booked against it yet, so there is no second line: a flat line at zero '
+          + 'would assert “we spent nothing”, and what this app knows is “nobody has logged anything”.';
+      } else if (c.beforeStart) {
+        cap = 'Today is <b>before the plan starts</b> (' + escapeHtml(fmtNice(c.dPlanStart))
+          + '). Nothing is due yet and <b>' + money(c.ac) + '</b> is already booked — that is spend running '
+          + 'ahead of the committed dates, not an overrun of them.';
+      } else {
+        cap = 'At today the plan says <b>' + money(c.pv) + '</b> and <b>' + money(c.ac) + '</b> is booked — <b>'
+          + (flat ? 'level with the plan' : (gap > 0 ? 'over by ' : 'under by ') + money(Math.abs(gap)))
+          + '</b>. That vertical gap is the Budget bar above, drawn instead of divided.';
+      }
+
+      // Measured / inferred / unknown, with the live counts. Deliberately not
+      // inside a <details>: a caveat you have to click for is a caveat a client
+      // pack ships without.
+      const t = c.tally || {};
+      let fine = '<b>Measured:</b> the ' + (d.hb ? 'curve — baselined dates × baselined costs, frozen on '
+        + escapeHtml(baselineDate) + ' and never recomputed, so it reaches exactly ' + money(c.phased)
+        : 'curve, from today’s dates and today’s prices')
+        + '. At today it is the same <b>' + money(c.pv) + '</b> the planned-value card below prints: one '
+        + 'function, called twice.';
+      if (hasAc) {
+        const bits = [];
+        if (t.span) bits.push('<b>' + t.span + '</b> across logged start→finish dates');
+        if (t.open) bits.push('<b>' + t.open + '</b> started but not finished, smeared from the start date to today');
+        if (t.point) bits.push('<b>' + t.point + '</b> on a finish date');
+        fine += ' <b>Inferred:</b> the staircase. This file stores one cost total and at best two dates per '
+          + 'activity, never a daily spend, so only the <em>totals</em> are facts'
+          + (bits.length ? ': ' + bits.join('; ') + '.' : '.')
+          + ' Work done in bursts is drawn as a steady burn across the dead weeks between. It is an '
+          + '<b>accrual</b>, not cash, and day rates are read live — re-pricing a resource redraws last month too.';
+      }
+      const unk = [];
+      if (c.unplaced > 0.5) unk.push('<b>' + money(c.unplaced) + '</b> of booked cost carries no usable date'
+        + (t.undatedN ? ' (' + t.undatedN + ' ' + ptrPl(t.undatedN, 'activity', 'activities') + ')' : '')
+        + ', so the staircase deliberately stops that far below the ring rather than inventing a day for it');
+      if (c.env > c.phased * 1.005) unk.push('<b>' + money(c.env - c.phased) + '</b> of the envelope sits on '
+        + 'milestones or on activities with no dates, which is why the curve tops out below the dashed line');
+      if (t.newN) unk.push('<b>' + t.newN + '</b> ' + ptrPl(t.newN, 'activity', 'activities') + ' did not exist '
+        + 'when the baseline was taken, so ' + money(t.newCash) + ' of the staircase has no curve to sit '
+        + 'against — that part of the gap is scope, not overspend');
+      if (t.unloggedN) unk.push('<b>' + t.unloggedN + '</b> ' + ptrPl(t.unloggedN, 'activity', 'activities')
+        + ' ' + (t.unloggedN === 1 ? 'has' : 'have') + ' progress ticked but no cost booked at all');
+      if (c.preWin > 0.5) unk.push('<b>' + money(c.preWin) + '</b> was booked <em>before</em> the drawn window, '
+        + 'which is capped so one stray old date cannot squash the curve — it is the staircase’s starting '
+        + 'height, not something that happened in the first period');
+      if (unk.length) fine += ' <b>Unknown:</b> ' + unk.join('; ') + '.';
+      fine += ' Both series spread each activity’s money evenly across its own span in <b>calendar</b> days, '
+        + 'weekends included — the assumption that adds nothing the plan does not already say, and the one that '
+        + 'keeps the curve passing exactly through the card.';
+      if (c.nActs < 3) fine += ' With ' + c.nActs + ' dated ' + ptrPl(c.nActs, 'activity', 'activities')
+        + ' this is close to a straight line: the S only appears once many spans overlap.';
+      if (c.nowSide) fine += ' Today is <b>' + c.nowOff + ' calendar ' + ptrPl(c.nowOff, 'day') + '</b> '
+        + (c.nowSide === -1 ? 'before' : 'after') + ' the drawn window, which is capped at half the plan’s own '
+        + 'span so the curve does not squash into a corner; the marker is pinned to the edge, not placed.';
+      if (d.safe) fine += ' Money is hidden while client-safe mode is on; the shape is unaffected.';
+
+      return '<div class="ptr-sc' + (c.live ? ' ptr-sc-live' : '') + '">'
+        + '<div class="ptr-sc-head">' + title + pair + badge + sub + '</div>'
+        + flag + plot + ax + key
+        + '<p class="ptr-cap">' + cap + '</p>'
+        + '<p class="ptr-sc-fine">' + fine + '</p></div>';
     }
 
     function ptrStripHtml(d) {
@@ -7354,11 +8086,17 @@
         + '<div class="ptr-plot ptr-axisplot">' + ticks + '<i class="ptr-zero"></i></div>'
         + '<div class="ptr-side ptr-end"><span>over plan ▶</span></div></div>'
         + d.rows.map(r => ptrRowHtml(r, R)).join('')
+        // Full-bleed, NOT a .ptr-row: that grid's middle column is the shared
+        // ±% variance axis, and this chart's x is TIME and its y is MONEY.
+        // Dropping it in there would assert shared geometry that does not exist.
+        + ptrCurveHtml(d)
         + ptrStripHtml(d)
         + '<p class="ptr-foot">Each bar is the gap between plan and reality as a share of <b>that dimension’s '
         + 'own plan</b> — the only scale on which days, dollars and effort can sit side by side'
-        + (denoms ? ' (' + denoms + ')' : '') + '. Every square below is one activity, in the same order as '
-        + 'the task list; hover any of them.' + (d.safe ? ' Money is hidden while client-safe mode is on.' : '')
+        + (denoms ? ' (' + denoms + ')' : '') + '. On the Budget bar the <b>length</b> is how far booked cost '
+        + 'is from the plan’s own spend curve for today, and the <b>colour</b> is the verdict: spending ahead '
+        + 'of that curve is only a problem when the finished work is not there to show for it. Every square '
+        + 'below the chart is one activity, in the same order as the task list; hover any of them.' + (d.safe ? ' Money is hidden while client-safe mode is on.' : '')
         + '</p></div>';
     }
     function renderAnalytics() {
@@ -7660,16 +8398,13 @@
           const usingBaseline = hasBaseline();
           const BAC = usingBaseline ? leafTasks().reduce((sx, t) => sx + (Number(t.baseCost) || 0), 0) || cost : cost;
           const AC = leafTasks().reduce((sx, t) => sx + actualCostOf(t), 0);   // derived from actual time unless manually overridden
-          const PV = leafTasks().reduce((sx, t) => {
-            if (t.milestone) return sx;
-            const s1 = usingBaseline ? t.baseStart : t.startDate;
-            const f1 = usingBaseline ? t.baseFinish : t.finishDate;
-            const c1 = usingBaseline ? (Number(t.baseCost) || taskCost(t)) : taskCost(t);
-            if (!s1 || !f1) return sx;
-            const s0 = stripTime(s1).getTime(), f0 = stripTime(f1).getTime() + 86400000;
-            const frac = todayT <= s0 ? 0 : todayT >= f0 ? 1 : (todayT - s0) / (f0 - s0);
-            return sx + c1 * frac;
-          }, 0);
+          // The reducer that used to live here is now pvAt() (next to
+          // earnedValue), because the Plan-truth budget bar, the Baseline budget
+          // card and the spend curve all need this number, two of them at other
+          // dates. Two copies would let this card and that chart print different
+          // answers on one screen — the defect the phase-row comment above was
+          // written to close. Same arithmetic, one home, called at today.
+          const PV = pvAt(todayT, usingBaseline);
           if (BAC <= 0) return '';
           const SV = ev - PV, CV = AC > 0 ? ev - AC : null;
           // SPI divides by planned value, and planned value is "baseline work due
@@ -8964,6 +9699,17 @@
       const donePct = overallProgress();
       const paceOf = (used, plan) => planPace(used, plan, donePct);
       const paceColor = p => p == null ? 0 : p > 1.10 ? 1 : p < 0.90 ? -1 : 0;
+      // The Budget card grades on the SAME rule as the Plan-truth budget bar, out
+      // of the same function: two screens colouring one project in opposite
+      // directions is precisely the defect that panel exists to prevent, and it
+      // is what would happen if this card kept pacing spend by completion while
+      // that bar measured against the phased plan. Pace stays on the Effort card,
+      // where "how much of the estimate is gone" is genuinely the question.
+      const bvCard = budgetVerdict(actCostAll, pvAt(stripTime(new Date()).getTime()), earnedValue(), costRef);
+      const budTone = bvCard.tone === 'bad' ? 1 : bvCard.tone === 'chg' ? 0 : -1;
+      const budTxt = !(costRef > 0 && actCostAll > 0) ? ''
+        : Math.abs(bvCard.gap) < Math.max(1, costRef * 0.005) ? 'on the plan to date'
+        : fmtMoney(Math.abs(bvCard.gap)) + (bvCard.gap > 0 ? ' above' : ' below') + ' the plan to date';
       const usedTxt = (used, plan, noun) => (plan > 0 && used > 0)
         ? Math.round(used / plan * 100) + '% of ' + noun + ' used at ' + Math.round(donePct) + '% complete' : '';
 
@@ -8973,7 +9719,7 @@
             projVar == null ? '' : (projVar > 0 ? '+' + projVar + 'd late vs baseline' : projVar < 0 ? -projVar + 'd early vs baseline' : 'on the baseline date'), projVar,
             hb ? 'committed finish → forecast finish' : 'live forecast finish')}
           ${card('Budget', fmtMoney(costRef), fmtMoney(actCostAll),
-            usedTxt(actCostAll, costRef, hb ? 'baseline' : 'budget'), paceColor(paceOf(actCostAll, costRef)),
+            budTxt, budTone,
             hb && planCostAll !== baseCostAll ? 'plan now ' + fmtMoney(planCostAll) + ' — scope repriced' : 'actual cost booked so far')}
           ${card('Scope', hb ? fmtDurCell(baseTeAll) : 'no baseline', fmtDurCell(planTeAll),
             hb ? (Math.abs(planTeAll - baseTeAll) < 0.01 ? 'scope unchanged'
