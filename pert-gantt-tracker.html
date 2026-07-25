@@ -1843,7 +1843,7 @@
             <p class="help-text" style="margin-top:0.3rem">Included at the top of 📄 Copy status report. Edit freely — your words, AI's first draft.</p>
           </div>
           <div class="gantt-container" id="ganttContainer" style="background:white;border:1px solid var(--border);border-radius:8px"></div>
-          <p class="help-text" style="margin-top:0.5rem">Click ▸/▾ on a phase to collapse or drill in • click any bar to edit the task • the exported image includes the title, legend and completeness so it's ready to paste into communications.</p>
+          <p class="help-text" style="margin-top:0.5rem"><span id="ganttImplNote"></span>Click ▸/▾ on a phase to collapse or drill in • click any bar to edit the task • the exported image includes the title, legend and completeness so it's ready to paste into communications.</p>
         </div>
       </div>
     </div>
@@ -2018,7 +2018,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0321</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0400</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -7974,6 +7974,7 @@
       // BEFORE drawing — 3+ links entering one bar merge onto a collector
       // lane with a SINGLE entry arrow instead of a row of arrowheads
       const edgeList = [];
+      const pairList = [], pairByKey = new Map();
       leafOrder.forEach(t0 => {
         effectivePreds(t0).forEach(p => {
           if (redundantEdges.has(t0.id + ':' + p.id)) return;
@@ -7981,13 +7982,60 @@
           if (!pt0) return;
           const t = repOf(t0.id), pt = repOf(p.id);
           if (!t || !pt || t.id === pt.id) return;
+          const plain = p.type === 'FS' && !p.lag;
           const pairKey = pt.id + '>' + t.id;
-          if (drawnPairs.has(pairKey)) return;
+          if (drawnPairs.has(pairKey)) {
+            // a pair is only reducible if EVERY link folded into it is plain
+            const ex = pairByKey.get(pairKey); if (ex && !plain) ex.plain = false;
+            return;
+          }
           drawnPairs.add(pairKey);
-          const k = inCount.get(t.id) || 0; inCount.set(t.id, k + 1);
-          edgeList.push({ t0, pt0, t, pt, k });
+          const rec = { key: pairKey, t0, pt0, t, pt, plain };
+          pairByKey.set(pairKey, rec); pairList.push(rec);
         });
       });
+      // Transitive reduction over the pairs actually about to be drawn. The
+      // redundantEdges filter above reads raw `predecessors`, so it cannot see
+      // the far bigger source of arrows here: effectivePreds hands a dependency
+      // written against a SUMMARY down to every leaf inside it, so one authored
+      // link becomes an arrow per activity, and each test case arrives carrying
+      // its parent's predecessors on top of its own. Where those activities are
+      // already chained, every arrow after the first is drawing a constraint the
+      // chain enforces anyway — the long rails running the height of the chart.
+      // Only plain finish-to-start links are reduced: a lead makes the bypass
+      // weaker than the direct link, and SS/FF anchor different ends.
+      let impliedHidden = 0;
+      {
+        const succ = new Map();
+        pairList.forEach(e => { if (!e.plain) return; if (!succ.has(e.pt.id)) succ.set(e.pt.id, []); succ.get(e.pt.id).push(e.t.id); });
+        const memo = new Map();
+        const canReach = (from, to) => {
+          const k = from + '>' + to;
+          if (memo.has(k)) return memo.get(k);
+          if (memo.has('#' + k)) return false;           // cycle guard
+          memo.set('#' + k, true);
+          let r = false;
+          for (const n of (succ.get(from) || [])) { if (n === to || canReach(n, to)) { r = true; break; } }
+          memo.set(k, r);
+          return r;
+        };
+        pairList.forEach(e => {
+          e.implied = e.plain && (succ.get(e.pt.id) || []).some(n => n !== e.t.id && canReach(n, e.t.id));
+          if (e.implied) impliedHidden++;
+        });
+      }
+      pairList.forEach(({ t0, pt0, t, pt, implied }) => {
+        if (implied) return;
+        const k = inCount.get(t.id) || 0; inCount.set(t.id, k + 1);
+        edgeList.push({ t0, pt0, t, pt, k });
+      });
+      // never silently thin the picture — say how many arrows were left out
+      {
+        const el = document.getElementById('ganttImplNote');
+        if (el) el.innerHTML = impliedHidden
+          ? '<b>' + impliedHidden + '</b> implied link(s) not drawn — a longer chain already gates each one, so removing it would move no date. See the <a href="#" onclick="switchTab(\'pert\');return false">PERT</a> tab to inspect them. • '
+          : '';
+      }
       const mergeGroups = new Map(); // successor id → bus-spine state
       edgeList.forEach(e => {
         const pyC = Y0 + rowIndexOf[e.pt.id] * ROWH + (e.pt.isSummary ? 13 : ROWH / 2);
@@ -13015,19 +13063,25 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     function bankCalibration() {
       const rows = loadBank().filter(r => r.basis === 'logged' && r.ratio > 0);
       if (!rows.length) return null;
+      // sorted[floor(n/2)] is the UPPER-middle value, not the median. At even n it
+      // is always >= the true median and never below it, so the calibration only
+      // ever erred one way — upward, i.e. toward a higher quote. At n = 2, which is
+      // the smallest group this reports, it returned the LARGER of the two ratios.
+      const medianOf = sorted => sorted.length % 2
+        ? sorted[(sorted.length - 1) / 2]
+        : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
       const group = (keyFn) => {
         const g = {};
         rows.forEach(r => { const k = keyFn(r) || '(unspecified)'; (g[k] = g[k] || []).push(r.ratio); });
         return Object.entries(g).filter(([, v]) => v.length >= 2).map(([k, v]) => {
           const sorted = v.slice().sort((a, b) => a - b);
-          const med = sorted[Math.floor(sorted.length / 2)];
-          return { k, n: v.length, median: +med.toFixed(2), min: +sorted[0].toFixed(2), max: +sorted[sorted.length - 1].toFixed(2) };
+          return { k, n: v.length, median: +medianOf(sorted).toFixed(2), min: +sorted[0].toFixed(2), max: +sorted[sorted.length - 1].toFixed(2) };
         }).sort((a, b) => b.n - a.n);
       };
       const all = rows.map(r => r.ratio).sort((a, b) => a - b);
       return {
         n: rows.length,
-        overall: +all[Math.floor(all.length / 2)].toFixed(2),
+        overall: +medianOf(all).toFixed(2),
         byKind: group(r => r.kind),
         byRole: group(r => r.role || r.owner).slice(0, 8),
         projects: [...new Set(rows.map(r => r.proj))].length
