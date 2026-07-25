@@ -617,6 +617,39 @@
     .rq-in:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
     .rq-hint { font-size: var(--t-xs); color: var(--muted); margin: 0.35rem 0 0; line-height: 1.5; }
     .rq-hint b { color: var(--text); }
+
+    /* ---- THE ESTIMATE BANK, LOOKED AT. Every archived activity has been
+       filed for months and the only way to see any of it was to export a CSV
+       and open a spreadsheet. */
+    .bk-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem 0.9rem; margin-bottom: 0.5rem; }
+    .bk-big { font-size: 1.5rem; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+    .bk-sub { font-size: var(--t-sm); color: var(--muted); }
+    .bk-hist { display: flex; align-items: flex-end; gap: 3px; height: 96px; margin: 0.3rem 0 0.2rem; }
+    .bk-b { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; height: 100%;
+      padding: 0; border: 0; background: none; cursor: pointer; border-radius: 3px 3px 0 0; box-shadow: none; }
+    .bk-b:hover:not(:disabled), .bk-b.bk-on { background: rgba(37, 99, 235, 0.12); transform: none; box-shadow: none; }
+    .bk-b > i { display: block; border-radius: 3px 3px 0 0; min-height: 2px; }
+    .bk-good > i { background: var(--success); } .bk-ok > i { background: var(--primary); }
+    .bk-warn > i { background: var(--warn); }   .bk-bad > i { background: var(--critical); }
+    .bk-ax { display: flex; gap: 3px; font-size: var(--t-xs); color: var(--muted); text-align: center; }
+    .bk-ax > span { flex: 1; font-variant-numeric: tabular-nums; }
+    .bk-cn { color: var(--text); }
+    .bk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+      gap: 0.6rem; margin-top: 0.7rem; }
+    .bk-card { border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.65rem; background: var(--card); }
+    .bk-ch { font-size: var(--t-xs); font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+      color: var(--muted); margin: 0 0 0.25rem; }
+    .bk-l { list-style: none; margin: 0; padding: 0; font-size: var(--t-sm); }
+    .bk-li { display: flex; align-items: baseline; gap: 0.4rem; padding: 1px 0; color: var(--muted); }
+    .bk-k { flex: 1; color: var(--text); }
+    .bk-v { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .bk-n { font-size: var(--t-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+    .bk-thin { opacity: 0.65; }
+    .bk-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.7rem 0 0.4rem; }
+    .bk-q { font: inherit; font-size: var(--t-sm); padding: 0.25rem 0.45rem; border: 1px solid var(--border);
+      border-radius: 6px; background: var(--card); color: var(--text); min-width: 180px; }
+    .bk-note { font-size: var(--t-xs); color: var(--muted); line-height: 1.55; margin: 0.5rem 0 0; }
+    .bk-note b { color: var(--text); }
     @media print { .rq { display: none !important; } }
     @media print { .cr { background: #fff; } .cr .btn-sm { display: none !important; } }
     @media print { .rdg-fix { display: none !important; } }
@@ -2599,6 +2632,15 @@
     <!-- ANALYTICS VIEW -->
     <div id="view-analytics" role="tabpanel" class="view">
       <div class="summary-grid" id="summaryGrid"></div>
+      <div class="card" id="bankCard">
+        <div class="card-header">
+          <h2><span class="ico" aria-hidden="true">📚</span> Estimate bank — your own track record</h2>
+          <div class="toolbar no-print">
+            <button class="btn-secondary btn-sm" onclick="bankExportCSV()" title="One row per measured activity">⬇ .csv</button>
+          </div>
+        </div>
+        <div class="card-body"><div id="bankPanel"></div></div>
+      </div>
       <div class="card" id="standupCard">
         <div class="card-body" style="padding-top:0.75rem;padding-bottom:0.75rem">
           <div id="standupBody"></div>
@@ -2657,7 +2699,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1819</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1833</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3965,6 +4007,7 @@
       if (name === 'gantt' && (calculated || !tasks.length)) { renderGantt(); renderNarrativePanel(); }
       if (name === 'resources' && calculated) renderResources();
       if (name === 'baseline' && (calculated || !tasks.length)) renderBaseline();
+      if (name === 'analytics') { try { renderBank(); } catch (e) {} }
       if (name === 'analytics' && calculated) { renderAnalytics(); renderHealth(); }
       if (name === 'raid') {
         renderRaid(); renderCoHistory();
@@ -9901,6 +9944,7 @@
       `;
       animateTiles();
       try { renderStandup(); } catch (e) {}
+      try { renderBank(); } catch (e) {}          // cross-project: never gated on THIS plan
       renderPlanTruth();
 
       // target date probability
@@ -16120,6 +16164,7 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
           const mg = bankMerge(loadBank(), incoming);
           saveBank(mg.rows);
           updateBankBadge();
+          try { renderBank(); } catch (e) {}
           flashSaved('📚 Estimate bank: ' + mg.added + ' new record(s) imported'
             + (mg.updated ? ', ' + mg.updated + ' refreshed with a later archive' : '')
             + (mg.healed ? ', ' + mg.healed + ' duplicate row(s) already in your bank merged away' : '')
@@ -16134,6 +16179,7 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
       if (!n) { alert('The estimate bank is already empty.'); return; }
       if (!confirm('Delete all ' + n + ' estimate-vs-actual records?\n\nThis is your cross-project calibration data and is NOT part of undo. Export it first if you might want it back.')) return;
       saveBank([]); updateBankBadge();
+      try { renderBank(); } catch (e) {}
       flashSaved('🗑 Estimate bank cleared.');
     }
     function updateBankBadge() {
@@ -16149,6 +16195,158 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
       }
       el.textContent = n ? (n + ' record' + (n === 1 ? '' : 's') + (c ? ' · median ' + c.overall + '× vs estimate' : '') + tw) : 'empty — archive a finished project to start it';
     }
+    /* ===================== THE BANK, LOOKED AT ==============================
+       Every archived activity has been filed for months — estimate, actual,
+       ratio, cost, work type, role, project — and the only way to see any of
+       it was to export a CSV. Meanwhile the calibration it produces is quietly
+       shaping every AI estimate the tool makes. A number that steers the
+       product and cannot be inspected is a number nobody can challenge.
+
+       This is the whole bank on one panel: the distribution first, because the
+       median alone hides whether you are consistently 20% over or wildly
+       unpredictable, and those are opposite problems with opposite fixes. */
+    const BANK_BUCKETS = [
+      { k: '≤0.75', lo: -Infinity, hi: 0.75, tone: 'good', say: 'came in well under estimate' },
+      { k: '0.75–0.9', lo: 0.75, hi: 0.9, tone: 'good', say: 'came in under estimate' },
+      { k: '0.9–1.1', lo: 0.9, hi: 1.1, tone: 'ok', say: 'landed on estimate' },
+      { k: '1.1–1.25', lo: 1.1, hi: 1.25, tone: 'warn', say: 'ran modestly over' },
+      { k: '1.25–1.5', lo: 1.25, hi: 1.5, tone: 'warn', say: 'ran well over' },
+      { k: '1.5–2', lo: 1.5, hi: 2, tone: 'bad', say: 'ran half again over or worse' },
+      { k: '>2', lo: 2, hi: Infinity, tone: 'bad', say: 'took more than twice the estimate' }
+    ];
+    let bankSel = { bucket: null, q: '' };
+    function bankBucketOf(ratio) {
+      for (let i = 0; i < BANK_BUCKETS.length; i++) {
+        const b = BANK_BUCKETS[i];
+        if (ratio >= b.lo && ratio < b.hi) return i;
+      }
+      return BANK_BUCKETS.length - 1;
+    }
+    function bankSetBucket(i) { bankSel.bucket = (bankSel.bucket === i ? null : i); renderBank(); }
+    function bankSetQ(v) { bankSel.q = String(v || ''); renderBank(); }
+    function bankOpenProject(pid) {
+      if (!pid || !projIndex()[pid]) { flashSaved('That project is not in this browser — the record stays either way.'); return; }
+      if (pid === activeProjectId()) { flashSaved('That is the project you already have open.'); return; }
+      switchProject(pid);
+    }
+    function renderBank() {
+      const host = document.getElementById('bankPanel');
+      if (!host) return;
+      const all = loadBank();
+      if (!all.length) {
+        host.innerHTML = '<p class="bk-note"><b>Nothing filed yet.</b> Finish a project with actuals logged and '
+          + 'press <b>Archive to historical data</b> — one record per activity, estimate against what it actually '
+          + 'took. The records live outside any project and outlive all of them, and every AI estimate this tool '
+          + 'makes is calibrated against them.</p>';
+        return;
+      }
+      // Only LOGGED rows can carry a ratio worth reading: a span-derived actual
+      // is the calendar distance between two dates, not measured effort, and
+      // mixing the two is how a bank quietly teaches itself the wrong lesson.
+      const logged = all.filter(r => r.basis === 'logged' && r.ratio > 0);
+      const spanN = all.length - logged.length;
+      const c = bankCalibration();
+      const counts = BANK_BUCKETS.map(() => 0);
+      logged.forEach(r => { counts[bankBucketOf(r.ratio)]++; });
+      const max = Math.max.apply(null, counts.concat([1]));
+      const over = logged.filter(r => r.ratio > 1.1).length;
+      const under = logged.filter(r => r.ratio < 0.9).length;
+      const projects = [...new Set(all.map(r => r.proj))];
+
+      const head = '<div class="bk-head"><span class="bk-big">' + (c ? c.overall + '×' : '—') + '</span>'
+        + '<span class="bk-sub">median actual ÷ estimate across <b>' + logged.length + '</b> measured '
+        + ptrPl(logged.length, 'activity', 'activities') + ' in <b>' + projects.length + '</b> '
+        + ptrPl(projects.length, 'project') + '</span>'
+        + '<span class="bk-sub">· <b>' + over + '</b> ran over, <b>' + under + '</b> came in under</span></div>';
+
+      const hist = '<div class="bk-hist">' + counts.map((n, i) => {
+        const b = BANK_BUCKETS[i];
+        return '<button type="button" class="bk-b bk-' + b.tone + (bankSel.bucket === i ? ' bk-on' : '')
+          + '" id="bkB' + i + '" onclick="bankSetBucket(' + i + ')" title="'
+          + escapeHtml(n + ' ' + ptrPl(n, 'activity', 'activities') + ' ' + b.say
+            + (n ? ' — click to list them' : '')) + '" aria-label="' + escapeHtml(b.k + ', ' + n + ' activities')
+          + '"><i style="height:' + (n / max * 100).toFixed(1) + '%"></i></button>';
+      }).join('') + '</div><div class="bk-ax">'
+        // the count in its own element: <br> contributes no whitespace to
+        // textContent, so "≤0.75" and "2" ran together for anything reading
+        // this as text — a screen reader included
+        + BANK_BUCKETS.map((b, i) => '<span>' + escapeHtml(b.k) + '<br><b class="bk-cn">'
+            + counts[i] + '</b></span>').join('') + '</div>';
+
+      const tbl = (title, arr, note) => {
+        if (!arr || !arr.length) return '';
+        return '<div class="bk-card"><p class="bk-ch">' + title + '</p><ul class="bk-l">'
+          + arr.slice(0, 8).map(x => '<li class="bk-li' + (x.n < 5 ? ' bk-thin' : '') + '">'
+              + '<span class="bk-k">' + escapeHtml(x.k) + '</span>'
+              + '<span class="bk-v">' + x.median + '×</span>'
+              + '<span class="bk-n">n=' + x.n + ' · ' + x.min + '–' + x.max + '</span></li>').join('')
+          + '</ul>' + (note ? '<p class="bk-note">' + note + '</p>' : '') + '</div>';
+      };
+      // per project, computed here rather than in bankCalibration: the panel is
+      // the only caller that cares, and the prompt block must not grow
+      const byProj = {};
+      logged.forEach(r => { (byProj[r.proj] = byProj[r.proj] || []).push(r.ratio); });
+      const projRows = Object.keys(byProj).map(k => {
+        const v = byProj[k].slice().sort((a, b) => a - b);
+        const mid = v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
+        return { k: k, n: v.length, median: +mid.toFixed(2), min: +v[0].toFixed(2), max: +v[v.length - 1].toFixed(2) };
+      }).sort((a, b) => b.n - a.n);
+
+      const cards = '<div class="bk-grid">'
+        + tbl('By activity kind', c ? c.byKind : [])
+        + tbl('By work type', c ? c.byTaxUi : [], 'Buckets under five records are faded — a thin bucket is a hint, not a multiplier.')
+        + tbl('By role or owner', c ? c.byRole : [])
+        + tbl('By project', projRows)
+        + '</div>';
+
+      // ---- the rows themselves
+      const q = bankSel.q.trim().toLowerCase();
+      let rows = logged.slice();
+      if (bankSel.bucket != null) rows = rows.filter(r => bankBucketOf(r.ratio) === bankSel.bucket);
+      if (q) rows = rows.filter(r => ((r.proj || '') + ' ' + (r.name || '') + ' ' + (r.owner || '') + ' '
+        + (r.wbs || '')).toLowerCase().indexOf(q) >= 0);
+      rows.sort((a, b) => Math.abs(b.ratio - 1) - Math.abs(a.ratio - 1));
+      const shown = rows.slice(0, 20);
+      const known = projIndex();
+      const body = shown.map(r => {
+        const t = BANK_BUCKETS[bankBucketOf(r.ratio)].tone;
+        const col = t === 'bad' ? 'var(--critical)' : t === 'warn' ? 'var(--warn)' : t === 'good' ? 'var(--success)' : 'var(--text)';
+        const proj = (r.pid && known[r.pid])
+          ? '<button type="button" class="ptr-sc-rbtn no-print" onclick="bankOpenProject(' + ekJs2(r.pid)
+            + ')" title="Open that project">' + escapeHtml(r.proj || '') + '</button>'
+          : escapeHtml(r.proj || '');
+        return '<tr><td>' + proj + '</td><td>' + escapeHtml((r.wbs ? r.wbs + ' ' : '') + (r.name || ''))
+          + '</td><td>' + escapeHtml(taxLabel(r.tax) || r.kind || '') + '</td>'
+          + '<td style="white-space:nowrap">' + r.te + ' → ' + r.actual + ' ' + escapeHtml(r.unit || '')
+          + '</td><td style="font-weight:700;color:' + col + '">' + r.ratio + '×</td>'
+          + '<td class="bk-n">' + escapeHtml(r.at || '') + '</td></tr>';
+      }).join('');
+      const bar = '<div class="bk-bar no-print">'
+        + '<input class="bk-q" type="text" placeholder="Filter by project, activity or owner…" value="'
+        + escapeHtml(bankSel.q) + '" oninput="bankSetQ(this.value)">'
+        + (bankSel.bucket != null ? '<button class="btn-sm btn-secondary" onclick="bankSetBucket('
+            + bankSel.bucket + ')">✕ ' + escapeHtml(BANK_BUCKETS[bankSel.bucket].k) + ' only</button>' : '')
+        + '<span class="bk-n">showing ' + shown.length + ' of ' + rows.length
+        + (rows.length !== logged.length ? ' (filtered from ' + logged.length + ')' : '')
+        + ' · furthest from estimate first</span></div>';
+      const table = rows.length
+        ? '<div class="table-wrap"><table><thead><tr><th>Project</th><th>Activity</th><th>Work type</th>'
+          + '<th>Est → actual</th><th>Ratio</th><th>Filed</th></tr></thead><tbody>' + body + '</tbody></table></div>'
+        : '<p class="bk-note">No record matches that filter.</p>';
+
+      const notes = '<p class="bk-note"><b>Only measured effort counts.</b> '
+        + (spanN ? '<b>' + spanN + '</b> of the ' + all.length + ' filed ' + ptrPl(spanN, 'record')
+            + ' derive their actual from the calendar distance between a start and a finish rather than from '
+            + 'logged time, so they are excluded from every figure above — a three-day job inside a three-week '
+            + 'window is not a three-week job. '
+          : 'Every filed record carries logged time rather than a date span. ')
+        + 'The median is what the AI estimator is calibrated against; the spread is what tells you whether that '
+        + 'calibration is worth trusting. Consistently 20% over and wildly unpredictable are opposite problems '
+        + 'with opposite fixes, which is why the distribution is drawn before the average.</p>';
+
+      host.innerHTML = head + hist + cards + bar + table + notes;
+    }
+
     function histPromptBlock() {
       const v = (localStorage.getItem(HIST_STORE) || '').trim();
       if (!v) return '';
@@ -20561,7 +20759,7 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
       // alongside the prose the human writes)
       const fresh = bankRowsFromPlan();
       let mg = { added: fresh.length, updated: 0 };
-      if (fresh.length) { mg = bankMerge(loadBank(), fresh); saveBank(mg.rows); updateBankBadge(); }
+      if (fresh.length) { mg = bankMerge(loadBank(), fresh); saveBank(mg.rows); updateBankBadge(); try { renderBank(); } catch (e) {} }
       const cal = bankCalibration();
       flashSaved('🗄 Archived — ' + mg.added + ' activity actual(s) added to the estimate bank'
         + (mg.updated ? ', ' + mg.updated + ' updated from a previous archive of this project' : '')
