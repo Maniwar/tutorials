@@ -2313,7 +2313,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0529</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0536</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -7776,16 +7776,27 @@
          Deliberately capped and deliberately worst-first: a list of thirty
          is another wall of numbers, and the tail never matters. */
       const DRIVER_MAX = 5;
-      const drivers = (arr, valueOf, label) => arr
-        .map(t => ({ t: t, v: valueOf(t) }))
-        .filter(x => x.v > 0.0001)
-        .sort((a, b) => b.v - a.v)
-        .slice(0, DRIVER_MAX)
-        .map(x => ({ id: x.t.id, name: x.t.name, wbs: x.t.wbs || '', kind: ekKindOf(x.t),
-                     crit: !!x.t.isCritical, txt: label(x.v, x.t),
-                     // if somebody already logged why this went wrong, show it HERE,
-                     // beside the number it explains, not one tab away
-                     raid: raidChipFor(x.t.id) }));
+      /* Drivers are SIGNED and follow the bar. The first version only ever
+         listed overruns, so a plan that was under budget or unchanged in scope
+         offered nothing to open at all — which is the common, healthy case, and
+         it made the whole drill-in look broken to anyone whose project was going
+         well. "We are $3,771 under plan to date, which activities?" deserves an
+         answer too, and it is usually a more interesting one: under-spend
+         against a dated plan generally means work has not started, not that
+         money was saved. `dir` is +1 to rank overruns, -1 to rank the shortfall. */
+      const drivers = (arr, valueOf, label, dir) => {
+        dir = dir || 1;
+        return arr
+          .map(t => ({ t: t, v: valueOf(t) }))
+          .filter(x => Number.isFinite(x.v) && x.v * dir > 0.0001)
+          .sort((a, b) => (b.v - a.v) * dir)
+          .slice(0, DRIVER_MAX)
+          .map(x => ({ id: x.t.id, name: x.t.name, wbs: x.t.wbs || '', kind: ekKindOf(x.t),
+                       crit: !!x.t.isCritical, txt: label(x.v, x.t),
+                       // if somebody already logged why this went wrong, show it HERE,
+                       // beside the number it explains, not one tab away
+                       raid: raidChipFor(x.t.id) }));
+      };
 
       // Schedule: activities finishing later than the baseline froze them. Only
       // a critical one can actually move the end date, so those lead, but a
@@ -7810,13 +7821,25 @@
           effectivePreds(t).forEach(p => { const s = slipOf.get(p.id); if (s > inherited) inherited = s; });
           return Math.max(0, mine - inherited);
         };
+        const behind = (sch.pct || 0) >= 0;
+        if (behind) {
+          const late = leaves.filter(t => slipOf.get(t.id) > 0);
+          sch.drivers = drivers(late, ownSlip,
+            v => '+' + Math.round(v) + ' ' + ptrPl(Math.round(v), 'day'));
+          sch.driverNote = 'Where the delay was introduced, not everything standing behind it: each figure is the slip'
+            + ' an activity added on top of what it inherited from a late predecessor. Critical ones move the finish'
+            + ' date; the rest are spending float they will want later.';
+        } else {
+          // ahead of the baseline: name what is pulling the finish date in
+          const early = leaves.filter(t => slipOf.get(t.id) < 0);
+          sch.drivers = drivers(early, t => slipOf.get(t.id) || 0,
+            v => Math.round(v) + ' ' + ptrPl(Math.abs(Math.round(v)), 'day'), -1);
+          sch.driverNote = 'Finishing earlier than the baseline froze them, biggest gain first. Worth reading before'
+            + ' you bank it: an early finish on work that was never really started reads the same as one that was'
+            + ' genuinely delivered ahead.';
+        }
         const late = leaves.filter(t => slipOf.get(t.id) > 0);
-        sch.drivers = drivers(late, ownSlip,
-          v => '+' + Math.round(v) + ' ' + ptrPl(Math.round(v), 'day'));
-        sch.driverNote = 'Where the delay was introduced, not everything standing behind it: each figure is the slip'
-          + ' an activity added on top of what it inherited from a late predecessor. Critical ones move the finish'
-          + ' date; the rest are spending float they will want later.';
-        if (!sch.drivers.length && late.length) {
+        if (behind && !sch.drivers.length && late.length) {
           // everything late inherited its lateness — say so rather than showing nothing
           sch.driverNote = 'Every late activity inherited its slip from a predecessor rather than adding any of its'
             + ' own, so the delay entered this plan before the baseline was frozen or through a dependency.';
@@ -7825,24 +7848,41 @@
       // Budget: booked cost above what this activity was budgeted. Money, not a
       // ratio — a 300% overrun on a $200 task is noise beside 8% on a $90k one.
       if (bud.state !== 'needs') {
-        const over = leaves.filter(t => !t.milestone);
-        bud.drivers = drivers(over,
-          t => (actOf.get(t.id) || 0) - (hb && Number(t.baseCost) > 0 ? Number(t.baseCost) : taskCost(t)),
-          v => '+' + money(Math.round(v)));
-        bud.driverNote = 'Booked above what each was budgeted, biggest overspend first — dollars, not percentages,'
-          + ' because a 300% overrun on a $200 task is noise beside 8% on a $90k one.';
+        const work = leaves.filter(t => !t.milestone);
+        const gap = t => (actOf.get(t.id) || 0) - (hb && Number(t.baseCost) > 0 ? Number(t.baseCost) : taskCost(t));
+        const overspent = (bud.pct || 0) >= 0;
+        bud.drivers = drivers(work, gap,
+          v => (v > 0 ? '+' : '−') + money(Math.abs(Math.round(v))), overspent ? 1 : -1);
+        bud.driverNote = overspent
+          ? 'Booked above what each was budgeted, biggest overspend first — dollars, not percentages, because a 300%'
+            + ' overrun on a $200 task is noise beside 8% on a $90k one.'
+          : 'Booked BELOW what each was budgeted, biggest shortfall first. Under a dated plan this usually means the'
+            + ' work has not started rather than that money was saved — check these against the progress column before'
+            + ' reporting an underspend to anyone.';
       }
       // Scope: work that was not in the baseline at all, then work that was
       // re-estimated upward. Two different conversations with a client, so they
       // are labelled rather than merged into one "scope" number.
       if (hb && scp.state !== 'needs') {
-        const grew = leaves.filter(t => !t.milestone);
-        scp.drivers = drivers(grew,
-          t => t.baseTe == null ? (Number(t.te) || 0) : (Number(t.te) || 0) - Number(t.baseTe),
-          (v, t) => (t.baseTe == null ? 'new · ' : '+') + (+v.toFixed(1)) + ' ' + u);
-        scp.driverNote = 'Effort added since the baseline. "new" means the activity did not exist when the plan'
-          + ' was frozen; the rest were re-estimated upward.';
+        const work = leaves.filter(t => !t.milestone);
+        const delta = t => t.baseTe == null ? (Number(t.te) || 0) : (Number(t.te) || 0) - Number(t.baseTe);
+        const grown = (scp.pct || 0) >= 0;
+        scp.drivers = drivers(work, delta,
+          (v, t) => (t.baseTe == null ? 'new · ' : (v > 0 ? '+' : '')) + (+v.toFixed(1)) + ' ' + u,
+          grown ? 1 : -1);
+        scp.driverNote = grown
+          ? 'Effort added since the baseline. "new" means the activity did not exist when the plan was frozen; the'
+            + ' rest were re-estimated upward.'
+          : 'Effort removed since the baseline, biggest reduction first — work that was re-estimated downward or cut.';
       }
+
+      // what to say when a dimension is measured but has no contributors to list
+      if (sch.state !== 'needs' && !(sch.drivers || []).length)
+        sch.driverEmpty = 'No activity has moved off its baseline finish, so there is nothing behind this number yet.';
+      if (bud.state !== 'needs' && !(bud.drivers || []).length)
+        bud.driverEmpty = 'Every activity is booked at exactly what it was budgeted, so no single one is moving this.';
+      if (scp.state !== 'needs' && !(scp.drivers || []).length)
+        scp.driverEmpty = 'Nothing has been added, cut or re-estimated since the baseline — the scope you committed to is the scope you are delivering.';
 
       return {
         rows: [sch, bud, scp], cells, leaves, cov, hb, donePct, u, safe,
@@ -7854,7 +7894,13 @@
        the answer beside the number that raised the question, it costs nothing
        when closed, and it prints open if the reader left it open. */
     function ptrDrivers(r) {
-      if (!r.drivers || !r.drivers.length) return '';
+      if (!r.drivers || !r.drivers.length) {
+        // A measured row with nothing behind it is a real answer, and a better
+        // one than an absent control: it says the tool looked. Silence here made
+        // the drill-in look broken on exactly the plans that are going well.
+        if (r.state === 'needs' || !r.driverEmpty) return '';
+        return '<p class="ptr-drv-note" style="margin-top:0.45rem">' + r.driverEmpty + '</p>';
+      }
       // The row is a <li> holding up to two SIBLING buttons, never nested ones:
       // "open the activity" and, when something is logged against it, "open the
       // RAID log". A button inside a button is invalid and swallows one of the
@@ -16336,6 +16382,18 @@ IMPORTANT: rows marked [ROLL-UP] are WBS summary rows — the tool schedules and
             : fd.recommendation && fd.severity !== 'info' ? `<button class="btn-sm btn-secondary" onclick="aiFixFindings(${fi})" title="AI applies just this recommendation">🔧 Fix</button>` : ''}</td></tr>`;
       }).join('');
       const fixable = healthFindings.findings.filter(fd => fd.recommendation && fd.severity !== 'info' && !fd.jump && !fd.relink);
+      /* A clean plan used to render the heading "(0 findings)" over an empty
+         table — 78 characters of change on a panel below the fold, which reads
+         as "the button did nothing" rather than "there is nothing wrong".
+         A pass deserves to be stated. */
+      if (!healthFindings.findings.length) {
+        cont.innerHTML = trend + `<h3 style="font-size:0.95rem;margin:1rem 0 0.5rem">Health check — ${escapeHtml(healthFindings.date)}</h3>`
+          + '<p style="background:#f0fdf4;border:1px solid #bbf7d0;border-left:4px solid #16a34a;border-radius:8px;padding:0.75rem 1rem;margin:0;font-size:0.9rem">'
+          + '<b>Nothing to flag.</b> Every check passed: estimate ranges are wide enough to be honest, no activity is too big to track, '
+          + 'scope traces to stories, and the schedule drivers look deliberate. This is the plan as it stands right now — re-run it after any '
+          + 'significant change.</p>';
+        return;
+      }
       cont.innerHTML = trend + `<h3 style="font-size:0.95rem;margin:1rem 0 0.5rem">Health check — ${escapeHtml(healthFindings.date)} (${healthFindings.findings.length} finding${healthFindings.findings.length === 1 ? '' : 's'})</h3>
         ${healthFindings.findings.length ? `<div class="table-wrap"><table><thead><tr><th></th><th>Area</th><th>Finding</th><th>Recommendation</th><th class="no-print"></th></tr></thead><tbody>${rows}</tbody></table></div>
         ${fixable.length ? `<div class="toolbar no-print" style="margin-top:0.6rem"><button class="btn-primary btn-sm" onclick="aiFixFindings()" title="The AI edits the plan to address every fixable finding — you review the result">🔧 Fix all with AI (${fixable.length})</button><span class="help-text">applies the recommendations as a plan update — every change stays editable</span></div>` : ''}`
