@@ -9848,6 +9848,7 @@ Write the test cases for the criteria above, following the contract exactly. Ret
         <button type="button" class="btn-sm btn-danger" title="Remove this criterion" onclick="this.parentElement.remove()">✕</button>`;
       if (/^(happy|error|edge|perf)$/.test(String(a.type))) row.querySelector('select').value = a.type;
       row.querySelector('textarea').value = a.text || '';
+      row.dataset.acId = (a && a.id) || '';   // carry identity through the editor
       wrap.appendChild(row);
       autoGrowTA(row.querySelector('textarea'));
       stAcGwtHint(row.querySelector('textarea'));
@@ -9863,7 +9864,7 @@ Write the test cases for the criteria above, following the contract exactly. Ret
     }
     function stAcEntries() {
       return [...document.querySelectorAll('#stAcRows .st-ac-row')]
-        .map(r => ({ type: r.querySelector('.st-ac-type').value, text: r.querySelector('.st-ac-text').value.trim() }))
+        .map(r => ({ id: r.dataset.acId || '', type: r.querySelector('.st-ac-type').value, text: r.querySelector('.st-ac-text').value.trim() }))
         .filter(x => x.text);
     }
     // bracket-line bridge (paste-style input; also what the probes drive)
@@ -10045,7 +10046,21 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       const beforeCore = before ? JSON.stringify([before.persona || '', before.want || '', before.soThat || '']) : null;
       const splitLines = elId => document.getElementById(elId).value.split('\n').map(l => l.trim()).filter(Boolean);
       const acBase = id.replace(/^US/i, 'AC');
-      const ac = stAcEntries().map((x, i) => ({ id: acBase + '.' + (i + 1), type: x.type, text: x.text }));
+      // An AC id is an IDENTITY, not a position. Rebuilding it from array index
+      // meant deleting one criterion silently renumbered every criterion below
+      // it — while the test cases NAMED after those ids kept their names, so
+      // "TC AC-6.2" carried on claiming to verify a criterion that was now a
+      // different sentence. Nothing warned, and the wrong pairing shipped in the
+      // acceptance pack. A surviving criterion keeps its number (re-based when
+      // the story id changes, which the TC rename just below mirrors); a newly
+      // added one takes the next number this story has never used, so a retired
+      // number is never recycled onto different words.
+      let maxAcN = 0;
+      beforeAc.forEach(a => { const m = String(a.id || '').match(/\.(\d+)$/); if (m) maxAcN = Math.max(maxAcN, +m[1]); });
+      const ac = stAcEntries().map(x => {
+        const m = String(x.id || '').match(/\.(\d+)$/);
+        return { id: acBase + '.' + (m ? m[1] : ++maxAcN), type: x.type, text: x.text };
+      });
       const linkIds = [...new Set(storyModalWbsIds.filter(x => tasks.some(t => t.id === x)))];
       const primaryTask = linkIds.length ? tasks.find(t => t.id === linkIds[0]) : null;
       const story = {
@@ -10079,7 +10094,17 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       // ripple the edit down the chain: changed criteria → stale test cases;
       // changed story sentence with UNTOUCHED criteria → offer an AI re-draft
       const coreChanged = beforeCore !== JSON.stringify([story.persona, story.want, story.soThat]);
-      const acEdited = beforeAc.length !== ac.length || ac.some((a, i) => !beforeAc[i] || String(beforeAc[i].text || '').trim() !== a.text.trim() || beforeAc[i].type !== a.type);
+      // Pair criteria by ID, not by array position. Positionally, deleting the
+      // first criterion makes every later one look rewritten, so removing one
+      // criterion condemned the whole story's test cases — including the ones
+      // whose criteria had not changed a character, taking their steps, evidence
+      // links and logged actuals with them.
+      const beforeById = {};
+      beforeAc.forEach(a => { beforeById[String(a.id || '').toLowerCase()] = a; });
+      const acEdited = beforeAc.length !== ac.length || ac.some(a => {
+        const b = beforeById[String(a.id || '').toLowerCase()];
+        return !b || String(b.text || '').trim() !== a.text.trim() || b.type !== a.type;
+      });
       const hasKey = !!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE));
       if (coreChanged && !acEdited && ac.length && hasKey && !isProcessStory(story)) {
         if (confirm('You changed the story sentence of ' + story.id + ' but kept its acceptance criteria.\n\nHave AI re-draft the criteria (and NFRs/assumptions) to match the updated story? Stale test cases are then offered for regeneration too.\n\nCancel keeps the criteria exactly as written.')) {
@@ -10121,11 +10146,17 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       const newAc = story.ac || [];
       const stale = new Set();   // AC ids (lowercase) whose TC must be rewritten
       const orphans = [];        // TC tasks whose criterion no longer exists
-      oldAc.forEach((oa, i) => {
+      // Match old criterion to new BY ID. Index-pairing meant one deletion shifted
+      // every later criterion out of alignment, so untouched criteria were read as
+      // rewritten and their test cases destroyed. Ids are stable now, so a
+      // criterion is orphaned only when it genuinely no longer exists.
+      const newById = {};
+      newAc.forEach(a => { newById[String(a.id || '').toLowerCase()] = a; });
+      oldAc.forEach(oa => {
         const tcs = testCasesForAC(oa.id);
         if (!tcs.length) return;
-        const nu = newAc[i];
-        if (!nu || String(nu.id).toLowerCase() !== String(oa.id).toLowerCase()) { orphans.push(...tcs); return; }
+        const nu = newById[String(oa.id || '').toLowerCase()];
+        if (!nu) { orphans.push(...tcs); return; }
         if (nu.text.trim() !== String(oa.text || '').trim() || nu.type !== oa.type) stale.add(String(nu.id).toLowerCase());
       });
       if (orphans.length && confirm(orphans.length + ' test case(s) verify criteria that no longer exist:\n' + orphans.map(t => '• ' + t.name).join('\n') + '\n\nDelete them? (Cancel keeps them — they will show as unlinked.) ↶ Undo restores.')) {
@@ -12274,8 +12305,27 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       try { const v = JSON.parse(localStorage.getItem(BANK_STORE) || '[]'); return Array.isArray(v) ? v : []; }
       catch (e) { return []; }
     }
+    // A silent catch here meant the one store that is supposed to accumulate
+    // forever could stop accumulating with no symptom at all: every later archive
+    // would report success, the badge would keep showing the old count, and the
+    // calibration fed to every future estimate would quietly freeze. It shares a
+    // ~5 MB origin quota with the history box, so this is a question of when.
+    // Retry once at half the rows — the newest are the ones worth keeping — and
+    // if even that fails, say so where the user is looking.
     function saveBank(rows) {
-      try { localStorage.setItem(BANK_STORE, JSON.stringify(rows.slice(-BANK_MAX))); } catch (e) {}
+      const write = n => localStorage.setItem(BANK_STORE, JSON.stringify(rows.slice(-n)));
+      try { write(BANK_MAX); return true; }
+      catch (e) {
+        try {
+          write(Math.floor(BANK_MAX / 2));
+          flashSaved('⚠ Estimate bank trimmed to the most recent ' + Math.floor(BANK_MAX / 2) + ' records — browser storage is full. Export it (⬇ Bank .json) to keep the older history.');
+          return true;
+        } catch (e2) {
+          const el = document.getElementById('bankBadge');
+          if (el) el.innerHTML = '<span style="color:var(--critical);font-weight:600">⚠ Could not save — browser storage is full. This archive was NOT recorded.</span> Export what you have (⬇ Bank .json), then 🗑 Clear to start a fresh bank.';
+          return false;
+        }
+      }
     }
     // one row per leaf activity that has a usable actual
     function bankRowsFromPlan() {
