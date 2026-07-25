@@ -2381,7 +2381,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1620</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1628</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -8324,16 +8324,34 @@
       // ratio — a 300% overrun on a $200 task is noise beside 8% on a $90k one.
       if (bud.state !== 'needs') {
         const work = leaves.filter(t => !t.milestone);
-        const gap = t => (actOf.get(t.id) || 0) - (hb && Number(t.baseCost) > 0 ? Number(t.baseCost) : taskCost(t));
+        /* The bar above compares booked cost against the plan TO DATE. This list
+           used to compare booked cost against each activity's WHOLE budget —
+           a different denominator, so the rows could not add up to the number
+           they sat under and generally did not come close. On a real plan whose
+           baseline was taken on day three, the bar read +$26,760 and the list
+           named two activities totalling $2,917: eleven per cent of the figure
+           it claimed to explain, with the other $23,843 invisible.
+
+           Same subtraction as the bar, per activity: what has been booked
+           against it, minus what the baseline says should have been spent on it
+           BY TODAY. An activity whose baseline window has not opened yet has a
+           plan-to-date of zero, so every dollar booked against it is the whole
+           of its contribution — which is exactly the story a plan running ahead
+           of its baseline needs to tell. The rows now sum to the bar. */
+        const budToday = stripTime(new Date()).getTime();
+        const planToDate = t => { try { return accrualAt(pvSpread(hb, [t]).segs, budToday); } catch (e) { return 0; } };
+        const gap = t => (actOf.get(t.id) || 0) - planToDate(t);
         const overspent = (bud.pct || 0) >= 0;
         bud.drivers = drivers(work, gap,
           v => (v > 0 ? '+' : '−') + money(Math.abs(Math.round(v))), overspent ? 1 : -1);
         bud.driverNote = overspent
-          ? 'Booked above what each was budgeted, biggest overspend first — dollars, not percentages, because a 300%'
-            + ' overrun on a $200 task is noise beside 8% on a $90k one.'
-          : 'Booked BELOW what each was budgeted, biggest shortfall first. Under a dated plan this usually means the'
-            + ' work has not started rather than that money was saved — check these against the progress column before'
-            + ' reporting an underspend to anyone.';
+          ? 'Booked above what the baseline says should have been spent on each one BY TODAY — the same subtraction as'
+            + ' the bar, so these add up to it. An activity whose baseline window has not opened yet contributes'
+            + ' everything booked against it: that is work running ahead of the plan, not an overrun. Dollars, not'
+            + ' percentages, because a 300% overrun on a $200 task is noise beside 8% on a $90k one.'
+          : 'Booked BELOW what the baseline says should have been spent on each one by today, biggest shortfall first.'
+            + ' Under a dated plan this usually means the work has not started rather than that money was saved —'
+            + ' check these against the progress column before reporting an underspend to anyone.';
       }
       // Scope: work that was not in the baseline at all, then work that was
       // re-estimated upward. Two different conversations with a client, so they
@@ -15765,14 +15783,20 @@ Rules:
       try {
         const text = await callAnthropic(dg.text, {
           onDelta, cachePrefix: [ptPrefix()],   // ONE block; the digest stays uncached
-          // 2000 was too tight for a real engagement. The contract allows up to
-          // ten items, each with a sentence, a verbatim cite of 20+ characters,
-          // refs and an action — comfortably past 2000 tokens on a 29-activity
-          // plan, and the whole reading was then discarded for being long. The
-          // VALIDATOR caps what is kept (10 items, 4 per panel), so the real
-          // spend is bounded by the contract, not by this number; it only needs
-          // to be big enough that a good answer is never thrown away.
-          maxTokens: 8000, noContinue: true
+          /* NO OUTPUT CAP — this was the only call site in the file that set
+             one, and it is what broke the feature. A ceiling does not make a
+             model concise; it truncates it mid-sentence, and the strict parser
+             then throws the whole answer away. What actually bounds a reading
+             is the contract (ten items, four per panel, a sentence each) and
+             the validator that enforces it. Billing is for tokens GENERATED,
+             not for the ceiling, so leaving it at the model's own maximum —
+             the same one the other eighteen flows use — costs nothing and
+             removes a way to lose good work.
+             noContinue stays, and is a different thing: the continuation round
+             resends with an assistant prefill, which these models reject with
+             a 400, so for a single-answer flow it is a guaranteed failure one
+             round later rather than a safety net. */
+          noContinue: true
         });
         const res = parseAIJsonStrict(text, 'the reading', { noContinue: true });   // repaired/truncated -> nothing written
         const v = ptValidate(res, dg);
