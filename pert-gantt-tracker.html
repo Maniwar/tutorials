@@ -2018,7 +2018,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0409</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0421</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -2821,7 +2821,16 @@
         b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:3000;background:#b91c1c;color:#fff;padding:8px 16px;font-size:13px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.3)';
         document.body.appendChild(b);
       }
-      b.innerHTML = '⚠ <b>Changes are NOT being saved</b> — browser storage is full (' + storageUsedMB().toFixed(1) + ' MB used of ~5 MB). <b>Export ▸ Download JSON now</b>, then free space: open an old project via Projects ▸ and 🗑 Delete current. <button onclick="this.parentElement.remove()" aria-label="Dismiss warning" style="margin-left:10px;background:#fff;color:#b91c1c;border:none;border-radius:4px;padding:2px 8px;cursor:pointer">✕</button>';
+      b.innerHTML = '⚠ <b>Changes are NOT being saved</b> — this browser is refusing to store data (<span id="storageBannerUsage">' + storageUsedMB().toFixed(1) + ' MB in the fallback store</span>). <b>Export ▸ Download JSON now</b>, then free space: open an old project via Projects ▸ and 🗑 Delete current. <button onclick="this.parentElement.remove()" aria-label="Dismiss warning" style="margin-left:10px;background:#fff;color:#b91c1c;border:none;border-radius:4px;padding:2px 8px;cursor:pointer">✕</button>';
+      // report the REAL figures where the browser will tell us — the old text
+      // quoted "~5 MB", which is the localStorage ceiling and has not been this
+      // app's limit since the payloads moved to IndexedDB
+      if (navigator.storage && navigator.storage.estimate) {
+        navigator.storage.estimate().then(e => {
+          const el = document.getElementById('storageBannerUsage');
+          if (el && e && e.quota) el.textContent = (e.usage / 1048576).toFixed(1) + ' MB used of ' + (e.quota / 1048576).toFixed(0) + ' MB available';
+        }).catch(() => {});
+      }
     }
     function saveLocal() {
       try {
@@ -13005,32 +13014,65 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     // ACROSS projects (own storage key, never cleared by New project), so each
     // engagement makes the next one's estimates better.
     const BANK_STORE = 'pertGantt.estimateBank';
-    const BANK_MAX = 5000;                    // rows kept; oldest dropped first
+    /* The bank used to live in localStorage behind a 5,000-row cap, and past that
+       cap saveBank deleted the OLDEST rows — the long history that makes a
+       calibration worth having in the first place. The cap existed because
+       localStorage refuses anything past roughly 5 MB. Measured: a bank row is
+       ~718 bytes, so 5,000 rows is 3.4 MB and the cap and the ceiling arrive
+       together. But the project payloads moved to IndexedDB long ago and that has
+       no such ceiling — measured 936 MB of quota on this machine, from file://.
+       So the bank moves there too and the cap goes: nothing is ever deleted to
+       make room, and a merged team bank is not bounded by a number somebody
+       guessed. localStorage stays only as the fallback for a browser with
+       IndexedDB blocked, where the old ceiling is a fact of life rather than a
+       policy — and there the write simply fails loudly instead of silently
+       discarding history.
+
+       Reads stay synchronous against an in-memory cache, exactly as project
+       payloads do with projCache, so no call site has to become async. */
+    let bankCache = null;
     function loadBank() {
-      try { const v = JSON.parse(localStorage.getItem(BANK_STORE) || '[]'); return Array.isArray(v) ? v : []; }
-      catch (e) { return []; }
+      if (bankCache) return bankCache;
+      // bootstrap before bankInit resolves, and the fallback path
+      try { const v = JSON.parse(localStorage.getItem(BANK_STORE) || '[]'); if (Array.isArray(v)) return (bankCache = v); }
+      catch (e) { /* fall through */ }
+      return (bankCache = []);
+    }
+    async function bankInit() {
+      try {
+        const v = await idbGet(BANK_STORE);
+        if (v != null) { const p = JSON.parse(v); if (Array.isArray(p)) bankCache = p; }
+        else {
+          // one-time migration of a localStorage bank into IndexedDB
+          const old = localStorage.getItem(BANK_STORE);
+          if (old) {
+            const p = JSON.parse(old);
+            if (Array.isArray(p) && p.length) {
+              bankCache = p;
+              await idbSet(BANK_STORE, old);
+              localStorage.removeItem(BANK_STORE);   // only after the durable write lands
+            }
+          }
+        }
+      } catch (e) { /* keep whatever loadBank bootstrapped */ }
+      updateBankBadge();
     }
     // A silent catch here meant the one store that is supposed to accumulate
     // forever could stop accumulating with no symptom at all: every later archive
     // would report success, the badge would keep showing the old count, and the
-    // calibration fed to every future estimate would quietly freeze. It shares a
-    // ~5 MB origin quota with the history box, so this is a question of when.
-    // Retry once at half the rows — the newest are the ones worth keeping — and
-    // if even that fails, say so where the user is looking.
+    // calibration fed to every future estimate would quietly freeze. So a failure
+    // is always said out loud, where the user is looking.
     function saveBank(rows) {
-      const write = n => localStorage.setItem(BANK_STORE, JSON.stringify(rows.slice(-n)));
-      try { write(BANK_MAX); return true; }
-      catch (e) {
-        try {
-          write(Math.floor(BANK_MAX / 2));
-          flashSaved('⚠ Estimate bank trimmed to the most recent ' + Math.floor(BANK_MAX / 2) + ' records — browser storage is full. Export it (⬇ Bank .json) to keep the older history.');
-          return true;
-        } catch (e2) {
+      bankCache = rows;                       // synchronous truth for every reader
+      const json = JSON.stringify(rows);
+      idbSet(BANK_STORE, json).catch(() => {
+        try { localStorage.setItem(BANK_STORE, json); }
+        catch (e) {
           const el = document.getElementById('bankBadge');
-          if (el) el.innerHTML = '<span style="color:var(--critical);font-weight:600">⚠ Could not save — browser storage is full. This archive was NOT recorded.</span> Export what you have (⬇ Bank .json), then 🗑 Clear to start a fresh bank.';
-          return false;
+          if (el) el.innerHTML = '<span style="color:var(--critical);font-weight:600">⚠ Could not save — this browser has IndexedDB blocked and the localStorage fallback is full. This archive was NOT recorded.</span> Export what you have (⬇ Bank .json) before doing anything else.';
         }
-      }
+      });
+      return true;
     }
     // one row per leaf activity that has a usable actual
     function bankRowsFromPlan() {
@@ -15398,6 +15440,21 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
     }
 
     // ========================= INIT =========================
+
+    /* Ask the browser to keep this data. Without it every store here — projects,
+       snapshots, the estimate bank — is "best-effort" and may be evicted when the
+       disk gets tight, which is a silent way to lose years of measured actuals.
+       Chromium grants this without a prompt for an installed or engaged site and
+       simply declines otherwise, so it is safe to ask unconditionally and there is
+       nothing useful to tell the user when it says no; the export button remains
+       the real off-browser backup either way. */
+    (async () => {
+      try { if (navigator.storage && navigator.storage.persist && !(await navigator.storage.persisted())) await navigator.storage.persist(); }
+      catch (e) { /* not supported — nothing to do */ }
+    })();
+    // the estimate bank now lives in IndexedDB; pull it into the sync cache and
+    // migrate a pre-existing localStorage bank on the way
+    bankInit();
 
     // Enter walks the editor's fields, Shift+Enter saves — see modalKeyFlow.
     (() => {
