@@ -2719,7 +2719,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1907</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1934</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -2924,6 +2924,14 @@
     let raid = [];                // RAID log: risks / assumptions / issues / decisions / exclusions
     let nextRaidId = 1;
     let statusHistory = [];       // periodic snapshots: {date, pct, finish, p80, cost, over, openRisks}
+    /* THE COMMITTED FEATURE SET. The task baseline freezes effort, dates and
+       cost; none of those is what a client argues about. They argue about
+       features: how many stories, and how many acceptance criteria each one
+       grew. Effort can sit perfectly flat while a story quietly acquires four
+       more criteria, and that is the most expensive kind of scope creep
+       precisely because no number on this screen moved. So the story set is
+       frozen at the same moment, and by the same button. */
+    let reqsBaseline = null;      // { at, stories: [{id, ac: [ids], audience}] }
     let sowDraft = '';            // last generated SOW HTML
     let statusNarrative = null;   // {date, text} AI exec summary for the status report
     let pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 }; // bill-side settings
@@ -3725,7 +3733,7 @@
         weekendDays: [...weekendDays].sort().join(','),
         nextId,
         resources, reserves, baselineDate, levelMode, projectBudget,
-        raid, nextRaidId, statusHistory, sowDraft, statusNarrative, pricing,
+        raid, nextRaidId, statusHistory, sowDraft, statusNarrative, pricing, reqsBaseline,
         clientSafeReports, sowBaseline, reqs, sowUserEdited, coLog,
         collapsedIds: [...collapsedIds],
         tasks: tasks.map(t => ({
@@ -3809,6 +3817,12 @@
       raid = Array.isArray(data.raid) ? data.raid.map(r => Object.assign({ id: 0, type: 'Risk', title: '', description: '', probability: 3, impact: 3, owner: '', status: 'Open', mitigation: '', taskId: null, createdAt: '', links: null, v: 1 }, r)) : [];
       nextRaidId = data.nextRaidId || (Math.max(0, ...raid.map(r => r.id)) + 1);
       statusHistory = Array.isArray(data.statusHistory) ? data.statusHistory : [];
+      reqsBaseline = (data.reqsBaseline && Array.isArray(data.reqsBaseline.stories))
+        ? { at: String(data.reqsBaseline.at || ''),
+            stories: data.reqsBaseline.stories.map(s => ({ id: String(s.id),
+              audience: s.audience === 'client' ? 'client' : s.audience === 'internal' ? 'internal' : null,
+              ac: Array.isArray(s.ac) ? s.ac.map(String) : [] })) }
+        : null;
       sowDraft = typeof data.sowDraft === 'string' ? data.sowDraft : '';
       statusNarrative = (data.statusNarrative && data.statusNarrative.text) ? data.statusNarrative : null;
       pricing = Object.assign({ model: 'fixed', basis: 'p80', contractPrice: 0 }, data.pricing || {});
@@ -8212,13 +8226,83 @@
         t.baseCost = taskCost(t);
       });
       baselineDate = fmtISO(new Date());
+      // the feature set is committed at the same instant as the dates and the
+      // money — one button, one moment, or the two comparisons drift apart
+      reqsBaseline = {
+        at: baselineDate,
+        stories: (((reqs && reqs.stories) || [])).map(s => ({
+          id: String(s.id), audience: storyAudience(s),
+          ac: ((s.ac || []).map(a => String(a.id)))
+        }))
+      };
       saveLocal(); renderBaseline(); renderTaskTable(); renderGantt();
+      try { if (document.getElementById('view-req').classList.contains('active')) renderReqs(); } catch (e) {}
     }
     function clearBaseline() {
       if (!confirm('Clear the saved baseline?')) return;
       tasks.forEach(t => { t.baseStart = null; t.baseFinish = null; t.baseTe = null; t.baseCost = null; });
       baselineDate = '';
+      reqsBaseline = null;
       saveLocal(); renderBaseline(); renderTaskTable(); renderGantt();
+      try { if (document.getElementById('view-req').classList.contains('active')) renderReqs(); } catch (e) {}
+    }
+    /* What changed in the FEATURE SET since it was committed. Counted three
+       ways, because they are three different conversations with a client:
+       whole stories added, whole stories removed, and criteria added to a
+       story that was already agreed — the last one being the one that never
+       shows up as a new row anywhere. */
+    function featureScope() {
+      const now = ((reqs && reqs.stories) || []);
+      const out = { hb: !!(reqsBaseline && Array.isArray(reqsBaseline.stories)),
+        at: reqsBaseline ? reqsBaseline.at : '', nowStories: now.length,
+        nowAcs: now.reduce((n, s) => n + ((s.ac || []).length), 0),
+        baseStories: 0, baseAcs: 0, added: [], removed: [], grew: [], shrank: [],
+        addedAcs: 0, removedAcs: 0 };
+      if (!out.hb) return out;
+      const was = new Map(reqsBaseline.stories.map(s => [String(s.id), s]));
+      out.baseStories = was.size;
+      was.forEach(s => { out.baseAcs += (s.ac || []).length; });
+      now.forEach(s => {
+        const id = String(s.id), b = was.get(id);
+        const acNow = (s.ac || []).map(a => String(a.id));
+        if (!b) { out.added.push({ id: id, n: acNow.length, want: s.want || '' }); out.addedAcs += acNow.length; return; }
+        const acWas = new Set((b.ac || []).map(String));
+        const fresh = acNow.filter(x => !acWas.has(x));
+        const gone = (b.ac || []).map(String).filter(x => acNow.indexOf(x) < 0);
+        if (fresh.length) { out.grew.push({ id: id, n: fresh.length, want: s.want || '' }); out.addedAcs += fresh.length; }
+        if (gone.length) { out.shrank.push({ id: id, n: gone.length, want: s.want || '' }); out.removedAcs += gone.length; }
+      });
+      const live = new Set(now.map(s => String(s.id)));
+      was.forEach((b, id) => {
+        if (live.has(id)) return;
+        out.removed.push({ id: id, n: (b.ac || []).length });
+        out.removedAcs += (b.ac || []).length;
+      });
+      out.netStories = out.nowStories - out.baseStories;
+      out.netAcs = out.nowAcs - out.baseAcs;
+      out.pct = out.baseAcs > 0 ? out.netAcs / out.baseAcs * 100 : (out.nowAcs > 0 ? 100 : 0);
+      out.moved = !!(out.added.length || out.removed.length || out.grew.length || out.shrank.length);
+      return out;
+    }
+    // one sentence, shared by the Plan-truth scope row, the Requirements tab
+    // and the health check, so all three say the same thing
+    function featureScopeLine(f) {
+      if (!f.hb) return '';
+      if (!f.moved) return '<b>' + f.nowStories + '</b> ' + ptrPl(f.nowStories, 'story', 'stories') + ' and <b>'
+        + f.nowAcs + '</b> ' + ptrPl(f.nowAcs, 'criterion', 'criteria') + ' — exactly the set committed on '
+        + escapeHtml(f.at) + '.';
+      const bits = [];
+      if (f.added.length) bits.push('<b>' + f.added.length + '</b> new '
+        + ptrPl(f.added.length, 'story', 'stories') + ' (' + f.added.reduce((n, x) => n + x.n, 0) + ' criteria)');
+      if (f.grew.length) bits.push('<b>' + f.grew.reduce((n, x) => n + x.n, 0) + '</b> criteria added to '
+        + f.grew.length + ' ' + ptrPl(f.grew.length, 'story', 'stories') + ' that were already agreed');
+      if (f.removed.length) bits.push('<b>' + f.removed.length + '</b> '
+        + ptrPl(f.removed.length, 'story', 'stories') + ' dropped');
+      if (f.shrank.length) bits.push('<b>' + f.shrank.reduce((n, x) => n + x.n, 0) + '</b> criteria removed');
+      return 'Against the feature set committed on ' + escapeHtml(f.at) + ': ' + bits.join(', ')
+        + '. That is <b>' + f.baseAcs + ' → ' + f.nowAcs + '</b> acceptance criteria ('
+        + (f.netAcs > 0 ? '+' : f.netAcs < 0 ? '−' : '') + Math.abs(f.netAcs) + ', '
+        + (f.pct > 0 ? '+' : f.pct < 0 ? '−' : '') + Math.abs(Math.round(f.pct)) + '%).';
     }
     function hasBaseline() { return !!baselineDate && tasks.some(t => t.baseFinish); }
     // "Current" finish used for variance: actual finish if entered, else forecast.
@@ -8829,8 +8913,27 @@
           + (addedTc ? ', ' + (addedTc === added.length ? 'all' : addedTc + ' of them') + ' generated test cases' : ''));
         if (Math.abs(reEst) >= 0.05) bits.push('<b>' + ptrNum(reEst, u) + '</b> of re-estimates on work that '
           + 'was already agreed');
+        /* EFFORT IS NOT THE SCOPE CONVERSATION. The bar above measures the
+           effort you committed against the effort you now plan, which is the
+           thing that costs money. What a client argues about is FEATURES, and
+           the two can disagree in the most expensive way available: effort
+           flat, four new acceptance criteria absorbed into existing estimates.
+           Nothing on this panel moved, and you sold four criteria for nothing.
+           So the row states both, and says so out loud when they diverge. */
+        const fs2 = featureScope();
+        const featLine = featureScopeLine(fs2);
         scp.note = (bits.length ? bits.join(' plus ') + '.' : 'Effort is unchanged since the baseline was taken.')
+          + (featLine ? ' ' + featLine : '')
+          + (fs2.hb && fs2.netAcs > 0 && Math.abs(scp.pct) < 2
+              ? ' <b>The effort did not move and the feature set did</b> — those criteria were absorbed into '
+                + 'estimates that were written before they existed, which is the least visible way to give work away.'
+              : '')
           + (scp.unpriced ? ' <b>No change order has ever been raised</b> — this is scope you are building for free.' : '');
+        // scope grown in EITHER currency with nothing raised is unpriced work
+        if (!scp.unpriced && fs2.hb && fs2.netAcs > 0 && !(Array.isArray(coLog) && coLog.length)) {
+          scp.unpriced = true;
+          scp.softCta = { label: 'Raise a change order', act: "switchTab('raid')" };
+        }
         if (scp.unpriced) scp.softCta = { label: 'Raise a change order', act: "switchTab('raid')" };
       })();
 
@@ -12122,6 +12225,14 @@
         <div class="stat-card ${allWarns ? 'critical' : 'success'}" style="cursor:pointer" onclick="${allWarns ? `reqScrollTo('lintBanner')` : `void(0)`}" title="${allWarns ? 'Click for the lint findings and the one-click AI repair' : 'INVEST/testability lint is clean: every story has error/edge paths, real personas, measurable criteria'}"><div class="value">${allWarns}</div><div class="label">Lint warnings</div></div>
         ${(() => { const tcs = tasks.filter(isTestCaseTask); const shallow = tcs.filter(t => !hasRealSteps(t)).length; return `<div class="stat-card ${shallow ? 'warn' : ''}" style="cursor:pointer" onclick="reqScrollTo('tcListPanel', true)" title="${tcs.length ? 'Click for the full on-screen test-case sheet — steps, pass conditions, owners, schedule' + (shallow ? ' (⚠ ' + shallow + ' shallow — re-run 🧪 Generate test plan)' : '') : 'No test cases yet — 🧪 Generate test plan creates one per UAT-testable criterion'}"><div class="value">${tcs.length}</div><div class="label">${ekMark('tc', { xs: true })}Test cases</div></div>`; })()}
       </div>`;
+      /* The committed feature set, stated where the features live. The tiles
+         above count what exists NOW; without this line there is nowhere in the
+         product that says what was agreed, and "we added three criteria" is a
+         thing you can only know by remembering it. */
+      const fsReq = featureScope();
+      const fsBanner = !fsReq.hb
+        ? `<p class="help-text" style="margin:-0.5rem 0 1rem">No feature set is committed yet — <b>📌 Set baseline</b> on Plan vs actual freezes the current ${stories.length} stor${stories.length === 1 ? 'y' : 'ies'} and ${acCount} criteri${acCount === 1 ? 'on' : 'a'} as the agreed scope, and everything added after that becomes visible as a change instead of a memory.</p>`
+        : `<div class="${fsReq.netAcs > 0 ? 'pa-lock' : ''}" style="margin:-0.5rem 0 1rem;font-size:var(--t-sm);line-height:1.55;${fsReq.netAcs > 0 ? '' : 'color:var(--muted)'}">${fsReq.netAcs > 0 ? '⚑ ' : ''}${featureScopeLine(fsReq)}${fsReq.netAcs > 0 && !(Array.isArray(coLog) && coLog.length) ? ' <button class="btn-sm btn-secondary no-print" onclick="switchTab(\'sow\')" title="Price the added criteria as a change order">Raise a change order</button>' : ''}</div>`;
       let rowPersonas = '';
       if (reqs.personas && (reqs.personas.length || (reqs.stories || []).length)) {
         // glossary hygiene: personas must be who USES/ACCEPTS the capability —
@@ -12411,7 +12522,7 @@
       epics.forEach(ep => { html += epicBlock(ep.id, ep.title, ep.businessNeed); });
       const leftovers = stories.filter(s => !rendered.has(s.id));
       if (leftovers.length) html += `<div style="margin-bottom:1.1rem"><h3 style="font-size:0.95rem;margin:0 0 0.5rem">${ekMark('ep', { cls: 'ek--new', tip: 'Stories with no epic — group them in the story editor (✎).' })}Ungrouped stories <span class="help-text">(${leftovers.length})</span></h3><div class="story-grid">${leftovers.map(s => storyCardHtml(s, idToTask, typeIcon, typeTip)).join('')}</div></div>`;
-      cont.innerHTML = tiles
+      cont.innerHTML = tiles + fsBanner
         + `<div id="reqStoriesView" class="req-view${reqView === 'stories' ? ' active' : ''}" data-view="stories" role="region" aria-label="Stories workflow">`
         + html + `</div>`
         + traceView + tcView;
@@ -15886,6 +15997,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         else if (!tasks.some(c => c.parentId === t.id) && !t.milestone) t.audience = 'internal';  // storyless leaf = process work
       });
       statusHistory = []; sowDraft = ''; statusNarrative = null; healthFindings = null; coLog = []; sowBaseline = null; coDraft = '';
+      reqsBaseline = null;
       pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 };
       reserves = { contingency: { value: 10, unit: 'percent' }, management: { value: 5, unit: 'percent' } };
       baselineDate = ''; collapsedIds = new Set(); levelMode = 'none'; projectBudget = 0; calculated = false;
@@ -20595,6 +20707,31 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       // above stops new occurrences; this finds the ones already in the file,
       // because silently ignoring a stored number is how it went missing in the
       // first place.
+      (() => {
+        const f = featureScope();
+        if (!f.hb || !f.moved) return;
+        const grewN = f.grew.reduce((n, x) => n + x.n, 0);
+        if (f.netAcs > 0 && !(Array.isArray(coLog) && coLog.length)) {
+          findings.push({ severity: f.netAcs >= Math.max(3, f.baseAcs * 0.1) ? 'high' : 'medium',
+            area: 'Feature scope',
+            finding: 'The committed feature set has grown from ' + f.baseAcs + ' to ' + f.nowAcs
+              + ' acceptance criteria since ' + f.at + ' ('
+              + (f.added.length ? f.added.length + ' new stor' + (f.added.length === 1 ? 'y' : 'ies') : '')
+              + (f.added.length && grewN ? '; ' : '')
+              + (grewN ? grewN + ' criteria added to stories that were already agreed' : '')
+              + ') and no change order has been raised.',
+            recommendation: 'Raise a change order for the added criteria, or record them as absorbed with a reason. '
+              + 'Criteria added to an EXISTING story are the ones to check first — they never appear as a new row, '
+              + 'so they are usually absorbed into an estimate written before they existed.' });
+        }
+        if (f.removed.length) findings.push({ severity: 'medium', area: 'Feature scope',
+          finding: f.removed.length + ' stor' + (f.removed.length === 1 ? 'y' : 'ies')
+            + ' committed on ' + f.at + ' ' + (f.removed.length === 1 ? 'is' : 'are') + ' no longer in the plan: '
+            + f.removed.slice(0, 4).map(x => x.id).join(', ') + (f.removed.length > 4 ? ' …' : '') + '.',
+          recommendation: 'If they were descoped, that belongs in a change order too — a client who is billed for '
+            + 'the original scope will ask where they went. If they were renumbered rather than dropped, re-baseline '
+            + 'so the committed set matches what you are actually delivering.' });
+      })();
       const chained = tcChainedList();
       if (chained.length) findings.push({ severity: 'medium', area: 'Test plan',
         finding: chained.length + ' test case(s) depend on another test case — '
