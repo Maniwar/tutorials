@@ -400,6 +400,40 @@
        this tab, whose percentile markers are absolutely positioned at left:X%.
        Prefix `ptr-` is deliberately three characters so it cannot be confused at
        a glance with the activity editor's `.pa-` family (504-542). */
+    /* .tx- — activity work type. A SET tag is solid; an INFERRED or AI-proposed
+       one is dashed, muted and prefixed "~". A tag that feeds an estimate
+       multiplier must never LOOK decided when it was guessed — this is the
+       affordance `audience` has never had (grep for it between renderTaskTable's
+       bounds returns nothing), and a large part of why `audience` went unused.
+       The chip lives INSIDE the existing Activity name cell beside the ◆ marker
+       and the collapsed-children (N) count, so no column is added and none of
+       the six index-keyed table rules move: nth-child(n+6):nth-child(-n+9)
+       right-align, nth-child(13) slack, nth-child(15) status min-width,
+       nth-child(-n+2) width, td:nth-child(4) min-width, and the two mobile
+       blocks. The hand-counted 16 <td>s in the PROJECT TOTAL row also stay correct. */
+    .tx-chip { display: inline-block; margin-left: 5px; padding: 0 5px; border-radius: 999px;
+      font-size: var(--t-xs); font-weight: 700; line-height: 1.5; white-space: nowrap;
+      vertical-align: middle; cursor: help;
+      background: var(--primary-50); border: 1px solid var(--primary-200); color: var(--primary-700); }
+    .tx-chip.tx-inf { background: transparent; border-style: dashed; border-color: var(--border);
+      color: var(--muted); font-weight: 600; }
+    /* an inferred tag is a working note; a printed plan may reach a client */
+    @media print { .tx-chip.tx-inf { display: none; } }
+    /* the chip is the first thing to give up when the name column is squeezed */
+    @media (max-width: 768px), (pointer: coarse) { .tx-chip { display: none; } }
+
+    /* .tl- — team library sync review. The direction tag is the whole safety
+       story in one word per row, and `conflict` must never look like a state
+       the app resolved on its own. */
+    .tl-tag { display: inline-block; padding: 0 5px; border-radius: 4px; font-size: var(--t-xs);
+      font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; cursor: help; white-space: nowrap; }
+    .tl-push     { background: #eff6ff; border: 1px solid var(--primary-200); color: var(--primary-700); }
+    .tl-pull     { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
+    .tl-conflict { background: #fffbeb; border: 1px solid #fde68a; color: #b45309; }
+    .tl-local    { background: #f5f3ff; border: 1px solid #ddd6fe; color: #6d28d9; }
+    .tl-new      { background: #f8fafc; border: 1px solid var(--border); color: var(--muted); }
+    @media (max-width: 760px) { #tlPanel table { font-size: var(--t-xs); } }
+
     .ptr-wrap { font-size: var(--t-base); }
     .ptr-blank { color: var(--muted); font-size: var(--t-base); line-height: 1.5; padding: 0.3rem 0; }
     .ptr-lead { display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem;
@@ -1856,6 +1890,7 @@
             <div style="display:flex;gap:0.8rem;flex-wrap:wrap;align-items:center;font-size:0.8rem">
               <strong id="bulkCount" style="white-space:nowrap"></strong>
               <span style="display:inline-flex;gap:4px;align-items:center" title="Assign one owner to every selected task">Owner <select id="bulkOwner" class="mini-inp" style="width:auto;max-width:150px"></select><button class="btn-sm btn-secondary" onclick="bulkSetOwner()">Set</button></span>
+              <span style="display:inline-flex;gap:4px;align-items:center" title="Pin one work type on every selected activity — the dimension your estimate bank groups by. Ticking a phase already selects everything under it, so this tags a whole phase in one go. Phases are included; test cases are skipped (they are always Test &amp; QA). ↶ Undo reverses the whole batch.">🏷 Work type <select id="bulkTaxonomy" class="mini-inp" style="width:auto;max-width:190px"></select><button class="btn-sm btn-secondary" onclick="bulkSetTaxonomy()">Set</button></span>
               <span style="display:inline-flex;gap:4px;align-items:center" title="Allocation % for every selected task (100 = full-time)">Units <input id="bulkUnits" type="number" min="1" max="400" value="100" class="mini-inp" style="width:60px" /><button class="btn-sm btn-secondary" onclick="bulkSetUnits()">Set</button></span>
               <span style="display:inline-flex;gap:4px;align-items:center" title="Progress % for every selected task — rollups recompute">% done <input id="bulkPct" type="number" min="0" max="100" value="100" class="mini-inp" style="width:60px" /><button class="btn-sm btn-secondary" onclick="bulkSetPct()">Set</button></span>
               <span style="display:inline-flex;gap:4px;align-items:center" title="Multiply O, M and P of every selected task — 1.2 adds 20% across the board, 0.8 tightens by 20%">Estimates × <input id="bulkScale" type="number" step="0.05" min="0.1" value="1.2" class="mini-inp" style="width:64px" /><button class="btn-sm btn-secondary" onclick="bulkScaleEst()">Apply</button></span>
@@ -2313,7 +2348,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0536</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0614</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -2367,6 +2402,11 @@
         <div class="form-group" style="max-width:26rem">
           <span class="fg-head"><label for="mAudience">Activity type</label><button type="button" class="info-icon" aria-label="About activity type" data-help="Client-facing = builds a capability the client accepts and is billed for; it should trace to a user story, so it counts toward coverage. Internal / process = delivery-side work (kickoff, PM, our own test execution) — real, billable effort, but it needs no client story, so traceability never flags it as a gap. Auto infers it from the activity name.">i</button></span>
           <select id="mAudience"><option value="">Auto (from activity name)</option><option value="client">Client-facing (needs a story)</option><option value="internal">Internal / process (no story needed)</option></select>
+        </div>
+        <div class="form-group" style="max-width:26rem">
+          <span class="fg-head"><label for="mTaxonomy">Work type</label><button type="button" class="info-icon" aria-label="About work type" data-help="NOT the same as Activity type above — that one decides whether this activity needs a user story. This is WHAT KIND of delivery work it is, from a fixed list of five, and it is the dimension your estimate bank groups by. After a few archived engagements the AI can be told that data migration runs 1.6x your estimate while governance runs 1.0x, which is impossible today because nothing records that two projects both contained data migration. Left on Auto it is read from the activity name EVERY time — nothing is stored, and it re-reads itself if you rename the activity. An inferred work type shows as a dashed ~chip in the activity table; one you set here shows solid and always wins. Only five types exist on purpose: a bucket needs about five measured activities before its number means anything, so a longer list would leave every bucket permanently below that bar.">i</button></span>
+          <select id="mTaxonomy"></select>
+          <span class="help-text" id="mTaxonomyHint" style="margin-top:0.25rem"></span>
         </div>
         <div class="form-group" id="attGroup">
           <label>Additional attendees</label><button type="button" class="info-icon" aria-label="About Additional attendees" data-help="For sessions/workshops with several people at once. Each attendee loads their own calendar, cost and billing (client-type resources bill nothing).">i</button>
@@ -2625,7 +2665,7 @@
         owner: '', units: 100, attendees: [], levelDelay: 0, percentComplete: 0, predecessors: [],
         startNoEarlier: '', deadline: '', jira: '', autoActualStart: false, autoActualFinish: false,
         parentId: null, description: '', deliverable: '', acceptance: '',
-        actualStart: '', actualFinish: '', actualEffort: null, fixedCost: 0, actualCost: 0, autoActualCost: true, audience: null,
+        actualStart: '', actualFinish: '', actualEffort: null, fixedCost: 0, actualCost: 0, autoActualCost: true, audience: null, taxonomy: null, taxSrc: null,
         baseStart: null, baseFinish: null, baseTe: null, baseCost: null,
         te: 0, variance: 0, es: 0, ef: 0, ls: 0, lf: 0, slack: 0, wbs: '', isSummary: false,
         isCritical: false, criticality: 0, startDate: null, finishDate: null, overallocated: false
@@ -3192,6 +3232,7 @@
           parentId: t.parentId, description: t.description, deliverable: t.deliverable,
           acceptance: t.acceptance, actualStart: t.actualStart, actualFinish: t.actualFinish, actualEffort: (t.actualEffort == null ? null : t.actualEffort),
           fixedCost: t.fixedCost || 0, actualCost: t.actualCost || 0, autoActualCost: t.autoActualCost !== false, audience: t.audience || null,
+          taxonomy: t.taxonomy || null, taxSrc: (t.taxSrc === 'ai' ? 'ai' : null),
           baseStart: t.baseStart ? fmtISO(new Date(t.baseStart)) : null,
           baseFinish: t.baseFinish ? fmtISO(new Date(t.baseFinish)) : null,
           baseTe: t.baseTe, baseCost: (t.baseCost == null ? null : t.baseCost),
@@ -3227,6 +3268,11 @@
         jira: String(t.jira || '').trim(),
         deadline: /^\d{4}-\d{2}-\d{2}$/.test(t.deadline || '') ? t.deadline : '',
         fixedCost: Number(t.fixedCost) || 0, actualCost: Number(t.actualCost) || 0, autoActualCost: t.autoActualCost !== false, audience: (t.audience === 'client' || t.audience === 'internal') ? t.audience : null,
+        taxonomy: taxCoerce(t.taxonomy), taxSrc: (t.taxSrc === 'ai' ? 'ai' : null),
+/* TDZ note: hydrate() references taxCoerce, declared ~7500 lines later in source
+   order. Safe — hydrate only RUNS from init/loadLocal/import, long after the
+   script body has finished evaluating. The resolver lives beside the other
+   classifiers because that is where it belongs. */
         baseStart: t.baseStart ? new Date(t.baseStart + 'T00:00:00') : null,
         baseFinish: t.baseFinish ? new Date(t.baseFinish + 'T00:00:00') : null,
         baseTe: (t.baseTe == null ? null : Number(t.baseTe)),
@@ -3835,6 +3881,7 @@
       paSetChip('start', false); paSetChip('finish', false); paNote('');
       refreshAutoActualCost();
       document.getElementById('mAudience').value = '';
+      document.getElementById('mTaxonomy').innerHTML = taxOptionsHtml(''); taxHint(null);
       populateOwnerList();
       modalRefMap = buildTaskDatalist('predDatalist', t => true);
       modalParentMap = buildTaskDatalist('parentDatalist', t => !t.milestone);
@@ -3967,6 +4014,7 @@
       paSetChip('start', mAutoStamp.start); paSetChip('finish', mAutoStamp.finish); paNote('');
       refreshAutoActualCost();
       document.getElementById('mAudience').value = (t.audience === 'client' || t.audience === 'internal') ? t.audience : '';
+      document.getElementById('mTaxonomy').innerHTML = taxOptionsHtml(taxCoerce(t.taxonomy) || ''); taxHint(t);
       document.getElementById('mJira').value = t.jira || '';
       populateOwnerList();
       // only offer predecessors that can validly come before this task: not itself,
@@ -4273,7 +4321,7 @@
       }
       const finalPreds = Object.values(seen).filter(pr => pr.id !== editingId);
 
-      const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, actualCost, actualEffort, autoActualCost: !mActualCostManual, audience: (v => (v === 'client' || v === 'internal') ? v : null)(document.getElementById('mAudience').value), percentComplete: pct, predecessors: finalPreds, jira: document.getElementById('mJira').value.trim(),
+      const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, actualCost, actualEffort, autoActualCost: !mActualCostManual, audience: (v => (v === 'client' || v === 'internal') ? v : null)(document.getElementById('mAudience').value), taxonomy: taxCoerce(document.getElementById('mTaxonomy').value), taxSrc: null, percentComplete: pct, predecessors: finalPreds, jira: document.getElementById('mJira').value.trim(),
         parentId, description, deliverable, acceptance, actualStart, actualFinish,
         // the panel owns these: a date IT filled in stays flagged auto (so dropping
         // below 100% can still clear it), a date the user typed or edited is manual
@@ -5147,7 +5195,7 @@
         const twisty = summary
           ? `<button class="wbs-twisty" onclick="toggleCollapse(${t.id})" title="${collapsedIds.has(t.id) ? 'Expand' : 'Collapse'}">${collapsedIds.has(t.id) ? '▸' : '▾'}</button>`
           : '<span class="wbs-twisty-spacer"></span>';
-        const nameCell = `<span style="display:inline-flex;align-items:center;padding-left:${depth * 16}px">${twisty}${t.milestone ? '◆ ' : ''}<span style="cursor:text" onclick="beginNameEdit(${t.id}, this, event)" title="Click to rename right here — everything traced to this activity follows (linked stories are offered an AI refresh)">${escapeHtml(t.milestone ? t.name.replace(/^◆\s*/, '') : t.name)}</span>${collapsedIds.has(t.id) ? ` <span class="help-text" style="font-size:0.68rem;margin-left:4px">(${leafDescendants(t.id).length})</span>` : ''}</span>`;
+        const nameCell = `<span style="display:inline-flex;align-items:center;padding-left:${depth * 16}px">${twisty}${t.milestone ? '◆ ' : ''}<span style="cursor:text" onclick="beginNameEdit(${t.id}, this, event)" title="Click to rename right here — everything traced to this activity follows (linked stories are offered an AI refresh)">${escapeHtml(t.milestone ? t.name.replace(/^◆\s*/, '') : t.name)}</span>${collapsedIds.has(t.id) ? ` <span class="help-text" style="font-size:0.68rem;margin-left:4px">(${leafDescendants(t.id).length})</span>` : ''}${taxChip(t)}</span>`;
         const pctCell = summary
           ? `<span title="Rolled up automatically from sub-tasks, weighted by expected duration (TE) — check off the children and this updates itself">${calculated ? (t.percentComplete || 0) + '%' : '—'} <span class="help-text" style="font-size:0.65rem">auto</span></span>`
           : (t.milestone && effectivePreds(t).length)
@@ -5241,6 +5289,13 @@
       const keepO = ownerSel.value;
       ownerSel.innerHTML = '<option value="">(clear owner)</option>' + Object.keys(resources).sort().map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('');
       if ([...ownerSel.options].some(o => o.value === keepO)) ownerSel.value = keepO;
+      const taxSel = document.getElementById('bulkTaxonomy');
+      if (taxSel) {
+        const keepT = taxSel.value;
+        taxSel.innerHTML = '<option value="">(clear → back to auto)</option>'
+          + TAXONOMY.map(c => `<option value="${c.id}">${escapeHtml(c.label)}</option>`).join('');
+        if ([...taxSel.options].some(o => o.value === keepT)) taxSel.value = keepT;
+      }
       const parSel = document.getElementById('bulkParent');
       const keepP = parSel.value;
       computeWbsCodes();
@@ -5261,6 +5316,29 @@
       selectedTasks().forEach(t => { if (!t.isSummary) { t.owner = v; n++; } });
       if (v) syncResources();
       bulkApplyDone('👤 Owner ' + (v ? 'set to ' + v : 'cleared') + ' on ' + n + ' task(s)');
+    }
+    // Near-copy of bulkSetOwner. Eligibility, decided explicitly:
+    //  · SUMMARIES IN — audience allows them (saveActivity's strip list omits
+    //    it) and a phase called "Data migration" tagged data is meaningful.
+    //    Summaries never reach the bank (bankRowsFromPlan walks leafTasks), so
+    //    this is display plus decompose inheritance only.
+    //  · TEST CASES OUT — they resolve to `test` structurally, and tagging 200
+    //    generated TCs by hand is exactly what the audience code refused to do.
+    //    Reported as skipped, not silently dropped.
+    // Undo works because bulkApplyDone -> saveLocal -> trackUndo -> serialize,
+    // and taxonomy/taxSrc are in serialize (T2) AND hydrate (T3). Miss either
+    // and "↶ Undo reverses the whole batch" becomes a lie for a 40-row tag.
+    function bulkSetTaxonomy() {
+      const raw = document.getElementById('bulkTaxonomy').value;
+      const v = taxCoerce(raw);
+      if (raw && !v) { alert('Pick a work type, or “(clear → back to auto)”.'); return; }
+      let n = 0, skipped = 0;
+      selectedTasks().forEach(t => {
+        if (isTestCaseTask(t)) { skipped++; return; }
+        t.taxonomy = v; t.taxSrc = null; n++;
+      });
+      bulkApplyDone('🏷 Work type ' + (v ? 'set to “' + taxLabel(v) + '”' : 'cleared (back to auto)') + ' on ' + n + ' activity(ies)'
+        + (skipped ? ' — ' + skipped + ' test case(s) skipped (always Test & QA)' : ''));
     }
     function bulkSetUnits() {
       const v = Math.max(1, Math.min(400, parseFloat(document.getElementById('bulkUnits').value) || 100));
@@ -10905,6 +10983,112 @@
       return taskNameIsProcess(t) ? 'internal' : 'client';
     }
     function isInternalActivity(t) { return activityAudience(t) === 'internal'; }
+    // ---- ACTIVITY WORK TYPE ------------------------------------------------
+    // FIVE ids, frozen in source. Not a store: there is nothing to curate, no
+    // browser-local id to dangle on export, and therefore nothing the team
+    // library can be a prerequisite for.
+    // WHY FIVE. bankCalibration reports a bucket only once it holds enough
+    // LOGGED rows, and one engagement contributes 10-25 of those. Simulated on
+    // realistic skew, an 8-bucket table mis-orders an adjacent 1.45x-vs-1.20x
+    // pair 12% of the time even at 10 projects, and 30% at 3 — so most of an
+    // 8-bucket table would be noise the model is told to act on. These five are
+    // the regimes that are actually separated: data and integration over-run,
+    // test under-estimates, govern is level-of-effort and near 1.0 (the control
+    // that makes the others credible), and everything else is one honest
+    // residual whose LABEL names what it contains rather than pretending.
+    // ORDER IS POLICY, first match wins: the SUBJECT of the work predicts the
+    // ratio better than the verb, so "Configure SSO" must land on integration.
+    // `delivery` is last and broad — and because it is the residual there is no
+    // separate "build" pattern sitting mid-list to swallow governance,
+    // integration and configuration work.
+    const TAXONOMY = [
+      { id: 'data', label: 'Data & migration', short: 'data',
+        re: /\bdata\b|migrat|\betl\b|cleans|de-?dup|dedup|reconcil|master data|golden record|dataset|data load|load data|extraction|data conversion/i },
+      { id: 'integration', label: 'Integration & interfaces', short: 'integration',
+        re: /integrat|interfac|\bapis?\b|middleware|connector|webhook|\bsso\b|single sign|inbound|outbound|message queue|\besb\b|\bftp\b|endpoint|\bfeeds?\b/i },
+      { id: 'test', label: 'Test & QA', short: 'test',
+        re: /\btest|\bqa\b|\buat\b|defect|\bbugs?\b|regression|smoke|penetration|validat|verif/i },
+      { id: 'govern', label: 'Manage & govern', short: 'govern',
+        re: /project management|program(me)? management|governance|\bpmo\b|status report|progress report|steering|\braid\b|change control|kick[\s-]?off|stand[\s-]?up|stage gate|lessons learned|project clos|mobilis|mobiliz|sign[\s-]?off|\bapprov/i },
+      { id: 'delivery', label: 'Delivery (discovery, design, build, enablement)', short: 'delivery',
+        re: /build|develop|configur|customi[sz]|implement|\bcode\b|script|workflow|automation|extension|plugin|\bset ?up\b|provision|install|design|architect|blueprint|wirefram|prototype|specification|discover|requirement|elicit|workshop|interview|as[\s-]?is|to[\s-]?be|fit[\s-]?gap|assess|analys|analyz|scoping|train|enablement|adoption|documentation|user guide|runbook|cutover|go[\s-]?live|hypercare|handover|handoff|deploy|releas|rollout|dashboard|\breport\b|module|feature|screen|portal/i }
+    ];
+    const TAX_IDS = TAXONOMY.map(x => x.id);
+    const TAX_BY_ID = {}; TAXONOMY.forEach(x => { TAX_BY_ID[x.id] = x; });
+    // A bucket's median only means anything once it has a few measurements in
+    // it. 2 is enough to STOP HIDING a bucket in the UI; it is nowhere near
+    // enough to put a multiplier in front of the model. Hence two gates.
+    const TAX_MIN_N = 5;
+    function taxCoerce(v) {
+      const s = String(v == null ? '' : v).trim().toLowerCase();
+      return TAX_IDS.indexOf(s) >= 0 ? s : null;
+    }
+    function taxLabel(id) { return (TAX_BY_ID[id] || {}).label || ''; }
+    // renderTaskTable resolves a type for every row; memoise by name. The
+    // vocabulary is a constant, so this cache never needs invalidating — a
+    // renamed task simply produces a new key.
+    const _taxInfer = new Map();
+    function inferTaxonomy(name) {
+      const nm = String(name || '');
+      if (!nm) return '';
+      if (_taxInfer.has(nm)) return _taxInfer.get(nm);
+      let hit = '';
+      for (let i = 0; i < TAXONOMY.length; i++) { if (TAXONOMY[i].re.test(nm)) { hit = TAXONOMY[i].id; break; } }
+      if (_taxInfer.size > 4000) _taxInfer.clear();
+      _taxInfer.set(nm, hit);
+      return hit;
+    }
+    // THE resolver. Nothing reads t.taxonomy directly except the five writers.
+    // INFERENCE IS NEVER STORED — it runs on read, every time. That is what
+    // makes an existing plan fully tagged the moment this code loads with
+    // nothing migrated, nothing written and nothing to undo, and it re-runs
+    // after a rename instead of going stale.
+    // Note what it does NOT do: activityAudience ends with a hard
+    // `return taskNameIsProcess(t) ? 'internal' : 'client'` — a guess presented
+    // as a fact. Harmless when it only gates a coverage count; wrong when it
+    // feeds a median that raises every future estimate. So a name that matches
+    // nothing resolves to '' and is dropped, not defaulted into a bucket.
+    function taxonomyOf(t) {
+      if (!t) return { id: '', label: '', src: '' };
+      const stored = taxCoerce(t.taxonomy);
+      if (stored) return { id: stored, label: taxLabel(stored), src: (t.taxSrc === 'ai' ? 'ai' : 'user') };
+      // a "TC …" row is test work by construction — a fact about the row, not a
+      // guess about its name. Same shape as activityAudience letting a test case
+      // follow its story rather than the regex.
+      if (isTestCaseTask(t)) return { id: 'test', label: taxLabel('test'), src: 'kind' };
+      const inf = inferTaxonomy(t.name);
+      return inf ? { id: inf, label: taxLabel(inf), src: 'auto' } : { id: '', label: '', src: '' };
+    }
+    function activityTaxonomy(t) { return taxonomyOf(t).id; }
+    function taxIsInferred(src) { return src === 'auto' || src === 'ai' || src === 'kind'; }
+    function taxOptionsHtml(sel) {
+      return '<option value="">Auto (from the activity name)</option>'
+        + TAXONOMY.map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${escapeHtml(c.label)}</option>`).join('');
+    }
+    // the visible-inference promise, kept on every row at once
+    function taxChip(t) {
+      const g = taxonomyOf(t);
+      if (!g.id || g.src === 'kind') return '';   // TC rows are already obvious
+      const inf = taxIsInferred(g.src);
+      const tip = g.src === 'ai'
+        ? 'AI-proposed work type: ' + g.label + '. Stored, but no person has reviewed it — open the activity, or select rows ▸ 🏷 Work type ▸ Set, to confirm.'
+        : inf
+          ? 'INFERRED from the activity name: ' + g.label + '. Nothing is stored, so it re-reads itself if you rename the activity. Set it explicitly to pin it.'
+          : 'Work type set by hand: ' + g.label + '.';
+      return ` <span class="tx-chip${inf ? ' tx-inf' : ''}" title="${escapeHtml(tip + ' This is the dimension your estimate bank groups by.')}">${inf ? '~' : ''}${escapeHtml(TAX_BY_ID[g.id].short)}</span>`;
+    }
+    // says out loud what "Auto" currently resolves to, so the user can see the
+    // decision they are about to accept by not changing it
+    function taxHint(t) {
+      const el = document.getElementById('mTaxonomyHint'); if (!el) return;
+      if (!t) { el.textContent = 'Leave on Auto unless it reads wrong — Auto is re-read every time, so it follows renames.'; return; }
+      const g = taxonomyOf(t);
+      el.textContent = g.src === 'user' ? '✓ Set by hand — this beats the name, and re-reading never overwrites it.'
+        : g.src === 'ai' ? '~ AI-proposed “' + g.label + '” — pick it above to confirm, or change it.'
+        : g.src === 'kind' ? 'Test case — always Test & QA. Test cases are left out of work-type calibration; they are already reported separately as “test-case”.'
+        : g.src === 'auto' ? 'Auto → “' + g.label + '” from the name. Nothing is stored; rename the activity and it re-infers.'
+        : 'Auto → nothing in the name matched, so this activity is untagged and stays out of every work-type bucket.';
+    }
     function isProcessStory(story) {
       // authoritative: the AI classifies verification at draft time
       if (story && story.verification === 'artifact') return true;
@@ -12912,7 +13096,8 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           isSum ? '' : (t.attendees || []).map(a => a.name + (a.units !== 100 ? '@' + a.units : '')).join(', '),
           isSum ? '' : fmtDurCell(t.o), isSum ? '' : fmtDurCell(t.m), isSum ? '' : fmtDurCell(t.p), isSum ? '' : (t.percentComplete || 0), t.fixedCost || 0,
           predText(t), t.startNoEarlier || '', t.deadline || '', t.deliverable || '', t.description || '', t.acceptance || '',
-          t.actualStart || '', t.actualFinish || '', t.jira || '']);
+          t.actualStart || '', t.actualFinish || '', t.jira || '',
+          (taxCoerce(t.taxonomy) || (taxonomyOf(t).id ? '~' + taxonomyOf(t).id : ''))]);
       });
       dlCsv('-activities-editable.csv', rows);
     }
@@ -13111,6 +13296,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         if (cell(c.acc) || t.acceptance) t.acceptance = cell(c.acc);
         t.fixedCost = numOf(c.fixed, t.fixedCost || 0);
         if (c.jira >= 0 && (cell(c.jira) || t.jira)) t.jira = cell(c.jira);
+        if (c.tax >= 0) { t.taxonomy = taxCoerce(cell(c.tax)); t.taxSrc = null; }
         if (!isSum) { // phases roll up — their own estimate/owner/% are display-only
           t.milestone = isMs;
           // untouched compact cells ("10m", "1.33") keep the exact stored value — no drift on a no-op round trip
@@ -14139,6 +14325,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         if (t.milestone) return;
         const days = actualEffortDays(t);
         if (days == null) return;                      // no actual → nothing to learn from
+        const tx = taxonomyOf(t);
         const est = t.te || 0;
         const act = workingDaysToUnit(days);
         out.push({
@@ -14149,6 +14336,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           proj: pj, at: when, unit: u,
           wbs: t.wbs || '', name: t.name,
           kind: isTestCaseTask(t) ? 'test-case' : 'work-package',
+          tax: tx.id, taxSrc: tx.src,
           audience: activityAudience(t),
           owner: t.owner || '', role: ((resources[(t.owner || '').trim()] || {}).role || ''),
           o: t.o, m: t.m, p: t.p, te: +est.toFixed(3),
@@ -14226,19 +14414,35 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       const medianOf = sorted => sorted.length % 2
         ? sorted[(sorted.length - 1) / 2]
         : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
-      const group = (keyFn) => {
-        const g = {};
-        rows.forEach(r => { const k = keyFn(r) || '(unspecified)'; (g[k] = g[k] || []).push(r.ratio); });
-        return Object.entries(g).filter(([, v]) => v.length >= 2).map(([k, v]) => {
+      /* opts.rows narrows the population, opts.minN raises the reporting bar —
+         both needed now that the bank is sliced by work type as well as by kind
+         and role. A falsy key is DROPPED rather than bucketed as
+         "(unspecified)": a bucket meaning "we could not classify this" is not
+         something a model can act on, and on a plan where the tagger recognises
+         few names it would be the largest line in the table. The bias this
+         function used to carry — the upper-middle value standing in for a median
+         — mattered little at n≈46 and matters enormously once buckets fall to
+         n=5, which is exactly where slicing puts them. */
+      const group = (keyFn, opts) => {
+        opts = opts || {};
+        const src = opts.rows || rows, minN = opts.minN || 2, g = {};
+        src.forEach(r => { const k = keyFn(r); if (!k) return; (g[k] = g[k] || []).push(r.ratio); });
+        return Object.entries(g).filter(([, v]) => v.length >= minN).map(([k, v]) => {
           const sorted = v.slice().sort((a, b) => a - b);
           return { k, n: v.length, median: +medianOf(sorted).toFixed(2), min: +sorted[0].toFixed(2), max: +sorted[sorted.length - 1].toFixed(2) };
         }).sort((a, b) => b.n - a.n);
       };
       const all = rows.map(r => r.ratio).sort((a, b) => a - b);
+      const wpRows = rows.filter(r => r.kind !== 'test-case' && r.tax);
+      const wpUser = wpRows.filter(r => r.taxSrc === 'user').length;
       return {
         n: rows.length,
         overall: +medianOf(all).toFixed(2),
         byKind: group(r => r.kind),
+        byTax: group(r => taxLabel(r.tax), { rows: wpRows, minN: TAX_MIN_N }),
+        byTaxUi: group(r => taxLabel(r.tax), { rows: wpRows, minN: 1 }),
+        byAud: group(r => r.audience, { minN: TAX_MIN_N }),
+        taxUserPct: wpRows.length ? Math.round(100 * wpUser / wpRows.length) : 0,
         byRole: group(r => r.role || r.owner).slice(0, 8),
         projects: [...new Set(rows.map(r => r.proj))].length
       };
@@ -14249,15 +14453,17 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       const line = x => `${x.k}: median ${x.median}× (n=${x.n}, range ${x.min}–${x.max})`;
       return `\nMEASURED ESTIMATE ACCURACY (from ${c.n} completed activities across ${c.projects} of the user's own past project(s); ratio = actual effort ÷ estimated TE, so 1.3 means work ran 30% over estimate):
 Overall median ratio: ${c.overall}×.
-By activity kind — ${c.byKind.map(line).join(' | ') || 'not enough data'}.
+By activity kind — ${c.byKind.map(line).join(' | ') || 'not enough data'}.${c.byTax.length ? `
+By work type — ${c.byTax.map(line).join(' | ')}. Work type is a five-way tag on each activity (data & migration / integration & interfaces / test & QA / manage & govern / delivery), measured on work packages only — test cases are the separate "test-case" line above. ${c.taxUserPct}% of these rows were tagged by hand and the rest were read from the activity name, so treat any bucket under n=10 as directional.` : ''}${c.byAud.length ? `
+By client-facing vs internal — ${c.byAud.map(line).join(' | ')}. NOTE: this split is derived from the activity NAME by a keyword rule, not set by a person — use it as a weak signal only.` : ''}
 By role — ${c.byRole.map(line).join(' | ') || 'not enough data'}.
-Apply these as a calibration factor on comparable work: if a kind or role runs consistently over, raise the estimate for matching activities rather than repeating the optimistic figure. State the adjustment in the basis when you use it.\n`;
+Apply these as a calibration factor on comparable work: if a bucket runs consistently over, raise the estimate for matching activities rather than repeating the optimistic figure. When two of these lines disagree, PREFER THE ONE WITH THE LARGEST n — a thin bucket is a hint, not a multiplier. State the adjustment in the basis when you use it.\n`;
     }
     function bankExportCSV() {
       const rows = loadBank();
       if (!rows.length) { alert('The estimate bank is empty — archive a project with logged actuals first (Analytics ▸ Archive to historical data).'); return; }
-      const head = ['Project', 'Archived', 'WBS', 'Activity', 'Kind', 'Audience', 'Owner', 'Role', 'Unit', 'Est O', 'Est M', 'Est P', 'Est TE', 'Actual effort', 'Ratio', 'Basis', 'Planned cost', 'Actual cost'];
-      const body = rows.map(r => [r.proj, r.at, r.wbs, r.name, r.kind, r.audience || '', r.owner, r.role, r.unit,
+      const head = ['Project', 'Archived', 'WBS', 'Activity', 'Kind', 'Audience', 'Work type', 'Tag source', 'Owner', 'Role', 'Unit', 'Est O', 'Est M', 'Est P', 'Est TE', 'Actual effort', 'Ratio', 'Basis', 'Planned cost', 'Actual cost'];
+      const body = rows.map(r => [r.proj, r.at, r.wbs, r.name, r.kind, r.audience || '', taxLabel(r.tax) || '', r.taxSrc || '', r.owner, r.role, r.unit,
         r.o, r.m, r.p, r.te, r.actual, r.ratio == null ? '' : r.ratio, r.basis, r.costEst, r.costActual]);
       download('estimate-bank.csv', [head].concat(body).map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
     }
@@ -14297,7 +14503,14 @@ Apply these as a calibration factor on comparable work: if a kind or role runs c
       const el = document.getElementById('bankBadge'); if (!el) return;
       const c = bankCalibration();
       const n = loadBank().length;
-      el.textContent = n ? (n + ' record' + (n === 1 ? '' : 's') + (c ? ' · median ' + c.overall + '× vs estimate' : '')) : 'empty — archive a finished project to start it';
+      let tw = '';
+      if (c && c.byTaxUi && c.byTaxUi.length) {
+        const lit = c.byTax.map(x => x.k.split(' ')[0].toLowerCase());
+        const warm = c.byTaxUi.filter(x => lit.indexOf(x.k.split(' ')[0].toLowerCase()) < 0);
+        tw = (lit.length ? ' · work type: ' + c.byTax.map(x => x.k.split(' ')[0].toLowerCase() + ' ' + x.median + '×').join(', ') : '')
+          + (warm.length ? ' · warming up: ' + warm.map(x => x.k.split(' ')[0].toLowerCase() + ' n=' + x.n).join(', ') + ' (needs ' + TAX_MIN_N + ')' : '');
+      }
+      el.textContent = n ? (n + ' record' + (n === 1 ? '' : 's') + (c ? ' · median ' + c.overall + '× vs estimate' : '') + tw) : 'empty — archive a finished project to start it';
     }
     function histPromptBlock() {
       const v = (localStorage.getItem(HIST_STORE) || '').trim();
@@ -14396,6 +14609,7 @@ Apply these as a calibration factor on comparable work: if a kind or role runs c
       "attendees": [],        // optional: other people also in this session/workshop (names; each loads their own calendar)
       "parent": "",           // optional: exact name of a phase/deliverable this task rolls up under (for WBS grouping)
       "deliverable": "",      // REQUIRED: the tangible output (one line)
+      "taxonomy": "",         // REQUIRED: exactly one of data|integration|test|govern|delivery — see the work-type rule below
       "description": "",      // REQUIRED: scope statement for the WBS dictionary (one line)
       "acceptance": "",       // REQUIRED: acceptance criteria / definition of done (one line)
       "dependsOn": ["exact names of predecessor tasks that must finish first"]
@@ -14440,6 +14654,7 @@ ${uatStylePref() === 'bigbang'
       "parent": "exact name of the phase it nests under (or \\"\\" for top level)",
       "deliverable": "", "description": "", "acceptance": "",
       "dependsOn": ["exact predecessor task names"],
+      "taxonomy": "one of data|integration|test|govern|delivery — OMIT THE KEY ENTIRELY if you are not changing it",
       "was": "current name ONLY when renaming this task" }
   ],
   "removeTasks": ["exact names of tasks to delete"],
@@ -14754,7 +14969,9 @@ ${aiSchemaHint()}`];
             owner: String(pt.owner || '').trim(), units: (Number.isFinite(+pt.units) && +pt.units > 0) ? +pt.units : 100,
             attendees: attendees || [],
             deliverable: String(pt.deliverable || '').trim(), description: String(pt.description || '').trim(),
-            acceptance: String(pt.acceptance || '').trim(), predecessors: [] });
+            acceptance: String(pt.acceptance || '').trim(),
+            taxonomy: taxCoerce(pt.taxonomy), taxSrc: taxCoerce(pt.taxonomy) ? 'ai' : null,
+            predecessors: [] });
           tasks.push(t); addedN++; addedTasks.push(t);
         } else {
           updatedN++;
@@ -14762,6 +14979,10 @@ ${aiSchemaHint()}`];
           if (pt.optimistic != null || pt.mostLikely != null || pt.pessimistic != null) { t.o = o; t.m = m; t.p = p; }
           if (pt.milestone != null) t.milestone = !!pt.milestone && !isSummaryId(t.id);
           if (pt.owner != null) t.owner = String(pt.owner).trim();
+          if (pt.taxonomy != null) {
+            const _tx = taxCoerce(pt.taxonomy);
+            if (_tx && !(t.taxonomy && t.taxSrc !== 'ai')) { t.taxonomy = _tx; t.taxSrc = 'ai'; }
+          }
           if (Number.isFinite(+pt.units) && +pt.units > 0) t.units = +pt.units;
           if (attendees) t.attendees = attendees;
           // Test-case content (numbered steps + exact pass condition) belongs to
@@ -14874,6 +15095,7 @@ ${aiSchemaHint()}`];
           attendees: Array.isArray(pt.attendees) ? pt.attendees.map(a => ({ name: String(typeof a === 'string' ? a : (a && a.name) || '').trim(), units: 100 })).filter(a => a.name) : [],
           deliverable: String(pt.deliverable || '').trim(), description: String(pt.description || '').trim(),
           acceptance: String(pt.acceptance || '').trim(),
+          taxonomy: taxCoerce(pt.taxonomy), taxSrc: taxCoerce(pt.taxonomy) ? 'ai' : null,
           predecessors: [], _dependsOn: pt.dependsOn || [], _parent: String(pt.parent || '').trim() }));
       });
       // resolve dependencies + WBS parent by name
@@ -15080,6 +15302,8 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
             owner: String(st.owner || '').trim() || t.owner || '', units,
             deliverable: String(st.deliverable || '').trim(), description: String(st.description || '').trim(),
             acceptance: String(st.acceptance || '').trim(),
+            taxonomy: (inferTaxonomy(nm) || activityTaxonomy(t) || null),
+            taxSrc: (inferTaxonomy(nm) || activityTaxonomy(t)) ? 'ai' : null,
             parentId: id, predecessors: [] });
           nameToNew[nm.toLowerCase()] = nt.id;
           created.push([nt, st.dependsOn || []]);
@@ -16247,6 +16471,26 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       leaves.forEach(t => {
         if (!t.o && !t.m && !t.p) findings.push({ severity: 'high', area: 'Estimates', finding: `"${t.name}" has no O/M/P estimate at all`, recommendation: 'Give it a 3-point estimate — or let the AI propose one calibrated to the plan and your history.' });
       });
+      // GUARDED on the bank actually producing work-type numbers. That guard IS
+      // the "earns its place" test written as code: until the calibration has
+      // something to say, nagging someone to fill in this field buys them
+      // nothing. Only activities where INFERENCE ALSO FAILED are counted — an
+      // inferred tag is already good enough for the bank.
+      // No `jump` key on purpose: renderHealth's label is a two-way ternary that
+      // renders anything other than 'resources' as "Requirements", so any other
+      // value would be mislabelled. Without jump the finding gets the 🔧 Fix
+      // button routed to aiFixFindings -> aiDeltaSchemaHint, which now carries
+      // "taxonomy" (T19) and can therefore genuinely comply instead of silently
+      // returning "0 added, 0 updated".
+      (() => {
+        const cal = bankCalibration();
+        if (!cal || !cal.byTax || !cal.byTax.length) return;
+        const untagged = leaves.filter(t => !isTestCaseTask(t) && !activityTaxonomy(t));
+        if (!untagged.length) return;
+        findings.push({ severity: 'low', area: 'Estimates',
+          finding: `${untagged.length} activit${untagged.length === 1 ? 'y has' : 'ies have'} no work type and a name the tagger does not recognise (${untagged.slice(0, 4).map(t => '"' + t.name + '"').join(', ')}${untagged.length > 4 ? '…' : ''}) — they are excluded from your ${cal.byTax.length}-bucket estimate calibration`,
+          recommendation: 'Select them in the activity table ▸ 🏷 Work type ▸ Set (instant, no AI call) — or press 🔧 Fix and the AI will tag them from the closed list.' });
+      })();
       if (reqs && Array.isArray(reqs.stories) && reqs.stories.length) {
         const orphans = reqs.stories.filter(s => storyWbsIds(s).length === 0);
         if (orphans.length) findings.push({ severity: 'medium', area: 'Requirements', finding: `${orphans.length} user stor${orphans.length === 1 ? 'y is' : 'ies are'} not linked to any WBS activity (its task was deleted or renamed): ${orphans.slice(0, 6).map(s => s.id).join(', ')}${orphans.length > 6 ? '…' : ''}`, recommendation: 'Auto-relink matches by remembered task name; relink the rest in the story editor.', relink: true });
