@@ -261,7 +261,12 @@
     .toolbar { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
     .dep-row { display: grid; grid-template-columns: 2fr 1fr 1fr 2.2rem; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
     .dep-row .btn-danger { width: 100%; padding-left: 0; padding-right: 0; }
-    .dep-head { color: var(--muted); font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; margin-bottom: 0.25rem; }
+    /* The header used to carry class="dep-row" for this grid, which made
+       .dep-block ALWAYS :has(.dep-row) — so the hide rule below could never
+       match and every task editor with no dependencies showed a column header
+       over an empty area. It owns its columns now, and the rule works. */
+    .dep-head { display: grid; grid-template-columns: 2fr 1fr 1fr 2.2rem; gap: 0.5rem; align-items: center;
+      color: var(--muted); font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; margin-bottom: 0.25rem; }
     .dep-block:not(:has(.dep-row)) .dep-head { display: none; }
     .att-head { display: grid; grid-template-columns: 3fr 1fr 2.2rem; gap: 0.5rem; color: var(--muted); font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; margin-bottom: 0.25rem; }
     .att-block:not(:has(.dep-row)) .att-head { display: none; }
@@ -1098,6 +1103,28 @@
     .chip-static .chip-lbl { overflow: hidden; text-overflow: ellipsis; }
     .chip-static .chip-x { border: none; background: transparent; color: #64748b; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 0.25rem; border-radius: 999px; }
     .chip-static .chip-x:hover { background: #dbeafe; color: #b91c1c; }
+    /* RAID link chips (raidLinkChips) are emitted OUTSIDE .chip-edit and
+       .chip-static, so the rules above never reached them — and the two states
+       that carry the meaning had no rules anywhere in the stylesheet at all. A
+       link that had gone dangling and one that was still accurate rendered
+       identically, which is precisely what the marker exists to prevent. */
+    .rdg .chip, #raidContainer .chip, #rLinks .chip {
+      display: inline-flex; align-items: center; gap: 0.2rem; margin: 0 0.2rem 0.2rem 0;
+      background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a;
+      border-radius: 999px; padding: 0.1rem 0.2rem 0.1rem 0.55rem;
+      font-size: 0.78rem; line-height: 1.5; max-width: 100%; }
+    #raidContainer .chip-lbl, #rLinks .chip-lbl { overflow: hidden; text-overflow: ellipsis; }
+    #raidContainer .chip-go, #rLinks .chip-go { border: none; background: transparent; color: inherit;
+      font: inherit; cursor: pointer; padding: 0; text-align: left; }
+    #raidContainer .chip-go:hover, #rLinks .chip-go:hover { text-decoration: underline; }
+    #raidContainer .chip-x, #rLinks .chip-x { border: none; background: transparent; color: #64748b;
+      cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 0.25rem; border-radius: 999px; }
+    #raidContainer .chip-x:hover, #rLinks .chip-x:hover { background: #dbeafe; color: #b91c1c; }
+    /* the target is gone: struck through, and it says what it used to be */
+    .chip-dangling { background: #fef2f2 !important; border-color: #fecaca !important; color: #b91c1c !important; }
+    /* the target still exists but its WORDING changed since the link was made */
+    .chip-stale { background: #fffbeb !important; border-color: #fde68a !important; color: #92400e !important; }
+    .chip-stale::after { content: "≠"; font-weight: 700; margin-left: 0.15rem; }
     /* story sentence: each clause on its own line so a long story reads cleanly */
     .story-sentence { display: flex; flex-direction: column; gap: 0.15rem; line-height: 1.4; }
     .story-sentence .sc-id { font-size: 0.72rem; color: var(--muted); font-weight: 700; letter-spacing: 0.02em; }
@@ -2381,7 +2408,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1635</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1645</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -2510,7 +2537,7 @@
         <div class="form-group">
           <label>Dependencies (predecessors)</label>
           <div class="dep-block">
-            <div class="dep-head dep-row" style="margin-bottom:0.25rem"><span>Predecessor</span><span>Type</span><span>Lag (days)</span><span></span></div>
+            <div class="dep-head" style="margin-bottom:0.25rem"><span>Predecessor</span><span>Type</span><span>Lag (days)</span><span></span></div>
             <div id="depRows"></div>
           </div>
           <button class="btn-sm btn-secondary" type="button" onclick="addDepRow()">+ Add dependency</button>
@@ -3311,14 +3338,13 @@
         // durable write: IndexedDB (disk-backed, no ~5 MB ceiling). localStorage
         // no longer holds payloads at all — only the tiny index and prefs.
         idbSet(PROJ_PREFIX + id, json).then(() => {
-          saveLocal.lastOk = true;
           const sb = document.getElementById('storageBanner'); if (sb) sb.remove();
           snapshotKeep(id, json, (data.tasks || []).length); // time machine
           diskAutoSave(json); // optional real file on disk
         }).catch(() => {
           // no IndexedDB (blocked/ancient browser): localStorage fallback
-          try { localStorage.setItem(PROJ_PREFIX + id, json); saveLocal.lastOk = true; }
-          catch (e2) { saveLocal.lastOk = false; showStorageBanner(); }
+          try { localStorage.setItem(PROJ_PREFIX + id, json); }
+          catch (e2) { showStorageBanner(); }
         });
         const idx = projIndex();
         idx[id] = { name: data.projectName || 'Untitled', updatedAt: new Date().toISOString(),
@@ -3334,13 +3360,11 @@
         el.textContent = '✓ Saved';
         clearTimeout(saveLocal._t);
         saveLocal._t = setTimeout(() => { el.textContent = ''; }, 1500);
-        saveLocal.lastOk = true;
         const sb = document.getElementById('storageBanner'); if (sb) sb.remove(); // saving works again
         return true;
       } catch (e) {
         // storage full or unavailable — this must be LOUD, not a 1.5s toast:
         // silent save failures are how a "New project" click destroys work
-        saveLocal.lastOk = false;
         const el = document.getElementById('savedIndicator');
         if (el) el.textContent = '⚠ NOT saved — storage full';
         showStorageBanner();
@@ -3641,10 +3665,16 @@
       if (['pert', 'gantt', 'resources', 'baseline', 'analytics', 'raid'].includes(name)) ensureCalculated();
       if (name === 'wbs') renderWBS();
       if (name === 'req') renderReqs();
-      if (name === 'pert' && calculated) renderPERT();
-      if (name === 'gantt' && calculated) { renderGantt(); renderNarrativePanel(); }
+      /* `&& calculated` meant a project with NO activities never wrote to these
+         containers at all, so the "Calculate first" empty states these three
+         functions carry for exactly this case could not be reached by clicking
+         the tab — a first-time user saw three blank panels with toolbars and
+         instructions about bars and nodes that were not there. Every other tab
+         renders unguarded and shows a proper empty state. */
+      if (name === 'pert' && (calculated || !tasks.length)) renderPERT();
+      if (name === 'gantt' && (calculated || !tasks.length)) { renderGantt(); renderNarrativePanel(); }
       if (name === 'resources' && calculated) renderResources();
-      if (name === 'baseline' && calculated) renderBaseline();
+      if (name === 'baseline' && (calculated || !tasks.length)) renderBaseline();
       if (name === 'analytics' && calculated) { renderAnalytics(); renderHealth(); }
       if (name === 'raid') {
         renderRaid(); renderCoHistory();
@@ -4095,8 +4125,8 @@
             <div style="margin-bottom:0.4rem">As a <b>${escapeHtml(stHit.persona || '?')}</b>, I want to ${escapeHtml(stHit.want || '?')}, so that ${escapeHtml(stHit.soThat || '?')}.</div>
             ${(stHit.ac || []).length ? `<div style="margin-bottom:0.35rem"><b>Acceptance criteria (${stHit.ac.length}):</b><ul style="list-style:none;margin:0.2rem 0 0;padding-left:0.25rem">${stHit.ac.map(a => `<li style="margin-bottom:0.15rem${a.id === (acHit && acHit.id) ? ';background:#fef9c3;border-radius:4px;padding:1px 4px' : ''}">${typeIcon[a.type] || '•'} <span style="color:#475569">${escapeHtml(a.id)}</span> ${escapeHtml(a.text)}${a.id === (acHit && acHit.id) ? ' <span class="help-text">← this test verifies this one</span>' : ''}</li>`).join('')}</ul></div>` : ''}
             <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.5rem">
-              <button class="btn-sm btn-secondary no-print" onclick="openStoryModal('${escapeHtml(stHit.id)}')" title="Edit ${escapeHtml(stHit.id)} — persona, acceptance criteria, NFRs, assumptions. Opens on top; saving refreshes this panel.">✎ Edit story</button>
-              <button class="btn-sm btn-secondary no-print" onclick="closeModal();openReqStory('${escapeHtml(stHit.id)}')" title="Jump to ${escapeHtml(stHit.id)} on the Requirements tab">Open story →</button>
+              <button class="btn-sm btn-secondary no-print" onclick="openStoryModal('${ekJs(stHit.id)}')" title="Edit ${escapeHtml(stHit.id)} — persona, acceptance criteria, NFRs, assumptions. Opens on top; saving refreshes this panel.">✎ Edit story</button>
+              <button class="btn-sm btn-secondary no-print" onclick="closeModal();openReqStory('${ekJs(stHit.id)}')" title="Jump to ${escapeHtml(stHit.id)} on the Requirements tab">Open story →</button>
             </div>
             </div>
           </details>` : ''}`;
@@ -4126,12 +4156,12 @@
               ${st.map(s => `<div style="margin:0.6rem 0 0.75rem;font-size:0.8rem;line-height:1.45">
                 <div style="display:flex;gap:0.6rem;align-items:flex-start">
                   <span style="flex:1;min-width:0"><b>${escapeHtml(s.id)}</b> — As a <b>${escapeHtml(s.persona || '?')}</b>, I want to ${escapeHtml(s.want || '?')}, so that ${escapeHtml(s.soThat || '?')}</span>
-                  <button class="btn-lite no-print" onclick="openStoryModal('${escapeHtml(s.id)}')" title="Edit ${escapeHtml(s.id)} right here — persona, acceptance criteria, NFRs, assumptions. The story editor opens ON TOP of this one; saving refreshes this panel and your unsaved activity fields stay put. Criteria edits still offer test-case regeneration.">✎ Edit</button>
+                  <button class="btn-lite no-print" onclick="openStoryModal('${ekJs(s.id)}')" title="Edit ${escapeHtml(s.id)} right here — persona, acceptance criteria, NFRs, assumptions. The story editor opens ON TOP of this one; saving refreshes this panel and your unsaved activity fields stay put. Criteria edits still offer test-case regeneration.">✎ Edit</button>
                 </div>
                 ${(s.ac || []).length ? `<ul style="list-style:none;margin:0.25rem 0 0;padding-left:0.5rem">${s.ac.map(a => `<li>${typeIcon[a.type] || '•'} <span style="color:#475569">${escapeHtml(a.id)}</span> ${escapeHtml(a.text)}</li>`).join('')}</ul>` : ''}
               </div>`).join('')}
               <button class="btn-lite no-print" onclick="addStoryForTask(${id})" title="Add ANOTHER story for this activity — the editor opens on top, pre-linked to this task (its phase's epic preselected); saving refreshes this panel">＋ Add story</button>
-              <button class="btn-lite no-print" onclick="closeModal();openReqStory('${escapeHtml(st[0].id)}')" title="Jump straight to ${escapeHtml(st[0].id)} on the Requirements tab — edit, lint, traceability matrix">Open in Requirements →</button>
+              <button class="btn-lite no-print" onclick="closeModal();openReqStory('${ekJs(st[0].id)}')" title="Jump straight to ${escapeHtml(st[0].id)} on the Requirements tab — edit, lint, traceability matrix">Open in Requirements →</button>
             </details>`
           : (!isSummaryId(id) && !t.milestone && !isTestCaseTask(t)
             ? `<div style="margin-bottom:0.75rem;display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap"><span class="help-text" style="margin:0">No user story traces to this activity yet — untraced work has no acceptance criteria to bill against.</span>
@@ -7674,13 +7704,29 @@
     }
     function hasBaseline() { return !!baselineDate && tasks.some(t => t.baseFinish); }
     // "Current" finish used for variance: actual finish if entered, else forecast.
+    /* Two ways these used to hand back something that is not a date.
+       An imported "2026-13-01" passes the importer's YYYY-MM-DD regex and
+       becomes an Invalid Date whose getTime() is NaN, which then poisoned the
+       project roll-up Math.max and printed "Invalid Date" across the Baseline
+       tab. acSpread already documents and defends against this regex admitting
+       impossible months; this path did not.
+       And an activity created from a story has never been scheduled, so
+       finishDate is null and .getTime() threw outright — crashing the Baseline
+       tab and the status report, both of which read exactly that expression.
+       Callers want "the date this finished, or nothing". Give them that. */
+    function isRealDate(d) { return d instanceof Date && !isNaN(d.getTime()); }
     function currentFinish(t) {
-      if (t.actualFinish) return new Date(t.actualFinish + 'T00:00:00');
-      return t.finishDate;
+      if (t && t.actualFinish) { const d = new Date(t.actualFinish + 'T00:00:00'); if (isRealDate(d)) return d; }
+      return (t && isRealDate(t.finishDate)) ? t.finishDate : null;
     }
     function currentStart(t) {
-      if (t.actualStart) return new Date(t.actualStart + 'T00:00:00');
-      return t.startDate;
+      if (t && t.actualStart) { const d = new Date(t.actualStart + 'T00:00:00'); if (isRealDate(d)) return d; }
+      return (t && isRealDate(t.startDate)) ? t.startDate : null;
+    }
+    // the roll-up every caller of Math.max(...map(currentFinish)) wanted
+    function latestFinish(list) {
+      const ts = (list || []).map(currentFinish).filter(isRealDate).map(d => d.getTime());
+      return ts.length ? new Date(Math.max(...ts)) : null;
     }
 
     // ---- Live update: recompute + refresh every view after any edit ----
@@ -7721,7 +7767,7 @@
     };
 
     /* escapeHtml (1922) escapes & < > " but NOT the apostrophe — so the
-       app's existing `onclick="openReqStory('${escapeHtml(id)}')"` pattern
+       app's `onclick="openReqStory('${ekJs(id)}')"` pattern
        (already live at 8270 and 9055) breaks on an id containing one. Story
        ids come back from AI drafting and from exportStoriesEditableCSV
        round-trips, so this is reachable. Every onclick this family builds
@@ -8960,7 +9006,7 @@
         });
         const maxCount = Math.max(...counts);
         histBlock = `
-          <h3 style="margin:1.25rem 0 0.5rem;font-size:1rem" title="Each bar = how many of the ${mcResult.iters.toLocaleString()} simulated project runs finished in that duration bucket. A wide spread means your estimates carry a lot of uncertainty." style="cursor:help">Completion Distribution <span class="help-text">(${mcResult.iters.toLocaleString()} simulations — every run re-rolls each task within its O–P range)</span></h3>
+          <h3 style="margin:1.25rem 0 0.5rem;font-size:1rem;cursor:help" title="Each bar = how many of the ${mcResult.iters.toLocaleString()} simulated project runs finished in that duration bucket. A wide spread means your estimates carry a lot of uncertainty.">Completion Distribution <span class="help-text">(${mcResult.iters.toLocaleString()} simulations — every run re-rolls each task within its O–P range)</span></h3>
           <div style="padding:1.1rem 0.5rem 0.5rem;background:#f8fafc;border-radius:8px;border:1px solid var(--border)">
             <div style="position:relative">
               <div style="display:flex;align-items:flex-end;gap:2px;height:120px">
@@ -10179,7 +10225,7 @@
             <div class="toolbar no-print" style="margin-top:0.5rem">
               <button class="btn-sm btn-success" data-mend-add="${names.indexOf(name)}" title="Raise ${escapeHtml(name)}'s capacity by one full-time person"><span class="ico" aria-hidden="true">➕</span> Add 1 person to ${escapeHtml(name)}</button>
               <button class="btn-sm btn-secondary" data-mend-peak="${names.indexOf(name)}" title="Raise capacity to exactly cover the peak load">⤒ Raise capacity to peak (${Math.round(R.peak)}%)</button>
-              ${tcContrib.length >= 3 ? `<button class="btn-sm btn-primary" onclick="spreadTestCases('${escapeHtml(name)}')" title="Round-robin the test cases owned by ${escapeHtml(name)} across several testers — you pick the names (client-side testers are unbilled). One ↶ undo reverses.">⚖ Spread test cases across testers</button>` : ''}
+              ${tcContrib.length >= 3 ? `<button class="btn-sm btn-primary" onclick="spreadTestCases('${ekJs(name)}')" title="Round-robin the test cases owned by ${escapeHtml(name)} across several testers — you pick the names (client-side testers are unbilled). One ↶ undo reverses.">⚖ Spread test cases across testers</button>` : ''}
               <button class="btn-sm" style="background:#fef3c7;color:#b45309" onclick="autoLevelExtend()" title="Push conflicting work later, extending the finish date"><span class="ico" aria-hidden="true">📅</span> Extend timeline instead</button>
             </div>
           </div>`;
@@ -10350,7 +10396,7 @@
           <td style="font-size:0.8rem">${escapeHtml(t.acceptance || '')}</td>
           <td style="font-size:0.72rem;color:var(--muted)">${linksCell}</td>
           <td style="font-size:0.75rem;white-space:nowrap">${(() => { const st = storiesForTask(t.id); return st.length
-            ? st.map(s => `<span class="badge badge-info" style="cursor:pointer" onclick="event.stopPropagation();openReqStory('${escapeHtml(s.id)}')" title="${escapeHtml('As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?') + ' — ' + (s.ac || []).length + ' acceptance criteria. Click to jump to this story.')}">${escapeHtml(s.id)}</span>`).join(' ')
+            ? st.map(s => `<span class="badge badge-info" style="cursor:pointer" onclick="event.stopPropagation();openReqStory('${ekJs(s.id)}')" title="${escapeHtml('As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?') + ' — ' + (s.ac || []).length + ' acceptance criteria. Click to jump to this story.')}">${escapeHtml(s.id)}</span>`).join(' ')
             : '<span class="help-text">—</span>'; })()}</td>
         </tr>`;
       }).join('');
@@ -10385,8 +10431,8 @@
       const hb = hasBaseline();
       const leaves = leafTasks();
       const baseFinishAll = hb ? new Date(Math.max(...tasks.filter(t => t.baseFinish).map(t => t.baseFinish.getTime()))) : null;
-      const curFinishAll = new Date(Math.max(...leaves.map(t => currentFinish(t).getTime())));
-      const projVar = hb ? varianceDays(baseFinishAll, curFinishAll) : null;
+      const curFinishAll = latestFinish(leaves);
+      const projVar = (hb && curFinishAll) ? varianceDays(baseFinishAll, curFinishAll) : null;
 
       // A baseline is a commitment on THREE things, not one. Reporting only the
       // dates answered "are we late" and left "are we over" and "did the work grow"
@@ -10545,7 +10591,7 @@
 
       cont.innerHTML = `${banner}${ptReadingHtml('base')}
         <div class="summary-grid bl-cards" style="margin-bottom:1rem">
-          ${card('Schedule', hb ? fmtNice(baseFinishAll) : 'no baseline', fmtNice(curFinishAll),
+          ${card('Schedule', hb ? fmtNice(baseFinishAll) : 'no baseline', curFinishAll ? fmtNice(curFinishAll) : 'not scheduled yet',
             projVar == null ? '' : (projVar > 0 ? '+' + projVar + 'd late vs baseline' : projVar < 0 ? -projVar + 'd early vs baseline' : 'on the baseline date'), projVar,
             hb ? 'committed finish → forecast finish' : 'live forecast finish')}
           ${card('Budget', fmtMoney(costRef), fmtMoney(actCostAll),
@@ -10731,7 +10777,22 @@
     }
     function renderPERT() {
       const svgEl = document.getElementById('pertSvg');
-      if (!calculated || tasks.length === 0) { svgEl.innerHTML = ''; return; }
+      if (!calculated || tasks.length === 0) {
+        /* Gantt and Baseline both carry a real "Calculate first" state for this
+           case; PERT blanked its canvas, which is indistinguishable from a
+           broken render — a first-time user saw a toolbar, a legend explaining
+           nodes and arrows, and nothing at all beneath them. Same words as the
+           other two, drawn as SVG because the host IS the svg. */
+        const msg = tasks.length ? 'Press Calculate to draw the network'
+                                 : 'Add activities, then press Calculate';
+        svgEl.setAttribute('viewBox', '0 0 640 120');
+        svgEl.innerHTML = '<text x="320" y="52" text-anchor="middle" font-family="system-ui,sans-serif"'
+          + ' font-size="17" font-weight="700" fill="#334155">Nothing to draw yet</text>'
+          + '<text x="320" y="78" text-anchor="middle" font-family="system-ui,sans-serif"'
+          + ' font-size="13" fill="#64748b">' + msg + '</text>';
+        const nEl = document.getElementById('pertAggNote'); if (nEl) nEl.innerHTML = '';
+        return;
+      }
       const agg = pertAggregate();
       const sel = document.getElementById('pertLevelSel'); if (sel) sel.value = pertLevel;
       const cbT = document.getElementById('pertRollTcCb'); if (cbT) cbT.checked = pertRollTc;
@@ -12254,6 +12315,20 @@ Write the test cases for the criteria above, following the contract exactly. Ret
     function openReqStory(storyId) {
       switchTab('req');
       reqSetView('stories');            // story cards live in the stories view
+      /* The audience filter is sticky across renders and hides non-matching
+         cards with display:none — and scrollIntoView on a display:none element
+         is a no-op, so every deep link in the app became a dead click the
+         moment somebody clicked "Client", which is the natural thing to do
+         before reviewing scope with a client. The link wins: a request for a
+         specific story is a request to SEE that story. */
+      const s0 = (reqs && reqs.stories || []).find(x => String(x.id) === String(storyId));
+      if (s0 && reqAudienceFilter !== 'all') {
+        const aud = s0.audience || 'client';
+        if (aud !== reqAudienceFilter) {
+          setStoryAudienceFilter('all');
+          flashSaved('Showing all stories — ' + storyId + ' was hidden by the ' + reqAudienceFilter + ' filter.');
+        }
+      }
       setTimeout(() => {
         const el = document.getElementById('story-card-' + storyId);
         if (!el) return;
@@ -13414,6 +13489,12 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       clientSafeReports = (el && el.type === 'checkbox') ? el.checked : !clientSafeReports;
       saveLocal();
       updateClientSafeBtn();
+      /* Not only an export flag: planTruthData masks money when it is on and
+         renderPlanTruth prints "Money is hidden while client-safe mode is on".
+         The panel a consultant is about to share kept every dollar on screen
+         until some unrelated action happened to re-render it. The mode exists
+         for screen-sharing — it has to take effect when it is switched on. */
+      try { if (calculated) { renderPlanTruth(); renderAnalytics(); renderPricing(); renderBaseline(); } } catch (e) {}
       flashSaved(clientSafeReports ? '🕶 Client-safe ON — reports omit financials & internal notes' : 'Client-safe OFF — full internal reports');
     }
     function updateClientSafeBtn() {
@@ -13454,7 +13535,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       const overLine = clientSafeReports ? '' : rl.overResourceDays
         ? `<p style="margin:6px 0;font-size:13px;color:#b91c1c"><b>⚠ Resourcing:</b> ${rl.overResourceDays} over-allocated resource-day(s) — ${rl.resourcesOver.map(escapeHtml).join(', ')}. Mitigation in progress (level, add capacity, or extend).</p>` : '';
       const baseLine = hasBaseline()
-        ? `<p style="margin:6px 0;font-size:13px"><b>Baseline (${escapeHtml(baselineDate)}):</b> variance ${(() => { const bf = new Date(Math.max(...tasks.filter(t => t.baseFinish).map(t => t.baseFinish.getTime()))); const v = calDaysBetween(bf, new Date(Math.max(...leaves.map(t => currentFinish(t).getTime())))); return (v > 0 ? '<span style="color:#b91c1c">+' + v + 'd late</span>' : v < 0 ? '<span style="color:#15803d">' + v + 'd early</span>' : 'on plan'); })()}</p>` : '';
+        ? `<p style="margin:6px 0;font-size:13px"><b>Baseline (${escapeHtml(baselineDate)}):</b> variance ${(() => { const bf = new Date(Math.max(...tasks.filter(t => t.baseFinish).map(t => t.baseFinish.getTime()))); const lf = latestFinish(leaves); const v = lf ? calDaysBetween(bf, lf) : 0; return (v > 0 ? '<span style="color:#b91c1c">+' + v + 'd late</span>' : v < 0 ? '<span style="color:#15803d">' + v + 'd early</span>' : 'on plan'); })()}</p>` : '';
       const narrBlock = (statusNarrative && statusNarrative.text)
         ? `<div style="background:#f8fafc;border-left:4px solid #2563eb;padding:8px 12px;margin:8px 0;font-size:13px">${escapeHtml(statusNarrative.text).replace(/\n\n/g, '</p><p style="margin:6px 0 0">').replace(/^/, '<p style="margin:0">')}</p><div style="color:#94a3b8;font-size:10px;margin-top:4px">AI-drafted narrative (${escapeHtml(statusNarrative.date)}) — review before sending</div></div>` : '';
       const openRisks = raid.filter(r => (r.type === 'Risk' || r.type === 'Issue') && r.status !== 'Closed')
@@ -16767,9 +16848,17 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
         }
         r.links = r.links.filter(l => l && RAID_LINK_KINDS[l.k] && l.id != null)
           .map(l => ({ k: l.k, id: l.id, was: String(l.was || '') }));
-        // refresh the remembered label wherever the target still resolves, so a
-        // rename does not leave the chip lying about what it points at
-        r.links.forEach(l => { const g = raidResolve(l); if (g) l.was = g.label; });
+        /* `was` is what the target was called WHEN THE LINK WAS MADE. Refreshing
+           it to the current label on every hydrate and every renderRaid meant
+           the staleness test — does `was` still contain the criterion's opening
+           words — compared the current text against itself and was therefore
+           always false. The marker the block comment above calls load-bearing
+           ("that label is not decoration") could never fire, so a criterion
+           rewritten under a RAID entry looked identical to one still accurate.
+           The remembered label is now written ONCE, when the link is created,
+           and only filled in for a link that never had one. A dangling chip
+           still shows `was`, which is the other job it does. */
+        r.links.forEach(l => { if (!l.was) { const g = raidResolve(l); if (g) l.was = g.label; } });
         r.v = 2;
         raidSyncTaskId(r);
       });
@@ -17274,6 +17363,14 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           zeroUp
             ? (f.basis === 'p50' ? 'P50 is the expected outcome by definition, so there is no uplift to add. You are bidding a coin flip on margin.'
                : !f.haveSim ? 'No simulation has run, so there is no measured spread to price in. This is a missing input, not a finding.'
+               /* The uplift is floored at revenue-at-expected-effort. A bill-rate
+                  edit does not re-run the simulation, so the STALE percentile
+                  sits below the new expected revenue and the uplift collapses to
+                  zero — which the row then blamed on the user's estimates having
+                  no spread. That is not what happened, and it is the opposite of
+                  actionable: it says the plan is certain when the truth is that
+                  the figure is out of date. */
+               : f.staleSim ? 'The simulation predates a rate or scope change, so its revenue spread no longer lines up with today\'s expected revenue and the uplift floors at zero. This is a stale figure, not a finding about your estimates — press Calculate to re-run it.'
                : 'The simulation found no spread above the expected outcome — every activity has p ≤ o, so nothing can overrun.')
             : 'The ' + f.basis.toUpperCase() + ' of simulated revenue, minus revenue at expected effort. Hatched because it is sampled, not counted.'));
       } else {
