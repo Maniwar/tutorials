@@ -794,6 +794,11 @@
        recorded without effort, the logged duration itself once it is there */
     .eff-missing { cursor: pointer; font-size: var(--t-xs); font-weight: 700; line-height: 1; padding: 0.15rem 0.3rem; border-radius: 999px; background: #fef3c7; color: #b45309; border: 1px solid #fcd34d; }
     .eff-missing:hover { background: #fde68a; }
+    /* the neutral state is still an invitation to log time, just not a warning */
+    .eff-none { cursor: pointer; color: var(--muted); border-bottom: 1px dotted var(--border); }
+    .eff-none:hover { color: var(--primary); border-bottom-color: var(--primary); }
+    .eff-link { cursor: pointer; color: var(--warn); font-weight: 600; text-decoration: underline dotted; text-underline-offset: 2px; }
+    .eff-link:hover { color: #92400e; }
     .eff-ok { cursor: pointer; font-size: var(--t-xs); color: var(--muted); font-variant-numeric: tabular-nums; padding: 0.1rem 0.2rem; border-radius: 4px; }
     .eff-ok:hover { background: #eff6ff; color: var(--primary); }
     /* task-backed table rows that open the editor on a single click/tap */
@@ -3702,6 +3707,27 @@
     function effortRequiredMsg(pct) {
       return 'Time spent is required once an activity has progress' + (pct >= 100 ? ' — this one is marked complete' : ' — this one is at ' + Math.round(pct) + '%')
         + '. Log the real effort (20m · 1.5h · 2d) so the actual cost and the estimate bank measure work rather than elapsed days.';
+    }
+    // Every "⏱ not logged" affordance in the app answers the same question —
+    // where do I log this? — so they all land in the same place: the editor with
+    // the cursor already in Time spent. The chip in the activity table edits in
+    // place because that table is built for inline editing; everywhere else the
+    // row has no editor of its own, and a chip that looks clickable and does
+    // nothing is worse than plain text.
+    function openTimeSpent(id) {
+      openEditModal(id);
+      requestAnimationFrame(() => {
+        const el = document.getElementById('mActualEffort');
+        if (!el) return;
+        try { el.focus(); el.select(); } catch (e) {}
+        if (el.scrollIntoView) el.scrollIntoView({ block: 'center' });
+        paFlash(el);
+      });
+    }
+    function openFirstMissingTimeSpent() {
+      const t = tasksNeedingEffort()[0];
+      if (!t) { flashSaved('✓ Every activity with progress has its time spent logged.'); return; }
+      openTimeSpent(t.id);
     }
     // inline log-time editor, reusing the table's own cell-edit convention
     function beginEffortEdit(id, td) {
@@ -8290,7 +8316,11 @@
           ${pairCell((planTe > 0 ? fmtDurCell(planTe) : '—')
               + ((hb && t.baseTe != null && Math.abs((t.te || 0) - t.baseTe) > 0.01)
                 ? ` <span class="badge badge-warn" style="font-size:0.6rem" title="Re-estimated since the baseline: ${escapeHtml(fmtDurCell(t.baseTe))} → ${escapeHtml(fmtDurCell(t.te || 0))}">${(t.te || 0) > t.baseTe ? '+' : '−'}${escapeHtml(fmtDurCell(Math.abs((t.te || 0) - t.baseTe)))}</span>` : ''),
-            spent == null ? (started ? '<span style="color:var(--warn);font-weight:600" title="Progress recorded with no time spent">⏱ not logged</span>' : '<span style="color:var(--muted)">not logged</span>') : fmtDurCell(spent),
+            spent == null
+              ? (started
+                ? `<span class="eff-missing" onclick="event.stopPropagation();openTimeSpent(${t.id})" title="${escapeHtml(effortRequiredMsg(t.percentComplete || 0))} Click to log it.">⏱ not logged</span>`
+                : `<span class="eff-none" onclick="event.stopPropagation();openTimeSpent(${t.id})" title="Nothing logged yet — click to record the time spent.">not logged</span>`)
+              : `<span class="eff-ok" onclick="event.stopPropagation();openTimeSpent(${t.id})" title="Click to change the time spent">${escapeHtml(fmtDurCell(spent))}</span>`,
             ed.txt, ed.v,
             spent == null ? 'No time spent logged against this activity' : `Estimated ${fmtDurCell(planTe)}, logged ${fmtDurCell(spent)}`)}
           <td>${t.percentComplete || 0}%</td>
@@ -8373,7 +8403,7 @@
               : 'committed effort → effort planned now')}
           ${card('Effort spent', planTeAll > 0 ? fmtDurCell(planTeAll) : '—', spentAll > 0 ? fmtDurCell(spentAll) : 'nothing logged',
             usedTxt(spentAll, planTeAll, 'plan'), paceColor(paceOf(spentAll, planTeAll)),
-            noEffort ? `<span style="color:var(--warn);font-weight:600">⏱ ${noEffort} missing time spent</span>` : 'planned effort → logged effort')}
+            noEffort ? `<span class="eff-link" onclick="openFirstMissingTimeSpent()" title="Open the first activity that has progress but no time logged">⏱ ${noEffort} missing time spent</span>` : 'planned effort → logged effort')}
           ${(() => {
             // calendar burned vs work earned — the one comparison that says whether
             // "34% done" is good news or bad news
@@ -8385,7 +8415,7 @@
             return card('Progress', elapsed == null ? 'elapsed' : Math.round(elapsed) + '% elapsed', Math.round(donePct) + '% complete',
               gap == null ? '' : Math.abs(gap) < 5 ? 'tracking the calendar' : gap < 0 ? Math.round(-gap) + ' pts behind the calendar' : Math.round(gap) + ' pts ahead',
               gap == null || Math.abs(gap) < 5 ? 0 : gap < 0 ? 1 : -1,
-              noEffort ? `<span style="color:var(--warn);font-weight:600">⏱ ${noEffort} activit${noEffort === 1 ? 'y' : 'ies'} missing time spent</span>` : 'TE-weighted across every leaf');
+              noEffort ? `<span class="eff-link" onclick="openFirstMissingTimeSpent()" title="Open the first activity that has progress but no time logged">⏱ ${noEffort} activit${noEffort === 1 ? 'y' : 'ies'} missing time spent</span>` : 'TE-weighted across every leaf');
           })()}
         </div>
         <div class="table-wrap"><table>
