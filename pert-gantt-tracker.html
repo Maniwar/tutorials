@@ -2239,8 +2239,14 @@
               <div><label for="rProb">Probability (1–5)</label><input id="rProb" type="number" min="1" max="5" value="3" /></div>
               <div><label for="rImpact">Impact (1–5)</label><input id="rImpact" type="number" min="1" max="5" value="3" /></div>
               <div><label for="rOwner">Owner</label><input id="rOwner" type="text" list="ownerList" /></div>
-              <div><label for="rTask">Related task</label><select id="rTask"><option value="">—</option></select></div>
+              <div><label for="rOwner2" style="visibility:hidden">.</label><span class="help-text" style="margin:0">Score ${'' /* prob x impact, shown in the table */}</span></div>
             </div>
+            <div class="form-group">
+              <span class="fg-head"><label for="rLinkPick">Linked to</label><button type="button" class="info-icon" aria-label="About links" data-help="What this entry actually touches. A risk usually hits several activities, is raised against a story or one of its acceptance criteria, is evidenced by a failing test case, and may end up justifying a change order — link all of them. Every link works in both directions: the entry appears on the activity, in the Plan-truth drill-in beside that activity's variance, and here. The first activity you link is also written to the old single-task field, so a file saved here still opens in an older copy of this tool. If something you linked is later deleted the link is shown broken rather than quietly dropped — a link that disappears silently is how test cases once ended up pointing at the wrong criteria.">i</button></span>
+              <div id="rLinks" class="chip-static" style="display:flex;flex-wrap:wrap;gap:0.3rem;align-items:center;margin-bottom:0.4rem"></div>
+              <select id="rLinkPick" class="mini-inp" style="width:100%;max-width:34rem" onchange="raidAddLinkFromPicker()"></select>
+            </div>
+            <div class="form-group"><label for="rDesc">Description / context</label><textarea id="rDesc" rows="2" placeholder="What is actually going on — the detail you would want six months from now"></textarea></div>
             <div class="form-group"><label for="rMitigation">Mitigation / response / detail</label><textarea id="rMitigation" rows="2"></textarea></div>
             <div style="display:flex;gap:0.5rem;justify-content:flex-end">
               <button class="btn-secondary btn-sm" onclick="closeRaidForm()">Cancel</button>
@@ -2348,7 +2354,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0614</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0640</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3288,7 +3294,7 @@
       baselineDate = data.baselineDate || '';
       levelMode = ['none','slack','extend'].includes(data.levelMode) ? data.levelMode : 'none';
       projectBudget = Number(data.projectBudget) || 0;
-      raid = Array.isArray(data.raid) ? data.raid.map(r => Object.assign({ id: 0, type: 'Risk', title: '', description: '', probability: 3, impact: 3, owner: '', status: 'Open', mitigation: '', taskId: null, createdAt: '' }, r)) : [];
+      raid = Array.isArray(data.raid) ? data.raid.map(r => Object.assign({ id: 0, type: 'Risk', title: '', description: '', probability: 3, impact: 3, owner: '', status: 'Open', mitigation: '', taskId: null, createdAt: '', links: null, v: 1 }, r)) : [];
       nextRaidId = data.nextRaidId || (Math.max(0, ...raid.map(r => r.id)) + 1);
       statusHistory = Array.isArray(data.statusHistory) ? data.statusHistory : [];
       sowDraft = typeof data.sowDraft === 'string' ? data.sowDraft : '';
@@ -3304,6 +3310,9 @@
       } : null;
       normalizeStoryLinks();   // give every story a wbsIds[] (migrates old single wbsId)
       coLog = Array.isArray(data.coLog) ? data.coLog : [];
+      // AFTER tasks, reqs and coLog: every remembered label must resolve against
+      // THIS project, not the one being switched away from
+      normalizeRaidLinks();
       collapsedIds = new Set(Array.isArray(data.collapsedIds) ? data.collapsedIds : []);
       nextId = data.nextId || (Math.max(0, ...tasks.map(t => t.id)) + 1);
       calculated = false;
@@ -15329,6 +15338,179 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
 
     // ========================= RAID LOG =========================
     let editingRaidId = null;
+    /* ═════════ RAID LINKS — what an entry actually touches ═══════════════════
+       A RAID entry could point at exactly ONE task, through a single `taskId`,
+       chosen from a flat dropdown of every row in the plan. But a risk touches
+       several activities, is raised against a story, is evidenced by a failing
+       test case, and ends up justifying a change order — and none of that could
+       be written down. The log recorded governance and lost the causal shape of
+       the engagement.
+
+       An entry now carries typed edges. `taskId` survives as a DERIVED MIRROR of
+       the first activity edge, so the places that read it — the CSV export, the
+       test-failure de-dup, renderRaid's task column — keep working untouched,
+       and a file written here still opens in the previous version with its
+       primary link intact.
+
+       Each edge stores what the target was CALLED at the time. That label is not
+       decoration: it is what lets a link that has gone dangling say "this
+       pointed at Data mapping, which is no longer in this plan" instead of
+       vanishing. An id that silently stops resolving is exactly how this app
+       once re-pointed test cases at the wrong acceptance criteria, so a link
+       that breaks is shown broken, never dropped. */
+    const RAID_LINK_KINDS = {
+      act:   { label: 'Activity',     plural: 'Activities' },
+      story: { label: 'User story',   plural: 'User stories' },
+      ac:    { label: 'Criterion',    plural: 'Acceptance criteria' },
+      co:    { label: 'Change order', plural: 'Change orders' },
+      raid:  { label: 'RAID entry',   plural: 'RAID entries' }
+    };
+    const RAID_LINK_SEP = '|';
+    function raidLinks(r) { return (r && Array.isArray(r.links)) ? r.links : []; }
+    // taskId is a mirror of the first activity edge, never a second source of truth
+    function raidSyncTaskId(r) {
+      const first = raidLinks(r).find(l => l.k === 'act');
+      r.taskId = first ? first.id : null;
+      return r;
+    }
+    /* Resolve one edge against the live project. Returns null when the target is
+       gone — the caller renders that as a dangling chip rather than skipping it. */
+    function raidResolve(l) {
+      if (!l) return null;
+      if (l.k === 'act') {
+        const t = tasks.find(x => x.id === l.id);
+        return t ? { label: (t.wbs ? t.wbs + ' ' : '') + t.name, kind: ekKindOf(t),
+                     open: 'openEditModal(' + t.id + ', true)' } : null;
+      }
+      if (l.k === 'story') {
+        const s = ((reqs && reqs.stories) || []).find(x => x.id === l.id);
+        return s ? { label: s.id + ' — ' + String(s.want || '').slice(0, 40), kind: 'us',
+                     open: "switchTab('req');openReqStory('" + ekJs(s.id) + "')" } : null;
+      }
+      if (l.k === 'ac') {
+        let hit = null;
+        ((reqs && reqs.stories) || []).forEach(s => (s.ac || []).forEach(a => { if (a.id === l.id) hit = { s: s, a: a }; }));
+        if (!hit) return null;
+        return { label: hit.a.id + ' — ' + String(hit.a.text || '').slice(0, 40), kind: 'ac',
+                 stale: !!(l.was && hit.a.text && l.was.indexOf(String(hit.a.text).slice(0, 20)) < 0),
+                 open: "switchTab('req');openReqStory('" + ekJs(hit.s.id) + "')" };
+      }
+      if (l.k === 'co') {
+        const c = (coLog || []).find(x => x.no === l.id);
+        return c ? { label: c.no + ' — ' + String(c.scope || '').slice(0, 40), kind: null,
+                     open: "switchTab('raid')" } : null;
+      }
+      if (l.k === 'raid') {
+        const e = (raid || []).find(x => x.id === l.id);
+        return e ? { label: e.type + ': ' + String(e.title || '').slice(0, 40), kind: null,
+                     open: 'openRaidForm(' + e.id + ')' } : null;
+      }
+      return null;
+    }
+    /* Runs once per hydrate, AFTER tasks, reqs and coLog are in place, so every
+       `was` label resolves against THIS project rather than the one being
+       switched away from. Idempotent: a v2 entry passes straight through. */
+    function normalizeRaidLinks() {
+      (raid || []).forEach(r => {
+        if (!Array.isArray(r.links)) {
+          r.links = (r.taskId != null)
+            ? [{ k: 'act', id: r.taskId, was: (tasks.find(t => t.id === r.taskId) || {}).name || '' }]
+            : [];
+        }
+        r.links = r.links.filter(l => l && RAID_LINK_KINDS[l.k] && l.id != null)
+          .map(l => ({ k: l.k, id: l.id, was: String(l.was || '') }));
+        // refresh the remembered label wherever the target still resolves, so a
+        // rename does not leave the chip lying about what it points at
+        r.links.forEach(l => { const g = raidResolve(l); if (g) l.was = g.label; });
+        r.v = 2;
+        raidSyncTaskId(r);
+      });
+    }
+    /* The reverse index, now over any entity kind. raidForTask keeps its name,
+       arity and return type, so its existing callers are untouched and become
+       multi-link aware for free. */
+    function raidForEntity(kind, id, openOnly) {
+      if (id == null) return [];
+      return (raid || []).filter(r => {
+        if (openOnly && r.status === 'Closed') return false;
+        if (raidLinks(r).some(l => l.k === kind && l.id === id)) return true;
+        // An entry can exist before anything normalises it: the test-failure path
+        // opens an Issue mid-import, the CSV importer pushes rows, an AI draft
+        // lands. Those carry the legacy taskId and no links, and a reverse lookup
+        // that only reads `links` would go blind to them until the next RAID
+        // render. Read the mirror too rather than depending on call order.
+        return kind === 'act' && !Array.isArray(r.links) && r.taskId === id;
+      });
+    }
+    function raidDanglingList() {
+      const out = [];
+      (raid || []).forEach(r => raidLinks(r).forEach((l, i) => { if (!raidResolve(l)) out.push({ r: r, l: l, i: i }); }));
+      return out;
+    }
+    function raidLinkChips(r, editable) {
+      const ls = raidLinks(r);
+      if (!ls.length) return '<span class="help-text" style="margin:0">Nothing linked yet.</span>';
+      return ls.map((l, i) => {
+        const g = raidResolve(l);
+        const kindName = (RAID_LINK_KINDS[l.k] || {}).label || l.k;
+        if (!g) {
+          return '<span class="chip chip-dangling" title="' + escapeHtml(kindName
+              + ' link to something no longer in this plan. It was "' + (l.was || l.id) + '" when this entry was written.')
+            + '"><span class="chip-lbl"><s>' + escapeHtml(l.was || String(l.id)) + '</s> (missing)</span>'
+            + (editable ? '<button type="button" class="chip-x" onclick="raidUnlink(' + i + ')" aria-label="Remove this dead link">✕</button>' : '')
+            + '</span>';
+        }
+        const mark = g.kind ? ekTok(g.kind, '', '', { xs: true }) : '';
+        return '<span class="chip' + (g.stale ? ' chip-stale' : '') + '" title="' + escapeHtml(kindName + (g.stale
+            ? ' — the wording changed since this was linked. It read "' + l.was + '".' : '')) + '">'
+          + mark + '<button type="button" class="chip-lbl chip-go" onclick="' + g.open + '">' + escapeHtml(g.label) + '</button>'
+          + (editable ? '<button type="button" class="chip-x" onclick="raidUnlink(' + i + ')" aria-label="Unlink">✕</button>' : '')
+          + '</span>';
+      }).join('');
+    }
+    /* ---- the form's link editor ------------------------------------------
+       Draft links live outside `raid` until Save, so cancelling an edit cannot
+       half-link an entry. */
+    let raidDraftLinks = [];
+    function raidRenderDraft() {
+      const host = document.getElementById('rLinks');
+      if (host) host.innerHTML = raidLinkChips({ links: raidDraftLinks }, true);
+    }
+    function raidUnlink(i) { raidDraftLinks.splice(i, 1); raidRenderDraft(); }
+    function raidLinkCandidates() {
+      const out = [];
+      tasks.forEach(t => out.push({ k: 'act', id: t.id, label: (t.wbs ? t.wbs + ' ' : '') + t.name }));
+      ((reqs && reqs.stories) || []).forEach(s => {
+        out.push({ k: 'story', id: s.id, label: s.id + ' — ' + String(s.want || '').slice(0, 44) });
+        (s.ac || []).forEach(a => out.push({ k: 'ac', id: a.id, label: a.id + ' — ' + String(a.text || '').slice(0, 44) }));
+      });
+      (coLog || []).forEach(c => out.push({ k: 'co', id: c.no, label: c.no + ' — ' + String(c.scope || '').slice(0, 44) }));
+      (raid || []).forEach(e => { if (e.id !== editingRaidId) out.push({ k: 'raid', id: e.id, label: e.type + ': ' + String(e.title || '').slice(0, 44) }); });
+      return out;
+    }
+    function raidAddLinkFromPicker() {
+      const sel = document.getElementById('rLinkPick');
+      if (!sel || !sel.value) return;
+      const cut = sel.value.indexOf(RAID_LINK_SEP);
+      const k = sel.value.slice(0, cut), rawId = sel.value.slice(cut + 1);
+      const id = (k === 'act' || k === 'raid') ? Number(rawId) : rawId;
+      if (raidDraftLinks.some(l => l.k === k && String(l.id) === String(id))) { sel.value = ''; return; }
+      const g = raidResolve({ k: k, id: id });
+      raidDraftLinks.push({ k: k, id: id, was: g ? g.label : '' });
+      sel.value = '';
+      raidRenderDraft();
+    }
+    function raidFillPicker() {
+      const sel = document.getElementById('rLinkPick');
+      if (!sel) return;
+      const groups = {};
+      raidLinkCandidates().forEach(c => { (groups[c.k] = groups[c.k] || []).push(c); });
+      sel.innerHTML = '<option value="">＋ Link an activity, story, criterion, change order or another entry…</option>'
+        + Object.keys(groups).map(k =>
+          '<optgroup label="' + escapeHtml((RAID_LINK_KINDS[k] || {}).plural || k) + '">'
+          + groups[k].map(c => '<option value="' + escapeHtml(c.k + RAID_LINK_SEP + c.id) + '">' + escapeHtml(c.label) + '</option>').join('')
+          + '</optgroup>').join('');
+    }
     function openRaidForm(id) {
       editingRaidId = id == null ? null : id;
       const r = id != null ? raid.find(x => x.id === id) : null;
@@ -15337,9 +15519,13 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
       document.getElementById('rProb').value = r ? r.probability : 3;
       document.getElementById('rImpact').value = r ? r.impact : 3;
       document.getElementById('rOwner').value = r ? r.owner : '';
-      document.getElementById('rMitigation').value = r ? (r.mitigation || r.description || '') : '';
-      const sel = document.getElementById('rTask');
-      sel.innerHTML = '<option value="">—</option>' + tasks.map(t => `<option value="${t.id}" ${r && r.taskId === t.id ? 'selected' : ''}>${escapeHtml((t.wbs ? t.wbs + ' ' : '') + t.name)}</option>`).join('');
+      document.getElementById('rMitigation').value = r ? (r.mitigation || '') : '';
+      // mitigation used to fall back to description because there was nowhere to
+      // put a description; now there is, so the two stop sharing one box
+      document.getElementById('rDesc').value = r ? (r.description || '') : '';
+      // draft links live outside `raid` until Save, so cancelling cannot half-link
+      raidDraftLinks = r ? raidLinks(r).map(l => ({ k: l.k, id: l.id, was: l.was })) : [];
+      raidFillPicker(); raidRenderDraft();
       document.getElementById('raidForm').style.display = 'block';
       document.getElementById('rTitle').focus();
     }
@@ -15354,8 +15540,11 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
         impact: Math.min(5, Math.max(1, parseInt(document.getElementById('rImpact').value, 10) || 3)),
         owner: document.getElementById('rOwner').value.trim(),
         mitigation: document.getElementById('rMitigation').value.trim(),
-        taskId: Number(document.getElementById('rTask').value) || null
+        description: document.getElementById('rDesc').value.trim(),
+        links: raidDraftLinks.slice(),
+        v: 2
       };
+      raidSyncTaskId(entry);   // keep the legacy single-task field a true mirror
       if (editingRaidId != null) {
         Object.assign(raid.find(x => x.id === editingRaidId) || {}, entry);
       } else {
@@ -15382,10 +15571,7 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
        This is the reverse index. It is keyed on taskId because that is the only
        link the data model has today; when typed links land it becomes the same
        lookup over a wider edge set, and every caller here is unchanged. */
-    function raidForTask(taskId, openOnly) {
-      if (taskId == null) return [];
-      return raid.filter(r => r.taskId === taskId && (!openOnly || r.status !== 'Closed'));
-    }
+    function raidForTask(taskId, openOnly) { return raidForEntity('act', taskId, openOnly); }
     // Open issues are what an overrun most often has behind it, so they lead;
     // within a kind, the worst score first. One line, so a caller can put it in
     // a table cell without measuring anything.
@@ -15412,6 +15598,12 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
     function renderRaid() {
       const cont = document.getElementById('raidContainer');
       if (!cont) return;
+      // hydrate is not the only way entries appear — loadSample assigns `raid`
+      // directly, the CSV importer pushes rows, and a failed test result opens an
+      // Issue. Normalising here catches every one of them; it is idempotent and a
+      // v2 entry passes straight through, so the cost is a walk of a few dozen
+      // objects on a render that already rebuilds a table.
+      normalizeRaidLinks();
       if (!raid.length) { cont.innerHTML = '<div class="empty-state"><h3>RAID log is empty</h3><p>Track risks, assumptions, issues, decisions and scope exclusions here — they feed the status report and the SOW draft. Try <strong>✨ AI draft RAID</strong> to seed it from the plan.</p></div>'; renderPricing(); return; }
       const order = { Risk: 0, Issue: 1, Assumption: 2, Decision: 3, Exclusion: 4 };
       const rows = raid.slice().sort((a, b) => (order[a.type] ?? 9) - (order[b.type] ?? 9) || ((b.probability * b.impact) - (a.probability * a.impact))).map(r => {
