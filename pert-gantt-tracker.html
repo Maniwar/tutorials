@@ -2381,7 +2381,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1433</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1448</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3617,12 +3617,25 @@
     // from their children — lock those fields so nothing can be typed here that
     // the next recompute would silently overwrite. Name, dependencies, WBS
     // parent, fixed cost, dictionary and actuals stay editable.
+    /* mFixedCost joins the locked set. taskCost() short-circuits a summary to
+       the sum of its leaves, and projectCost, billingData, pricingFigures and
+       runMonteCarlo all enumerate leaves — so a summary's own fixed cost could
+       never reach a total. It was still fully enabled in the editor (visibly
+       so: the estimate fields beside it were greyed out and labelled "Rolled up
+       from the children"), still saved, still serialized, and still emitted in
+       the workbook's "Fixed cost $" column. A vendor fee typed on a phase was
+       accepted, stored, round-tripped, and silently absent from cost, margin,
+       the quote, the Monte Carlo, the SOW and the billing CSV — with the number
+       still sitting in the box when the user came back to check. */
     function applySummaryLock(isSum) {
-      ['mO', 'mM', 'mP', 'mOwner', 'mUnits', 'mPct', 'mMilestone'].forEach(k => {
+      ['mO', 'mM', 'mP', 'mOwner', 'mUnits', 'mPct', 'mMilestone', 'mFixedCost'].forEach(k => {
         const el = document.getElementById(k);
+        if (!el) return;
         el.disabled = !!isSum;
         el.style.background = isSum ? '#f1f5f9' : '';
-        el.title = isSum ? 'Rolled up from the children — edit the child activities instead' : '';
+        el.title = isSum ? (k === 'mFixedCost'
+          ? 'A phase carries no money of its own — every total in this app is summed from the leaves. Put the fee on an activity underneath it.'
+          : 'Rolled up from the children — edit the child activities instead') : '';
       });
       const ag = document.getElementById('attGroup'); if (ag) ag.style.display = isSum ? 'none' : '';
       const sh = document.getElementById('mSummaryHint'); if (sh) sh.style.display = isSum ? '' : 'none';
@@ -4445,7 +4458,7 @@
         // below 100% can still clear it), a date the user typed or edited is manual
         autoActualStart: !!mAutoStamp.start, autoActualFinish: !!mAutoStamp.finish };
       // roll-up rows: the locked, computed-from-children fields never save
-      if (isSum) ['o', 'm', 'p', 'milestone', 'owner', 'units', 'attendees', 'percentComplete'].forEach(k => delete fields[k]);
+      if (isSum) ['o', 'm', 'p', 'milestone', 'owner', 'units', 'attendees', 'percentComplete', 'fixedCost'].forEach(k => delete fields[k]);
       let renamedTask = null, renamedFrom = '';
       if (editingId === null) {
         const nt = makeTask(Object.assign({ id: nextId++ }, fields));
@@ -6999,7 +7012,7 @@
             ${d.fixedTotal ? `<tr><td>Fixed costs (licenses, travel…)</td><td><span class="badge badge-done">💰 billed</span></td><td>—</td><td>—</td><td>${fmtMoney(d.fixedTotal)}</td><td>${fmtMoney(d.fixedTotal)}</td></tr>` : ''}
             <tr style="font-weight:700;background:#f8fafc"><td>Σ Total</td><td></td><td>${d.totDays.toFixed(1)}</td><td></td><td>${fmtMoney(d.totCost)}</td><td>${fmtMoney(d.totBill)}</td></tr>
           </tbody></table></div>
-        <p class="help-text" style="margin-top:0.4rem">Cost uses each person's <b>cost rate</b>; Billed uses their <b>bill rate</b> (margin = the difference). Client-side people (highlighted) do real scheduled work but are never billed — that work lands in the SOW as a client responsibility instead.${d.unbilledDays ? ` Right now <b>${d.unbilledDays.toFixed(1)} ${unitLabel()}</b> of effort is client-side/unbilled.` : ''}${d.noEstCount ? ` <span style="color:var(--critical)">⚠ ${d.noEstCount} work package(s) have no estimate at all — they are missing from BOTH columns (see the alarm on the Tasks tab).</span>` : ''}</p>`;
+        <p class="help-text" style="margin-top:0.4rem">Cost uses each person's <b>cost rate</b>; Billed uses their <b>bill rate</b> (margin = the difference). Client-side people (highlighted) do real scheduled work but are never billed — that work lands in the SOW as a client responsibility instead.${d.unbilledDays ? ` Right now <b>${d.unbilledDays.toFixed(1)} days</b> of effort is client-side/unbilled.` : ''}${d.noEstCount ? ` <span style="color:var(--critical)">⚠ ${d.noEstCount} work package(s) have no estimate at all — they are missing from BOTH columns (see the alarm on the Tasks tab).</span>` : ''}</p>`;
     }
     // Roster entries participating in zero tasks — usually AI-proposed parallel
     // staff that never got work, or leftovers from an earlier plan version.
@@ -7024,7 +7037,44 @@
       rows.push(['TOTAL', '', '', '', '', d.totDays.toFixed(2), '', '', d.totCost.toFixed(0), d.totBill.toFixed(0)]);
       download(safeName() + '-billing.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
     }
-    function earnedValue() { return leafTasks().reduce((s, t) => s + taskCost(t) * ((t.percentComplete || 0) / 100), 0); }
+    /* ═══ ONE COST BASIS FOR EVERY VARIANCE ════════════════════════════════
+       Earned value used to be priced from the LIVE taskCost() while planned
+       value and BAC were priced from the FROZEN baseCost. Every EVM number is
+       a difference or a ratio between those two, so they were comparing two
+       different cost bases:
+
+         Re-estimate an activity upward — the single most common bad-news event
+         in delivery — and EV rose while PV and BAC did not. SV, CV, SPI, CPI
+         and EAC all improved. A discovery that work would cost MORE made the
+         project report as healthier, on the cards a manager takes to a
+         steering committee.
+
+         Symmetrically, a rate change re-priced EV and AC together and cancelled
+         out of CPI, so EAC could not see it at all.
+
+       Every consumer now asks the same question of the same function: what is
+       this work BUDGETED at, on the basis the variances are measured against?
+       The `Number(t.baseCost) || taskCost(t)` falsy test is kept verbatim from
+       pvSpread, deliberately — an activity baselined at exactly $0 picks up
+       today's price. Changing that is a separate decision, and it has to change
+       in one place now rather than three. */
+    function plannedCostOf(t, usingBaseline) {
+      if (!t) return 0;
+      const ub = usingBaseline === undefined ? hasBaseline() : !!usingBaseline;
+      if (t.isSummary) return leafDescendants(t.id).reduce((s, x) => s + plannedCostOf(x, ub), 0);
+      return ub ? (Number(t.baseCost) || taskCost(t)) : taskCost(t);
+    }
+    function earnedValue(usingBaseline) {
+      return leafTasks().reduce((s, t) =>
+        s + plannedCostOf(t, usingBaseline) * ((t.percentComplete || 0) / 100), 0);
+    }
+    // Budget at completion — the same population and the same basis as PV, so
+    // PV can actually reach it. Summing `Number(t.baseCost) || 0` did not: an
+    // activity added after the baseline contributed nothing to BAC while
+    // contributing its live cost to PV.
+    function budgetAtCompletion(usingBaseline) {
+      return leafTasks().reduce((s, t) => s + plannedCostOf(t, usingBaseline), 0);
+    }
     // ============ TIME-PHASED SPEND — one accrual rule, four callers ==========
     // This app has exactly one way of turning "a cost and a date range" into
     // "money due by a date", and until now it existed only as an inline reducer
@@ -7054,27 +7104,42 @@
       return v;
     }
 
-    // The PLAN as segments, plus the money that has no span to sit on. Identical
-    // to the EVM card's reducer in every term: leaves only (setBaseline writes a
-    // baseCost onto summaries too, and summing those would double every phase),
-    // milestones skipped (a date, but no span), the frozen triple when a baseline
-    // exists and the live one otherwise, and the finish day counted WHOLE via the
-    // + 86400000 — which is why a one-day activity books its whole cost on that
-    // day instead of nothing.
+    // The PLAN as segments, plus the money that has no date to sit on. Leaves
+    // only — setBaseline writes a baseCost onto summaries too, and summing those
+    // would double every phase. Milestones book as a one-day step at their own
+    // date. The finish day is counted WHOLE via the + 86400000, which is why a
+    // one-day activity books its whole cost on that day instead of nothing.
     //
-    // `Number(t.baseCost) || taskCost(t)` is a falsy test, not a null test, so an
-    // activity genuinely baselined at $0 quietly picks up today's price. It is
-    // kept deliberately: changing it here without changing the EVM card would make
-    // the curve and the planned-value card disagree, which is the one thing this
-    // refactor exists to prevent. Fix both together or neither.
+    // The cost basis is plannedCostOf(), shared with earnedValue() and
+    // budgetAtCompletion() so a variance can never be a ratio between two
+    // different bases. Everything left in `offCash` genuinely has no usable
+    // date: PV can reach BAC exactly, which is what makes SV and SPI mean what
+    // they claim at completion.
     function pvSpread(usingBaseline, leaves) {
       const ub = usingBaseline === undefined ? hasBaseline() : !!usingBaseline;
       const out = { segs: [], phased: 0, msN: 0, msCash: 0, offN: 0, offCash: 0 };
       (leaves || leafTasks()).forEach(t => {
-        const c1 = ub ? (Number(t.baseCost) || taskCost(t)) : taskCost(t);
-        if (t.milestone) { if (c1 > 0) { out.msN++; out.msCash += c1; } return; }
+        const c1 = plannedCostOf(t, ub);
         const s1 = ub ? t.baseStart : t.startDate;
         const f1 = ub ? t.baseFinish : t.finishDate;
+        /* A milestone has a date but no span, so its money used to be counted
+           aside and never enter the curve at all — while EV and BAC both
+           included it. PV therefore topped out permanently below BAC by exactly
+           that amount, and SV and SPI carried an upward bias for the whole life
+           of the plan, at completion included. A milestone's budget is earned on
+           its date: book it as a one-day STEP there, which is what the accrual
+           model already draws for a one-day activity. Still counted in msCash so
+           the spend curve can keep saying how much of the envelope arrives as
+           steps rather than as a slope. */
+        if (t.milestone) {
+          if (c1 > 0) out.msN++;
+          const d = s1 || f1;
+          if (!d) { if (c1 > 0) { out.offN++; out.offCash += c1; } return; }
+          const ms = stripTime(d).getTime();
+          if (!Number.isFinite(ms)) { if (c1 > 0) { out.offN++; out.offCash += c1; } return; }
+          if (c1 > 0) { out.msCash += c1; out.segs.push({ s: ms, f: ms + 86400000, c: c1 }); out.phased += c1; }
+          return;
+        }
         if (!s1 || !f1) { if (c1 > 0) { out.offN++; out.offCash += c1; } return; }
         const s = stripTime(s1).getTime(), f = stripTime(f1).getTime() + 86400000;
         // An imported plan can carry a malformed baseline date. The reducer this
@@ -7197,9 +7262,30 @@
       };
     }
 
+    /* The rate-card editor has always offered a "Currency label" field beside
+       the discount, persisted whatever was typed, and never read it anywhere —
+       setting it was indistinguishable from not setting it, so a consultant on
+       a EUR or GBP engagement got a client-facing SOW and a finance-facing
+       billing CSV denominated in dollars. This is the only money formatter in
+       the file, so reading it here reaches every figure at once. Empty or
+       unset still means "$", which is what every existing project has. */
+    function moneySymbol() {
+      try {
+        // pricing.rateCardId already records which card THIS project applied, so
+        // the currency has a per-project home and two projects on different
+        // cards do not borrow each other's. Falling back to the nominated
+        // default card covers a project priced by hand from a card's rates.
+        const id = (pricing && pricing.rateCardId) || localStorage.getItem(RATECARD_DEFAULT_KEY) || '';
+        const c = String(((rateCards() || {})[id] || {}).currency || '').trim();
+        return (!c || /^usd$/i.test(c)) ? '$' : c;
+      } catch (e) { return '$'; }
+    }
     function fmtMoney(v) {
       if (!Number.isFinite(v)) return '—';
-      return '$' + Math.round(v).toLocaleString();
+      const sym = moneySymbol();
+      const n = Math.round(v).toLocaleString();
+      // a symbol prefixes; a code (EUR, GBP, CHF) reads correctly after the number
+      return /^[A-Za-z]{2,}$/.test(sym) ? n + ' ' + sym : sym + n;
     }
     function setBudget(val) {
       projectBudget = Math.max(0, parseFloat(val) || 0);
@@ -8891,7 +8977,7 @@
       const ev = earnedValue();
       const phases = tasks.filter(t => t.isSummary && (t.parentId == null || !tasks.some(x => x.id === t.parentId)));
       const phaseRows = phases.map(ph => {
-        const c = taskCost(ph);
+        const c = plannedCostOf(ph);
         const lv = leafDescendants(ph.id);
         // Earned is summed from the LEAVES, not phaseCost x the phase's rolled-up
         // percent. The rolled-up percent is TE-weighted while cost is rate-weighted,
@@ -8899,7 +8985,7 @@
         // rows printed $23,206 against the project's own $23,180 EV on the same
         // screen. Same definition as earnedValue(), so they now reconcile by
         // construction rather than by luck.
-        const earned = lv.reduce((sx, t) => sx + taskCost(t) * ((t.percentComplete || 0) / 100), 0);
+        const earned = lv.reduce((sx, t) => sx + plannedCostOf(t) * ((t.percentComplete || 0) / 100), 0);
         const act = lv.reduce((sx, t) => sx + actualCostOf(t), 0);
         // Earned equals Planned exactly at 100% BY DEFINITION — earned value is
         // priced at budget, so those two columns alone can never show whether the
@@ -8934,7 +9020,7 @@
           // an explicit label when no baseline exists. EV = earned monetary value.
           const todayT = stripTime(new Date()).getTime();
           const usingBaseline = hasBaseline();
-          const BAC = usingBaseline ? leafTasks().reduce((sx, t) => sx + (Number(t.baseCost) || 0), 0) || cost : cost;
+          const BAC = budgetAtCompletion(usingBaseline) || cost;
           const AC = leafTasks().reduce((sx, t) => sx + actualCostOf(t), 0);   // derived from actual time unless manually overridden
           // The reducer that used to live here is now pvAt() (next to
           // earnedValue), because the Plan-truth budget bar, the Baseline budget
@@ -16408,7 +16494,16 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
     function setBillRate(name, val) {
       if (!resources[name]) resources[name] = { capacity: 100 };
       resources[name].billRate = Math.max(0, parseFloat(val) || 0);
-      saveLocal(); renderPricing();
+      saveLocal();
+      // renderPricing writes #pricingContainer, which lives on the RAID tab and
+      // is not on screen. The visible "💰 Billing & cost breakdown" table sits
+      // directly beneath this roster — its Billed $ column and Σ Total revenue
+      // row kept the pre-edit figures with no staleness cue, while the Cost
+      // column one cell over updated, because every sibling setter (setRate,
+      // setCapacity, setKind, setRateUnit, setPto) re-renders the tab it lives
+      // on and this one did not.
+      renderPricing();
+      renderResources();
     }
     function laborRevenue() { // bill side at P50 effort; client-side resources bill nothing
       return leafTasks().reduce((sum, t) => {
@@ -16516,7 +16611,18 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       // inside the total, or the panel asserts a commitment that does not exist.
       const recPrice = isTM ? detRev : ceiling;
       const contract = pricing.contractPrice || 0;
-      const price = contract || recPrice;
+      /* On Time & materials you bill what you work, so the PRICE is bill rates
+         × expected effort and the typed contract price is a not-to-exceed CAP.
+         `contract || recPrice` let the cap win and become the fee: margin was
+         computed against a number nobody will invoice — 54.8% shown where the
+         true figure was 37.7% — and because `cap` was then set to the same
+         value, the SOW's `cap > price` test went false and suppressed the
+         "estimated, not to exceed" clause exactly when a cap existed. The panel
+         says in its own warning line that the contract price "is being treated
+         as a not-to-exceed cap, not as a fixed fee"; the total, the margin tile
+         and the client-facing SOW all did the opposite. On fixed fee the typed
+         price IS the fee, and that is unchanged. */
+      const price = isTM ? recPrice : (contract || recPrice);
       const cap = isTM ? (contract || ceiling) : price;
       // Cost is UNKNOWN (not zero) only when there is internal labour and nobody
       // has a day rate. A pass-through plan with no internal labour has a
@@ -17343,6 +17449,20 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         if (!t.owner) findings.push({ severity: 'low', area: 'Ownership', finding: `"${t.name}" has no owner`, recommendation: 'Assign a resource so workload and accountability are tracked.' });
         if (!t.deliverable && !t.description) findings.push({ severity: 'low', area: 'WBS dictionary', finding: `"${t.name}" has no deliverable/scope note`, recommendation: 'Fill the dictionary — it feeds the SOW and handoffs.' });
       });
+      // Money typed on a phase before the editor started refusing it. The lock
+      // above stops new occurrences; this finds the ones already in the file,
+      // because silently ignoring a stored number is how it went missing in the
+      // first place.
+      const strandedFixed = tasks.filter(t => t.isSummary && (Number(t.fixedCost) || 0) > 0);
+      if (strandedFixed.length) {
+        const total = strandedFixed.reduce((n, t) => n + (Number(t.fixedCost) || 0), 0);
+        findings.push({ severity: 'high', area: 'Cost',
+          finding: fmtMoney(total) + ' of fixed cost is recorded on ' + strandedFixed.length + ' phase row(s) — '
+            + strandedFixed.slice(0, 3).map(t => `"${t.name}" ${fmtMoney(Number(t.fixedCost) || 0)}`).join('; ')
+            + (strandedFixed.length > 3 ? ' …' : '')
+            + '. Every total in this app sums the leaves, so this money is in NO total: not the delivery cost, the margin, the quote, the simulation, the SOW or the billing export.',
+          recommendation: 'Move each amount onto an activity underneath its phase (or a new one named for the fee), then clear it from the phase row.' });
+      }
       // ⚑ deadline commitments vs the current forecast
       const breached = tasks.filter(t => t.deadline && t.finishDate && fmtISO(t.finishDate) > t.deadline);
       if (breached.length) findings.push({ severity: 'high', area: 'Commitments',
