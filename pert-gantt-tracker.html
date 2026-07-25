@@ -590,6 +590,35 @@
     .wl-wait { font-size: var(--t-xs); color: var(--muted); }
     .wl-none { font-size: var(--t-sm); color: var(--muted); font-style: italic; }
     .wl-more { font-size: var(--t-xs); color: var(--muted); font-style: italic; }
+
+    /* ---- THE COMPLETION REVIEW. A miss with no reason recorded is the single
+       most expensive gap in this file: it is the one fact the next estimate
+       needed and the only one nobody writes down. */
+    .cr { border: 1px solid #fde68a; background: #fffbeb; border-radius: 10px;
+      padding: 0.7rem 0.9rem; margin-bottom: 1rem; }
+    .cr-h { font-size: var(--t-md); color: var(--text); line-height: 1.55; margin: 0 0 0.5rem; }
+    .cr-h b { color: var(--text); }
+    .cr-l { list-style: none; margin: 0; padding: 0; }
+    .cr-li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.4rem;
+      padding: 0.25rem 0; border-top: 1px solid #fde68a; font-size: var(--t-sm); color: var(--muted); }
+    .cr-li:first-child { border-top: 0; }
+    .cr-why { flex: 1 1 auto; min-width: 200px; }
+    .cr-why b { color: var(--text); }
+    .cr-foot { font-size: var(--t-xs); color: var(--muted); margin: 0.5rem 0 0; line-height: 1.5; }
+
+    /* ---- SAY IT IN A SENTENCE. The RAID form has eleven fields and a picker;
+       what a manager actually has is one sentence, in the ninety seconds
+       between the call ending and the next one starting. */
+    .rq { border: 1px dashed var(--border); border-radius: 10px; background: var(--bg);
+      padding: 0.55rem 0.7rem; margin-bottom: 1rem; }
+    .rq-row { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+    .rq-in { flex: 1; min-width: 220px; font: inherit; font-size: var(--t-sm); padding: 0.35rem 0.5rem;
+      border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text); }
+    .rq-in:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+    .rq-hint { font-size: var(--t-xs); color: var(--muted); margin: 0.35rem 0 0; line-height: 1.5; }
+    .rq-hint b { color: var(--text); }
+    @media print { .rq { display: none !important; } }
+    @media print { .cr { background: #fff; } .cr .btn-sm { display: none !important; } }
     @media print { .rdg-fix { display: none !important; } }
     .rdg-unver { border-bottom: 1px dotted var(--warn); color: var(--warn); cursor: help; }
     @media print { .rdg-go, .rdg-act, .rdg-stale, .rdg-chip { display: none !important; }
@@ -2487,6 +2516,17 @@
           </div>
         </div>
         <div class="card-body">
+          <div class="rq no-print" id="raidQuick">
+            <div class="rq-row">
+              <input class="rq-in" id="rqIn" type="text" maxlength="300"
+                placeholder="Say it in a sentence — “the client sandbox is three weeks late and is blocking integration testing”"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();raidFromSentence()}" />
+              <button class="btn-primary btn-sm" id="rqBtn" onclick="raidFromSentence()">Capture</button>
+            </div>
+            <p class="rq-hint" id="rqHint"><b>One sentence in, a drafted entry out</b> — typed, scored, and linked to
+              the activities, stories, criteria or change orders it actually touches. It fills the form below and
+              stops there: nothing reaches the log until you press Save.</p>
+          </div>
           <div id="raidForm" style="display:none;background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:1rem">
             <div style="display:grid;grid-template-columns:1fr 3fr;gap:0.75rem;margin-bottom:0.75rem">
               <div><label for="rType">Type</label><select id="rType">
@@ -2617,7 +2657,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1757</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1819</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3638,7 +3678,10 @@
           baseFinish: t.baseFinish ? fmtISO(new Date(t.baseFinish)) : null,
           baseTe: t.baseTe, baseCost: (t.baseCost == null ? null : t.baseCost),
           startNoEarlier: t.startNoEarlier || '', deadline: t.deadline || '', jira: t.jira || '',
-          autoActualStart: !!t.autoActualStart, autoActualFinish: !!t.autoActualFinish
+          autoActualStart: !!t.autoActualStart, autoActualFinish: !!t.autoActualFinish,
+          // "this one missed and needs no entry" — a judgement, so it is stored
+          // with the plan rather than re-asked every time the tab is opened
+          missAck: !!t.missAck
         }))
       };
     }
@@ -3685,7 +3728,11 @@
         baseStart: t.baseStart ? new Date(t.baseStart + 'T00:00:00') : null,
         baseFinish: t.baseFinish ? new Date(t.baseFinish + 'T00:00:00') : null,
         baseTe: (t.baseTe == null ? null : Number(t.baseTe)),
-        baseCost: (t.baseCost == null ? null : Number(t.baseCost))
+        baseCost: (t.baseCost == null ? null : Number(t.baseCost)),
+        // hydrate maps every field EXPLICITLY (makeTask's defaults are the
+        // schema, not a pass-through), so a new stored field that is not
+        // listed here is written on save and silently lost on load
+        missAck: !!t.missAck
       }));
       resources = (data.resources && typeof data.resources === 'object') ? data.resources : {};
       if (data.reserves && typeof data.reserves === 'object') {
@@ -4979,6 +5026,100 @@
       // and teach nothing. Record the progress, then put the cursor in the cell
       // that is now missing its effort so the pair is completed in one motion.
       if (needsEffort(t)) promptEffortFor(id);
+    }
+
+    /* ============ WHY DID IT MISS? — captured at completion =================
+       Every estimate this tool will ever make is calibrated on what actually
+       happened last time, and the one fact that never gets written down is WHY
+       something missed. It is knowable for about a day after the work finishes
+       and unrecoverable a fortnight later, so it has to be asked for at the
+       moment of completion rather than at the post-mortem.
+
+       Three independent tests, each against the activity's OWN committed
+       figure, each with a floor so a rounding error is never called a miss:
+         LATE    finished after its baselined finish date
+         EFFORT  took materially longer than it was estimated at
+         COST    cost materially more than it was budgeted at
+       The strongest is the headline; the others are named beside it. */
+    function completionMiss(t) {
+      if (!t || t.isSummary || isSummaryId(t.id)) return null;
+      if (!((Number(t.percentComplete) || 0) >= 100)) return null;
+      const out = [];
+      const bf = t.baseFinish, cf = currentFinish(t);
+      if (isRealDate(bf) && cf) {
+        const d = calDaysBetween(stripTime(bf), stripTime(cf));
+        // the three weights are RELATIVE OVERRUNS on one scale and deliberately
+        // uncapped: capping them at 1 made every serious overrun tie, and a
+        // nine-day slip could then never outrank a 26% effort miss
+        if (d >= 1) out.push({ k: 'late', w: d / 10,
+          txt: 'finished <b>' + d + ' calendar ' + ptrPl(d, 'day') + ' late</b> against its baseline of '
+            + escapeHtml(fmtNice(bf)) });
+      }
+      // effort is compared in working days, because te and actualEffort can be
+      // entered in different units and only this function reconciles them
+      const refU = Number(t.baseTe) > 0 ? Number(t.baseTe) : (Number(t.te) || 0);
+      const refD = refU > 0 ? unitToWorkingDays(refU) : 0;
+      const actD = actualEffortDays(t);
+      if (refD > 0 && actD != null && actD > refD * 1.25 && (actD - refD) >= 0.5)
+        out.push({ k: 'effort', w: actD / refD - 1,
+          txt: 'took <b>' + (Math.round(actD * 10) / 10) + ' days against ' + (Math.round(refD * 10) / 10)
+            + ' estimated</b>' });
+      const pc = plannedCostOf(t, hasBaseline()), ac = actualCostOf(t);
+      if (pc > 0 && ac > pc * 1.15 && (ac - pc) >= 100)
+        out.push({ k: 'cost', w: ac / pc - 1,
+          txt: 'cost <b>' + fmtMoney(Math.round(ac)) + ' against ' + fmtMoney(Math.round(pc))
+            + ' budgeted</b>' });
+      if (!out.length) return null;
+      out.sort((a, b) => b.w - a.w);
+      const strip = x => String(x.txt).replace(/<[^>]+>/g, '');
+      return { top: out[0], all: out,
+               headline: strip(out[0]),                 // the title: one clause
+               plain: out.map(strip).join('; ') };      // the description: all of them
+    }
+    /* An entry ALREADY logged against it is the answer — open or closed, because
+       a closed issue is still the recorded cause. An acknowledgement is the
+       other answer: some things miss for no reason worth a register entry, and
+       a tool that cannot be told that is a tool people learn to ignore. */
+    function missNeedsCause(t) {
+      if (t.missAck) return false;
+      if (!completionMiss(t)) return false;
+      try { return raidForTask(t.id, false).length === 0; } catch (e) { return true; }
+    }
+    function missesNeedingCause() { return leafTasks().filter(missNeedsCause); }
+    function missAckSet(id) {
+      const t = tasks.find(x => x.id === id);
+      if (!t) return;
+      t.missAck = true;
+      saveLocal();
+      renderBaseline();
+      flashSaved('Noted — no entry needed for “' + ekName(t) + '”');
+    }
+    function completionReviewHtml() {
+      const rows = missesNeedingCause();
+      if (!rows.length) return '';
+      const MAX = 6;
+      const li = rows.slice(0, MAX).map(t => {
+        const m = completionMiss(t);
+        return '<li class="cr-li"><button type="button" class="ptr-sc-rbtn no-print" onclick="openEditModal('
+          + t.id + ', true)" title="Open it">' + ekTok(ekKindOf(t), t.wbs || '', ekName(t), { xs: true, max: 26 })
+          + '</button><span class="cr-why">' + m.top.txt
+          + (m.all.length > 1 ? ' <span class="ptr-aside">· also ' + m.all.slice(1).map(x => x.txt).join('; ')
+              + '</span>' : '') + '</span>'
+          + '<button class="btn-sm btn-primary no-print" onclick="raidLogFor(' + t.id + ", '"
+          + ekJs(m.headline) + "', 'completion review', '" + ekJs(m.plain)
+          + "')\" title=\"Draft a RAID entry linked to this activity, "
+          + "with the miss already written into it\">Say why</button>"
+          + '<button class="btn-sm btn-secondary no-print" onclick="missAckSet(' + t.id + ')" '
+          + 'title="Nothing worth logging — stop asking about this one">No entry needed</button></li>';
+      }).join('');
+      return '<div class="cr no-print-open"><p class="cr-h">⚑ <b>' + rows.length + ' completed '
+        + ptrPl(rows.length, 'activity', 'activities') + ' missed the plan with no reason recorded.</b> '
+        + 'Why something missed is knowable for about a day and unrecoverable a fortnight later, and it is the '
+        + 'one fact your next estimate needs most — the bank stores the ratio, never the reason.</p>'
+        + '<ul class="cr-l">' + li + '</ul>'
+        + (rows.length > MAX ? '<p class="cr-foot">and ' + (rows.length - MAX) + ' more below the fold.</p>' : '')
+        + '<p class="cr-foot">This clears itself the moment a RAID entry is linked to the activity — open or '
+        + 'closed, either counts. “No entry needed” is a real answer and is remembered with the plan.</p></div>';
     }
 
     // ========================= STATUS HELPERS =========================
@@ -9477,15 +9618,18 @@
         + escapeHtml('Nothing is logged in the RAID log against “' + (name || 'this activity')
           + '”. Draft an entry linked to it.') + '"><span aria-hidden="true">＋</span>RAID</button>';
     }
-    function raidLogFor(taskId, note) {
+    function raidLogFor(taskId, note, src, detail) {
       const t = tasks.find(x => x.id === taskId);
       switchTab('raid');
       openRaidForm(null);
       const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
       const nm = t ? ((t.wbs ? t.wbs + ' ' : '') + ekName(t)) : ('activity ' + taskId);
       set('rType', 'Issue');
-      set('rTitle', nm + ' — ' + (note || 'off plan'));
-      set('rDesc', 'Raised from the plan-truth panel on ' + fmtISO(new Date()) + '. The variance is ' + (note || '')
+      // the TITLE is the headline miss and nothing else — a RAID log whose
+      // titles run to three clauses is a log nobody scans
+      set('rTitle', (nm + ' — ' + (note || 'off plan')).slice(0, 90));
+      set('rDesc', 'Raised from the ' + (src || 'plan-truth panel') + ' on ' + fmtISO(new Date())
+        + '. The variance is ' + (detail || note || '')
         + '. What caused it, and what is being done about it?');
       // link it to the activity it came from, so the entry answers back on every
       // surface that reads the reverse index
@@ -11406,7 +11550,7 @@
       const usedTxt = (used, plan, noun) => (plan > 0 && used > 0)
         ? Math.round(used / plan * 100) + '% of ' + noun + ' used at ' + Math.round(donePct) + '% complete' : '';
 
-      cont.innerHTML = `${banner}${ptReadingHtml('base')}
+      cont.innerHTML = `${banner}${completionReviewHtml()}${ptReadingHtml('base')}
         <div class="summary-grid bl-cards" style="margin-bottom:1rem">
           ${card('Schedule', hb ? fmtNice(baseFinishAll) : 'no baseline', curFinishAll ? fmtNice(curFinishAll) : 'not scheduled yet',
             projVar == null ? '' : (projVar > 0 ? '+' + projVar + 'd late vs baseline' : projVar < 0 ? -projVar + 'd early vs baseline' : 'on the baseline date'), projVar,
@@ -18218,6 +18362,147 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
         (tasks.find(t => t.id === r.taskId) || {}).name || '', r.mitigation, r.status, r.createdAt]));
       download(safeName() + '-raid.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
     }
+    /* =============== SAY IT IN A SENTENCE — prompt-driven capture ==========
+       The RAID form asks for a type, a title, two scores, an owner, a
+       mitigation, a description and a set of links. What a manager has, in the
+       ninety seconds between one call and the next, is a sentence. This turns
+       one into the other.
+
+       The discipline is the same as the reading's: the model may only reference
+       entities from a CATALOGUE this file builds, so a link it invents cannot
+       resolve and is dropped by name. It also never writes to the log — it
+       fills the form and stops, because a register entry nobody read is worse
+       than no entry at all, and this one goes in front of a client. */
+    const RAID_CAPTURE_CONTRACT = `You turn ONE sentence from a delivery manager into ONE structured RAID
+register entry for the engagement described below.
+
+RAID means Risks (might happen), Assumptions (we are planning on it), Issues
+(it is happening now), Decisions (it was decided) and Exclusions (explicitly
+out of scope). Choose by tense and certainty: something already happening is an
+Issue, not a Risk.
+
+HARD RULES.
+1. Return ONE entry. Not a list of possibilities, not a set of related risks.
+2. LINK ONLY WHAT IS IN THE CATALOGUE. Every link must be an exact "k|id" pair
+   copied from the CATALOGUE below. An id you invent is dropped and reported to
+   the user as dropped. Link everything the sentence genuinely touches —
+   usually one or two activities, sometimes the story or criterion behind them.
+   Zero links is correct when the sentence names nothing in the plan.
+3. THE OWNER MUST BE ON THE ROSTER, exactly as spelled there, or empty. Do not
+   invent a person, and do not put a company or a role in the owner field.
+4. The title is a SHORT noun phrase a reader can scan in a register — under
+   ninety characters, no leading "Risk:" or "Issue:", no full stop.
+5. Probability and impact are 1-5 integers. For an Issue, probability is 5: it
+   has already happened. Be honest rather than dramatic; 3 is the default.
+6. The description is the manager's own sentence, tidied — not expanded,
+   not embellished, and never invented detail they did not say.
+7. The mitigation is the response if the sentence implies one, otherwise empty.
+   Do not invent a plan of action nobody has agreed to.
+
+Return ONLY this JSON, no prose, no code fence:
+{"type":"Risk|Assumption|Issue|Decision|Exclusion",
+ "title":"short noun phrase",
+ "description":"their sentence, tidied",
+ "probability":1,"impact":1,
+ "owner":"exact roster name or empty",
+ "mitigation":"",
+ "links":["act|12","story|US-3"]}`;
+
+    function raidCatalogue() {
+      const rows = raidLinkCandidates().map(c => c.k + RAID_LINK_SEP + c.id + '  ' + String(c.label).slice(0, 70));
+      const roster = Object.keys(resources);
+      return 'PROJECT "' + (document.getElementById('projectName').value || 'this engagement') + '"\n'
+        + 'ROSTER (the only valid owners): ' + (roster.length ? roster.join(' | ') : '(nobody on the roster)') + '\n'
+        + 'EXISTING ENTRIES (do not duplicate): '
+        + (raid.length ? raid.map(r => r.type + ': ' + String(r.title).slice(0, 50)).join(' | ') : '(none)') + '\n\n'
+        + 'CATALOGUE — the only ids you may link to:\n' + rows.join('\n');
+    }
+    let rqBusy = false;
+    function rqSay(html, tone) {
+      const h = document.getElementById('rqHint');
+      if (h) h.innerHTML = html;
+      const box = document.getElementById('raidQuick');
+      if (box) box.style.borderColor = tone === 'bad' ? '#fca5a5' : tone === 'ok' ? '#bbf7d0' : '';
+    }
+    async function raidFromSentence() {
+      if (rqBusy) return;
+      const el = document.getElementById('rqIn');
+      const q = ((el && el.value) || '').trim().slice(0, 300);
+      if (!q) { if (el) el.focus(); return; }
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) {
+        document.getElementById('aiSettings').style.display = 'block';
+        switchTab('tasks'); return;
+      }
+      rqBusy = true;
+      const btn = document.getElementById('rqBtn');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Reading it…'; }
+      rqSay('Reading the sentence against this plan…');
+      const onDelta = streamShow('Capturing: ' + q.slice(0, 60));
+      const Q3 = '\u0022\u0022\u0022';               // the same fence the contract's example uses
+      try {
+        const text = await callAnthropic(raidCatalogue() + '\n\nTHE SENTENCE:\n' + Q3
+          + q.replace(/[\u0022]{3}/g, '\u0022') + Q3, {
+          onDelta, cachePrefix: [RAID_CAPTURE_CONTRACT], noContinue: true
+        });
+        const res = parseAIJsonStrict(text, 'the RAID entry', { noContinue: true });
+        streamHide(true);
+        const v = raidCaptureApply(res, q);
+        if (el) el.value = '';
+        rqSay('<b>Drafted below — nothing is in the log yet.</b> ' + v.note
+          + ' Check it, change anything, then press <b>Save entry</b>.', 'ok');
+      } catch (e) {
+        streamHide(false);
+        rqSay('<b>That did not come back as an entry.</b> ' + escapeHtml((e && e.message) || String(e))
+          + ' Nothing was changed — try again, or press <b>+ Add entry</b> and type it in.', 'bad');
+      } finally {
+        rqBusy = false;
+        if (btn) { btn.disabled = false; btn.textContent = 'Capture'; }
+      }
+    }
+    // Validation is the same shape as the reading's: coerce what is coercible,
+    // DROP what cannot be resolved, and say out loud what was dropped.
+    function raidCaptureApply(res, sentence) {
+      const drops = [];
+      const TYPES = ['Risk', 'Assumption', 'Issue', 'Decision', 'Exclusion'];
+      const type = TYPES.indexOf(String(res && res.type)) >= 0 ? res.type : 'Risk';
+      if (res && res.type && TYPES.indexOf(String(res.type)) < 0) drops.push('an unknown type, defaulted to Risk');
+      const clamp = v => Math.min(5, Math.max(1, Math.round(+v) || 3));
+      const title = String((res && res.title) || '').trim().replace(/^(risk|issue|assumption|decision|exclusion)\s*:\s*/i, '');
+      const owner = Object.prototype.hasOwnProperty.call(resources, String((res && res.owner) || '').trim())
+        ? String(res.owner).trim() : '';
+      if (res && res.owner && !owner) drops.push('an owner who is not on the roster (“' + String(res.owner).slice(0, 24) + '”)');
+      const links = [];
+      (Array.isArray(res && res.links) ? res.links : []).forEach(raw => {
+        const str = String(raw || '');
+        const cut = str.indexOf(RAID_LINK_SEP);
+        if (cut < 0) { drops.push('a link that was not a k|id pair'); return; }
+        const k = str.slice(0, cut), rawId = str.slice(cut + 1);
+        const id = (k === 'act' || k === 'raid') ? Number(rawId) : rawId;
+        if (!RAID_LINK_KINDS[k]) { drops.push('a link of an unknown kind'); return; }
+        const g = raidResolve({ k: k, id: id });
+        if (!g) { drops.push('a link to something not in this plan (' + escapeHtml(str.slice(0, 24)) + ')'); return; }
+        if (links.some(l => l.k === k && String(l.id) === String(id))) return;
+        links.push({ k: k, id: id, was: g.label });
+      });
+      openRaidForm(null);
+      const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+      set('rType', type);
+      set('rTitle', (title || sentence).slice(0, 90));
+      set('rProb', type === 'Issue' ? 5 : clamp(res && res.probability));
+      set('rImpact', clamp(res && res.impact));
+      set('rOwner', owner);
+      set('rDesc', String((res && res.description) || sentence).slice(0, 600));
+      set('rMitigation', String((res && res.mitigation) || '').slice(0, 400));
+      raidDraftLinks = links;
+      raidRenderDraft();
+      const nLink = links.length;
+      return { drops: drops, links: nLink,
+        note: 'Typed <b>' + escapeHtml(type) + '</b>, linked to <b>' + nLink + '</b> '
+          + ptrPl(nLink, 'thing') + ' in this plan'
+          + (drops.length ? ', and ' + drops.length + ' part' + (drops.length === 1 ? '' : 's')
+              + ' of the answer discarded — ' + drops.slice(0, 2).join('; ') : '') + '.' };
+    }
+
     async function aiDraftRaid() {
       if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) {
         alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return;
