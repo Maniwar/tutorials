@@ -544,6 +544,27 @@
     .rdg-applied { font-size: var(--t-sm); color: var(--text); background: #f0fdf4;
       border: 1px solid #bbf7d0; border-radius: 6px; padding: 0.35rem 0.55rem; margin: 0 0 0.4rem; }
     .rdg-applied b { color: var(--text); }
+
+    /* ---- SLICE 4 — THE STANDUP. What actually changed since this morning,
+       computed from a stored copy of the plan rather than remembered. */
+    .stu-sum { cursor: pointer; font-weight: 700; font-size: var(--t-md); }
+    .stu-sum .stu-n { display: inline-block; min-width: 1.4rem; padding: 0 0.35rem; margin-right: 0.4rem;
+      border-radius: 999px; background: var(--primary); color: #fff; font-variant-numeric: tabular-nums;
+      text-align: center; }
+    .stu-sum .stu-n-0 { background: var(--slack); }
+    .stu-when { font-weight: 400; color: var(--muted); font-size: var(--t-sm); }
+    .stu-g { margin: 0.55rem 0 0; }
+    .stu-gh { font-size: var(--t-xs); font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+      color: var(--muted); margin: 0 0 0.2rem; }
+    .stu-l { list-style: none; margin: 0; padding: 0; }
+    .stu-li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; padding: 2px 0;
+      font-size: var(--t-sm); color: var(--muted); line-height: 1.5; }
+    .stu-li b { color: var(--text); }
+    .stu-more { font-size: var(--t-xs); color: var(--muted); font-style: italic; }
+    .stu-pick { font-size: var(--t-sm); padding: 0.15rem 0.35rem; border: 1px solid var(--border);
+      border-radius: 6px; background: var(--card); color: var(--text); }
+    .stu-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-top: 0.6rem; }
+    .stu-none { font-size: var(--t-md); color: var(--muted); line-height: 1.55; margin: 0.4rem 0 0; }
     @media print { .rdg-fix { display: none !important; } }
     .rdg-unver { border-bottom: 1px dotted var(--warn); color: var(--warn); cursor: help; }
     @media print { .rdg-go, .rdg-act, .rdg-stale, .rdg-chip { display: none !important; }
@@ -2513,6 +2534,11 @@
     <!-- ANALYTICS VIEW -->
     <div id="view-analytics" role="tabpanel" class="view">
       <div class="summary-grid" id="summaryGrid"></div>
+      <div class="card" id="standupCard">
+        <div class="card-body" style="padding-top:0.75rem;padding-bottom:0.75rem">
+          <div id="standupBody"></div>
+        </div>
+      </div>
       <div class="card">
         <div class="card-header">
           <h2><span class="ico" aria-hidden="true">⚖️</span> Plan truth — schedule, budget &amp; scope</h2>
@@ -2566,7 +2592,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1744</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1752</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3331,6 +3357,36 @@
       }
       return true;
     }
+    /* ===================== SLICE 4 — THE DAY ANCHOR =========================
+       The snapshot ring above holds the last FIFTEEN SAVES, which on an active
+       morning is about twenty minutes of history — useless for "what changed
+       since yesterday". This keeps one copy per calendar DAY instead, and it
+       keeps the right one: on the first save of a new day it stores the state
+       as it was BEFORE that save, which is exactly the plan as it stood when
+       the day started. Fourteen days, one entry each, so a fortnight of
+       "what moved" is always answerable from disk rather than from memory. */
+    let dayRing = [];                                   // [{date, at, json}] for the ACTIVE project
+    async function dayAnchorKeep(id, prevJson) {
+      if (!prevJson) return;
+      const today = fmtISO(new Date());
+      try {
+        const key = 'day.' + id;
+        let ring = [];
+        try { ring = JSON.parse((await idbGet(key)) || '[]'); } catch (e) { ring = []; }
+        if (ring.some(x => x.date === today)) { if (id === activeProjectId()) dayRing = ring; return; }
+        ring.push({ date: today, at: new Date().toISOString(), json: prevJson });
+        while (ring.length > 14) ring.shift();
+        await idbSet(key, JSON.stringify(ring));
+        if (id === activeProjectId()) dayRing = ring;
+      } catch (e) { /* history is best-effort, exactly like the ring above */ }
+    }
+    async function dayHydrate() {
+      const id = activeProjectId();
+      try { dayRing = JSON.parse((await idbGet('day.' + id)) || '[]'); } catch (e) { dayRing = []; }
+      if (!Array.isArray(dayRing)) dayRing = [];
+      try { if (document.getElementById('standupBody')) renderStandup(); } catch (e) {}
+    }
+
     // rolling snapshot ring — the "time machine": every save with real content
     // keeps a timestamped copy (last 15 per project), so nothing is ever one
     // bad save away from gone
@@ -3492,12 +3548,16 @@
         const json = JSON.stringify(data);
         trackUndo(json);
         const id = activeProjectId();
+        // captured BEFORE the cache is overwritten: on the first save of a new
+        // day this is the plan as it stood when the day began
+        const prevJson = projCache[id];
         projCache[id] = json; // sync cache: switch/new/compare read this instantly
         // durable write: IndexedDB (disk-backed, no ~5 MB ceiling). localStorage
         // no longer holds payloads at all — only the tiny index and prefs.
         idbSet(PROJ_PREFIX + id, json).then(() => {
           const sb = document.getElementById('storageBanner'); if (sb) sb.remove();
           snapshotKeep(id, json, (data.tasks || []).length); // time machine
+          dayAnchorKeep(id, prevJson);                       // one copy per calendar day
           diskAutoSave(json); // optional real file on disk
         }).catch(() => {
           // no IndexedDB (blocked/ancient browser): localStorage fallback
@@ -9671,6 +9731,7 @@
         ${overCard}
       `;
       animateTiles();
+      try { renderStandup(); } catch (e) {}
       renderPlanTruth();
 
       // target date probability
@@ -19318,6 +19379,252 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         }).join('') + '</div>';
     }
 
+    /* ===================== SLICE 4 — THE STANDUP ============================
+       "What changed since yesterday" is the question every delivery day opens
+       with, and this file could not answer it. It stored a full copy of the
+       plan every save and never once compared two of them.
+
+       This diffs the live plan against the day anchor: not a narrative, not a
+       model's recollection, but field-by-field over the same serialize() the
+       app saves. Every row names an activity you can open. It is deterministic
+       and free — no key, no call — because "what did we change" is a fact
+       about the file, not a judgement about the engagement.  */
+    const STU_GROUPS = [
+      ['progress', 'Progress and actuals'], ['scope', 'Scope'], ['estimate', 'Estimates'],
+      ['sequence', 'Sequence and dates'], ['people', 'People'], ['money', 'Money'],
+      ['raid', 'RAID'], ['req', 'Requirements'], ['commit', 'Commitments']
+    ];
+    function stuParse(json) { try { return JSON.parse(json); } catch (e) { return null; } }
+    function stuNum(v) { return v == null || v === '' ? null : +v; }
+    function standupDiff(oldObj, cur) {
+      const G = {};
+      const add = (g, txt, id) => { (G[g] = G[g] || []).push({ txt, id }); };
+      if (!oldObj || !cur) return { groups: G, total: 0 };
+      const oT = new Map((oldObj.tasks || []).map(t => [t.id, t]));
+      const nT = new Map((cur.tasks || []).map(t => [t.id, t]));
+      /* A phase's percentage and its O/M/P are ROLLED UP from its children, so
+         ticking one activity complete also moves every phase above it. Listing
+         those is the same news three times in a row, wearing three names. The
+         leaf rows carry it; the summaries are skipped for the derived fields
+         only, and still report a rename, a move or a stranded cost. */
+      const parents = new Set();
+      (cur.tasks || []).forEach(t => { if (t.parentId != null) parents.add(t.parentId); });
+      (oldObj.tasks || []).forEach(t => { if (t.parentId != null) parents.add(t.parentId); });
+      const nameOf = t => (t && t.name) || '(unnamed)';
+      const pct = v => Math.round(Number(v) || 0);
+
+      nT.forEach((n, id) => {
+        const o = oT.get(id);
+        if (!o) { add('scope', '<b>added</b> ' + escapeHtml(nameOf(n)), id); return; }
+        if (String(o.name) !== String(n.name))
+          add('scope', 'renamed <b>' + escapeHtml(nameOf(o)) + '</b> → ' + escapeHtml(nameOf(n)), id);
+        const rolled = parents.has(id);
+        // progress and actuals
+        if (!rolled && pct(o.percentComplete) !== pct(n.percentComplete))
+          add('progress', escapeHtml(nameOf(n)) + ' <b>' + pct(o.percentComplete) + '% → ' + pct(n.percentComplete) + '%</b>', id);
+        [['actualStart', 'actual start'], ['actualFinish', 'actual finish']].forEach(([k, lab]) => {
+          const a = o[k] || '', b2 = n[k] || '';
+          if (rolled || a === b2) return;
+          add('progress', escapeHtml(nameOf(n)) + ' ' + lab + ' '
+            + (a && b2 ? '<b>' + escapeHtml(a) + ' → ' + escapeHtml(b2) + '</b>'
+               : b2 ? 'logged <b>' + escapeHtml(b2) + '</b>' : '<b>cleared</b>'), id);
+        });
+        if (!rolled && stuNum(o.actualEffort) !== stuNum(n.actualEffort))
+          add('progress', escapeHtml(nameOf(n)) + ' time spent <b>' + (o.actualEffort == null ? '—' : o.actualEffort)
+            + ' → ' + (n.actualEffort == null ? '—' : n.actualEffort) + '</b>', id);
+        // estimates
+        if (!rolled && (o.o !== n.o || o.m !== n.m || o.p !== n.p))
+          add('estimate', escapeHtml(nameOf(n)) + ' <b>' + o.o + '–' + o.m + '–' + o.p + ' → '
+            + n.o + '–' + n.m + '–' + n.p + '</b>', id);
+        if (!!o.milestone !== !!n.milestone)
+          add('estimate', escapeHtml(nameOf(n)) + ' is ' + (n.milestone ? 'now a <b>milestone</b>' : 'no longer a milestone'), id);
+        // sequence
+        const pl = t => (t.predecessors || []).map(p => p.id + p.type + (p.lag || 0)).sort().join(',');
+        if (pl(o) !== pl(n))
+          add('sequence', escapeHtml(nameOf(n)) + ' dependencies <b>' + (o.predecessors || []).length
+            + ' → ' + (n.predecessors || []).length + '</b>', id);
+        if ((o.parentId || null) !== (n.parentId || null))
+          add('sequence', escapeHtml(nameOf(n)) + ' moved under <b>'
+            + escapeHtml(nameOf(nT.get(n.parentId)) || 'the top level') + '</b>', id);
+        [['deadline', 'deadline'], ['startNoEarlier', 'start-no-earlier']].forEach(([k, lab]) => {
+          if ((o[k] || '') === (n[k] || '')) return;
+          add('sequence', escapeHtml(nameOf(n)) + ' ' + lab + ' '
+            + (n[k] ? 'set to <b>' + escapeHtml(n[k]) + '</b>' : '<b>cleared</b>'), id);
+        });
+        // people
+        if ((o.owner || '') !== (n.owner || ''))
+          add('people', escapeHtml(nameOf(n)) + ' owner <b>' + escapeHtml(o.owner || 'nobody') + ' → '
+            + escapeHtml(n.owner || 'nobody') + '</b>', id);
+        const at = t => (t.attendees || []).map(a => a.name).sort().join(',');
+        if (at(o) !== at(n))
+          add('people', escapeHtml(nameOf(n)) + ' attendees <b>' + ((o.attendees || []).length)
+            + ' → ' + ((n.attendees || []).length) + '</b>', id);
+        // money
+        [['fixedCost', 'fixed cost'], ['actualCost', 'actual cost']].forEach(([k, lab]) => {
+          if ((Number(o[k]) || 0) === (Number(n[k]) || 0)) return;
+          add('money', escapeHtml(nameOf(n)) + ' ' + lab + ' <b>' + fmtMoney(Number(o[k]) || 0) + ' → '
+            + fmtMoney(Number(n[k]) || 0) + '</b>', id);
+        });
+      });
+      oT.forEach((o, id) => { if (!nT.has(id)) add('scope', '<b>removed</b> ' + escapeHtml(nameOf(o)), null); });
+
+      // roster
+      const oR = oldObj.resources || {}, nR = cur.resources || {};
+      Object.keys(nR).forEach(k => {
+        if (!oR[k]) { add('people', '<b>added</b> ' + escapeHtml(k) + ' to the roster'); return; }
+        if ((Number(oR[k].rate) || 0) !== (Number(nR[k].rate) || 0))
+          add('money', escapeHtml(k) + ' day rate <b>' + fmtMoney(Number(oR[k].rate) || 0) + ' → '
+            + fmtMoney(Number(nR[k].rate) || 0) + '</b>');
+        if ((Number(oR[k].capacity) || 0) !== (Number(nR[k].capacity) || 0))
+          add('people', escapeHtml(k) + ' capacity <b>' + (oR[k].capacity || 0) + '% → ' + (nR[k].capacity || 0) + '%</b>');
+      });
+      Object.keys(oR).forEach(k => { if (!nR[k]) add('people', '<b>removed</b> ' + escapeHtml(k) + ' from the roster'); });
+
+      // RAID
+      const oQ = new Map((oldObj.raid || []).map(r => [r.id, r])), nQ = new Map((cur.raid || []).map(r => [r.id, r]));
+      nQ.forEach((r, id) => {
+        const o = oQ.get(id);
+        if (!o) { add('raid', '<b>' + escapeHtml(r.type || 'Entry') + ' raised</b> — ' + escapeHtml(String(r.title || '').slice(0, 60))); return; }
+        if (String(o.status) !== String(r.status))
+          add('raid', escapeHtml(String(r.title || '').slice(0, 50)) + ' <b>' + escapeHtml(o.status || '—')
+            + ' → ' + escapeHtml(r.status || '—') + '</b>');
+      });
+      oQ.forEach((r, id) => { if (!nQ.has(id)) add('raid', '<b>deleted</b> ' + escapeHtml(String(r.title || '').slice(0, 60))); });
+
+      // requirements
+      const oS = ((oldObj.reqs || {}).stories) || [], nS = ((cur.reqs || {}).stories) || [];
+      const oSm = new Map(oS.map(x => [x.id, x])), nSm = new Map(nS.map(x => [x.id, x]));
+      let linked = 0, acN = 0;
+      nSm.forEach((n, id) => {
+        const o = oSm.get(id);
+        if (!o) { add('req', '<b>added</b> story ' + escapeHtml(String(id))); return; }
+        const l = x => (x.wbsIds || (x.wbsId != null ? [x.wbsId] : [])).slice().sort().join(',');
+        if (l(o) !== l(n)) linked++;
+        if (((o.ac || []).length) !== ((n.ac || []).length)) acN++;
+      });
+      oSm.forEach((o, id) => { if (!nSm.has(id)) add('req', '<b>removed</b> story ' + escapeHtml(String(id))); });
+      if (linked) add('req', '<b>' + linked + '</b> ' + ptrPl(linked, 'story') + ' re-linked to different activities');
+      if (acN) add('req', '<b>' + acN + '</b> ' + ptrPl(acN, 'story') + ' had acceptance criteria added or removed');
+
+      // commitments
+      if ((oldObj.baselineDate || '') !== (cur.baselineDate || ''))
+        add('commit', 'baseline <b>' + escapeHtml(oldObj.baselineDate || 'none') + ' → '
+          + escapeHtml(cur.baselineDate || 'none') + '</b>');
+      const rv = (x, k) => ((x.reserves || {})[k] || {});
+      ['contingency', 'management'].forEach(k => {
+        const a = rv(oldObj, k), b2 = rv(cur, k);
+        if ((Number(a.value) || 0) !== (Number(b2.value) || 0) || (a.unit || '') !== (b2.unit || ''))
+          add('commit', k + ' reserve <b>' + (a.value || 0) + ' ' + (a.unit || '') + ' → '
+            + (b2.value || 0) + ' ' + (b2.unit || '') + '</b>');
+      });
+      if ((Number(oldObj.projectBudget) || 0) !== (Number(cur.projectBudget) || 0))
+        add('money', 'project budget <b>' + fmtMoney(Number(oldObj.projectBudget) || 0) + ' → '
+          + fmtMoney(Number(cur.projectBudget) || 0) + '</b>');
+      const op = oldObj.pricing || {}, np = cur.pricing || {};
+      if ((op.model || '') !== (np.model || '') || (op.basis || '') !== (np.basis || ''))
+        add('commit', 'pricing basis <b>' + escapeHtml((op.model || '?') + '/' + (op.basis || '?')) + ' → '
+          + escapeHtml((np.model || '?') + '/' + (np.basis || '?')) + '</b>');
+      if (((oldObj.coLog || []).length) !== ((cur.coLog || []).length))
+        add('commit', 'change orders <b>' + ((oldObj.coLog || []).length) + ' → ' + ((cur.coLog || []).length) + '</b>');
+      if ((oldObj.projectStart || '') !== (cur.projectStart || ''))
+        add('sequence', 'project start <b>' + escapeHtml(oldObj.projectStart || '—') + ' → '
+          + escapeHtml(cur.projectStart || '—') + '</b>');
+
+      let total = 0; Object.keys(G).forEach(k => { total += G[k].length; });
+      return { groups: G, total };
+    }
+
+    function stuPlain(html) {
+      return String(html == null ? '' : html).replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+        .replace(/\s+/g, ' ').trim();
+    }
+    let stuPick = null;                                  // which anchor the reader chose
+    function stuAnchor() {
+      if (!dayRing.length) return null;
+      if (stuPick != null) return dayRing.find(x => x.date === stuPick) || dayRing[dayRing.length - 1];
+      return dayRing[dayRing.length - 1];                // the most recent day boundary
+    }
+    function stuSetPick(v) { stuPick = v || null; renderStandup(); }
+    function renderStandup() {
+      const host = document.getElementById('standupBody');
+      if (!host) return;
+      const a = stuAnchor();
+      if (!a) {
+        host.innerHTML = '<p class="stu-none"><b>The standup starts tomorrow.</b> This panel diffs the plan against '
+          + 'a copy stored at the start of each day, and this project has no earlier day on file yet — the first '
+          + 'one is written the next time you edit it on a new date.</p>';
+        return;
+      }
+      const cur = serialize();
+      const was = stuParse(a.json);
+      if (!was) {
+        // "nothing changed" would be a lie about a copy we could not read
+        host.innerHTML = '<p class="stu-none"><b>The stored copy for ' + escapeHtml(a.date) + ' cannot be read.</b> '
+          + 'It is on disk but not valid JSON, so there is nothing to compare against — rather than report no '
+          + 'changes, which would be a claim about a file this cannot open. Tomorrow’s copy is unaffected.</p>';
+        return;
+      }
+      const d = standupDiff(was, cur);
+      const when = 'since the start of ' + escapeHtml(a.date)
+        + (a.date === fmtISO(new Date()) ? ' — today' : '');
+      const pick = dayRing.length > 1
+        ? '<select class="stu-pick no-print" onchange="stuSetPick(this.value)" title="Compare against the start of an earlier day">'
+          + dayRing.slice().reverse().map(x => '<option value="' + escapeHtml(x.date) + '"'
+              + (x.date === a.date ? ' selected' : '') + '>' + escapeHtml(x.date)
+              + (x.date === fmtISO(new Date()) ? ' (today)' : '') + '</option>').join('')
+          + '</select>' : '';
+      if (!d.total) {
+        host.innerHTML = '<p class="stu-none"><b>Nothing has changed ' + when + '.</b> '
+          + 'Not "nothing important" — nothing at all: every field this file stores is identical to the copy '
+          + 'taken then.</p><div class="stu-bar no-print">' + pick + '</div>';
+        return;
+      }
+      const MAXR = 8;
+      const body = STU_GROUPS.map(([k, label]) => {
+        const rows = d.groups[k];
+        if (!rows || !rows.length) return '';
+        const shown = rows.slice(0, MAXR);
+        return '<div class="stu-g"><p class="stu-gh">' + label + ' · ' + rows.length + '</p><ul class="stu-l">'
+          + shown.map(r => '<li class="stu-li">' + (r.id != null
+              ? '<button type="button" class="ptr-sc-rbtn no-print" onclick="openEditModal(' + r.id + ', true)" '
+                + 'title="Open it">' + r.txt + '</button>'
+              : '<span>' + r.txt + '</span>') + '</li>').join('')
+          + '</ul>' + (rows.length > MAXR ? '<p class="stu-more">and ' + (rows.length - MAXR) + ' more</p>' : '')
+          + '</div>';
+      }).join('');
+      host.innerHTML = '<details class="stu" open><summary class="stu-sum"><span class="stu-n">' + d.total
+        + '</span> ' + ptrPl(d.total, 'change') + ' <span class="stu-when">' + when + '</span></summary>'
+        + body
+        + '<div class="stu-bar no-print">' + pick
+        + '<button class="btn-sm btn-secondary" onclick="stuCopy()" title="Plain text, ready to paste into a stand-up note or an email">📋 Copy</button>'
+        + '</div></details>';
+    }
+    function stuText() {
+      const a = stuAnchor();
+      if (!a) return '';
+      const d = standupDiff(stuParse(a.json), serialize());
+      const L = ['STAND-UP — ' + (document.getElementById('projectName').value || 'project'),
+        d.total + ' change' + (d.total === 1 ? '' : 's') + ' since the start of ' + a.date, ''];
+      STU_GROUPS.forEach(([k, label]) => {
+        const rows = d.groups[k];
+        if (!rows || !rows.length) return;
+        L.push(label.toUpperCase());
+        // tags AND entities: "Kick-off &amp; Discovery" pasted into an email is
+        // how you can tell a plain-text export was never actually read
+        rows.forEach(r => L.push('  · ' + stuPlain(r.txt)));
+        L.push('');
+      });
+      return L.join('\n').trim();
+    }
+    async function stuCopy() {
+      const t = stuText();
+      if (!t) return;
+      try { await navigator.clipboard.writeText(t); flashSaved('📋 Stand-up copied'); }
+      catch (e) { download(safeName() + '-standup.txt', t, 'text/plain'); }
+    }
+
     // ========================= PLAN HEALTH CHECK =========================
     function lintPlan() {
       const u = unitLabel();
@@ -20066,7 +20373,7 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
        hydrate(). Wrapping it is the ONE hook that covers all of them, in the
        same idiom this file already uses for calculate and flashSaved below. */
     { const _hyd = hydrate;
-      hydrate = function () { const r = _hyd.apply(this, arguments); ptHydrate(); return r; }; }
+      hydrate = function () { const r = _hyd.apply(this, arguments); ptHydrate(); dayHydrate(); return r; }; }
     { const _fs = flashSaved;
       flashSaved = function(msg) {
         _fs.apply(this, arguments);
