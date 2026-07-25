@@ -2381,7 +2381,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1507</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1521</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4483,8 +4483,25 @@
         t.predecessors = t.predecessors.filter(p => p.id !== id);
         if (t.parentId === id) t.parentId = null; // orphaned children move to top level
       });
+      pruneStoryLinks(new Set([id]));
       saveLocal();
       refreshAll();
+    }
+    /* Deleting an activity used to leave its id sitting in every story that
+       traced to it. The mirror was cleared on the bulk path and not at all on
+       this one, and normalizeStoryLinks then copied the dead id back into the
+       mirror on the next hydrate — so a story orphaned by a deletion still
+       reported one link. wbsName is deliberately kept: it is what Auto-relink
+       matches on. */
+    function pruneStoryLinks(deadIds) {
+      if (!reqs || !Array.isArray(reqs.stories)) return;
+      reqs.stories.forEach(s => {
+        const was = storyWbsIds(s);
+        const live = was.filter(x => !deadIds.has(x));
+        if (live.length === was.length) return;
+        s.wbsIds = live;
+        s.wbsId = live.length ? live[0] : null;
+      });
     }
     // Milestones track completion automatically: complete exactly when every
     // predecessor feeding them is 100% done (manual entry only for milestones
@@ -5605,7 +5622,13 @@
         t.predecessors = t.predecessors.filter(p => !ids.has(p.id));
         if (t.parentId != null && ids.has(t.parentId)) t.parentId = null;
       });
-      if (reqs && Array.isArray(reqs.stories)) reqs.stories.forEach(s => { if (s.wbsId != null && ids.has(s.wbsId)) s.wbsId = null; }); // wbsName kept for relink
+      // Prune the dead ids from the ARRAY as well. Clearing only the mirror
+      // left the deleted id sitting in wbsIds, and normalizeStoryLinks then put
+      // it back into the mirror on the next hydrate — so a story orphaned by a
+      // deletion still reported one link, and the health check's orphan finding
+      // (which tests only for an EMPTY list) could never fire for the one case
+      // that actually creates orphans. wbsName is kept for relink.
+      pruneStoryLinks(ids);
       selectedTaskIds = new Set();
       bulkApplyDone('🗑 ' + ids.size + ' task(s) deleted');
     }
@@ -11361,13 +11384,30 @@
     }
     // leaf activities that legitimately need a user story
     function storyableLeaves() { return leafTasks().filter(t => !t.milestone && !isTestCaseTask(t) && !isParallelCloneTask(t)); }
+    /* The naming contract is "TC <AC-id> — …", so the id is a DELIMITED TOKEN.
+       Looking for it as a plain substring meant "ac-6.1" matched "AC-6.10",
+       "AC-6.11" and every other criterion in that decade: on any story with ten
+       or more criteria, the first criterion claimed nine other criteria's test
+       cases. Coverage counts, the traceability matrix and the test-plan export
+       all overstated coverage, and in-place regeneration could rewrite the
+       wrong case. The boundary check is what a token means: the character after
+       the id must not extend it. */
     function testCasesForAC(acId) {
       if (!acId) return [];
       const needle = String(acId).trim().toLowerCase();
       if (!needle) return [];
       return tasks.filter(t => {
         const n = t.name.trim().toLowerCase();
-        return n.startsWith('tc ') && n.indexOf(needle) >= 0;
+        if (!n.startsWith('tc ')) return false;
+        let i = n.indexOf(needle);
+        while (i >= 0) {
+          const after = n.charAt(i + needle.length);
+          // an id continues only through digits, a dot or a dash — anything
+          // else (space, em dash, end of string) ends the token
+          if (!/[0-9.\-]/.test(after)) return true;
+          i = n.indexOf(needle, i + 1);
+        }
+        return false;
       });
     }
     // stories traced to a given WBS task — used by every export for traceability
@@ -11450,7 +11490,11 @@
         acceptance: happy ? happy.text.slice(0, 300) : ''
       });
       tasks.push(t);
-      s.wbsId = t.id; s.wbsName = t.name;
+      // wbsIds is the source of truth and wbsId its mirror; writing only the
+      // mirror left every activity→story reader (storyLinksTask, storiesForTask,
+      // the traceability `covered` set, the coverage lint) blind to a link the
+      // story→activity readers could already see, until the next hydrate.
+      setStoryLinks(s, [t.id, ...storyWbsIds(s)]);
       if (!quiet) {
         saveLocal(); renderReqs(); renderTaskTable();
         flashSaved('➕ WBS activity created from ' + s.id + ' — it needs an O/M/P estimate (🩺 scan will nag until it has one)');
@@ -12259,8 +12303,22 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       // the story id changes, which the TC rename just below mirrors); a newly
       // added one takes the next number this story has never used, so a retired
       // number is never recycled onto different words.
-      let maxAcN = 0;
+      /* The high-water mark has to be the highest number this story has EVER
+         used, not the highest among the criteria that SURVIVE. When the
+         highest-numbered criterion was the one deleted, the next one added
+         re-took its number — and the test case still named after the retired
+         criterion then claimed to verify a completely different sentence.
+         Two records of the past exist: `acSeq`, stored from now on, and — for
+         a file written before that existed — the test cases themselves, which
+         are named after the ids they were generated for. Both are consulted. */
+      let maxAcN = Number(before && before.acSeq) || 0;
       beforeAc.forEach(a => { const m = String(a.id || '').match(/\.(\d+)$/); if (m) maxAcN = Math.max(maxAcN, +m[1]); });
+      (function () {
+        const esc = acBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp('^tc\\s+' + esc + '\\.(\\d+)(?![0-9.])', 'i');
+        tasks.forEach(t => { if (!isTestCaseTask(t)) return;
+          const m = re.exec(t.name.trim()); if (m) maxAcN = Math.max(maxAcN, +m[1]); });
+      })();
       const ac = stAcEntries().map(x => {
         const m = String(x.id || '').match(/\.(\d+)$/);
         return { id: acBase + '.' + (m ? m[1] : ++maxAcN), type: x.type, text: x.text };
@@ -12277,6 +12335,7 @@ Write the test cases for the criteria above, following the contract exactly. Ret
         verification: document.getElementById('stVerif').value || null,
         audience: (v => (v === 'client' || v === 'internal') ? v : null)(document.getElementById('stAudience').value),
         ac, nfrs: splitLines('stNfr'), assumptions: stAssumeEntries(),
+        acSeq: maxAcN,          // highest criterion number this story has ever issued
         jira: document.getElementById('stJira').value.trim()
       };
       const idx = editingStoryId != null ? reqs.stories.findIndex(s => s.id === editingStoryId) : -1;
@@ -13639,7 +13698,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         const wbsRef = first(c.wbsCode) || first(c.wbsName);
         if (wbsRef) {
           const t = tasks.find(x => x.wbs === wbsRef) || tasks.find(x => x.name.trim().toLowerCase() === wbsRef.toLowerCase());
-          if (t) { s.wbsId = t.id; s.wbsName = t.name; }
+          if (t) setStoryLinks(s, [t.id, ...storyWbsIds(s).filter(id => id !== t.id)]);
           else rep.notes.push(g.sid + ': WBS "' + wbsRef + '" not found — trace left as it was');
         }
         const nfrPacked = first(c.nfr), asPacked = first(c.assume);
@@ -13658,12 +13717,19 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         if (newAc.length || oldAc.length) s.ac = newAc;
         if (isNew) { rep.added++; return; }
         rep.updated++;
-        // positional staleness diff — same pairing rule as the story editor
-        oldAc.forEach((oa, i) => {
+        /* Pair by ID. The old comment claimed this matched the story editor's
+           rule, but the editor was moved to id-pairing precisely because
+           position misreads a deletion: remove one criterion row and every
+           later criterion shifts out of alignment, so each one is reported as
+           "a criterion that no longer exists" and its still-valid test cases
+           are offered for deletion. An AC id is an identity; the row it happens
+           to occupy in a spreadsheet is not. */
+        const newById = new Map(newAc.map(a => [String(a.id).toLowerCase(), a]));
+        oldAc.forEach(oa => {
           const tcs = testCasesForAC(oa.id);
           if (!tcs.length) return;
-          const nu = newAc[i];
-          if (!nu || String(nu.id).toLowerCase() !== String(oa.id).toLowerCase()) { orphansAll.push(...tcs); return; }
+          const nu = newById.get(String(oa.id).toLowerCase());
+          if (!nu) { orphansAll.push(...tcs); return; }   // genuinely gone
           if (nu.text.trim() !== String(oa.text || '').trim() || nu.type !== oa.type) { staleAll.add(String(nu.id).toLowerCase()); acChanged++; }
         });
       });
@@ -17701,7 +17767,11 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
           recommendation: 'Select them in the activity table ▸ 🏷 Work type ▸ Set (instant, no AI call) — or press 🔧 Fix and the AI will tag them from the closed list.' });
       })();
       if (reqs && Array.isArray(reqs.stories) && reqs.stories.length) {
-        const orphans = reqs.stories.filter(s => storyWbsIds(s).length === 0);
+        // A link that points at a deleted activity is exactly as orphaned as no
+        // link at all — and it is the ONLY way orphans normally arise. Testing
+        // for an empty list meant the finding could never fire for the case it
+        // was written for. Resolve the ids.
+        const orphans = reqs.stories.filter(s => !storyWbsIds(s).some(id => tasks.some(t => t.id === id)));
         if (orphans.length) findings.push({ severity: 'medium', area: 'Requirements', finding: `${orphans.length} user stor${orphans.length === 1 ? 'y is' : 'ies are'} not linked to any WBS activity (its task was deleted or renamed): ${orphans.slice(0, 6).map(s => s.id).join(', ')}${orphans.length > 6 ? '…' : ''}`, recommendation: 'Auto-relink matches by remembered task name; relink the rest in the story editor.', relink: true });
         const covered = new Set(reqs.stories.flatMap(storyWbsIds));
         const untold = leaves.filter(t => !covered.has(t.id) && !isTestCaseTask(t)); // TCs verify ACs — they never need stories
@@ -17874,7 +17944,7 @@ IMPORTANT: rows marked [ROLL-UP] are WBS summary rows — the tool schedules and
         const t = s.wbsId != null ? tasks.find(x => x.id === s.wbsId) : null;
         if (t) { s.wbsName = t.name; return; }
         const m = taskByLooseName(s.wbsName);
-        if (m) { s.wbsId = m.id; s.wbsName = m.name; fixed++; } else { s.wbsId = null; still++; }
+        if (m) { setStoryLinks(s, [m.id]); fixed++; } else { setStoryLinks(s, []); still++; }
       });
       saveLocal();
       if (document.getElementById('view-req').classList.contains('active')) renderReqs();
