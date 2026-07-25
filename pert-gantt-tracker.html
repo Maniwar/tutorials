@@ -1156,186 +1156,267 @@
       #aiNotes { box-sizing: border-box; width: 100%; }
     }
     /* ═══════════════════ .ek — ENTITY-KIND MARKS ═══════════════════════════
-       A SECOND badge family that must never be mistaken for the first.
+       A SECOND badge family that must never be mistaken for the first — and
+       the cheapest way to guarantee that is to stop making it an OBJECT.
 
-       .badge (114-123) answers HOW IT IS GOING: 999px pill, flat saturated
-       tint across the whole mark, NO border (verified: not one of the nine
-       declares one), a WORD inside, parked at the RIGHT end of a row or in
-       the last <td>.
-       .ek answers WHAT IT IS: 4px squared box, 1px hairline + a 2px left
-       rail, WHITE body, a SHAPE, anchored hard LEFT of the name or id.
+       .badge (114-123) is a THING: 999px pill, flat saturated tint edge to
+       edge, no border, a WORD inside, parked at the RIGHT of a row. It
+       answers HOW IT IS GOING.
+       .ek is TYPE: no box, no fill, no rule, no radius. One small capital —
+       the initial of the kind — in front of the id, hard LEFT. It answers
+       WHAT IT IS.
 
-       Five differences fire at once — contour, border, fill, content,
-       position. The two that fire PRE-ATTENTIVELY (contour + position) need
-       no reading. The two that survive a PRINTER (border + glyph) are the
-       backup: .badge is in no print-color-adjust list except .ptr-side
-       .badge (496), so status pills print as bare 12px text while .ek prints
-       intact. The entity language is stronger on paper than the status
-       language, which is the right way round for a client pack.
+       The distinction is now object-vs-text, which needs no comparison. You
+       can tell a pill from a letter with only one of them on screen; you
+       could not tell a 4px-radius box from a 999px one without both in view,
+       and the WBS's first column only ever shows one.
 
-       The rule is FILL + RADIUS, not hue: .badge-slack and .badge-notstarted
-       (117, 123) are GREY fills, so "grey = entity" would be false. A round
-       FILLED pill is a status whatever colour it is.
+       THE KEY — one letter per kind, each the initial of its own word:
+         E epic       P phase        M milestone
+         S story      A activity     T test case
+         C criterion
+       Seven Basic-Latin capitals, so the whole
+       'Segoe UI Symbol','Apple Symbols','Noto Sans Symbols 2','DejaVu Sans'
+       stack is DELETED, not lengthened. U+25AD WHITE RECTANGLE (activity)
+       lives in Noto Sans Symbols 2, which an Android phone need not carry —
+       it rendered as tofu, an outlined rectangle inside an outlined box.
+       Letters render in the body face on every device, offline, from file://.
+       And with no box, a rectangle glyph inside a box is impossible.
 
-       THE KEY — letters for the things you NAME, shapes for the things you
-       NUMBER:
-         E  epic       ≡  phase      (three bars = a stack of activity bars)
-         S  story      ▭  activity   (one bar = one duration)
-         C  criterion  ◆  milestone  (the house glyph — 22 sites + --milestone)
-                       ◇  test case  (hollow point: verifies, does not commit)
-       EP-1 / US-3 / AC-3.1 already say their kind, so the letter rhymes with
-       the id beside it and costs zero characters. 2.4.1 says NOTHING — a WBS
-       code cannot tell you whether it is a phase, a work package, a milestone
-       or a test — so the shape supplies what the number withholds.
-       C for Criterion, not A: "A" is already the assumption badge (9078).
+       WHY NO BOX. Four pieces of chrome (1px hairline, 2px rail, 1px
+       divider, tinted glyph cell) wrapped 3-4 characters to say "these
+       belong together and mean something". Type says it with a size step
+       (10.1 vs 12px), a weight step (700 vs 600), an ink step (#475569 vs
+       #1e293b) and a 4.1px gap — a gap that never occurs INSIDE an id.
+       Four differentials, zero pixels. Phase 36.8x20 -> ~17x18. Activity
+       49.7x20 -> ~27x18. Below 640px the mark collapses to [sigil id] and
+       the chrome-to-content ratio now IMPROVES, because there is no chrome.
 
-       COLOUR IS REINFORCEMENT ONLY. Three inks for seven kinds, and they
-       encode the SIDE of the trace line, which the letter/shape split already
-       encodes. Greyscale, print and colour-blind readers lose exactly nothing
-       (spec ink 58.7 printed luma vs plan ink 63.1 — 4/255 apart, i.e. the
-       colour channel collapses completely and the language is unaffected).
-       Green and red are excluded outright: a green mark on an un-run test
-       would read "passed". Violet/cyan are excluded — they are AUDIENCE. */
+       GREYSCALE / PRINT. Colour carries NOTHING: one ink for all seven
+       kinds. Nothing to strip on paper — no fill, no tint, no rail — so the
+       mark prints as drawn and needs no print-color-adjust anywhere. The
+       old ◆/◇ pair (milestone vs test case) differed ONLY in FILL, the
+       difference that dies first under 1-bit thresholding and low toner,
+       and they are the two kinds most likely to share a column. E S C P A M T
+       has no mirror pair (W was rejected against M for exactly that), no
+       rotational pair, and no single-feature pair. Colour-blind and mono
+       readers lose nothing because there is nothing in colour to lose.
+
+       Green/red stay excluded (a green mark on an un-run test would read
+       "passed"); violet/cyan are AUDIENCE — and --milestone's violet, which
+       .ek-ms used to borrow beside the violet "internal" pill on the same
+       story card, is dropped outright. M says milestone. */
     .ek {
-      display: inline-flex; align-items: stretch; vertical-align: -0.28em;
-      max-width: 100%; overflow: hidden;
-      /* containing block for .ek-sr. Without it the visually-hidden label is
-         positioned against the ROOT, so a badge sitting inside a horizontally
-         scrolled table escapes that table's clip and stretches the whole
-         document — 149px of phantom sideways scroll on a phone. */
+      display: inline-flex; align-items: baseline; vertical-align: baseline;
+      justify-content: flex-start;
+      gap: .34em;                        /* 4.08px @12px, 3.74px @11px */
+      max-width: 100%; white-space: nowrap;
+      /* MANDATORY — containing block for .ek-sr. Without it the
+         visually-hidden label positions against the ROOT, so a mark inside a
+         horizontally scrolled table escapes that table's clip and stretches
+         the document (149px of phantom sideways scroll on a phone). */
       position: relative;
-      /* the hairline is --muted (4.76:1 on #fff, 4.34:1 on the tr:hover
-         #f1f5f9) — a real 1.4.11-clean component boundary, not decoration */
-      border: 1px solid var(--muted); border-left: 2px solid #334155;
-      border-radius: 4px;
-      /* FIXED white, never inherited: it is what keeps .ek-nm's --muted at
-         4.76:1 even inside a tinted or hovered row */
-      background: #fff;
-      font-size: var(--t-sm); line-height: 1.5; font-weight: 600;
-      color: var(--text); white-space: nowrap;
+      /* every box property is explicitly zeroed. (0,1,0) beats both the UA
+         button styles and `button, .btn` at 50, so button.ek needs no reset
+         of its own — and a stale border/background cannot survive a partial
+         paste of this block. */
+      border: 0; border-radius: 0; background: none; box-shadow: none;
+      padding: 0;
+      /* 6.7px OUTSIDE vs 4.1px INSIDE. Two call sites concatenate a compound
+         mark straight against text (8598, 10629) and relied on the old
+         border to separate them; and in a .join(' ') run this makes the gap
+         between two tokens ~2.5x the gap inside one, which is the ratio that
+         reads as grouping. .ek--solo overrides it back DOWN to 4px, because
+         a solo mark labels the id the host prints immediately after it. */
+      margin-right: .42rem;
+      font-family: inherit; font-size: var(--t-sm); line-height: 1.5;
+      font-weight: 600; color: var(--text);
+      text-align: left; text-decoration: none;
+      /* NB: no `overflow: hidden`. It existed to clip the tinted glyph cell
+         to the radius; with no fill there is nothing to clip, and it was
+         actively harming .ek-nm — a flex item with min-width:auto cannot
+         shrink, so a long name was CUT by the parent instead of ellipsised
+         by itself. min-width:0 on .ek-nm is the real fix. */
     }
+    /* THE SIGIL. font-family:inherit is the point of the redesign — the body
+       face, not a symbol stack. line-height:1 so the smaller box can never
+       drive the container taller than the 18px line the id already occupies.
+       No letter-spacing: on a ONE-character span tracking is just trailing
+       space, i.e. a gap by another name — it lives in `gap` where a
+       maintainer can find it. #475569 is 7.58:1 on #fff, 6.92:1 on tr:hover
+       #f1f5f9, 6.96:1 on tr.row-edit:hover #eff6ff, 7.24:1 on the #f8fafc
+       summary rows, 7.06:1 on the #fef9c3 .sc-flash card. */
     .ek-g {
-      flex: none; width: 1.25em; display: grid; place-items: center;
-      background: #f8fafc; font-weight: 700; font-size: .95em; line-height: 1;
-      color: #475569;                              /* 7.24:1 on #f8fafc */
-      font-family: 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2',
-                   'DejaVu Sans', system-ui, sans-serif;
+      flex: none;
+      font-family: inherit; font-size: .84em;      /* 10.08px @ --t-sm */
+      line-height: 1; font-weight: 700;
+      color: #475569;
     }
-    .ek-id { padding: 0 .35rem; font-variant-numeric: tabular-nums;
-             overflow: hidden; text-overflow: ellipsis; }
-    .ek-nm { padding: 0 .35rem 0 .05rem; font-weight: 400; color: var(--muted);
-             overflow: hidden; text-overflow: ellipsis; }
-    /* the glyph cell is separated by its #f8fafc fill on screen — fills are
-       stripped on paper, so it also carries a hairline whenever text follows */
-    .ek-g + .ek-id, .ek-g + .ek-nm { border-left: 1px solid #e2e8f0; }
-    .ek--solo { margin-right: .28rem; }
+    /* an id is 3-8 characters and MUST NOT ellipsis — "2.4.1" truncated to
+       "2.4…" is a wrong answer, not a compact one. All shrink goes to the
+       name, which ekTok has already character-capped at o.max. */
+    .ek-id { flex: none; font-variant-numeric: tabular-nums; }
+    /* was var(--muted): 4.34:1 on tr:hover #f1f5f9 and 4.37:1 on
+       tr.row-edit:hover #eff6ff. It only ever passed because .ek painted
+       #fff underneath it; deleting the backplate would have made that a live
+       failure, so the ink moves first. Weight 400 keeps the hierarchy. */
+    .ek-nm {
+      flex: 0 1 auto; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis;
+      font-weight: 400; color: #475569;
+    }
+    /* SOLO (ekMark): the host prints the id immediately after us, so match
+       the INTERNAL gap rather than the external one. */
+    .ek--solo { margin-right: .25rem; }
     .ek--xs   { font-size: var(--t-xs); }          /* dense audit tables */
-    /* .sr-only / .visually-hidden DO NOT EXIST in this file (0 hits for all
-       five spellings). The family ships its own rather than squatting on a
-       global name; it is reusable by anything else that needs one. */
+    /* the sigil does NOT scale linearly into the xs variant: .84em of 11px
+       would be 9.24px (6.5px cap height). .9em holds it at 9.9px, still a
+       clear step below the 11px id. */
+    .ek--xs .ek-g { font-size: .9em; }
+    /* .sr-only / .visually-hidden DO NOT EXIST in this file. The family
+       ships its own rather than squatting on a global name. */
     .ek-sr { position: absolute; width: 1px; height: 1px; padding: 0;
              margin: -1px; overflow: hidden; clip: rect(0 0 0 0);
              clip-path: inset(50%); white-space: nowrap; border: 0; }
-
-    /* --- kind: the GLYPH carries it; ink only reinforces the SIDE --------
-       spec ink #1e3a8a is not new — it is .chip-static .chip (822), this
-       app's existing "reference to an entity" colour. */
-    .ek-ep, .ek-us, .ek-ac { border-left-color: #1e3a8a; }
-    .ek-ep .ek-g, .ek-us .ek-g, .ek-ac .ek-g { color: #1e3a8a; }   /* 9.90:1 */
-    .ek-ph, .ek-wp, .ek-tc { border-left-color: #334155; }
-    .ek-ph .ek-g, .ek-wp .ek-g, .ek-tc .ek-g { color: #334155; }   /* 9.90:1 */
-    .ek-ms { border-left-color: var(--milestone); }  /* the one kind with a
-        mandatory house colour — --milestone (28) is already its Gantt fill */
-    .ek-ms .ek-g { color: var(--milestone); }                      /* 5.45:1 */
-    /* an unsaved criterion has no id yet — a DASHED box says so without a
-       word, extending this file's own dashed-means-provisional idiom
-       (.ptr-void 445, the dashed verified-by Gantt links 7570-7574) */
-    .ek--new { border-style: dashed; border-left-style: dashed; opacity: .8; }
+    /* an unsaved criterion has no id yet. The house idiom is DASHED =
+       PROVISIONAL (.ptr-void 445, the dashed verified-by Gantt links); with
+       no border to dash it moves to the only dashable property type has.
+       NOT opacity — .75 drops #475569 to 4.03:1. The only call site (9747)
+       is a SOLO mark, so this never coexists with the hover underline that
+       .ek-id takes. */
+    .ek--new .ek-g {
+      text-decoration: underline dotted; text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
 
     /* --- interactive tokens ---------------------------------------------
        a11y: ekTok({onclick}) emits a real <button>, never a 32nd
-       onclick-on-span. It therefore inherits the zero-specificity
-       :where(button,.btn,summary,a):focus-visible ring at 341 — which is
-       exactly why NOTHING here declares `outline`. (.chip-edit .chip-input
-       at 819 sets outline:none at (0,2,0) and silently kills that ring; this
-       family does not repeat that mistake.) `overflow:hidden` on .ek does not
-       clip the element's own outline, only its children. */
+       onclick-on-span, so it inherits the zero-specificity
+       :where(button,.btn,summary,a):focus-visible ring at 341 — which is why
+       NOTHING here declares `outline`. (.chip-edit .chip-input at 819 sets
+       outline:none at (0,2,0) and silently kills that ring.) The ring is now
+       BETTER off: .ek has no overflow:hidden and no fill, so a 2px ring at
+       2px offset draws clean around bare type — and it traces the real
+       target, because the target IS the box.
+
+       WCAG 2.2 AA 2.5.8 VIA PADDING, and this is load-bearing. The obvious
+       alternatives both fail:
+         · min-height fights align-items:baseline — a single-line flex
+           container's line stretches to the container's inner cross size and
+           baseline-aligned items sit flush with its CROSS-START edge, so the
+           text would ride the top of a 32px box;
+         · an absolutely-positioned ::after pad (the .info-icon 1189 trick)
+           contributes ZERO layout, so in the lint banners at 9502/9526/9540,
+           where up to 12 tokens .join(' ') and WRAP at a 19.9px line box, a
+           32px pad overlaps the pad on the line above by 12px. WCAG is not
+           satisfied by targets that intersect each other, and it also failed
+           outright for .ek--xs (16.5px + 6px = 22.5px < 24px).
+       Padding on a box with no fill and no border is INVISIBLE but REAL: the
+       target is exactly the margin box, so the line box grows with it and
+       vertically adjacent targets can never overlap, at ANY font size.
+       Height: 18 + 8 = 26px (--t-sm), 16.5 + 8 = 24.5px (--t-xs). Both clear
+       24px unconditionally, because the padding is fixed px and the content
+       only grows with font-size. Width is min-width, which pushes the
+       neighbour rather than reaching into it. */
     button.ek, a.ek {
-      cursor: pointer; padding: 0; margin: 0; gap: 0; border-radius: 4px;
-      font-family: inherit; font-size: var(--t-sm); font-weight: 600;
-      text-decoration: none; color: var(--text);
-      min-height: 24px;                       /* WCAG 2.2 AA 2.5.8 minimum */
-      box-shadow: none;
-      transition: border-color .15s var(--easeo), background-color .15s ease;
+      cursor: pointer;
+      padding: 4px 0;
+      min-width: 24px;      /* floor for a degenerate token: ekTask() on a
+                               task with no .wbs renders id-less and would
+                               otherwise be ~7px of sigil */
+      transition: color .15s ease;
     }
-    button.ek.ek--xs, a.ek.ek--xs { font-size: var(--t-xs); }
-    button.ek.ek--solo, a.ek.ek--solo { margin-right: .28rem; }
     @media (hover: hover) {
-      button.ek:hover, a.ek:hover {
-        border-color: var(--primary); border-left-color: var(--primary); }
-      button.ek:hover .ek-g, a.ek:hover .ek-g {
-        background: #eff6ff; color: var(--primary); }               /* 4.75:1 */
+      /* (0,3,1) beats .ek-g (0,1,0) and .ek--xs .ek-g (0,2,0) */
+      button.ek:hover, a.ek:hover,
+      button.ek:hover .ek-g,  a.ek:hover .ek-g,
+      button.ek:hover .ek-id, a.ek:hover .ek-id,
+      button.ek:hover .ek-nm, a.ek:hover .ek-nm { color: var(--primary); }
+      /* the box used to be the affordance; the underline takes over. A badge
+         never underlines and never turns --primary, so hover cannot blur the
+         two families. --primary #2563eb = 5.17:1 on #fff, 4.72:1 on tr:hover
+         #f1f5f9, 4.75:1 on tr.row-edit:hover #eff6ff — the grounds it
+         actually fires against in the task and trace tables. */
+      button.ek:hover .ek-id, a.ek:hover .ek-id {
+        text-decoration: underline; text-decoration-thickness: 1px;
+        text-underline-offset: 2px;
+      }
     }
-    /* the global lift (339) would make a 24px inline token jump off its
-       baseline inside a table cell — the same opt-out .seg buttons and
-       row-action chips take at 572-582. Equal specificity, later source. */
+    /* the global lift (339) would make an inline token jump off its baseline
+       inside a table cell — the same opt-out .seg buttons and row-action
+       chips take at 572-582. Equal specificity, later source. */
     button.ek:hover:not(:disabled), button.ek:active:not(:disabled) {
       transform: none; box-shadow: none; }
 
-    /* --- .ac-tc becomes the family's own proof --------------------------
-       .ac-tc (873-880) is already the best compound mark in the file: an
-       entity half and a tinted status half in one control. It only ever
-       holds a TEST CASE. Squaring it from 999px to 6px pulls it out of the
-       STATUS silhouette, and a ::before glyph cell styled exactly like .ek-g
-       makes it literally "an .ek whose right half is a status tint". Two
-       call sites (story card + story editor) inherit this with no markup
-       change beyond dropping their hard-coded 🧪. */
-    .ac-tc { border-radius: 6px; border-color: var(--muted); }
-    .ac-tc::before {
-      content: '◇'; flex: none; width: 1.25em; display: grid;
-      place-items: center; background: #f8fafc;
-      border-right: 1px solid #e2e8f0; color: #334155;              /* 9.90:1 */
-      font-weight: 700; font-size: .95em; line-height: 1;
-      font-family: 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2',
-                   'DejaVu Sans', system-ui, sans-serif;
-    }
+    /* --- .ac-tc: a COMPOUND, and honestly half a status ------------------
+       .ac-tc (873-880) is an entity half plus a tinted status half in one
+       control. The previous design squared it to 6px to pull it out of the
+       status silhouette and gave it a ◇ cell; both are now wrong. "Squared =
+       entity" is not a rule this family teaches any more, and its right half
+       genuinely IS a status — so it keeps its 999px pill and the ::before is
+       DELETED outright rather than reissued as a letter. A letter inside a
+       pill would contradict the family's one rule in the single place both
+       families touch, and it was redundant anyway: every child of .ac-tcs
+       (859) is a test case, and .ac-tc-name already carries a .ek-sr saying
+       so. Only two declarations survive, and both are non-regressions:
+         · --muted (4.76:1) not --border (#e2e8f0, 1.24:1) — this is a real
+           click target whose only contour is that border, so 1.4.11 wants
+           >=3:1 and today's design already bought it;
+         · position:relative — .ac-tc CONTAINS a .ek-sr (9777, 10661) and has
+           no positioned ancestor, which is the same escape-to-root bug that
+           cost 149px of phantom scroll. */
+    .ac-tc { border-color: var(--muted); position: relative; }
 
     /* --- host-context fixes ---------------------------------------------
        .story-sentence is a flex COLUMN (827), so an inline-flex descendant
        placed as a direct child would stretch to the full card width. The
        mark is nested inside <b class="sc-id"> so it never is one — this is
-       the belt-and-braces for any future direct child. */
+       belt-and-braces for any future direct child. */
     .story-sentence > .ek { align-self: flex-start; }
-    /* story-editor criterion rows gain a leading id token: 3 cols -> 4.
-       The 640px collapse below assumes THREE children today, so it is
-       restated for four. The ✕ button's this.parentElement.remove() still
-       resolves to .st-ac-row — the token is a sibling, not a wrapper. */
-    .st-ac-row { grid-template-columns: auto 122px 1fr auto; }
+    /* .ac-head (855) is display:flex with gap:0.4rem and ekMark('ac') is a
+       DIRECT CHILD (9777), so gap and the mark's own margin ADDED: the sigil
+       sat 9.9px from AC-3.1, not 4px, which is the design's central claim
+       failing at a named host. Fix both halves. The <summary> at 3578 has
+       the same shape but declares its gap INLINE, so it cannot be reached
+       from here — see the call-site list. */
+    .ac-head { gap: .25rem; }
+    .ac-head > .ek--solo, .src-story > summary > .ek--solo { margin-right: 0; }
+    /* NOTE: the previous block's `.st-ac-row { grid-template-columns: auto
+       122px 1fr auto }` and its 640px partner are DELETED, not ported. They
+       widened the grid to FOUR tracks for a leading id token that
+       stAddAcRow (10545) never emits — it appends exactly three children, so
+       the select took `auto`, the TEXTAREA was pinned to 122px and the ✕
+       button got the 1fr. That is a live layout bug in the story editor
+       today. Removing them restores the correct rules at 976 and 979-980. */
 
-    @media (pointer: coarse) { button.ek, a.ek { min-height: 32px; } }
+    /* 32px on a finger: 18 + 8 + 8 = 34px (--t-sm), 16.5 + 8 + 8 = 32.5px
+       (--t-xs). Still real layout, so wrapped tokens still cannot overlap. */
+    @media (pointer: coarse) {
+      button.ek, a.ek { padding: 8px 0; min-width: 32px; }
+    }
     @media (max-width: 640px) {
-      .ek-nm { display: none; }                /* token shrinks to [glyph│id] */
-      .st-ac-row { grid-template-columns: auto 1fr auto; }
-      .st-ac-row > .st-ac-text { grid-column: 1 / -1; grid-row: 2; }
+      /* the mark collapses to [sigil id] — and unlike the boxed version,
+         collapsing now IMPROVES the ratio: ~17px of pure type, 0 chrome */
+      .ek-nm { display: none; }
     }
     /* house convention (657, 760): declare the opt-out BESIDE the motion, so
        the component stays self-contained under re-ordering */
     @media (prefers-reduced-motion: reduce) {
       button.ek, a.ek { transition: none; } }
-    /* house convention (494, 767): a component that means something in
-       colour says so for the printer. .ek is legible with every fill
-       stripped — the box, the rail and the separator are all BORDERS — but
-       the rails carry the side cue, so opt in and darken the ink. */
+    /* Nothing here needs print-color-adjust. The mark has no fill, no tint
+       and no rail — it is text, so paper gets exactly what the screen gets.
+       Compare the block this replaces, which needed exact on three selectors
+       plus a whole fill/border repaint just to survive. All we do is darken
+       the two subordinate inks and stand the hit area down. .ac-tc keeps its
+       opt-in — it still owns a status tint, and print-color-adjust inherits,
+       so declaring it on .ac-tc covers .ac-tc-state. */
     @media print {
-      .ek, .ac-tc, .ac-tc::before {
+      .ek { break-inside: avoid; }
+      .ek-g, .ek-nm { color: #334155; }             /* 10.35:1 */
+      button.ek, a.ek { min-width: 0; padding: 0; }
+      .ac-tc {
         -webkit-print-color-adjust: exact; print-color-adjust: exact;
-        break-inside: avoid; }
-      .ek { border-color: #334155; }                                /* 10.35:1 */
-      .ek-g { background: #fff; }
-      .ek-g + .ek-id, .ek-g + .ek-nm { border-left-color: #64748b; }
-      .ac-tc { border-color: #334155; }
-      .ac-tc::before { background: #fff; border-right-color: #64748b; }
-      button.ek, a.ek { min-height: 0; }
+        break-inside: avoid; border-color: #334155; }
     }
 
     /* .info-icon (302) is 15x15 and FAILS WCAG 2.2 AA 2.5.8 (24x24) — and it
@@ -1789,7 +1870,7 @@
     <div id="view-req" role="tabpanel" class="view">
       <div class="card">
         <div class="card-header">
-          <h2>Requirements &amp; user stories <button type="button" class="info-icon" aria-label="More about this" data-help="Epics → user stories → Given/When/Then acceptance criteria, each traced to a WBS work item. The estimation unit for SOWs: a story that isn't testable can't be accepted or invoiced.">i</button><button type="button" class="info-icon" aria-label="About the entity marks" data-ek-legend data-help="Every id carries a small squared mark saying what it is.">i</button></h2>
+          <h2>Requirements &amp; user stories <button type="button" class="info-icon" aria-label="More about this" data-help="Epics → user stories → Given/When/Then acceptance criteria, each traced to a WBS work item. The estimation unit for SOWs: a story that isn't testable can't be accepted or invoiced.">i</button><button type="button" class="info-icon" aria-label="About the entity marks" data-ek-legend data-help="Every id is preceded by a small capital letter saying what it is.">i</button></h2>
           <div class="toolbar no-print">
             <button class="btn-primary btn-sm" onclick="draftRequirements()" title="AI drafts personas, epics and INVEST user stories with happy/error/edge acceptance criteria for every WBS work item — or fills the gaps if some already exist">🤖 Draft from WBS</button>
             <button class="btn-secondary btn-sm" onclick="openStoryModal(null)" title="Write a story by hand">+ Add story</button>
@@ -2176,7 +2257,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0428</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0447</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3733,7 +3814,7 @@
             ${t.jira ? `<div style="margin-top:0.4rem"><b>\ud83d\udd17 Jira / evidence:</b>${jiraChip(t.jira)}</div>` : ''}
           </div>${stHit ? `
           <details class="src-story" style="margin:-0.4rem 0 1rem;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:0.55rem 0.75rem;font-size:0.8rem;line-height:1.5">
-            <summary style="font-weight:700;color:#334155;cursor:pointer;list-style:none;display:flex;align-items:center;gap:0.4rem"><span class="ico" aria-hidden="true">📖</span> Source story · ${ekMark('us')}${escapeHtml(stHit.id)}${stHit.epicId ? ` <span class="help-text" style="font-weight:400">${ekMark('ep', { xs: true })}${escapeHtml(stHit.epicId)}</span>` : ''} <span class="help-text" style="font-weight:400;margin-left:auto">${(stHit.ac || []).length} criteria · show</span></summary>
+            <summary style="font-weight:700;color:#334155;cursor:pointer;list-style:none;display:flex;align-items:center;gap:0.25rem"><span class="ico" aria-hidden="true">📖</span> Source story · ${ekMark('us')}${escapeHtml(stHit.id)}${stHit.epicId ? ` <span class="help-text" style="font-weight:400">${ekMark('ep', { xs: true })}${escapeHtml(stHit.epicId)}</span>` : ''} <span class="help-text" style="font-weight:400;margin-left:auto">${(stHit.ac || []).length} criteria · show</span></summary>
             <div style="margin-top:0.4rem">
             <div style="margin-bottom:0.4rem">As a <b>${escapeHtml(stHit.persona || '?')}</b>, I want to ${escapeHtml(stHit.want || '?')}, so that ${escapeHtml(stHit.soThat || '?')}.</div>
             ${(stHit.ac || []).length ? `<div style="margin-bottom:0.35rem"><b>Acceptance criteria (${stHit.ac.length}):</b><ul style="list-style:none;margin:0.2rem 0 0;padding-left:0.25rem">${stHit.ac.map(a => `<li style="margin-bottom:0.15rem${a.id === (acHit && acHit.id) ? ';background:#fef9c3;border-radius:4px;padding:1px 4px' : ''}">${typeIcon[a.type] || '•'} <span style="color:#475569">${escapeHtml(a.id)}</span> ${escapeHtml(a.text)}${a.id === (acHit && acHit.id) ? ' <span class="help-text">← this test verifies this one</span>' : ''}</li>`).join('')}</ul></div>` : ''}
@@ -7072,18 +7153,21 @@
        render site reads it. See the .ek block in <style> for why the geometry
        means what it means.
 
-       Letters for the things you NAME (EP-1, US-3, AC-3.1) — the letter
-       rhymes with the id, so the mark adds a kind without adding a word.
-       Shapes for the things you NUMBER (2.4.1) — a WBS code cannot tell you
-       whether it is a phase, a work package, a milestone or a test. */
+       ONE LETTER PER KIND, each the initial of its own word: E epic,
+       S story, C acceptance criterion, P phase, A activity, M milestone,
+       T test case. Nothing to memorise — EP-1 / US-3 / AC-3.1 already carry
+       their kind and the letter simply agrees with them, while a WBS code
+       like 2.4.1 cannot tell you whether it is a phase, an activity, a
+       milestone or a test, so the letter supplies what the number withholds.
+       All seven are Basic Latin, which is why .ek-g needs no symbol font. */
     const EK = {
       ep: { g: 'E', c: 'ek-ep', w: 'Epic',                 t: 'Epic — a group of user stories that together deliver one business outcome.' },
       us: { g: 'S', c: 'ek-us', w: 'User story',           t: 'User story — one outcome for one persona, accepted through its criteria.' },
       ac: { g: 'C', c: 'ek-ac', w: 'Acceptance criterion', t: 'Acceptance criterion — the Given/When/Then condition that defines done.' },
-      ph: { g: '≡', c: 'ek-ph', w: 'Phase',                t: 'Phase — a roll-up. Its dates, effort and cost are the sum of its children.' },
-      wp: { g: '▭', c: 'ek-wp', w: 'Activity',             t: 'Activity — a work package: one estimate, one owner, one duration.' },
-      ms: { g: '◆', c: 'ek-ms', w: 'Milestone',            t: 'Milestone — a zero-duration checkpoint; it consumes no effort.' },
-      tc: { g: '◇', c: 'ek-tc', w: 'Test case',            t: 'Test case — a scheduled activity that verifies one acceptance criterion.' }
+      ph: { g: 'P', c: 'ek-ph', w: 'Phase',                t: 'Phase — a roll-up. Its dates, effort and cost are the sum of its children.' },
+      wp: { g: 'A', c: 'ek-wp', w: 'Activity',             t: 'Activity — a work package: one estimate, one owner, one duration.' },
+      ms: { g: 'M', c: 'ek-ms', w: 'Milestone',            t: 'Milestone — a zero-duration checkpoint; it consumes no effort.' },
+      tc: { g: 'T', c: 'ek-tc', w: 'Test case',            t: 'Test case — a scheduled activity that verifies one acceptance criterion.' }
     };
 
     /* escapeHtml (1922) escapes & < > " but NOT the apostrophe — so the
@@ -7158,15 +7242,18 @@
 
     /* email / print surfaces (SOW, status report, update-request emails) are
        built from inline styles only — no stylesheet class reaches them. Same
-       geometry, hand-inlined. Border #64748b = 4.76:1, rail #334155 =
-       10.35:1, glyph #334155 on #fff = 10.35:1. */
+       typography, hand-inlined, and NOTHING to strip: no border, no fill, so
+       it survives every mail client's CSS mangling. #334155 = 10.35:1,
+       #1e293b = 14.63:1. The gap is &nbsp; and not `gap`, because mail
+       clients drop `gap` — 3.34px at 12px, matching the on-screen 4.08px
+       closely enough for a surface with no hover and no column to align. */
     function ekInline(kind, label) {
       const k = EK[kind] || EK.wp;
       const lbl = label == null ? '' : String(label);
-      return '<span style="display:inline-block;border:1px solid #64748b;border-left:2px solid #334155;' +
-        'border-radius:3px;padding:0 3px;margin-right:4px;font-size:10px;font-weight:700;' +
-        'color:#334155;line-height:1.5;white-space:nowrap">' + k.g +
-        (lbl ? ' ' + escapeHtml(lbl) : '') + '</span>';
+      return '<span style="white-space:nowrap;margin-right:4px">' +
+        '<span style="font-size:10px;font-weight:700;color:#334155">' + k.g + '</span>' +
+        (lbl ? '<span style="font-size:12px;font-weight:600;color:#1e293b">&nbsp;' + escapeHtml(lbl) + '</span>' : '') +
+        '</span>';
     }
     function ekInlineTask(t, label) { return ekInline(ekKindOf(t), label); }
 
@@ -7180,15 +7267,16 @@
        Unicode characters: the legend can SHOW them. A CSS-geometry mark
        family could only ever describe itself in words. */
     const EK_LEGEND =
-      'Every id carries a small squared mark saying WHAT it is — ' +
-      'E epic · S story · C acceptance criterion · ≡ phase · ▭ activity · ' +
-      '◆ milestone · ◇ test case. ' +
-      'Squared, hairline-bordered and to the LEFT of a name is always what it is. ' +
-      'Rounded, colour-filled and at the RIGHT of a row is always how it is going ' +
-      '(Complete, 3d late, not started). ' +
-      'Letters mark the things you name (EP-1, US-3, AC-3.1) because the id already says the kind; ' +
-      'shapes mark the things you number (2.4.1), because a WBS code cannot tell you whether it is ' +
-      'a phase, an activity, a milestone or a test.';
+      'Every id is preceded by a small capital saying WHAT it is — ' +
+      'E epic · S story · C acceptance criterion · P phase · A activity · ' +
+      'M milestone · T test case. ' +
+      'A small capital set close in front of an id is always what a thing IS. ' +
+      'A rounded, colour-filled pill holding a WORD, parked at the right of a row, ' +
+      'is always how it is GOING (Complete, 3d late, not started). ' +
+      'Each letter is the initial of its own kind, so there is nothing to memorise: ' +
+      'EP-1, US-3 and AC-3.1 already carry their kind and the letter simply agrees with them, ' +
+      'while a WBS code like 2.4.1 cannot tell you whether it is a phase, an activity, ' +
+      'a milestone or a test — so the letter supplies what the number withholds.';
     /* single source of truth: the markup carries data-ek-legend, the text
        lives here. The <script> opens at 1882, after this markup is parsed. */
     document.querySelectorAll('[data-ek-legend]').forEach(el => { el.dataset.help = EK_LEGEND; });
@@ -9529,7 +9617,7 @@
           <button class="btn-sm btn-secondary" onclick="setCollapseLevel(0)">L1 · Phases</button>
           <button class="btn-sm btn-secondary" onclick="setCollapseLevel(1)">L2</button>
           <button class="btn-sm btn-secondary" onclick="setCollapseLevel(Infinity)">Expand all</button>
-          <button type="button" class="info-icon" aria-label="About the entity marks" data-ek-legend data-help="Every id carries a small squared mark saying what it is.">i</button>
+          <button type="button" class="info-icon" aria-label="About the entity marks" data-ek-legend data-help="Every id is preceded by a small capital letter saying what it is.">i</button>
         </div>
         <div class="table-wrap"><table>
           <thead><tr><th>WBS</th><th>Element</th><th>Owner</th><th>Dur (${u})</th><th>Start</th><th>Finish</th><th>%</th>${anyCost ? '<th style="text-align:right">Cost</th>' : ''}<th>Deliverable</th><th>Description / scope</th><th>Acceptance</th><th title="Schedule relationships: ↤ predecessors this element waits for, ↦ successors it feeds — hover for the full name and link type. Full detail in the CSV export (Predecessors + Successors columns).">Links</th><th title="User stories traced to this element — hover a chip for the story, click for the Requirements tab">Stories</th></tr></thead>
