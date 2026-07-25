@@ -2381,7 +2381,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0801</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1433</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4627,9 +4627,37 @@
     // Transitive reduction: A→B→C plus an explicit A→C link — the chain
     // already gates C, the direct link only adds arrows. Schedule math is
     // identical with or without these edges (CPM takes the max path).
+    /* A link is only redundant when the chain that supposedly implies it
+       constrains the successor AT LEAST AS HARD. That is true for a plain
+       FS-with-no-lag edge — ES(t) ≥ EF(u) directly, and ES(t) ≥ EF(w) ≥ EF(u)
+       through any plain FS path u→w→t — and false the moment a lag or an
+       SS/FF type is involved.
+
+       This list used to walk raw predecessor ids and never look at type or
+       lag, so `Order hardware --FS+20--> Install hardware` was declared
+       "already implied" by `Order hardware → Prep site → Install hardware`.
+       Removing it deleted the twenty-day procurement lead time and pulled the
+       project finish 27 calendar days earlier — under a confirm dialog that
+       states, in those words, "The schedule does not change". The user has
+       been told not to re-check, so the wrong date reaches the client.
+
+       The PERT view has carried the guard for this since its transitive
+       reduction went in ("the raw-link test above can also fire on a lagged or
+       SS/FF link, and deleting one of those DOES move dates"). The deleting
+       path never got it. Summaries are excluded as well: a predecessor on a
+       roll-up expands to its leaves, so reachability over raw ids does not
+       describe what actually gates the successor. Missing a cleanup costs an
+       extra arrow; deleting the wrong one costs the schedule. */
     function redundantLinkList() {
+      const byId = {};
+      tasks.forEach(t => { byId[t.id] = t; });
+      const plainPred = p => p && p.type === 'FS' && !p.lag
+        && !(byId[p.id] && byId[p.id].isSummary);
       const predIds = {};
-      tasks.forEach(t => { predIds[t.id] = (t.predecessors || []).map(p => p.id); });
+      tasks.forEach(t => {
+        predIds[t.id] = t.isSummary ? []
+          : (t.predecessors || []).filter(plainPred).map(p => p.id);
+      });
       const memo = new Map();
       const reaches = (from, to, guard) => { // is `from` an ancestor of `to` through the pred graph?
         const key = from + ':' + to;
@@ -4644,12 +4672,13 @@
       };
       const out = [];
       tasks.forEach(t => {
+        // candidates are this task's own PLAIN predecessors; a lagged or SS/FF
+        // link is never offered for deletion, whatever the graph says
         const ps = predIds[t.id];
         if (!ps || ps.length < 2) return;
         ps.forEach(u => {
           if (ps.some(w => w !== u && reaches(u, w, new Set()))) {
-            const pt = tasks.find(x => x.id === u);
-            out.push({ task: t, predId: u, predName: pt ? pt.name : String(u) });
+            out.push({ task: t, predId: u, predName: (byId[u] || {}).name || String(u) });
           }
         });
       });
@@ -13449,12 +13478,32 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       const rep = { updated: 0, added: 0, rejected: [], notes: [] };
       if (!reqs) reqs = { personas: [], epics: [], stories: [] };
       computeWbsCodes();
-      // group rows by Story ID (repeated per AC row; blank continues the previous story)
-      const groups = []; let cur = null;
+      /* Group rows by Story ID — by IDENTITY, not by adjacency. A blank ID
+         still continues the story above it, which is what makes a multi-AC
+         story readable in Excel, but a Story ID that reappears further down
+         the file rejoins the group it already opened.
+
+         The old scan opened a NEW group every time the id differed from the
+         current one, so a story whose rows appeared in two runs produced two
+         groups — and since each group REPLACES s.ac with only its own rows,
+         the last one processed destroyed the rest. That fired on the most
+         ordinary edit the workbook invites: append one criterion for an
+         existing story at the bottom of the sheet, and that story dropped from
+         three criteria to one, with the appended text renumbered onto the
+         identity of the criterion it had just replaced. Sorting the sheet in
+         Excel was worse — sorting by AC type collapsed thirteen stories to one
+         criterion each, 40 down to 13, after which the app offered to delete
+         the 37 test cases now reading as orphans. Nothing detected it, so the
+         toast said "13 updated, 0 added" and the only trace was the count. */
+      const groups = []; const byStory = new Map(); let cur = null;
       body.forEach((r, ri) => {
         const cell = i => (i >= 0 && i < r.length) ? String(r[i] == null ? '' : r[i]).trim() : '';
         const sid = cell(c.id);
-        if (sid && (!cur || cur.sid !== sid)) { cur = { sid, rows: [] }; groups.push(cur); }
+        if (sid) {
+          const key = sid.toLowerCase();
+          if (!byStory.has(key)) { const g = { sid, rows: [] }; byStory.set(key, g); groups.push(g); }
+          cur = byStory.get(key);
+        }
         if (!cur) { rep.rejected.push('row ' + (ri + 2) + ': no Story ID'); return; }
         cur.rows.push({ ri, cell });
       });
