@@ -2381,7 +2381,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1628</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1632</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -15242,6 +15242,30 @@ ${uatStylePref() === 'bigbang'
       el.dataset.base = base;
       el.textContent = n > 1 ? base + '  (+' + (n - 1) + ' more running — ⏹ stops all)' : base;
     }
+    const MODEL_CAPS = [
+      { p: 'claude-haiku-4-5', max: 64000 },
+      { p: 'claude-sonnet-5',  max: 128000 },
+      { p: 'claude-opus-4-8',  max: 128000 },
+      { p: 'claude-opus-4-7',  max: 128000 },
+      { p: 'claude-opus-4-6',  max: 128000 },
+      { p: 'claude-sonnet-4-6', max: 128000 },
+      { p: 'claude-fable-5',   max: 128000 }
+    ];
+    const MODEL_CAP_LEARNED = 'pertGantt.modelCap';
+    function modelCapOverrides() { try { return JSON.parse(localStorage.getItem(MODEL_CAP_LEARNED) || '{}'); } catch (e) { return {}; } }
+    function modelOutputCap(model) {
+      const learned = modelCapOverrides()[model];
+      if (Number.isFinite(+learned) && +learned > 0) return +learned;
+      const hit = MODEL_CAPS.find(x => String(model).indexOf(x.p) === 0);
+      // an unknown model gets the LOWEST ceiling we know of rather than the
+      // highest — a request that is too small truncates and says so, one that is
+      // too large is rejected outright
+      return hit ? hit.max : 64000;
+    }
+    function learnModelCap(model, n) {
+      if (!Number.isFinite(+n) || +n <= 0) return;
+      try { const o = modelCapOverrides(); o[model] = +n; localStorage.setItem(MODEL_CAP_LEARNED, JSON.stringify(o)); } catch (e) {}
+    }
     const aiLiveCtrls = new Set();
     let aiAbortCtrl = null;   // the newest — kept for callers that read it
     function stopAIStream() {
@@ -15284,8 +15308,20 @@ Rules:
       // the global select — mutating that select would silently re-point every
       // other flow AND invalidate their prompt cache, which is model-scoped.
       const model = opts.model || document.getElementById('aiModel').value || 'claude-sonnet-5';
-      // per-model output ceilings: Sonnet 5 / Opus 4.8 allow 128k output tokens, Haiku 4.5 64k
-      const maxTok = opts.maxTokens || (model.indexOf('haiku') >= 0 ? 64000 : 128000);
+      /* PER-MODEL OUTPUT CEILING. This was `indexOf('haiku') ? 64000 : 128000`
+         — a substring test with a hardcoded fallback, so ANY model string that
+         is not Haiku was handed 128k whether or not that is its ceiling. The
+         numbers happen to be right for the three models this app offers
+         (Sonnet 5 and Opus 4.8 allow 128k output, Haiku 4.5 64k, and both
+         require streaming for large outputs, which every call here does), but
+         a table that is right by luck fails silently the day it stops being.
+
+         So: an EXPLICIT table, matched by id prefix rather than a substring
+         anywhere in the name, and a learned override. If the API ever rejects
+         the ceiling — the 400 names max_tokens — the caller retries once at the
+         value the error reports and remembers it per model, so a changed limit
+         costs one recovered request rather than a dead feature. */
+      const maxTok = opts.maxTokens || modelOutputCap(model);
       const ctrl = new AbortController();
       aiLiveCtrls.add(ctrl);
       aiAbortCtrl = ctrl;
@@ -15348,6 +15384,20 @@ Rules:
           try { const j = await res.json(); detail = j.error ? j.error.message : JSON.stringify(j); } catch (e) { detail = res.statusText; }
           if (res.status === 401) throw new Error('Invalid API key (401). Check the key in ⚙ API Key.');
           if (res.status === 429) throw new Error('Rate limited (429). Wait a moment and try again.');
+          /* A ceiling this app believed in but the API does not. The 400 names
+             both the offending field and the real limit, so read it, remember
+             it for this model, and retry once — a changed limit then costs one
+             recovered request instead of a feature that simply stops working
+             and reports an opaque API error. */
+          if (res.status === 400 && /max_tokens/i.test(detail) && !opts._capRetry) {
+            const m = String(detail).match(/(\d{4,7})/g);
+            const real = m ? Math.min(...m.map(Number).filter(n => n > 0 && n < maxTok)) : 0;
+            if (real > 0) {
+              learnModelCap(model, real);
+              flashSaved('⚠ ' + model + ' caps output at ' + real.toLocaleString() + ' tokens, not ' + maxTok.toLocaleString() + ' — retrying at its real limit and remembering it.');
+              return await callAnthropic(userContent, Object.assign({}, opts, { _capRetry: true, maxTokens: real }));
+            }
+          }
           throw new Error(`API error ${res.status}: ${detail}`);
         }
         // Parse the SSE stream, surfacing deltas as they arrive
