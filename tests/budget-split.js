@@ -1,11 +1,12 @@
-const { chromium } = require('playwright-core'); const fs = require('fs');
-function chrome(){const r='/opt/pw-browsers';for(const d of fs.readdirSync(r))if(/chromium/i.test(d)){const p=r+'/'+d+'/chrome-linux/chrome';if(fs.existsSync(p))return p;}}
+const { requirePlaywright, chromePath, APP, FIXTURE } = require('./_harness');
+const { chromium } = requirePlaywright();
+const fs = require('fs');
 (async () => {
-  const b = await chromium.launch({headless:true,args:['--no-sandbox'],executablePath:chrome()});
+  const b = await chromium.launch({headless:true,args:['--no-sandbox'],executablePath: chromePath()});
   const page = await b.newPage({viewport:{width:1440,height:1000}});
   page.on('dialog', d => d.accept());
   const errs=[]; page.on('pageerror', e=>errs.push(e.message));
-  await page.goto('file:///home/user/tutorials/pert-gantt-tracker.html',{waitUntil:'load'});
+  await page.goto(APP,{waitUntil:'load'});
   await page.evaluate(() => { loadSample(); });
   await page.waitForTimeout(500);
   const R = {};

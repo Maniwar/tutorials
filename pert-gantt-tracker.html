@@ -2791,7 +2791,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.2106</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.2205</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -11929,12 +11929,46 @@
 
       cont.innerHTML = `${banner}${completionReviewHtml()}${ptReadingHtml('base')}
         <div class="summary-grid bl-cards" style="margin-bottom:1rem">
-          ${card('Schedule', hb ? fmtNice(baseFinishAll) : 'no baseline', curFinishAll ? fmtNice(curFinishAll) : 'not scheduled yet',
-            projVar == null ? '' : (projVar > 0 ? '+' + projVar + 'd late vs baseline' : projVar < 0 ? -projVar + 'd early vs baseline' : 'on the baseline date'), projVar,
-            hb ? 'committed finish → forecast finish' : 'live forecast finish')}
-          ${card('Budget', fmtMoney(costRef), fmtMoney(actCostAll),
+          ${(() => {
+            /* A HELD END DATE IS NOT A STILL PLAN. Both ends of this comparison
+               are a max over the whole plan, so it only moves when the LAST
+               activity moves — and "on the baseline date" then reads as "nothing
+               has happened", on a plan where four activities sat 81 activity-days
+               off their own baselines. The Plan-truth schedule bar already says
+               "end date held · 4 off their own dates"; this card could not see it,
+               and being the smaller of two readings of one fact is how a card
+               ends up quietly contradicting the panel above it. */
+            const moved = hb ? leaves.filter(t => {
+              const bf = t.baseFinish, cf = currentFinish(t);
+              return bf && cf && varianceDays(bf, cf) !== 0;
+            }) : [];
+            const movedDays = moved.reduce((s2, t) => s2 + Math.abs(varianceDays(t.baseFinish, currentFinish(t))), 0);
+            const sub2 = !hb ? 'live forecast finish'
+              : (projVar === 0 && moved.length)
+                ? '<b>' + moved.length + '</b> ' + ptrPl(moved.length, 'activity', 'activities') + ' still moved — '
+                  + movedDays + ' activity-' + ptrPl(movedDays, 'day') + ' absorbed by float'
+                : 'committed finish → forecast finish'
+                  + (moved.length ? ' · ' + moved.length + ' off ' + (moved.length === 1 ? 'its' : 'their') + ' own dates' : '');
+            return card('Schedule', hb ? fmtNice(baseFinishAll) : 'no baseline', curFinishAll ? fmtNice(curFinishAll) : 'not scheduled yet',
+              projVar == null ? '' : (projVar > 0 ? '+' + projVar + 'd late vs baseline' : projVar < 0 ? -projVar + 'd early vs baseline'
+                : (moved.length ? 'end date held' : 'on the baseline date')), projVar, sub2);
+          })()}
+          ${/* EVERY OTHER CARD IS LIKE FOR LIKE. Schedule reads committed finish →
+                forecast finish; Scope reads committed effort → effort planned now.
+                Budget read the WHOLE envelope → spend SO FAR, which is not a
+                comparison at all, and then printed a delta measured against a
+                third number underneath it. On the real plan that rendered as
+                "$54,293 → $27,900" above "$26,760 above the plan to date": a
+                reader gets "we are about half way through the money", then a
+                figure that says the opposite, and nothing on the card explains
+                that they have different denominators. The pair is now the same
+                subtraction as the delta and as the Plan-truth bar — due by today
+                → booked — and the envelope moves to the sub-line, which is where
+                context belongs. */ ''}
+          ${card('Budget', fmtMoney(pvAt(stripTime(new Date()).getTime())) + ' due by today', fmtMoney(actCostAll),
             budTxt, budTone,
-            hb && planCostAll !== baseCostAll ? 'plan now ' + fmtMoney(planCostAll) + ' — scope repriced' : 'actual cost booked so far')}
+            'of a ' + fmtMoney(costRef) + (hb ? ' baselined' : ' planned') + ' envelope'
+              + (hb && planCostAll !== baseCostAll ? ' — plan now ' + fmtMoney(planCostAll) + ', scope repriced' : ''))}
           ${card('Scope', hb ? fmtDurCell(baseTeAll) : 'no baseline', fmtDurCell(planTeAll),
             hb ? (Math.abs(planTeAll - baseTeAll) < 0.01 ? 'scope unchanged'
               : (planTeAll > baseTeAll ? '+' : '−') + fmtDurCell(Math.abs(planTeAll - baseTeAll))

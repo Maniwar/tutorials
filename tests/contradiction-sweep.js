@@ -10,17 +10,18 @@
    does — it recomputes every figure independently, from the stored fields, and
    checks that what the panel SAYS agrees with what the arithmetic MEANS.
    ═══════════════════════════════════════════════════════════════════════════ */
-const { chromium } = require('playwright-core'); const fs = require('fs');
-function chrome(){const r='/opt/pw-browsers';for(const d of fs.readdirSync(r))if(/chromium/i.test(d)){const p=r+'/'+d+'/chrome-linux/chrome';if(fs.existsSync(p))return p;}}
-const FIXTURE = JSON.parse(fs.readFileSync('/home/user/tutorials/fixtures/crm-rollout.json', 'utf8'));
+const { requirePlaywright, chromePath, APP, FIXTURE } = require('./_harness');
+const { chromium } = requirePlaywright();
+const fs = require('fs');
+const DATA = FIXTURE();
 
 (async () => {
-  const b = await chromium.launch({headless:true,args:['--no-sandbox'],executablePath:chrome()});
+  const b = await chromium.launch({headless:true,args:['--no-sandbox'],executablePath: chromePath()});
   const page = await b.newPage({viewport:{width:1440,height:1200}});
   page.on('dialog', d => d.accept());
   const errs=[]; page.on('pageerror', e=>errs.push(e.message));
-  await page.goto('file:///home/user/tutorials/pert-gantt-tracker.html',{waitUntil:'load'});
-  await page.evaluate(data => { hydrate(data); calculate(); }, FIXTURE);
+  await page.goto(APP,{waitUntil:'load'});
+  await page.evaluate(data => { hydrate(data); calculate(); }, DATA);
   await page.waitForTimeout(600);
   const R = {};
 
