@@ -2381,7 +2381,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1448</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1507</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -2774,8 +2774,7 @@
       // Anything still in flight was computed from the plan we are leaving, and
       // would otherwise land on the plan we are entering. Kill it here rather
       // than trusting each flow to notice.
-      try { if (aiAbortCtrl) aiAbortCtrl.abort(); } catch (e) {}
-      aiAbortCtrl = null;
+      try { stopAIStream(); } catch (e) {}
       selectedTaskIds.clear();
       healthFindings = null;
       mcResult = null;
@@ -11687,6 +11686,20 @@ Execution conventions (assume these when writing every case — they are the con
 - Parallelism: cases within one workstream are written to be independently executable so several testers can split them; only chain one case on another (in its steps) when the criterion genuinely requires sequenced state, and say so explicitly in the setup step.
 Return ONLY JSON (no prose, no fences):
 {"testCases":[{"name":"TC AC-1.1 — …","ac":"AC-1.1","optimistic":0.02,"mostLikely":0.04,"pessimistic":0.09,"owner":"","steps":"1. … 2. …","pass":"…"}]}`;
+      /* THE ONLY ONE OF THE NINETEEN CALL SITES WITH NO ERROR HANDLING.
+         Every caller invokes this as a bare onclick or a bare await inside
+         another unguarded async function, so a rejection escaped as an
+         unhandled promise rejection: streamHide() was never reached, the
+         fixed-position activity strip was never removed and kept ticking
+         forever, and the closing calculate() / renderReqs() / summary never
+         ran. A rate limit, an expired key, a dropped connection — or the user's
+         own ⏹ Stop — all read as "still running", with the test plan silently
+         half-built and the gap only surfacing later in the exported plan and
+         the traceability table. Whatever happens now, the strip comes down, the
+         work already committed is calculated and rendered, and the user is told
+         what survived. */
+      let failure = null;
+      try {
       for (let bi = 0; bi < batches.length; bi++) {
         const batch = batches[bi];
         const partBar = batches.map((x, i) => i < bi ? '✓' : i === bi ? '▶' : '·').join('');
@@ -11753,8 +11766,20 @@ Write the test cases for the criteria above, following the contract exactly. Ret
         syncResources(); saveLocal();
         flashSaved('🧪 Batch ' + (bi + 1) + '/' + batches.length + ' done — ' + made + ' new, ' + respec + ' re-specified so far');
       }
+      } catch (e) {
+        failure = e;
+      } finally {
+        // whatever happened, the strip comes down
+        streamHide(!failure);
+      }
       calculate();
       renderReqs();
+      if (failure) {
+        alert('🧪 Test-plan generation stopped: ' + (failure.message || failure) + '\n\n'
+          + made + ' test case(s) were created and ' + respec + ' re-specified before it stopped — those are kept, scheduled and linked. '
+          + 'Re-run 🧪 Generate test plan to fill the rest: it only fills gaps, so nothing is duplicated.');
+        return;
+      }
       const uncovered = [];
       reqs.stories.forEach(s => (s.ac || []).forEach(a => { if (!testCasesForAC(a.id).length && storyAudience(s) !== 'internal') uncovered.push(a.id); }));
       flashSaved('🧪 ' + made + ' test case(s) created' + (respec ? ' · ' + respec + ' broken one(s) healed in place (steps, action → outcome name, real O<M<P spread)' : '') + (skippedProcess ? ' · ' + skippedProcess + ' PM/governance process criteria skipped (verified by their artifacts)' : '') + (usedHosts.size ? ' — nested under ' + [...usedHosts].map(n => '"' + n + '"').join(', ') : '') + (uncovered.length ? ' — ⚠ still uncovered: ' + uncovered.slice(0, 6).join(', ') + ' (re-run to fill)' : ' — every UAT-testable AC covered. Export ⬇ Test plan (.md)'));
@@ -14815,7 +14840,8 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
         }
       }
       streamShow._gen = (streamShow._gen || 0) + 1; // batch flows re-show instantly
-      const setLabel = t => { head.textContent = t; const l = document.getElementById('aiActivityLabel'); if (l) l.textContent = t; };
+      const setLabel = t => { head.textContent = t; const l = document.getElementById('aiActivityLabel');
+        if (l) { l.textContent = t; l.dataset.base = t; try { aiStripCount(); } catch (e) {} } };
       setLabel(label + ' — connecting…');
       // heartbeat: before the first token the model is "thinking" (big prompts
       // take up to a minute) — show elapsed time so silence never looks stuck
@@ -14904,9 +14930,33 @@ ${uatStylePref() === 'bigbang'
 
     // ⏹ Stop: aborting the fetch kills the SSE stream server-side, so the model
     // stops generating — the tokens it would have produced are never billed.
-    let aiAbortCtrl = null;
+    /* ONE Stop button, and it used to reach one call. aiAbortCtrl held only
+       the NEWEST controller, and nothing stops two flows running at once —
+       generateWithAI disables its own button, but aiHealDependencies,
+       generateTestPlan, draftRequirements, aiFixFindings, aiDraftRaid and
+       draftNarrative disable nothing. Start a second flow while the first is
+       streaming and the first became permanently unstoppable, while the strip
+       showed only the newest label so nothing said two things were running.
+
+       Every live controller is registered here. Stop aborts all of them, which
+       is what the button's own tooltip has always promised. */
+    // The strip carries one label. When two flows overlap it said only the
+    // newest, and the second one's streamHide removed the whole strip while the
+    // first was still streaming. Say how many are running.
+    function aiStripCount() {
+      const el = document.getElementById('aiActivityLabel');
+      if (!el) return;
+      const n = aiLiveCtrls.size;
+      const base = el.dataset.base || el.textContent;
+      el.dataset.base = base;
+      el.textContent = n > 1 ? base + '  (+' + (n - 1) + ' more running — ⏹ stops all)' : base;
+    }
+    const aiLiveCtrls = new Set();
+    let aiAbortCtrl = null;   // the newest — kept for callers that read it
     function stopAIStream() {
-      if (aiAbortCtrl) { try { aiAbortCtrl.abort(); } catch (e) {} }
+      aiLiveCtrls.forEach(c => { try { c.abort(); } catch (e) {} });
+      aiLiveCtrls.clear();
+      aiAbortCtrl = null;
     }
     // Shared DELTA contract for every flow that EDITS an existing plan — the AI
     // returns only what changes; unchanged tasks must not be re-emitted.
@@ -14946,7 +14996,9 @@ Rules:
       // per-model output ceilings: Sonnet 5 / Opus 4.8 allow 128k output tokens, Haiku 4.5 64k
       const maxTok = opts.maxTokens || (model.indexOf('haiku') >= 0 ? 64000 : 128000);
       const ctrl = new AbortController();
+      aiLiveCtrls.add(ctrl);
       aiAbortCtrl = ctrl;
+      if (aiLiveCtrls.size > 1) aiStripCount();
       // Stall watchdog. Two distinct hangs exist: a dead socket (no bytes at
       // all) and — sneakier — a live socket that keeps sending SSE pings while
       // the model never produces a token. The old byte-based timer never fired
@@ -15113,7 +15165,9 @@ Rules:
         throw e;
       } finally {
         clearInterval(watchdog);
+        aiLiveCtrls.delete(ctrl);
         if (aiAbortCtrl === ctrl) aiAbortCtrl = null;
+        aiStripCount();
       }
     }
     function parseAIJson(text) {
@@ -15139,6 +15193,17 @@ Rules:
     // Completeness guard: NEVER hand partial data to a caller that will apply it.
     // If the output hit the ceiling (even after 8 auto-continuations ≈ 1M tokens)
     // or the JSON only parsed after truncation-repair, abort — plan untouched.
+    /* Display-only callers can live with a repaired remnant — but not with
+       being told nothing. parseAIJson's repair fires on any malformation, not
+       just truncation, so "here is your narrative" can quietly mean "here is
+       two thirds of it". This returns the object and flashes once when it was
+       cut, so the user knows to re-run rather than quoting a half-written
+       paragraph to a client. */
+    function parseAIJsonNoted(text, what) {
+      const res = parseAIJson(text);
+      if (parseAIJson.repaired) flashSaved('⚠ The response for ' + what + ' arrived malformed and was cut back to the last complete section — re-run it before using this.');
+      return res;
+    }
     function parseAIJsonStrict(text, what) {
       if (String(text).indexOf('/*TRUNCATED*/') >= 0)
         throw new Error('The AI response for ' + what + ' exceeded the maximum output even after 8 auto-continuations. NOTHING was changed. Split the request into smaller pieces (e.g. one phase at a time) and retry.');
@@ -15714,7 +15779,9 @@ ${aiSchemaHint()}`];
         const stats = applyAIPlan(plan, mode);
         streamHide(true);
         status.textContent = stats
-          ? `✓ Delta applied — ${stats.added} added, ${stats.updated} updated, ${stats.removed} removed. Everything else (progress, actuals, links) untouched.`
+          ? `✓ Delta applied — ${stats.added} added, ${stats.updated} updated, ${stats.removed} removed.`
+            + aiAddedNote(stats)
+            + ' Everything else (progress, actuals, links) untouched.'
           : '✓ Plan ready — review below.';
         setTimeout(() => { status.textContent = ''; }, 9000);
         // one continuous flow: notes → plan → requirements (unless opted out).
@@ -15769,20 +15836,70 @@ ${aiSchemaHint()}`];
       }
       // 2) upserts — existing tasks are edited IN PLACE
       let addedN = 0, updatedN = 0;
-      const addedTasks = [];
+      const addedTasks = [], rejected = [];
       const parentNames = new Set(changed.map(x => String((x && x.parent) || '').trim().toLowerCase()).filter(Boolean));
       const pending = [];
       changed.forEach(pt => {
         const name = String((pt && pt.name) || '').trim();
         if (!name) return;
         const wasKey = String(pt.was || '').trim().toLowerCase();
-        // ID FIRST. byLower is last-wins over lowercased names (14947), so two
-        // leaves called "Sign-off" under different workstreams collapse to one
-        // and both proposals land on the second. An id cannot collide.
-        const _pid = (pt && pt.id != null && Number.isFinite(+pt.id)) ? tasks.find(x => x.id === +pt.id) : null;
-        let t = _pid || (wasKey && byLower[wasKey]) || byLower[name.toLowerCase()];
-        let o = Number(pt.optimistic) || 0, m = Number(pt.mostLikely) || 0, p = Number(pt.pessimistic) || 0;
-        const arr = [o, m, p].sort((a, b) => a - b); o = arr[0]; m = arr[1]; p = arr[2];
+        /* ID FIRST, BUT ONLY IF THE NAME AGREES. byLower is last-wins over
+           lowercased names, so two leaves called "Sign-off" under different
+           workstreams collapse to one and both proposals land on the second —
+           that is why an id is preferred at all, and it still is.
+
+           What it cannot be is trusted blind. The schema hint asks for "the
+           numeric id shown as T#42 in the digest", but NEITHER delta digest
+           emits an id: both map activities to name/durations/owner/parent/
+           dependsOn. So every id that comes back is invented — typically a
+           1-based position in the array the model was shown — and it was
+           resolved ahead of the exact-name match with nothing checking that the
+           task it landed on had any relation to the name being applied. Two
+           real activities got their name, estimate, parent and milestone flag
+           replaced, and because the id was kept, their tracking history, %
+           complete and story links stayed attached to the now-wrong row. The
+           app reported a clean success.
+
+           Requiring the resolved task's name to match `name` or `was` keeps
+           every legitimate use — a real id and a real name agree — and makes a
+           guessed one fall through to name matching, which is what the flows
+           actually rely on. */
+        const _idHit = (pt && pt.id != null && Number.isFinite(+pt.id)) ? tasks.find(x => x.id === +pt.id) : null;
+        const _idOk = _idHit && (() => {
+          const n = _idHit.name.trim().toLowerCase();
+          return n === name.toLowerCase() || (wasKey && n === wasKey);
+        })();
+        let t = (_idOk ? _idHit : null) || (wasKey && byLower[wasKey]) || byLower[name.toLowerCase()];
+        /* PARTIAL DURATIONS. All three used to be coerced with `|| 0`, so an
+           absent key became 0, and the write guard fired when ANY ONE of the
+           three was present — writing all three. The delta contract trains the
+           model to send only what changed, so "widen the worst case" came back
+           as `{pessimistic: 14}` and stored 0/0/14: wrong TE, wrong cost, wrong
+           finish date, on a row the user is unlikely to re-read. Missing keys
+           now inherit the activity's own current values, and a brand-new
+           activity has nothing to inherit, so they stay 0. */
+        const dur = k => (pt[k] == null || pt[k] === '') ? null : (Number(pt[k]) || 0);
+        const dO = dur('optimistic'), dM = dur('mostLikely'), dP = dur('pessimistic');
+        let o = dO != null ? dO : (t ? (t.o || 0) : 0);
+        let m = dM != null ? dM : (t ? (t.m || 0) : 0);
+        let p = dP != null ? dP : (t ? (t.p || 0) : 0);
+        const nGiven = (dO != null) + (dM != null) + (dP != null);
+        if (nGiven === 3 || nGiven === 0) {
+          const arr = [o, m, p].sort((a, b) => a - b); o = arr[0]; m = arr[1]; p = arr[2];
+        } else {
+          /* A PARTIAL update pins what was actually asked for and moves only
+             what was inherited. Sorting all three instead — which is right when
+             the model sends a whole triple — silently relabels the request:
+             "set most likely to 7" against a current 1/1/1 sorted to 1/1/7, so
+             the most likely stayed 1 and the number landed on the pessimistic.
+             O ≤ M ≤ P still holds; it is the inherited values that give way. */
+          if (dO == null) o = Math.min(o, dM != null ? dM : Infinity, dP != null ? dP : Infinity);
+          if (dP == null) p = Math.max(p, dM != null ? dM : -Infinity, dO != null ? dO : -Infinity);
+          if (dM == null) m = Math.min(Math.max(m, o), p);
+          // two explicit values can still arrive out of order; that is the
+          // model contradicting itself, and sorting is the only sane answer
+          if (!(o <= m && m <= p)) { const a2 = [o, m, p].sort((a, b) => a - b); o = a2[0]; m = a2[1]; p = a2[2]; }
+        }
         const attendees = Array.isArray(pt.attendees) ? pt.attendees.map(a => ({ name: String(typeof a === 'string' ? a : (a && a.name) || '').trim(), units: 100 })).filter(a => a.name) : null;
         if (!t) {
           // plan.strictIds is set by any flow whose delta was generated FROM a
@@ -15790,9 +15907,20 @@ ${aiSchemaHint()}`];
           // not an insert — and creating it here is how "Payment Gateway
           // Hardening" becomes a real zero-duration milestone that renumbers
           // every WBS code beneath it. Refuse, and report the refusal.
-          if (plan.strictIds) { (applyAIMergeDelta._rejected = applyAIMergeDelta._rejected || []).push(name); return; }
+          if (plan.strictIds) { rejected.push(name); return; }
+          /* An insert with no durations used to become a MILESTONE by
+             inference. That is how a name the model drifted on — an em dash
+             normalised to a hyphen, a fixed typo, a reworded title, or a
+             straightforward hallucination — turned into a real zero-duration
+             checkpoint sitting in the plan and renumbering every WBS code
+             beneath it. Those codes are printed in the SOW scope table, the
+             status-update request, the CSV exports and the traceability matrix,
+             so a client sees renumbered deliverables and an activity nobody
+             agreed. Only an explicit milestone:true makes a milestone now; an
+             estimate-less insert stays an activity, where the existing "no O/M/P
+             estimate" lint says so loudly on the Tasks tab. */
           t = makeTask({ id: nextId++, name, o, m, p,
-            milestone: (!!pt.milestone || (o === 0 && m === 0 && p === 0)) && !parentNames.has(name.toLowerCase()),
+            milestone: !!pt.milestone && !parentNames.has(name.toLowerCase()),
             owner: String(pt.owner || '').trim(), units: (Number.isFinite(+pt.units) && +pt.units > 0) ? +pt.units : 100,
             attendees: attendees || [],
             deliverable: String(pt.deliverable || '').trim(), description: String(pt.description || '').trim(),
@@ -15885,9 +16013,30 @@ ${aiSchemaHint()}`];
       renderTaskTable();
       saveLocal();
       if (tasks.length && recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderPERT(); }
-      return { added: addedN, updated: updatedN, removed: removedIds.size };
+      // Names matter here. "3 added" tells a user nothing they can check; the
+      // names are what let them see that "Payment Gateway Hardening" is not
+      // something they asked for. `rejected` was written to a function property
+      // that nothing ever read — it is returned now, so a refusal is visible.
+      return { added: addedN, updated: updatedN, removed: removedIds.size,
+               addedNames: addedTasks.map(t => t.name), rejected };
     }
 
+    /* "3 added" tells a user nothing they can check. The names are what let
+       them notice an activity nobody asked for — the failure mode where a name
+       the model drifted on gets inserted as new scope rather than matched to
+       the row it meant. Named here, and again in the Tasks-tab lint if the
+       insert has no estimate. */
+    function aiAddedNote(stats) {
+      if (!stats) return '';
+      let out = '';
+      const a = stats.addedNames || [];
+      if (a.length) out += ' NEW: ' + a.slice(0, 4).map(n => '“' + n + '”').join(', ')
+        + (a.length > 4 ? ' and ' + (a.length - 4) + ' more' : '') + ' — check these are scope you asked for.';
+      const r = stats.rejected || [];
+      if (r.length) out += ' REFUSED (no such activity in this plan): ' + r.slice(0, 4).map(n => '“' + n + '”').join(', ')
+        + (r.length > 4 ? ' and ' + (r.length - 4) + ' more' : '') + '.';
+      return out;
+    }
     function applyAIPlan(plan, mode) {
       // plan UPDATES are differential — a merge must never rebuild the task list
       // (rebuilding re-issues ids, wiping % complete, actuals and story links)
@@ -16007,7 +16156,13 @@ Estimate rules: an estimates[] entry ONLY for rows where new O/M/P numbers were 
       btn.disabled = true; const orig = btn.textContent; btn.textContent = '⏳ Updating…'; status.textContent = 'Reading notes…';
       const onDelta = streamShow('Updating progress from notes');
       try {
-        const res = parseAIJson(await callAnthropic(prompt, { onDelta }));
+        // strict: this writes progress, actual dates, actual effort, revised
+        // estimates and new risks. parseAIJson's repair loop fires on ANY
+        // mid-response malformation, not only truncation — an unescaped quote
+        // inside a copied "Blockers / notes" cell is the obvious one — and
+        // returns a silently shortened object. A status round would lose most
+        // of what the team reported while the toast said it worked.
+        const res = parseAIJsonStrict(await callAnthropic(prompt, { onDelta }), 'the status update');
         streamHide(true);
         let changed = 0, risksAdded = 0, estChanged = 0;
         const badEst = [];
@@ -16468,7 +16623,9 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       flashSaved('⏳ Drafting RAID…');
       const onDelta = streamShow('Drafting RAID entries (risks, assumptions, exclusions)');
       try {
-        const res = parseAIJson(await callAnthropic(prompt, { onDelta, cachePrefix: [histPromptBlock() + bankPromptBlock()] }));
+        // strict: these become RAID entries. A repaired remnant drops the tail
+        // of the list, and a dropped Issue never reaches the log or the status report.
+        const res = parseAIJsonStrict(await callAnthropic(prompt, { onDelta, cachePrefix: [histPromptBlock() + bankPromptBlock()] }), 'the RAID draft');
         streamHide(true);
         if (!res || !Array.isArray(res.entries)) throw new Error('No entries returned.');
         let added = 0;
@@ -17190,7 +17347,7 @@ Assumptions: ${d.assumptions.join('; ') || 'none recorded'}. Exclusions: ${d.exc
 ${d.price ? 'Commercials: ' + d.price.model + ' ' + d.price.amount + '.' : ''}
 Return ONLY JSON: {"overview":"2-3 sentence engagement overview & objectives","scopeNarrative":"2-3 sentences framing the scope table","outOfScope":"1-2 sentences if exclusions are empty","paymentTerms":"one sentence proposing milestone-based payment","acceptanceProcess":"2-3 sentence acceptance clause","changeControl":"2-3 sentence change-control clause"}
 Professional, client-ready, no hype, no invented facts.`;
-          narrative = parseAIJson(await callAnthropic(prompt, { onDelta: sowDelta, cachePrefix: [histPromptBlock() + bankPromptBlock()] }));
+          narrative = parseAIJsonNoted(await callAnthropic(prompt, { onDelta: sowDelta, cachePrefix: [histPromptBlock() + bankPromptBlock()] }), 'the SOW narrative');
           Object.keys(narrative || {}).forEach(k => { narrative[k] = escapeHtml(String(narrative[k] || '')); });
         } catch (e) { alert('AI narrative failed (' + (e.message || e) + ') — generating the structured skeleton instead.'); }
       }
@@ -17287,9 +17444,9 @@ Professional, client-ready, no hype, no invented facts.`;
         const onDelta = streamShow('Drafting change-order rationale');
         try {
           flashSaved('⏳ Drafting change-order rationale…');
-          const res = parseAIJson(await callAnthropic(`Write a 2-3 sentence professional rationale paragraph for a project change order.
+          const res = parseAIJsonNoted(await callAnthropic(`Write a 2-3 sentence professional rationale paragraph for a project change order.
 Changes: added tasks: ${added.map(t => t.name).join(', ') || 'none'}; removed: ${removed.map(t => t.name).join(', ') || 'none'}; effort changes: ${changed.map(c => c.t.name + ' ' + c.from + '→' + c.to).join(', ') || 'none'}. Schedule impact ${finishDelta >= 0 ? '+' : ''}${finishDelta} days. Price impact ${priceDelta >= 0 ? '+' : ''}$${Math.abs(priceDelta).toLocaleString()}.
-Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelta }));
+Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelta }), 'the change-order rationale');
           rationale = escapeHtml(String((res && res.rationale) || ''));
           streamHide(true);
         } catch (e) { streamHide(false); /* skeleton without narrative */ }
@@ -17613,7 +17770,7 @@ Return ONLY JSON: {"findings":[{"severity":"high|medium|low","area":"Missing sco
 Focus on: scope that is obviously missing for this type of work; estimates that contradict the historical data; sequencing that looks wrong; single points of failure. 3-8 findings, concrete, no generic advice.
 IMPORTANT: rows marked [ROLL-UP] are WBS summary rows — the tool schedules and prices ONLY leaf tasks and computes parents from their children. Never flag a parent row's own estimate as missing, flat, or "not rolled up"; that number is display-only legacy data the engine ignores.`;
           const onDelta = streamShow('AI plan review');
-          const res = parseAIJson(await callAnthropic(prompt, { onDelta, cachePrefix: [histPromptBlock() + bankPromptBlock()] }));
+          const res = parseAIJsonNoted(await callAnthropic(prompt, { onDelta, cachePrefix: [histPromptBlock() + bankPromptBlock()] }), 'the AI plan review');
           streamHide(true);
           if (res && Array.isArray(res.findings)) {
             res.findings.forEach(fd => findings.push({ severity: ['high','medium','low'].includes(fd.severity) ? fd.severity : 'medium', area: '🤖 ' + String(fd.area || 'AI review'), finding: String(fd.finding || ''), recommendation: String(fd.recommendation || '') }));
@@ -17801,7 +17958,7 @@ When a fix needs an owner assigned or reassigned, prefer people already listed i
         streamHide(true);
         healthFindings = { date: fmtISO(new Date()), findings: lintPlan() }; // fresh deterministic lint after fixes
         renderHealth();
-        flashSaved('✓ Fixes applied' + (stats ? ' — ' + stats.added + ' added, ' + stats.updated + ' updated, ' + stats.removed + ' removed; everything else untouched' : '') + ' — re-run the health check to confirm');
+        flashSaved('✓ Fixes applied' + (stats ? ' — ' + stats.added + ' added, ' + stats.updated + ' updated, ' + stats.removed + ' removed' + aiAddedNote(stats) + '; everything else untouched' : '') + ' — re-run the health check to confirm');
       } catch (e) { streamHide(false); alert('AI fix failed: ' + (e.message || e)); }
     }
 
@@ -17836,7 +17993,7 @@ When a fix needs an owner assigned or reassigned, prefer people already listed i
 Project ${projName()}: ${Math.round(overallProgress())}% complete, forecast finish ${fmtNice(durationToDate(Math.max(0, ...leaves.map(t => t.ef), 0)))}.
 Completed: ${done}. In progress: ${inProg}. Behind schedule: ${late}. Open risks: ${risks}.
 Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
-        const res = parseAIJson(await callAnthropic(prompt, { onDelta }));
+        const res = parseAIJsonNoted(await callAnthropic(prompt, { onDelta }), 'the status narrative');
         if (!res || !res.narrative) throw new Error('empty response');
         statusNarrative = { date: fmtISO(new Date()), text: String(res.narrative) };
         saveLocal();
