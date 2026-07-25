@@ -2381,7 +2381,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0726</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0801</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -2740,6 +2740,87 @@
       el.querySelectorAll('[data-proj]').forEach(btn => btn.addEventListener('click', () => switchProject(btn.dataset.proj)));
       el.querySelectorAll('[data-cmp]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); compareProject(btn.dataset.cmp); }));
     }
+    /* ═════════ THE PROJECT BOUNDARY ═══════════════════════════════════════
+       Five paths open a project — switchProject, switchProjectForce,
+       newProject, importJSON and recoverRow — and each one hand-reset a
+       DIFFERENT subset of the state belonging to the project it was leaving.
+       The subsets disagreed, and every disagreement was a defect:
+
+         switchProject cleared healthFindings; importJSON did not, so a freshly
+         imported plan showed the previous project's health check under today's
+         date, with Fix buttons resolving task ids against the NEW plan.
+
+         newProject cleared coDraft but not draftChangeOrder._pending — and the
+         RAID tab only repaints the SOW when `!draftChangeOrder._pending`, so a
+         stale pending record actively KEPT one client's change order on screen,
+         approve button live. Clicking it wrote that CO into another
+         engagement's log and rolled its contract baseline.
+
+         Nobody cleared selectedTaskIds. Every project numbers its tasks from 1,
+         so the ids survived and resolved to different activities: a bulk
+         "Set % done" or 🗑 Delete landed on rows the user never chose.
+
+       There is now ONE list, and every path calls it FIRST. Add a
+       project-scoped global next to the others and every boundary gets it for
+       free — which is the whole point of it being one list.
+
+       Document state (sowDraft, sowBaseline, coLog, reqs, pricing…) is NOT
+       here: it is serialized per project and hydrate() assigns all of it
+       unconditionally. This function is only for the state that never belonged
+       to a saved file in the first place. */
+    let projectEpoch = 0;
+    function leaveProjectScope() {
+      projectEpoch++;
+      // Anything still in flight was computed from the plan we are leaving, and
+      // would otherwise land on the plan we are entering. Kill it here rather
+      // than trusting each flow to notice.
+      try { if (aiAbortCtrl) aiAbortCtrl.abort(); } catch (e) {}
+      aiAbortCtrl = null;
+      selectedTaskIds.clear();
+      healthFindings = null;
+      mcResult = null;
+      resourceLoad = null;
+      unleveledDuration = null;
+      projectSpanUp = null;
+      coDraft = '';
+      draftChangeOrder._pending = null;
+      raidDraftLinks = [];
+      editingRaidId = null;
+      editingId = null;
+      editingStoryId = null;
+      dragTaskId = null;
+      ptRevertMark = null;
+      calculated = false;
+      const sow = document.getElementById('sowContainer');
+      if (sow) sow.innerHTML = '';
+    }
+    /* Repaint EVERY schedule-derived panel, including when there is nothing to
+       draw. The old code repainted only `if (tasks.length && recompute())`, so
+       an empty project — or one whose recompute fails on a dependency cycle —
+       inherited the previous project's Gantt, PERT, Resources, Analytics and
+       Baseline. switchTab's own `&& calculated` guard meant visiting the tab
+       did not fix it either, so those panels stayed wrong until Calculate.
+       These are the exact screens people screenshot for clients. */
+    function repaintForProject() {
+      renderTaskTable(); renderWBS(); renderRaid();
+      if (tasks.length && recompute()) {
+        renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT();
+        return true;
+      }
+      const blank = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html || ''; };
+      const none = '<div class="empty-state"><h3>Nothing to show yet</h3><p class="help-text" style="margin:0.4rem 0 0">'
+        + (tasks.length ? 'This plan has activities but no computable schedule — check for a circular dependency, then press <b>Calculate</b>.'
+                        : 'Add activities, then press <b>Calculate</b>.') + '</p></div>';
+      blank('summaryGrid');
+      blank('planTruth', '<p class="ptr-blank"><b>Nothing to compare yet.</b> Add activities and press <b>Calculate</b>.</p>');
+      blank('analyticsContent', none);
+      blank('ganttContainer', none);
+      blank('resourcesContainer', none);
+      blank('baselineContainer', none);
+      blank('healthContainer', '<p class="help-text">Run the health check once this plan has a computable schedule.</p>');
+      blank('pertSvg');
+      return false;
+    }
     async function switchProject(id) {
       const raw = await projBlobGet(id);
       if (id === activeProjectId()) {
@@ -2748,11 +2829,10 @@
         // that wiped the screen after a failed save). Reload from disk.
         if (raw && !tasks.length) {
           try {
+            leaveProjectScope();
             resetUndo();
             hydrate(JSON.parse(raw));
-            calculated = false;
-            renderTaskTable(); renderWBS(); renderRaid();
-            if (tasks.length && recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT(); }
+            repaintForProject();
             renderProjectMenu();
             flashSaved('↻ Reloaded "' + (document.getElementById('projectName').value || 'project') + '" from its last save');
           } catch (e) { alert('Could not reload the saved copy: ' + e.message); }
@@ -2767,18 +2847,17 @@
         // last resort: the legacy single-project slot may hold the latest full save
         const legacy = (await idbGet('legacy.snapshot')) || localStorage.getItem(STORAGE_KEY);
         if (legacy && confirm('That project has no saved copy of its own (its saves may have failed while storage was full).\n\nA legacy full snapshot exists — load it into this project?')) {
-          try { localStorage.setItem(PROJ_ACTIVE_KEY, id); resetUndo(); hydrate(JSON.parse(legacy)); calculated = false; renderTaskTable(); renderWBS(); renderRaid(); if (tasks.length && recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT(); } renderProjectMenu(); switchTab('tasks'); saveLocal(); flashSaved('↻ Recovered from the legacy snapshot'); } catch (e) { alert('Recovery failed: ' + e.message); }
+          try { localStorage.setItem(PROJ_ACTIVE_KEY, id); leaveProjectScope(); resetUndo(); hydrate(JSON.parse(legacy)); repaintForProject(); renderProjectMenu(); switchTab('tasks'); saveLocal(); flashSaved('↻ Recovered from the legacy snapshot'); } catch (e) { alert('Recovery failed: ' + e.message); }
           return;
         }
         alert('Could not load that project — it has no saved data. If its saves failed while storage was full, free space (delete an old project) and use Export/IMPORT JSON to restore from a backup.');
         return;
       }
       localStorage.setItem(PROJ_ACTIVE_KEY, id);
+      leaveProjectScope();
       resetUndo(); // undo must never cross a project boundary
       try { hydrate(JSON.parse(raw)); } catch (e) { alert('Project data is corrupted: ' + e.message); return; }
-      calculated = false; mcResult = null; resourceLoad = null; healthFindings = null;
-      renderTaskTable(); renderWBS(); renderRaid();
-      if (tasks.length && recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT(); }
+      repaintForProject();
       renderProjectMenu();
       switchTab('tasks');
       flashSaved('Switched to "' + (document.getElementById('projectName').value || 'project') + '"');
@@ -2794,13 +2873,17 @@
       }
       const id = 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
       localStorage.setItem(PROJ_ACTIVE_KEY, id);
+      // leaveProjectScope handles only state that is NOT serialized. sowDraft
+      // and sowBaseline are, which is why a COPY keeps them and a fresh project
+      // has them cleared by the block below — neither needs help here.
+      leaveProjectScope();
       resetUndo();
       if (!fromCurrent) {
         tasks = []; nextId = 1; resources = {}; raid = []; nextRaidId = 1; statusHistory = [];
-        sowDraft = ''; statusNarrative = null; healthFindings = null; projectBudget = 0;
+        sowDraft = ''; statusNarrative = null; projectBudget = 0;
         reserves = { contingency: { value: 0, unit: 'percent' }, management: { value: 0, unit: 'percent' } };
         pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 };
-        baselineDate = ''; collapsedIds = new Set(); levelMode = 'none'; calculated = false; mcResult = null;
+        baselineDate = ''; collapsedIds = new Set(); levelMode = 'none';
         reqs = null; sowBaseline = null; coDraft = ''; coLog = [];
         document.getElementById('projectName').value = 'New Engagement';
         document.getElementById('holidays').value = '';
@@ -2810,15 +2893,7 @@
         document.getElementById('projectName').value = (document.getElementById('projectName').value || 'Project') + ' (copy)';
       }
       saveLocal();
-      renderTaskTable(); renderWBS(); renderRaid(); renderProjectMenu();
-      if (!fromCurrent) {
-        document.getElementById('summaryGrid').innerHTML = '';
-        { const p = document.getElementById('planTruth'); if (p) p.innerHTML = '<p class="ptr-blank"><b>Nothing to compare yet.</b> Add activities and press <b>Calculate</b>.</p>'; }
-        document.getElementById('analyticsContent').innerHTML = '<div class="empty-state"><h3>Run Calculate to see analytics</h3></div>';
-        document.getElementById('ganttContainer').innerHTML = '';
-        document.getElementById('resourcesContainer').innerHTML = '';
-        document.getElementById('pertSvg').innerHTML = '';
-      }
+      repaintForProject(); renderProjectMenu();
       switchTab('tasks');
     }
     async function deleteProject() {
@@ -2839,12 +2914,11 @@
     }
     async function switchProjectForce(id) {
       localStorage.setItem(PROJ_ACTIVE_KEY, id);
+      leaveProjectScope();
       resetUndo();
       const raw = await projBlobGet(id);
       if (raw) { try { hydrate(JSON.parse(raw)); } catch (e) {} }
-      calculated = false;
-      renderTaskTable(); renderWBS(); renderRaid();
-      if (tasks.length && recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT(); }
+      repaintForProject();
       renderProjectMenu();
     }
 
@@ -3169,13 +3243,12 @@
         saveLocal(); // keep whatever is on screen under its own id
         const id = 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
         localStorage.setItem(PROJ_ACTIVE_KEY, id);
+        leaveProjectScope();
         resetUndo();
         hydrate(data);
         document.getElementById('projectName').value = (data.projectName || 'Recovered') + ' (recovered)';
-        calculated = false;
         saveLocal();
-        renderTaskTable(); renderWBS(); renderRaid(); renderProjectMenu();
-        if (tasks.length && recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT(); }
+        repaintForProject(); renderProjectMenu();
         closeOverlay('recoveryModal');
         switchTab('tasks');
         flashSaved('🛟 Restored "' + (data.projectName || '?') + '" as a new project — ' + tasks.length + ' task(s)');
@@ -3277,8 +3350,16 @@
     }
     function hydrate(data) {
       document.getElementById('projectName').value = data.projectName || 'New Engagement';
-      if (data.projectStart) document.getElementById('projectStart').value = data.projectStart;
-      if (data.durationUnit) document.getElementById('durationUnit').value = data.durationUnit;
+      /* Assign these UNCONDITIONALLY. serialize() faithfully stores
+         projectStart:'' when the date field is empty, but the old `if (value)`
+         guard meant a stored '' never cleared the input — so a project with no
+         start date silently inherited the start of whichever project was open
+         before it, scheduled every activity from that borrowed date, and the
+         next saveLocal persisted the borrowed date into the incoming project.
+         A full page reload hid it, because init() backfills an empty field
+         with today; only a project SWITCH showed the shift. */
+      document.getElementById('projectStart').value = data.projectStart || '';
+      document.getElementById('durationUnit').value = data.durationUnit || 'days';
       document.getElementById('holidays').value = data.holidays || '';
       renderHolidayChips();
       document.getElementById('weekendDays').value = (data.weekendDays != null ? data.weekendDays : '0,6');
@@ -13094,12 +13175,11 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           if (tasks.length) { saveLocal(); await persistNow(); }
           const id = 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
           localStorage.setItem(PROJ_ACTIVE_KEY, id);
+          leaveProjectScope();
           resetUndo();
           hydrate(data);
-          calculated = false;
           saveLocal();
-          renderTaskTable(); renderWBS(); renderRaid(); renderProjectMenu(); switchTab('tasks');
-          if (tasks.length && recompute()) { renderTaskTable(); renderAnalytics(); renderGantt(); renderResources(); renderBaseline(); renderPERT(); }
+          repaintForProject(); renderProjectMenu(); switchTab('tasks');
           flashSaved('📥 Imported "' + (data.projectName || 'project') + '" as its own project (' + tasks.length + ' tasks) — the previous plan stays in 📁 Projects');
         } catch (err) { alert('Could not import: ' + err.message); }
       };
@@ -14845,6 +14925,24 @@ Rules:
       // Auto-continuation: if the model hits the output ceiling, resend with the
       // partial answer as an assistant prefill so it resumes mid-token-stream —
       // huge plans get stitched together seamlessly across responses.
+      /* The project this request was BUILT from. Every AI flow reads the live
+         globals to compose its prompt, awaits a 1-3 minute call, then mutates
+         those same globals and calls saveLocal() — which writes to whatever
+         activeProjectId() returns AT THAT MOMENT. Switch project mid-call and
+         the answer computed from client A's plan was applied to client B's:
+         applyAIMergeDelta's name map is rebuilt from B, so nothing matches and
+         every changed activity is INSERTED as new scope, together with A's
+         resource block. leaveProjectScope() aborts the controller, which
+         catches almost every case; this catches the rest — a response that had
+         already arrived and was mid-parse when the switch happened. One guard
+         at the single choke point, so all nineteen call sites are covered and
+         none of them has to remember. */
+      const bornEpoch = projectEpoch;
+      const stillOurs = out => {
+        if (projectEpoch === bornEpoch) return out;
+        throw new Error('You switched project while this was running, so NOTHING was applied — '
+          + 'the answer was computed from the previous plan. Reopen that project and run it again.');
+      };
       try {
         let full = '';
         for (let round = 0; round < 8; round++) {
@@ -14861,10 +14959,10 @@ Rules:
           // maxTokens the loop is not a safety net, it is a guaranteed failure
           // one round later. Mark the output truncated and let
           // parseAIJsonStrict refuse it, which applies nothing.
-          if (opts.noContinue && r.stopReason === 'max_tokens') return full + '\n/*TRUNCATED*/';
-          if (r.stopReason !== 'max_tokens') return full;
+          if (opts.noContinue && r.stopReason === 'max_tokens') return stillOurs(full + '\n/*TRUNCATED*/');
+          if (r.stopReason !== 'max_tokens') return stillOurs(full);
         }
-        return full + '\n/*TRUNCATED*/';
+        return stillOurs(full + '\n/*TRUNCATED*/');
       } catch (e) {
         if (stalled) {
           // one automatic retry — slow first tokens and transient server hiccups
