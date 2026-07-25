@@ -808,10 +808,23 @@
     .trd-yl { left: 3px; } .trd-yr { right: 3px; }
     .trd-ax { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.3rem;
       font-size: var(--t-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
-    .trd-read { margin-top: 0.45rem; padding: 0.4rem 0.55rem; min-height: 4.4rem;
+    /* the readout box is shared by every chart that grew one: same box, same
+       resting text, same live region, so learning to read one teaches the rest */
+    .trd-read, .mch-read { margin-top: 0.45rem; padding: 0.4rem 0.55rem; min-height: 4.4rem;
       border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
       font-size: var(--t-xs); color: var(--muted); line-height: 1.55; }
-    .trd-read b { color: var(--text); }
+    .trd-read b, .mch-read b { color: var(--text); }
+
+    /* The histogram's bars were <div>s carrying a native tooltip that read
+       "17.1 days: 153" — a duration in abstract units and a count, to an
+       operator who needs a DATE and a confidence. They are buttons now. */
+    .mch-wrap { display: flex; align-items: flex-end; gap: 2px; height: 120px; }
+    .mch-b { flex: 1; display: flex; flex-direction: column; justify-content: flex-end;
+      height: 100%; padding: 0; border: 0; background: none; cursor: pointer;
+      border-radius: 2px 2px 0 0; box-shadow: none; }
+    .mch-b:hover:not(:disabled), .mch-b.mch-on { background: rgba(59, 130, 246, 0.14); transform: none; box-shadow: none; }
+    .mch-b > i { display: block; border-radius: 2px 2px 0 0; }
+    @media (max-width: 640px) { .mch-read { min-height: 5.6rem; } }
     .trd-rd { font-variant-numeric: tabular-nums; }
     .trd-key { display: flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; margin-top: 0.45rem;
       align-items: center; font-size: var(--t-xs); color: var(--muted); }
@@ -2523,7 +2536,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1712</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1718</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -9420,6 +9433,104 @@
         + 'below the chart is one activity, in the same order as the task list; hover any of them.' + (d.safe ? ' Money is hidden while client-safe mode is on.' : '')
         + '</p></div>';
     }
+    /* ============== THE COMPLETION DISTRIBUTION, MADE READABLE ==============
+       Every bar carried a native tooltip that said "17.1 days: 153": a
+       duration in abstract units and a raw count, to a reader whose actual
+       question is "what date is that, and how confident would I be promising
+       it?". Both answers were already computed and thrown away. The bar is a
+       button now: hovering states the date and the confidence, and clicking
+       loads that date into the probability box at the top of this tab, which
+       is the one control that turns a bucket into a decision. */
+    let mcHistState = null;
+    function mcHistIdle() {
+      return 'Hover any bar to turn it into a date: which finish it represents, how many of the simulated '
+        + 'futures landed there, and what confidence promising that date would mean. '
+        + '<span class="trd-rd">Click a bar to test that date in the probability box at the top of this tab.</span>';
+    }
+    function mcHistBarDate(b) {
+      // the TOP of the bucket, because "finishing in this bucket" means at
+      // worst its upper edge — the conservative reading, and the one that
+      // matches the cumulative confidence printed beside it
+      try { return durationToDate(b.hi); } catch (e) { return null; }
+    }
+    function mcHistPaint(i) {
+      const st = mcHistState;
+      if (!st || !st.bins[i]) return;
+      const el = document.getElementById('mcHistRead');
+      if (!el) { mcHistState = null; return; }
+      st.on = true; st.last = i;
+      document.querySelectorAll('.mch-b.mch-on').forEach(b => b.classList.remove('mch-on'));
+      const btn = document.getElementById('mchB' + i);
+      if (btn) btn.classList.add('mch-on');
+      const b = st.bins[i];
+      const d = mcHistBarDate(b);
+      const share = st.iters ? b.c / st.iters * 100 : 0;
+      const pn = v => v < 1 ? 'under 1' : v > 99 && v < 100 ? 'over 99' : v.toFixed(0);
+      let out = '<b>' + b.lo.toFixed(1) + '–' + b.hi.toFixed(1) + ' ' + escapeHtml(st.u) + '</b> '
+        + '<span class="trd-rd">· ' + b.c.toLocaleString() + ' of ' + st.iters.toLocaleString()
+        + ' simulated futures (' + share.toFixed(1) + '%)</span><br>';
+      out += '<b>' + pn(b.pct) + '%</b> of futures finish within ' + b.hi.toFixed(1) + ' ' + escapeHtml(st.u);
+      // the number a reader can actually commit to is the DATE's, and it is the
+      // one the probability box prints — so it leads, and the gap is explained
+      const cf = b.dpct == null ? b.pct : b.dpct;
+      if (d) {
+        out += ', which lands on <b>' + escapeHtml(fmtNice(d)) + '</b>';
+        if (b.dpct != null && Math.abs(b.dpct - b.pct) >= 1) {
+          out += '. Dates fall on working days only, so several buckets can share one day: finishing by that '
+            + '<em>date</em> is <b>' + pn(b.dpct) + '%</b> — the figure the probability box at the top of this '
+            + 'tab prints for it';
+        }
+        out += ' · promising it is a <b>P' + pn(cf) + '</b> commitment';
+      } else {
+        out += ', but no calendar date could be derived for it';
+      }
+      if (cf < 50) out += ' — <b>less than a coin flip</b>.';
+      else if (cf < 78) out += ' — under the 80% level this file treats as the commitment standard.';
+      else if (cf < 92) out += ' — at or above the standard commitment level.';
+      else out += ' — a near-worst-case date, safe but expensive to hold.';
+      out += '<div class="ptr-sc-rrow"><span>What moves this whole curve left is named underneath the chart: '
+        + 'the activities whose O–P range and time on the critical path produce the spread.</span></div>';
+      el.innerHTML = out;
+    }
+    function mcHistOff() {
+      const st = mcHistState;
+      document.querySelectorAll('.mch-b.mch-on').forEach(b => b.classList.remove('mch-on'));
+      const el = document.getElementById('mcHistRead');
+      if (el) el.innerHTML = mcHistIdle();
+      if (st) { st.on = false; st.last = null; }
+    }
+    function mcHistKey(ev, i) {
+      const st = mcHistState;
+      if (!st) return;
+      let j = null;
+      if (ev.key === 'ArrowLeft') j = i - 1;
+      else if (ev.key === 'ArrowRight') j = i + 1;
+      else if (ev.key === 'Home') j = 0;
+      else if (ev.key === 'End') j = st.bins.length - 1;
+      else return;
+      j = Math.max(0, Math.min(st.bins.length - 1, j));
+      ev.preventDefault();
+      const b = document.getElementById('mchB' + j);
+      if (b) b.focus();                                  // focus repaints via onfocus
+    }
+    // The one action a bucket supports: put its date in the box that already
+    // answers "what are the odds of this date", rather than inventing a second
+    // way to say the same thing.
+    function mcHistCommit(i) {
+      const st = mcHistState;
+      if (!st || !st.bins[i]) return;
+      const d = mcHistBarDate(st.bins[i]);
+      const box = document.getElementById('targetDate');
+      if (!d || !box) return;
+      box.value = fmtISO(d);
+      saveLocal();
+      renderAnalytics();
+      const t = document.getElementById('targetDate');
+      if (t && t.scrollIntoView) t.scrollIntoView({ block: 'center' });
+      const cf = st.bins[i].dpct == null ? st.bins[i].pct : st.bins[i].dpct;
+      flashSaved('🎯 Target date set to ' + fmtNice(d) + ' — P' + Math.round(cf));
+    }
+
     function renderAnalytics() {
       if (!calculated) return;
       const leaves = leafTasks();
@@ -9474,18 +9585,52 @@
           counts[bi]++;
         });
         const maxCount = Math.max(...counts);
+        /* Read from the same counts the bars are drawn from, so a hovered
+           confidence can never disagree with the ink. Cumulative is counted
+           here rather than re-derived from mcResult.durations for the same
+           reason. */
+        let run = 0;
+        /* A duration is not a date. Every simulated duration is mapped onto the
+           calendar ONCE here, so a bucket can also state the confidence of the
+           DAY it lands on — which is what the probability box at the top of this
+           tab prints, and which differs from the duration-space figure because
+           dates land on working days only. Two numbers on one screen that
+           disagree with no explanation is the defect; stating both with the
+           reason is the fix. */
+        const finMs = mcResult.durations.map(d => {
+          try { return stripTime(durationToDate(d)).getTime(); } catch (e) { return null; }
+        }).filter(x => x != null).sort((a, b) => a - b);
+        const byDate = ms => {                            // how many finish on or before ms
+          let lo = 0, hi = finMs.length;
+          while (lo < hi) { const mid = (lo + hi) >> 1; if (finMs[mid] <= ms) lo = mid + 1; else hi = mid; }
+          return lo;
+        };
+        mcHistState = {
+          u: u, iters: mcResult.iters, nDur: mcResult.durations.length,
+          bins: counts.map((c, i) => {
+            run += c;
+            const hiD = min + (i + 1) / bins * span;
+            let dms = null;
+            try { dms = stripTime(durationToDate(hiD)).getTime(); } catch (e) {}
+            return { lo: min + i / bins * span, hi: hiD, c: c, cum: run,
+                     pct: run / mcResult.durations.length * 100,
+                     dms: dms,
+                     dpct: (dms != null && finMs.length) ? byDate(dms) / finMs.length * 100 : null };
+          }),
+          on: false, last: null
+        };
         histBlock = `
           <h3 style="margin:1.25rem 0 0.5rem;font-size:1rem;cursor:help" title="Each bar = how many of the ${mcResult.iters.toLocaleString()} simulated project runs finished in that duration bucket. A wide spread means your estimates carry a lot of uncertainty.">Completion Distribution <span class="help-text">(${mcResult.iters.toLocaleString()} simulations — every run re-rolls each task within its O–P range)</span></h3>
           <div style="padding:1.1rem 0.5rem 0.5rem;background:#f8fafc;border-radius:8px;border:1px solid var(--border)">
             <div style="position:relative">
-              <div style="display:flex;align-items:flex-end;gap:2px;height:120px">
+              <div class="mch-wrap" onmouseleave="mcHistOff()">
               ${counts.map((c,i) => {
                 const dLow = (min + i/bins*span);
                 const binHi = min + (i+1)/bins*span;
                 const binMid = min + (i + 0.5) / bins * span;
                 const col = binMid <= mcResult.p80 ? '#3b82f6' : '#cbd5e1';
-                return `<div title="${dLow.toFixed(1)} ${u}: ${c}" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%">
-                  <div style="background:${col};border-radius:2px 2px 0 0;height:${maxCount?(c/maxCount*100):0}%"></div></div>`;
+                return `<button type="button" class="mch-b" id="mchB${i}" aria-label="${dLow.toFixed(1)} to ${binHi.toFixed(1)} ${u}, ${c} runs" onmouseenter="mcHistPaint(${i})" onfocus="mcHistPaint(${i})" onclick="mcHistCommit(${i})" onkeydown="mcHistKey(event,${i})">
+                  <i style="background:${col};height:${maxCount?(c/maxCount*100):0}%"></i></button>`;
               }).join('')}
               </div>
               ${[['P50', mcResult.p50, '#2563eb'], ['P80', mcResult.p80, '#b45309'], ['P90', mcResult.p90, '#b91c1c']].map(([n, v, c], i, arr) => {
@@ -9499,6 +9644,7 @@
           <div style="display:flex;justify-content:space-between;font-size:var(--t-xs);color:var(--muted);margin-top:0.25rem">
             <span>${min.toFixed(1)} ${u}</span><span>${max.toFixed(1)} ${u}</span>
           </div>
+          <div class="mch-read" id="mcHistRead" aria-live="polite">${mcHistIdle()}</div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:0.75rem;margin-top:1rem">
             <div class="stat-card" style="cursor:help" title="Half the simulated runs finished by this date, half ran longer. A coin flip — fine internally, risky as a promise."><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p50))}</div><div class="label">P50 (${mcResult.p50.toFixed(1)} ${u})</div></div>
             <div class="stat-card" style="cursor:help" title="80% of simulated runs finished by this date — the standard commit level for client dates. Only 1-in-5 chance of overrunning."><div class="value" style="font-size:1.1rem">${fmtNice(durationToDate(mcResult.p80))}</div><div class="label">P80 (${mcResult.p80.toFixed(1)} ${u})</div></div>
@@ -9546,6 +9692,7 @@
             <td style="white-space:nowrap">
               <button class="btn-sm btn-secondary" onclick="aiDecompose(${t.id})" title="AI splits this into smaller sub-tasks with tighter ranges — smaller pieces = less aggregate uncertainty"><span class="ico" aria-hidden="true">⑂</span> Decompose</button>
               <button class="btn-sm btn-secondary" onclick="openEditModal(${t.id})" title="Re-estimate O/M/P by hand">✎ Edit</button>
+              ${raidChipFor(t.id) || ptrRaidBtn(t.id, t.name, 'carries ' + share.toFixed(0) + '% of the schedule risk (O–P ' + t.o + '–' + t.p + ', critical in ' + ((t.criticality || 0) * 100).toFixed(0) + '% of simulations)')}
             </td></tr>`;
         }).join('');
         histBlock += `
