@@ -2381,7 +2381,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1534</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1542</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3111,8 +3111,29 @@
         const target = k === STORAGE_KEY ? 'legacy.snapshot' : k;
         try {
           const existing = await idbGet(target);
-          // never let a smaller/empty legacy copy overwrite a richer IDB copy
-          if (existing == null || String(existing).length < v.length) await idbSet(target, v);
+          /* LENGTH IS NOT RECENCY. This used to keep whichever JSON string was
+             LONGER. A localStorage copy exists whenever an IndexedDB write
+             failed once and the fallback fired; if the user then removed scope
+             — making the newer payload SHORTER — and IndexedDB saves resumed,
+             the next page load promoted the older, longer localStorage copy and
+             overwrote the newer one in place. A whole session's deletions and
+             edits reverted on reload, the newer payload was destroyed rather
+             than merely shadowed, and the user was told nothing: the project
+             simply looked like it did before.
+
+             Nothing here can tell which copy is newer — the payload carries no
+             timestamp, and adding one would make every save differ from the
+             last and push a spurious undo frame. So stop guessing. The
+             IndexedDB copy is the one the app has been writing to, so it stays
+             live; the displaced localStorage copy is preserved in that
+             project's snapshot ring, where 🛟 Recover lists it with its own
+             timestamp and restores it as a NEW project. Neither is lost. */
+          if (existing == null) {
+            await idbSet(target, v);
+          } else if (String(existing) !== String(v) && target.indexOf(PROJ_PREFIX) === 0) {
+            let tc = 0; try { tc = (JSON.parse(v).tasks || []).length; } catch (e) {}
+            await snapshotKeep(target.slice(PROJ_PREFIX.length), v, tc);
+          }
           localStorage.removeItem(k);
         } catch (e) { return false; }
       }
@@ -3424,6 +3445,21 @@
       collapsedIds = new Set(Array.isArray(data.collapsedIds) ? data.collapsedIds : []);
       nextId = data.nextId || (Math.max(0, ...tasks.map(t => t.id)) + 1);
       calculated = false;
+      /* PRIME THE UNDO BASELINE. undoStack only grows when lastSnapshot is
+         already non-null, and it is null after boot and after every
+         resetUndo() — which every project entry calls. Nothing called
+         saveLocal() in between, so the FIRST mutation after opening the app or
+         switching project was consumed purely as the priming write: no frame
+         was pushed, ↶ Undo stayed disabled and Ctrl+Z did nothing. The
+         bulk-delete confirm promises undo in so many words, which made the
+         single most destructive action in the app unrecoverable at exactly the
+         moment a user is most likely to take it.
+         (It self-healed on the day's first Calculate, because that path happens
+         to reach saveLocal — so on every later reload the hole was back, which
+         is why it reads as intermittent.)
+         The state a load or a switch lands on is a perfectly good baseline.
+         Take it here, at the one place every entry path passes through. */
+      try { lastSnapshot = JSON.stringify(serialize()); updateUndoButtons(); } catch (e) {}
     }
     async function loadLocal() {
       try {
@@ -6673,11 +6709,26 @@
       renderTaskTable(); renderResources(); renderAnalytics(); renderGantt();
       flashSaved(exKey ? '👥 "' + oldName + '" merged into "' + exKey + '" — every assignment followed' : '👥 Renamed — every task assignment (owner + attendee) followed');
     }
+    /* Removing someone cleared the OWNER field and left them in every
+       attendees array — and syncResources, which runs inside the very next
+       recompute, re-creates any name it finds on a task. So the person came
+       straight back on the roster as a bare {capacity:100}: rate, bill rate,
+       role, kind, rate unit and PTO all gone, their cost silently dropped out
+       of the plan, the quote and the margin, and the entry could not be removed
+       because it returned on every recalculation.
+       The confirm counted owner rows only, so someone who was purely an
+       attendee was announced as affecting zero tasks. */
     function removeResource(name) {
-      const assigned = tasks.filter(t => (t.owner || '').trim() === name);
-      if (!confirm(`Remove resource "${name}"?${assigned.length ? ` ${assigned.length} task(s) will become unassigned.` : ''}`)) return;
-      delete resources[name];
+      const key = String(name).trim();
+      const assigned = tasks.filter(t => (t.owner || '').trim() === key);
+      const attending = tasks.filter(t => (t.attendees || []).some(a => String(a.name || '').trim() === key));
+      const parts = [];
+      if (assigned.length) parts.push(assigned.length + ' task(s) will become unassigned');
+      if (attending.length) parts.push(attending.length + ' task(s) will lose them as an attendee');
+      if (!confirm(`Remove resource "${key}"?${parts.length ? ' ' + parts.join(', ') + '.' : ''}${(assigned.length || attending.length) ? ' Their rates and PTO are deleted. ↶ Undo restores.' : ''}`)) return;
+      delete resources[key];
       assigned.forEach(t => t.owner = '');
+      attending.forEach(t => { t.attendees = (t.attendees || []).filter(a => String(a.name || '').trim() !== key); });
       saveLocal();
       if (calculated) recompute();
       renderTaskTable(); renderResources(); renderAnalytics(); renderGantt();
