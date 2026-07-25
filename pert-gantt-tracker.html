@@ -2018,7 +2018,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0400</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0409</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -13035,6 +13035,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     // one row per leaf activity that has a usable actual
     function bankRowsFromPlan() {
       const when = fmtISO(new Date()), pj = projName(), u = unitLabel();
+      const pid = (typeof activeProjectId === 'function') ? activeProjectId() : '';
       const out = [];
       leafTasks().forEach(t => {
         if (t.milestone) return;
@@ -13043,6 +13044,10 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         const est = t.te || 0;
         const act = workingDaysToUnit(days);
         out.push({
+          // Stable identity for the ACTIVITY, not for the act of archiving it.
+          // Re-archiving after logging more actuals must replace this row, and the
+          // old key could not express that because it included the archive date.
+          rid: pid + ':' + t.id, pid: pid,
           proj: pj, at: when, unit: u,
           wbs: t.wbs || '', name: t.name,
           kind: isTestCaseTask(t) ? 'test-case' : 'work-package',
@@ -13056,6 +13061,59 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         });
       });
       return out;
+    }
+    /* One merge rule for both ways rows arrive — archiving a plan and importing a
+       file. Before this, archive did a plain concat (re-archiving a project after
+       logging more actuals appended a SECOND copy of every activity, in one
+       browser, with no import involved) and import de-duped on
+       [proj, at, wbs, name] where `at` is the archive DATE, so the same activity
+       archived on two different days looked like two different activities. Both
+       paths inflated the row count with copies of the same work, and every copy
+       pulls the medians that price the next engagement.
+
+       A row identifies an ACTIVITY, not the act of filing it: same project, same
+       activity is the same row however many times it is archived, and the later
+       filing wins because it is the one with more actuals logged. Rows written
+       before this carry no rid, so they fall back to project + WBS + name — the
+       old key minus the date that was breaking it — which also lets a legacy row
+       be replaced by its identified successor instead of sitting beside it. */
+    function bankRowKeys(r) {
+      return {
+        id: r.rid ? 'i:' + r.rid : null,
+        // deliberately keyed on `proj`, which BOTH old and new rows carry, and
+        // deliberately WITHOUT the archive date. Two same-named projects can
+        // collide here, but only when one side has no rid to match on first.
+        legacy: 'l:' + [r.proj || '', r.wbs || '', r.name || ''].join('|')
+      };
+    }
+    function bankMerge(existing, incoming) {
+      const slots = [];                      // arrival order, so saveBank's trim stays meaningful
+      const byId = new Map(), byLegacy = new Map();
+      const place = (r) => {
+        const k = bankRowKeys(r);
+        let idx = (k.id && byId.has(k.id)) ? byId.get(k.id)
+          : (byLegacy.has(k.legacy) ? byLegacy.get(k.legacy) : -1);
+        if (idx < 0) {
+          idx = slots.length; slots.push(r);
+          if (k.id) byId.set(k.id, idx);
+          byLegacy.set(k.legacy, idx);
+          return 'added';
+        }
+        // same activity again — the later filing wins, it has more actuals logged.
+        // Index it under BOTH keys so a row that gained an rid replaces the one
+        // written before ids existed rather than sitting next to it.
+        if (String(r.at || '') >= String(slots[idx].at || '')) slots[idx] = r;
+        const nk = bankRowKeys(slots[idx]);
+        if (nk.id) byId.set(nk.id, idx);
+        byLegacy.set(nk.legacy, idx);
+        return 'updated';
+      };
+      let seeded = 0;
+      existing.forEach(r => { if (r && r.name) { seeded++; place(r); } });
+      const healed = seeded - slots.length;  // duplicates already in the bank, collapsed
+      let added = 0, updated = 0;
+      incoming.forEach(r => { if (r && r.name) { if (place(r) === 'added') added++; else updated++; } });
+      return { rows: slots, added, updated, healed };
     }
     // Calibration the model can act on: how far off we run, by kind and by role.
     // Only "logged" rows count — span-derived actuals measure elapsed time, not
@@ -13118,15 +13176,13 @@ Apply these as a calibration factor on comparable work: if a kind or role runs c
           const d = JSON.parse(rd.result);
           const incoming = Array.isArray(d) ? d : (d.rows || []);
           if (!incoming.length) throw new Error('no rows in that file');
-          // merge, de-duping on project+activity+archive date so re-importing is safe
-          const cur = loadBank();
-          const key = r => [r.proj, r.at, r.wbs, r.name].join('|');
-          const seen = new Set(cur.map(key));
-          let added = 0;
-          incoming.forEach(r => { if (r && r.name && !seen.has(key(r))) { cur.push(r); seen.add(key(r)); added++; } });
-          saveBank(cur);
+          const mg = bankMerge(loadBank(), incoming);
+          saveBank(mg.rows);
           updateBankBadge();
-          flashSaved('📚 Estimate bank: ' + added + ' new record(s) imported (' + cur.length + ' total). Future estimates calibrate against them.');
+          flashSaved('📚 Estimate bank: ' + mg.added + ' new record(s) imported'
+            + (mg.updated ? ', ' + mg.updated + ' refreshed with a later archive' : '')
+            + (mg.healed ? ', ' + mg.healed + ' duplicate row(s) already in your bank merged away' : '')
+            + ' (' + mg.rows.length + ' total). Future estimates calibrate against them.');
         } catch (e) { alert('Could not read that estimate bank: ' + e.message); }
         ev.target.value = '';
       };
@@ -15331,9 +15387,12 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
       // structured rows for the cross-project estimate bank (what the tool measures,
       // alongside the prose the human writes)
       const fresh = bankRowsFromPlan();
-      if (fresh.length) { const bank = loadBank(); saveBank(bank.concat(fresh)); updateBankBadge(); }
+      let mg = { added: fresh.length, updated: 0 };
+      if (fresh.length) { mg = bankMerge(loadBank(), fresh); saveBank(mg.rows); updateBankBadge(); }
       const cal = bankCalibration();
-      flashSaved('🗄 Archived — ' + fresh.length + ' activity actual(s) added to the estimate bank'
+      flashSaved('🗄 Archived — ' + mg.added + ' activity actual(s) added to the estimate bank'
+        + (mg.updated ? ', ' + mg.updated + ' updated from a previous archive of this project' : '')
+        + (mg.healed ? ' · ' + mg.healed + ' duplicate row(s) from earlier archives merged away' : '')
         + (cal ? ' · you now run a median ' + cal.overall + '× vs estimate across ' + cal.n + ' measured activities' : '')
         + '. Future estimates calibrate against it.');
     }
