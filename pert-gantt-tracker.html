@@ -2381,7 +2381,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1632</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1635</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -14759,7 +14759,15 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     // ---- Historical estimation data (knowledge base for AI calibration) ----
     const HIST_STORE = 'pertGantt.histData';
     const HIST_MAX = 120000; // chars kept in storage
-    const HIST_PROMPT_MAX = 24000; // chars included per AI call
+    /* This used to be 24,000 — the store held 120,000 and sent a fifth of it,
+       while the badge beside the box said the notes were "used in every AI
+       call". Silently dropping four fifths of the estimating knowledge someone
+       deliberately pasted in is the worst possible thing to be quiet about: it
+       is the calibration the estimates are supposed to rest on. It rides in the
+       CACHED prefix, so on a repeat call it bills at a fraction of normal
+       input, and the models here take a million tokens of context — 120,000
+       characters is roughly 30,000 of them. Send what was stored. */
+    const HIST_PROMPT_MAX = HIST_MAX; // chars included per AI call — the whole store
     function loadHistData() {
       try {
         const v = localStorage.getItem(HIST_STORE) || '';
@@ -14788,7 +14796,12 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       const b = document.getElementById('histBadge');
       if (!b) return;
       const v = (localStorage.getItem(HIST_STORE) || '');
-      b.textContent = v ? `— loaded (${Math.round(v.length / 1000)}k chars, used in every AI call)` : '— none loaded';
+      const clipped = v.length > HIST_PROMPT_MAX;
+      b.textContent = v
+        ? `— loaded (${Math.round(v.length / 1000)}k chars${clipped
+            ? `, but only the first ${Math.round(HIST_PROMPT_MAX / 1000)}k reach the model — trim it so the part that matters is at the top`
+            : ', all of it sent with every AI call'})`
+        : '— none loaded';
     }
     function loadHistFile(ev) {
       const file = ev.target.files[0]; if (!file) return;
