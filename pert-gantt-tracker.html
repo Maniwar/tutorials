@@ -997,6 +997,315 @@
       #uatStyle { flex: 1 1 auto; min-width: 0; max-width: 100%; }
       #aiNotes { box-sizing: border-box; width: 100%; }
     }
+    /* ═══════════════════ .ek — ENTITY-KIND MARKS ═══════════════════════════
+       A SECOND badge family that must never be mistaken for the first.
+
+       .badge (114-123) answers HOW IT IS GOING: 999px pill, flat saturated
+       tint across the whole mark, NO border (verified: not one of the nine
+       declares one), a WORD inside, parked at the RIGHT end of a row or in
+       the last <td>.
+       .ek answers WHAT IT IS: 4px squared box, 1px hairline + a 2px left
+       rail, WHITE body, a SHAPE, anchored hard LEFT of the name or id.
+
+       Five differences fire at once — contour, border, fill, content,
+       position. The two that fire PRE-ATTENTIVELY (contour + position) need
+       no reading. The two that survive a PRINTER (border + glyph) are the
+       backup: .badge is in no print-color-adjust list except .ptr-side
+       .badge (496), so status pills print as bare 12px text while .ek prints
+       intact. The entity language is stronger on paper than the status
+       language, which is the right way round for a client pack.
+
+       The rule is FILL + RADIUS, not hue: .badge-slack and .badge-notstarted
+       (117, 123) are GREY fills, so "grey = entity" would be false. A round
+       FILLED pill is a status whatever colour it is.
+
+       THE KEY — letters for the things you NAME, shapes for the things you
+       NUMBER:
+         E  epic       ≡  phase      (three bars = a stack of activity bars)
+         S  story      ▭  activity   (one bar = one duration)
+         C  criterion  ◆  milestone  (the house glyph — 22 sites + --milestone)
+                       ◇  test case  (hollow point: verifies, does not commit)
+       EP-1 / US-3 / AC-3.1 already say their kind, so the letter rhymes with
+       the id beside it and costs zero characters. 2.4.1 says NOTHING — a WBS
+       code cannot tell you whether it is a phase, a work package, a milestone
+       or a test — so the shape supplies what the number withholds.
+       C for Criterion, not A: "A" is already the assumption badge (9078).
+
+       COLOUR IS REINFORCEMENT ONLY. Three inks for seven kinds, and they
+       encode the SIDE of the trace line, which the letter/shape split already
+       encodes. Greyscale, print and colour-blind readers lose exactly nothing
+       (spec ink 58.7 printed luma vs plan ink 63.1 — 4/255 apart, i.e. the
+       colour channel collapses completely and the language is unaffected).
+       Green and red are excluded outright: a green mark on an un-run test
+       would read "passed". Violet/cyan are excluded — they are AUDIENCE. */
+    .ek {
+      display: inline-flex; align-items: stretch; vertical-align: -0.28em;
+      max-width: 100%; overflow: hidden;
+      /* containing block for .ek-sr. Without it the visually-hidden label is
+         positioned against the ROOT, so a badge sitting inside a horizontally
+         scrolled table escapes that table's clip and stretches the whole
+         document — 149px of phantom sideways scroll on a phone. */
+      position: relative;
+      /* the hairline is --muted (4.76:1 on #fff, 4.34:1 on the tr:hover
+         #f1f5f9) — a real 1.4.11-clean component boundary, not decoration */
+      border: 1px solid var(--muted); border-left: 2px solid #334155;
+      border-radius: 4px;
+      /* FIXED white, never inherited: it is what keeps .ek-nm's --muted at
+         4.76:1 even inside a tinted or hovered row */
+      background: #fff;
+      font-size: var(--t-sm); line-height: 1.5; font-weight: 600;
+      color: var(--text); white-space: nowrap;
+    }
+    .ek-g {
+      flex: none; width: 1.25em; display: grid; place-items: center;
+      background: #f8fafc; font-weight: 700; font-size: .95em; line-height: 1;
+      color: #475569;                              /* 7.24:1 on #f8fafc */
+      font-family: 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2',
+                   'DejaVu Sans', system-ui, sans-serif;
+    }
+    .ek-id { padding: 0 .35rem; font-variant-numeric: tabular-nums;
+             overflow: hidden; text-overflow: ellipsis; }
+    .ek-nm { padding: 0 .35rem 0 .05rem; font-weight: 400; color: var(--muted);
+             overflow: hidden; text-overflow: ellipsis; }
+    /* the glyph cell is separated by its #f8fafc fill on screen — fills are
+       stripped on paper, so it also carries a hairline whenever text follows */
+    .ek-g + .ek-id, .ek-g + .ek-nm { border-left: 1px solid #e2e8f0; }
+    .ek--solo { margin-right: .28rem; }
+    .ek--xs   { font-size: var(--t-xs); }          /* dense audit tables */
+    /* .sr-only / .visually-hidden DO NOT EXIST in this file (0 hits for all
+       five spellings). The family ships its own rather than squatting on a
+       global name; it is reusable by anything else that needs one. */
+    .ek-sr { position: absolute; width: 1px; height: 1px; padding: 0;
+             margin: -1px; overflow: hidden; clip: rect(0 0 0 0);
+             clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+    /* --- kind: the GLYPH carries it; ink only reinforces the SIDE --------
+       spec ink #1e3a8a is not new — it is .chip-static .chip (822), this
+       app's existing "reference to an entity" colour. */
+    .ek-ep, .ek-us, .ek-ac { border-left-color: #1e3a8a; }
+    .ek-ep .ek-g, .ek-us .ek-g, .ek-ac .ek-g { color: #1e3a8a; }   /* 9.90:1 */
+    .ek-ph, .ek-wp, .ek-tc { border-left-color: #334155; }
+    .ek-ph .ek-g, .ek-wp .ek-g, .ek-tc .ek-g { color: #334155; }   /* 9.90:1 */
+    .ek-ms { border-left-color: var(--milestone); }  /* the one kind with a
+        mandatory house colour — --milestone (28) is already its Gantt fill */
+    .ek-ms .ek-g { color: var(--milestone); }                      /* 5.45:1 */
+    /* an unsaved criterion has no id yet — a DASHED box says so without a
+       word, extending this file's own dashed-means-provisional idiom
+       (.ptr-void 445, the dashed verified-by Gantt links 7570-7574) */
+    .ek--new { border-style: dashed; border-left-style: dashed; opacity: .8; }
+
+    /* --- interactive tokens ---------------------------------------------
+       a11y: ekTok({onclick}) emits a real <button>, never a 32nd
+       onclick-on-span. It therefore inherits the zero-specificity
+       :where(button,.btn,summary,a):focus-visible ring at 341 — which is
+       exactly why NOTHING here declares `outline`. (.chip-edit .chip-input
+       at 819 sets outline:none at (0,2,0) and silently kills that ring; this
+       family does not repeat that mistake.) `overflow:hidden` on .ek does not
+       clip the element's own outline, only its children. */
+    button.ek, a.ek {
+      cursor: pointer; padding: 0; margin: 0; gap: 0; border-radius: 4px;
+      font-family: inherit; font-size: var(--t-sm); font-weight: 600;
+      text-decoration: none; color: var(--text);
+      min-height: 24px;                       /* WCAG 2.2 AA 2.5.8 minimum */
+      box-shadow: none;
+      transition: border-color .15s var(--easeo), background-color .15s ease;
+    }
+    button.ek.ek--xs, a.ek.ek--xs { font-size: var(--t-xs); }
+    button.ek.ek--solo, a.ek.ek--solo { margin-right: .28rem; }
+    @media (hover: hover) {
+      button.ek:hover, a.ek:hover {
+        border-color: var(--primary); border-left-color: var(--primary); }
+      button.ek:hover .ek-g, a.ek:hover .ek-g {
+        background: #eff6ff; color: var(--primary); }               /* 4.75:1 */
+    }
+    /* the global lift (339) would make a 24px inline token jump off its
+       baseline inside a table cell — the same opt-out .seg buttons and
+       row-action chips take at 572-582. Equal specificity, later source. */
+    button.ek:hover:not(:disabled), button.ek:active:not(:disabled) {
+      transform: none; box-shadow: none; }
+
+    /* --- .ac-tc becomes the family's own proof --------------------------
+       .ac-tc (873-880) is already the best compound mark in the file: an
+       entity half and a tinted status half in one control. It only ever
+       holds a TEST CASE. Squaring it from 999px to 6px pulls it out of the
+       STATUS silhouette, and a ::before glyph cell styled exactly like .ek-g
+       makes it literally "an .ek whose right half is a status tint". Two
+       call sites (story card + story editor) inherit this with no markup
+       change beyond dropping their hard-coded 🧪. */
+    .ac-tc { border-radius: 6px; border-color: var(--muted); }
+    .ac-tc::before {
+      content: '◇'; flex: none; width: 1.25em; display: grid;
+      place-items: center; background: #f8fafc;
+      border-right: 1px solid #e2e8f0; color: #334155;              /* 9.90:1 */
+      font-weight: 700; font-size: .95em; line-height: 1;
+      font-family: 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2',
+                   'DejaVu Sans', system-ui, sans-serif;
+    }
+
+    /* --- host-context fixes ---------------------------------------------
+       .story-sentence is a flex COLUMN (827), so an inline-flex descendant
+       placed as a direct child would stretch to the full card width. The
+       mark is nested inside <b class="sc-id"> so it never is one — this is
+       the belt-and-braces for any future direct child. */
+    .story-sentence > .ek { align-self: flex-start; }
+    /* story-editor criterion rows gain a leading id token: 3 cols -> 4.
+       The 640px collapse below assumes THREE children today, so it is
+       restated for four. The ✕ button's this.parentElement.remove() still
+       resolves to .st-ac-row — the token is a sibling, not a wrapper. */
+    .st-ac-row { grid-template-columns: auto 122px 1fr auto; }
+
+    @media (pointer: coarse) { button.ek, a.ek { min-height: 32px; } }
+    @media (max-width: 640px) {
+      .ek-nm { display: none; }                /* token shrinks to [glyph│id] */
+      .st-ac-row { grid-template-columns: auto 1fr auto; }
+      .st-ac-row > .st-ac-text { grid-column: 1 / -1; grid-row: 2; }
+    }
+    /* house convention (657, 760): declare the opt-out BESIDE the motion, so
+       the component stays self-contained under re-ordering */
+    @media (prefers-reduced-motion: reduce) {
+      button.ek, a.ek { transition: none; } }
+    /* house convention (494, 767): a component that means something in
+       colour says so for the printer. .ek is legible with every fill
+       stripped — the box, the rail and the separator are all BORDERS — but
+       the rails carry the side cue, so opt in and darken the ink. */
+    @media print {
+      .ek, .ac-tc, .ac-tc::before {
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        break-inside: avoid; }
+      .ek { border-color: #334155; }                                /* 10.35:1 */
+      .ek-g { background: #fff; }
+      .ek-g + .ek-id, .ek-g + .ek-nm { border-left-color: #64748b; }
+      .ac-tc { border-color: #334155; }
+      .ac-tc::before { background: #fff; border-right-color: #64748b; }
+      button.ek, a.ek { min-height: 0; }
+    }
+
+    /* .info-icon (302) is 15x15 and FAILS WCAG 2.2 AA 2.5.8 (24x24) — and it
+       is the ONLY teaching surface in the app (it drives #helpPop, the one
+       correctly-solved tap+keyboard help affordance, 14747-14766). No design
+       caught this while all three boasted about their own 24px chips.
+       ::after expands the HIT AREA to exactly 24x24 without changing the
+       15px visual size, which is depended on by dozens of inline uses. */
+    .info-icon { position: relative; }
+    .info-icon::after { content: ''; position: absolute; inset: -4.5px; }
+
+    /* ═════════════ .story-card — a slab you can pick up ════════════════════
+       The box moves OFF the inline style at the <details> (9186) and into
+       here. It had to: an inline background/border wins over every class, so
+       nothing could ever hover it, and openReqStory's hard-coded reset to
+       '#fff' would pin a background on permanently. The LINT channel moves to
+       .sc-lint; the 4px left rail stays exclusively the lint channel and
+       NOTHING in this design touches it.
+
+       ONLY transform (card) and opacity (pseudo) animate. Neither is a
+       layout property, so a lifted card cannot reflow a neighbour in ANY of
+       the three column counts (block <1500px, 2col at 1500, 3col at 2100 —
+       835-840) and cannot fight grid-column:1/-1 on an [open] card (837).
+       Transitioning box-shadow directly repaints the whole card every frame,
+       which is the usual reason "just add a hover shadow" drops a 40-card
+       grid to 30fps — hence the pseudo-element whose OPACITY is what moves.
+
+       opacity:0 at rest (not 0.3) so the painter can skip the blurred shadow
+       entirely on every un-hovered card. NO will-change / translateZ: only
+       ONE card is ever hovered, and promoting forty at rest costs tens of MB
+       of layer memory for nothing. perspective() lives INSIDE the transform
+       function rather than on .story-grid for the same reason — parent
+       perspective would layerize every sibling.
+
+       PSEUDO GEOMETRY IS LOAD-BEARING. inset:0 resolves against the PADDING
+       box, so a shadow on it spills across the card's own 1px border and
+       straight over the 4px amber lint rail. top/right/bottom:-1px with
+       left:-4px puts the pseudo's edges exactly on the BORDER box, and an
+       outer box-shadow is spec-clipped to outside its own border box — so
+       the shadow starts at the card's outer edge, never paints inside it,
+       and never touches the rail. This also means NO white fill is needed on
+       the pseudo (and none is used): the "blur reaches back inside the card"
+       premise is simply not how outer shadows work.
+
+       Vertical spill is 12 + 22/2 - 10 = 13px, inside the 20px of clip
+       headroom that .card-body's 1.25rem padding gives before .card's
+       overflow:hidden (69-79) cuts it off. */
+    .story-card {
+      position: relative;                   /* ::after anchor + hover z-index */
+      background: #fff;
+      border: 1px solid var(--border);
+      border-left: 4px solid transparent;   /* THE LINT CHANNEL — do not reuse */
+      border-radius: 10px; margin-bottom: .5rem;
+      transition: transform .18s var(--easeo), border-color .18s var(--easeo),
+                  background-color .35s ease;
+    }
+    .story-card.sc-lint  { border-left-color: var(--warn); }
+    .story-card.sc-flash { background: #fef9c3; border-color: #fde68a; }
+    /* beats .story-card[open]{box-shadow:var(--sh-1)} at 846 — equal
+       specificity, later source. Depth now lives entirely on the pseudo. */
+    .story-card[open] { box-shadow: none; }
+    .story-card::after {
+      content: ''; position: absolute;
+      top: -1px; right: -1px; bottom: -1px; left: -4px;   /* = the border box */
+      border-radius: inherit; pointer-events: none; opacity: 0;
+      box-shadow: 0 3px  8px -4px  rgb(15 23 42 / .20),   /* contact shadow */
+                  0 12px 22px -10px rgb(15 23 42 / .28);  /* ambient shadow */
+      transition: opacity .18s var(--easeo);
+    }
+    /* an OPEN card is being READ and spans every column — it gets resting
+       depth, never movement */
+    .story-card[open]::after { opacity: 1; box-shadow: var(--sh-2); }
+
+    @media (hover: hover) and (pointer: fine) {
+      /* Every hover rule is gated on :not([open]). An open card spans all
+         columns (837), the pointer sits inside it for the whole read, some
+         open THEMSELVES because they carry lint (9186 forces `open`), and a
+         tilt would fight the fadeSlide already running on
+         details[open] > summary ~ * (360).
+
+         rotateX is NEGATIVE: in CSS, rotateX(+) takes the +Y (down-screen)
+         edge toward the viewer, so a negative angle tips the TOP edge toward
+         the reader — the card stands up to meet the cursor instead of
+         falling away. -1.4deg over a ~110px card at perspective 820
+         displaces the edges 1.3px and varies scale by 0.16%: real depth,
+         sub-pixel distortion.
+
+         The :hover and :active transform lists are FUNCTION-FOR-FUNCTION
+         IDENTICAL (perspective, rotateX, translateY, scale) so the browser
+         interpolates componentwise instead of decomposing to matrix3d. */
+      .story-grid > .story-card:not([open]):hover,
+      .story-grid > .story-card:not([open]):focus-within {
+        transform: perspective(820px) rotateX(-1.4deg) translateY(-3px) scale(1);
+        border-color: #cbd5e1;
+        z-index: 3;      /* grid items paint in source order — without this a
+                            hovered card's shadow paints UNDER its right-hand
+                            neighbour. position:relative with z-index:auto at
+                            rest means no stacking context is created until
+                            hover, so this costs nothing. */
+      }
+      .story-grid > .story-card:not([open]):hover::after,
+      .story-grid > .story-card:not([open]):focus-within::after { opacity: 1; }
+      .story-grid > .story-card:not([open]):active {
+        transform: perspective(820px) rotateX(0deg) translateY(-1px) scale(.997);
+      }                                        /* echoes the button press (340) */
+      /* an open card still acknowledges the pointer — colour only, no motion */
+      .story-card[open] > summary:hover { background: #eef2f7; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      /* The global block (513-516) kills every transition with !important but
+         does NOT neutralise a hover TRANSFORM VALUE — the tilt would simply
+         snap on instantly, which is motion. This zeroes it. The SHADOW stays:
+         static depth is not motion, and it is the affordance a reduced-motion
+         user still needs to know the pointer is on the card. Declared after
+         the hover block so equal specificity resolves this way. */
+      .story-card, .story-card::after { transition: none; }
+      .story-grid > .story-card:not([open]):hover,
+      .story-grid > .story-card:not([open]):focus-within,
+      .story-grid > .story-card:not([open]):active { transform: none; }
+    }
+    @media print {
+      /* the global print block (517-521) targets .card, not .story-card */
+      .story-card { box-shadow: none !important; transform: none !important;
+                    break-inside: avoid; }
+      .story-card::after { display: none !important; }
+    }
+  </style>
   </style>
 </head>
 <body>
@@ -1322,7 +1631,7 @@
     <div id="view-req" role="tabpanel" class="view">
       <div class="card">
         <div class="card-header">
-          <h2>Requirements &amp; user stories <button type="button" class="info-icon" aria-label="More about this" data-help="Epics → user stories → Given/When/Then acceptance criteria, each traced to a WBS work item. The estimation unit for SOWs: a story that isn't testable can't be accepted or invoiced.">i</button></h2>
+          <h2>Requirements &amp; user stories <button type="button" class="info-icon" aria-label="More about this" data-help="Epics → user stories → Given/When/Then acceptance criteria, each traced to a WBS work item. The estimation unit for SOWs: a story that isn't testable can't be accepted or invoiced.">i</button><button type="button" class="info-icon" aria-label="About the entity marks" data-ek-legend data-help="Every id carries a small squared mark saying what it is.">i</button></h2>
           <div class="toolbar no-print">
             <button class="btn-primary btn-sm" onclick="draftRequirements()" title="AI drafts personas, epics and INVEST user stories with happy/error/edge acceptance criteria for every WBS work item — or fills the gaps if some already exist">🤖 Draft from WBS</button>
             <button class="btn-secondary btn-sm" onclick="openStoryModal(null)" title="Write a story by hand">+ Add story</button>
@@ -1353,7 +1662,7 @@
         <div class="modal-body">
           <div style="display:grid;grid-template-columns:110px 1fr 1fr;gap:0.75rem">
             <div class="form-group" style="margin-bottom:0"><label for="stId">ID</label><input id="stId" type="text" placeholder="US-1" /></div>
-            <div class="form-group" style="margin-bottom:0"><label for="stEpic">Epic</label><select id="stEpic"></select></div>
+            <div class="form-group" style="margin-bottom:0"><label for="stEpic"><span class="ek ek--solo ek--xs ek-ep" title="Epic — a group of user stories that together deliver one business outcome."><span class="ek-g" aria-hidden="true">E</span><span class="ek-sr">Epic: </span></span>Epic</label><select id="stEpic"></select></div>
             <div class="form-group" style="margin-bottom:0"><span class="fg-head"><label for="stAudience">Audience</label><button type="button" class="info-icon" aria-label="About audience" data-help="Client-facing = a product outcome the client accepts and is billed for. Internal = delivery-side process work (kickoff, our own test execution). Internal stories are filtered separately and kept out of the client SOW. Auto infers it from the persona.">i</button></span><select id="stAudience"><option value="">Auto (from persona)</option><option value="client">Client-facing</option><option value="internal">Internal / delivery</option></select></div>
           </div>
           <div class="form-group" style="margin:0.7rem 0 0">
@@ -1468,6 +1777,8 @@
             </select>
             <label style="font-size:0.8rem;display:inline-flex;gap:4px;align-items:center;cursor:pointer" title="Test cases collapse into the UAT activity they decompose — dozens of 0.3-day TC boxes clutter a network diagram; they belong in the Gantt and the execution sheet"><input type="checkbox" id="pertRollTcCb" onchange="pertSetRollTc(this.checked)" style="width:14px;height:14px" /> roll 🧪 test cases up</label>
             <label style="font-size:0.8rem;display:inline-flex;gap:4px;align-items:center;cursor:pointer" title="Show only zero-slack work — the chain that sets the finish date"><input type="checkbox" id="pertCritCb" onchange="pertSetCritOnly(this.checked)" style="width:14px;height:14px" /> critical path only</label>
+            <label style="font-size:0.8rem;display:inline-flex;gap:4px;align-items:center;cursor:pointer" title="Print the dependency type on every arrow. FS = finish-to-start (the ordinary one); SS, FF, SF and any +/- lag change how the dates are calculated, so they are drawn bolder."><input type="checkbox" id="pertLblCb" onchange="pertSetLabels(this.checked)" style="width:14px;height:14px" /> label links</label>
+            <label style="font-size:0.8rem;display:inline-flex;gap:4px;align-items:center;cursor:pointer" title="An implied link is one a longer chain already gates — deleting it would not move a single date. The Gantt has never drawn these; leave this off to see the same dependency picture in both views."><input type="checkbox" id="pertImplCb" onchange="pertSetImplied(this.checked)" style="width:14px;height:14px" /> show implied links</label>
             <span id="pertAggNote" class="help-text" style="flex:1;min-width:220px"></span>
           </div>
           <details style="margin-bottom:0.75rem">
@@ -1485,7 +1796,8 @@
                 <li><b>LS — Late Start:</b> the latest it can begin <em>without delaying the project finish</em>.</li>
                 <li><b>SLACK (float):</b> LS − ES — how much it can slip for free. <b>0 = critical path</b> (red): any delay here moves the end date.</li>
                 <li><b>LF — Late Finish:</b> the latest it can end without delaying the project.</li>
-                <li><b>Arrows</b> run left→right from predecessor to successor. Plain arrows are finish→start; labelled ones (<b>SS</b> start→start, <b>FF</b> finish→finish, <b>SF</b> start→finish, <b>+n/−n</b> lag or lead) mark non-standard links. Red arrows trace the critical path.</li>
+                <li><b>Arrows</b> run left→right from predecessor to successor and each one carries its type. <b>FS</b> (finish→start) is the ordinary case and is printed quietly; <b>SS</b> start→start, <b>FF</b> finish→finish, <b>SF</b> start→finish and <b>+n/−n</b> lag or lead change how the dates are calculated, so those chips are boxed and bold. Red arrows trace the critical path. Untick <i>label links</i> if you want the lines bare.</li>
+                <li><b>Implied links</b> are dependencies a longer chain already gates — delete one and not a single date moves. The Gantt has never drawn them, so the network hides them too and reports the count above the diagram. Tick <i>show implied links</i> to see them as dashed grey arrows, then use <b>Scan &amp; repair</b> on the Tasks tab to remove them for good.</li>
                 <li><b>Milestones are ◆ diamonds</b> — zero-duration checkpoints (standard activity-on-node notation); they auto-complete when every predecessor reaches 100%. Bottom strip of each task box = <b>% complete</b>; ✓ green = done. Hover any cell for its live values; click any shape to edit.</li>
               </ul>
             </div>
@@ -1706,7 +2018,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.24.2051</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0311</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3254,7 +3566,7 @@
             ${t.jira ? `<div style="margin-top:0.4rem"><b>\ud83d\udd17 Jira / evidence:</b>${jiraChip(t.jira)}</div>` : ''}
           </div>${stHit ? `
           <details class="src-story" style="margin:-0.4rem 0 1rem;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:0.55rem 0.75rem;font-size:0.8rem;line-height:1.5">
-            <summary style="font-weight:700;color:#334155;cursor:pointer;list-style:none;display:flex;align-items:center;gap:0.4rem"><span class="ico" aria-hidden="true">📖</span> Source story · ${escapeHtml(stHit.id)}${stHit.epicId ? ` <span class="help-text" style="font-weight:400">(${escapeHtml(stHit.epicId)})</span>` : ''} <span class="help-text" style="font-weight:400;margin-left:auto">${(stHit.ac || []).length} criteria · show</span></summary>
+            <summary style="font-weight:700;color:#334155;cursor:pointer;list-style:none;display:flex;align-items:center;gap:0.4rem"><span class="ico" aria-hidden="true">📖</span> Source story · ${ekMark('us')}${escapeHtml(stHit.id)}${stHit.epicId ? ` <span class="help-text" style="font-weight:400">${ekMark('ep', { xs: true })}${escapeHtml(stHit.epicId)}</span>` : ''} <span class="help-text" style="font-weight:400;margin-left:auto">${(stHit.ac || []).length} criteria · show</span></summary>
             <div style="margin-top:0.4rem">
             <div style="margin-bottom:0.4rem">As a <b>${escapeHtml(stHit.persona || '?')}</b>, I want to ${escapeHtml(stHit.want || '?')}, so that ${escapeHtml(stHit.soThat || '?')}.</div>
             ${(stHit.ac || []).length ? `<div style="margin-bottom:0.35rem"><b>Acceptance criteria (${stHit.ac.length}):</b><ul style="list-style:none;margin:0.2rem 0 0;padding-left:0.25rem">${stHit.ac.map(a => `<li style="margin-bottom:0.15rem${a.id === (acHit && acHit.id) ? ';background:#fef9c3;border-radius:4px;padding:1px 4px' : ''}">${typeIcon[a.type] || '•'} <span style="color:#475569">${escapeHtml(a.id)}</span> ${escapeHtml(a.text)}${a.id === (acHit && acHit.id) ? ' <span class="help-text">← this test verifies this one</span>' : ''}</li>`).join('')}</ul></div>` : ''}
@@ -3291,7 +3603,7 @@
       applySummaryLock(isSum);
       const dd = document.getElementById('dictDetails');
       if (dd) dd.open = !!expandDict || !!(t.deliverable || t.description || t.acceptance);
-      document.getElementById('modalTitle').textContent = (t.milestone ? 'Edit milestone' : isSum ? 'Edit phase (roll-up)' : 'Edit activity') + (t.wbs ? ' · ' + t.wbs : '');
+      document.getElementById('modalTitle').innerHTML = 'Edit ' + EK[ekKindOf(t)].w.toLowerCase() + (t.wbs ? ' ' + ekTask(t) : '');
       document.getElementById('mName').value = t.name;
       // summary rows show the rolled-up spans (read-only) instead of their own 0s
       document.getElementById('mO').value = isSum ? (t.oUp != null ? +(+t.oUp).toFixed(2) : '') : fmtDurCell(t.o);
@@ -3371,7 +3683,7 @@
       const t = tasks.find(x => x.id === id);
       if (!t) { ip.innerHTML = ''; return; }
       computeWbsCodes();
-      const nm = x => escapeHtml((x.wbs ? x.wbs + ' ' : '') + x.name);
+      const nm = x => ekTask(x, { name: true, max: 26, xs: true });
       const row = (inner, btns) => `<div style="display:flex;gap:.5rem;align-items:flex-start;justify-content:space-between;padding:.3rem 0;border-bottom:1px dashed var(--border);font-size:.78rem"><div style="flex:1;line-height:1.4">${inner}</div><div style="display:flex;gap:.3rem;flex-shrink:0">${btns}</div></div>`;
       const dependents = tasks.filter(x => x.predecessors.some(p => p.id === id));
       const anc = []; let cur = t.parentId;
@@ -4481,7 +4793,7 @@
       const noEstLeaves = leafTasks().filter(t => !t.milestone && !(t.p > 0));
       const alarmRow = noEstLeaves.length ? `<tr class="no-print"><td colspan="99" style="background:#fef2f2;border-left:4px solid var(--critical);font-size:0.8rem;padding:0.5rem 0.75rem">
         <strong style="color:var(--critical)">⚠ ${noEstLeaves.length} work package(s) have NO estimate</strong> — O/M/P are zero, so they add nothing to the schedule, the critical path or the price:
-        ${noEstLeaves.slice(0, 5).map(t => `<span class="badge badge-critical" style="cursor:pointer" onclick="openEditModal(${t.id}, true)" title="Click to open and estimate">${escapeHtml((t.wbs ? t.wbs + ' ' : '') + (t.name.length > 40 ? t.name.slice(0, 38) + '…' : t.name))}</span>`).join(' ')}${noEstLeaves.length > 5 ? ' +' + (noEstLeaves.length - 5) + ' more' : ''}
+        ${noEstLeaves.slice(0, 5).map(t => ekTask(t, { name: true, max: 40, onclick: `openEditModal(${t.id}, true)`, tip: 'Click to open and estimate' }) + '<span class="badge badge-critical">no estimate</span>').join(' ')}${noEstLeaves.length > 5 ? ' +' + (noEstLeaves.length - 5) + ' more' : ''}
         — click one to estimate it, or make it a milestone if it is a zero-duration checkpoint.</td></tr>` : '';
       const redun = redundantLinkList();
       const redunRow = redun.length ? `<tr class="no-print"><td colspan="99" style="background:#eff6ff;border-left:4px solid var(--primary);font-size:0.8rem;padding:0.4rem 0.75rem">
@@ -4498,14 +4810,14 @@
           'In progress': 'Work started; % complete drives the earned-value and phase rollups.',
           'Late start': 'Scheduled to have started before today but still at 0% — update progress or re-plan.',
           'Not started': 'No progress recorded yet.',
-          Summary: 'Phase / summary row: rolls up its children (dates, %, cost). Edit the children, not this row.',
+          'Rolls up': 'This row has no status of its own — its dates, % and cost are the sum of its children. Edit the children, not this row.',
           '✓ Complete': 'Phase complete — every sub-task in this roll-up is at 100%.',
           Pending: 'Press Calculate schedule (top of the page).'
         };
         const mkBadge = (cls, label) => `<span class="badge ${cls}" title="${escapeHtml(badgeTips[label] || '')}" style="cursor:help">${label}</span>`;
         const sumDone = summary && (t.percentComplete || 0) >= 100;
         const statusBadge = !calculated ? mkBadge('badge-slack', 'Pending')
-          : summary ? (sumDone ? mkBadge('badge-done', '✓ Complete') : mkBadge('badge-info', 'Summary'))
+          : summary ? (sumDone ? mkBadge('badge-done', '✓ Complete') : mkBadge('badge-slack', 'Rolls up'))
           : (t.percentComplete >= 100) ? mkBadge('badge-done', 'Complete')          // done beats critical
           : (t.isCritical && !t.milestone) ? mkBadge('badge-critical', 'Critical')
           : mkBadge(st.cls, st.label);
@@ -4523,7 +4835,7 @@
         return `<tr draggable="true" data-task-id="${t.id}" class="${t.isCritical && !t.milestone && !summary && (t.percentComplete || 0) < 100 ? 'critical' : ''} ${isLate(t) ? 'late' : ''} ${calculated && sumDone ? 'sum-done' : ''}" style="${summary ? 'font-weight:600;background:#f8fafc' : ''}${selectedTaskIds.has(t.id) ? ';outline:2px solid #93c5fd;outline-offset:-2px' : ''}">
           <td class="no-print"><input type="checkbox" data-selid="${t.id}" ${selectedTaskIds.has(t.id) ? 'checked' : ''} onclick="taskRowCheckClick(event, ${t.id}, this)" title="Select for bulk edit${summary ? ' — includes every sub-task' : ''}. Shift-click selects the whole range from the last box you clicked." style="width:14px;height:14px;cursor:pointer" /></td>
           <td title="Drag to reorder / re-nest"><button type="button" class="drag-handle" aria-label="Reorder ${escapeHtml(t.name)} — Alt+ArrowUp/ArrowDown moves it" data-drag-id="${t.id}">⠿</button></td>
-          <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
+          <td style="white-space:nowrap">${ekTask(t, { onclick: `event.stopPropagation();openEditModal(${t.id}, true)` })}</td>
           <td data-name-id="${t.id}">${nameCell}</td>
           <td data-owner-id="${t.id}" style="font-size:var(--t-md)${summary ? '' : ';cursor:text'}" title="${(resources[(t.owner || '').trim()] || {}).role ? escapeHtml((t.owner || '').trim() + ' — ' + resources[(t.owner || '').trim()].role) + '. ' : ''}${t.overallocated ? escapeHtml((t.owner||'')+' is over-allocated during this task. ') : ''}${summary ? '' : 'Click to reassign right here (type-ahead from the roster). Comma-separate for several people — first = owner, the rest join as attendees; @N sets allocation % (e.g. QA Tester@50).'}"${summary ? '' : ` onclick="beginOwnerEdit(${t.id}, this)"`}>${t.overallocated ? '<span style="color:var(--critical)" title="over-allocated">⚠ </span>' : ''}${summary ? summaryOwnerCell(t) : escapeHtml(t.owner || '—') + ((!t.milestone && t.units !== 100) ? ` <span class="help-text" style="font-size:var(--t-xs)">@${t.units}%</span>` : '') + ((t.attendees && t.attendees.length) ? ` <span class="badge badge-info" title="${escapeHtml(t.attendees.map(a => a.name + ' @' + a.units + '%').join(', '))}">+${t.attendees.length}</span>` : '') + roleSub(t.owner)}</td>
           ${(() => { const noEst = !summary && !t.milestone && !(t.p > 0);
@@ -4920,7 +5232,7 @@
       const loop = findScheduleCycleIds();
       if (!body || !loop) { closeDepFixWizard(); return; }
       computeWbsCodes();
-      const nm = id => { const t = tasks.find(x => x.id === id); return t ? (t.wbs ? t.wbs + ' ' : '') + t.name : '#' + id; };
+      const nm = id => { const t = tasks.find(x => x.id === id); return t ? ekTask(t, { name: true, max: 26, xs: true }) : '#' + id; };
       let rows = '';
       loop.forEach((id, i) => {
         const nxt = loop[(i + 1) % loop.length];
@@ -6413,6 +6725,135 @@
         if (document.getElementById('view-req').classList.contains('active')) renderReqs();
       }
     }
+
+    /* ═══ ENTITY-KIND MARKS — one key, seven shapes, one source of truth ═══
+       typeIcon is declared THREE times in this file (3240, 8957, 9954) and
+       that is exactly why the presentation drifted into ten story-id
+       renderings and seven AC-id renderings. This is declared ONCE and every
+       render site reads it. See the .ek block in <style> for why the geometry
+       means what it means.
+
+       Letters for the things you NAME (EP-1, US-3, AC-3.1) — the letter
+       rhymes with the id, so the mark adds a kind without adding a word.
+       Shapes for the things you NUMBER (2.4.1) — a WBS code cannot tell you
+       whether it is a phase, a work package, a milestone or a test. */
+    const EK = {
+      ep: { g: 'E', c: 'ek-ep', w: 'Epic',                 t: 'Epic — a group of user stories that together deliver one business outcome.' },
+      us: { g: 'S', c: 'ek-us', w: 'User story',           t: 'User story — one outcome for one persona, accepted through its criteria.' },
+      ac: { g: 'C', c: 'ek-ac', w: 'Acceptance criterion', t: 'Acceptance criterion — the Given/When/Then condition that defines done.' },
+      ph: { g: '≡', c: 'ek-ph', w: 'Phase',                t: 'Phase — a roll-up. Its dates, effort and cost are the sum of its children.' },
+      wp: { g: '▭', c: 'ek-wp', w: 'Activity',             t: 'Activity — a work package: one estimate, one owner, one duration.' },
+      ms: { g: '◆', c: 'ek-ms', w: 'Milestone',            t: 'Milestone — a zero-duration checkpoint; it consumes no effort.' },
+      tc: { g: '◇', c: 'ek-tc', w: 'Test case',            t: 'Test case — a scheduled activity that verifies one acceptance criterion.' }
+    };
+
+    /* escapeHtml (1922) escapes & < > " but NOT the apostrophe — so the
+       app's existing `onclick="openReqStory('${escapeHtml(id)}')"` pattern
+       (already live at 8270 and 9055) breaks on an id containing one. Story
+       ids come back from AI drafting and from exportStoriesEditableCSV
+       round-trips, so this is reachable. Every onclick this family builds
+       goes through here instead. */
+    function ekJs(v) {
+      return escapeHtml(String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+    }
+    /* a hand-typed leading ◆ must not double up now that the mark supplies
+       the diamond. Four sites never stripped it (8324, 11096, 11141, 14002)
+       and print "◆ ◆ Go-Live" today; ekName / ekStrip fix that as a side
+       effect of applying the marks. */
+    function ekStrip(s) { return String(s == null ? '' : s).replace(/^◆\s*/, ''); }
+    function ekName(t) { return ekStrip(t && t.name); }
+
+    /* phase first: a roll-up is a roll-up whatever else it is called. Then
+       milestone, then the "TC …" naming contract (9231), then work package.
+       PERF: computeWbsCodes() (4847) stamps t.isSummary on EVERY task before
+       every render, so we test whether the FLAG IS PRESENT rather than
+       whether it is truthy. Testing truthiness would send every leaf into
+       isSummaryId()'s tasks.some() scan — O(n) per row, O(n^2) across
+       renderTaskTable, ~90k comparisons on a 300-task plan. */
+    function ekKindOf(t) {
+      if (!t) return 'wp';
+      const sum = (t.isSummary === undefined) ? isSummaryId(t.id) : !!t.isSummary;
+      if (sum) return 'ph';
+      if (t.milestone) return 'ms';
+      if (isTestCaseTask(t)) return 'tc';
+      return 'wp';
+    }
+
+    /* SOLO — the id is already printed right next to this, so the mark only
+       TYPES the text beside it. Never repeats the letters of EP-/US-/AC-. */
+    function ekMark(kind, o) {
+      o = o || {};
+      const k = EK[kind] || EK.wp;
+      return '<span class="ek ek--solo ' + k.c + (o.xs ? ' ek--xs' : '') + (o.cls ? ' ' + o.cls : '') +
+        '" title="' + escapeHtml(o.tip || k.t) + '"><span class="ek-g" aria-hidden="true">' + k.g +
+        '</span><span class="ek-sr">' + escapeHtml(k.w) + ': </span></span>';
+    }
+    /* COMPOUND — a standalone scannable/clickable reference: a table cell, a
+       chip, a link. o.onclick makes it a real <button> (never onclick on a
+       <span>; the file already carries 31 of those and this ADDS none —
+       it removes several). Screen readers hear "Test case 2.4.1", not
+       "white diamond 2.4.1", because .ek-g is aria-hidden and .ek-sr
+       supplies the spoken kind word. */
+    function ekTok(kind, id, name, o) {
+      o = o || {};
+      const k = EK[kind] || EK.wp;
+      const btn = !!o.onclick;
+      const nm = name ? String(name) : '';
+      const cut = o.max || 22;
+      const short = nm.length > cut ? nm.slice(0, cut - 1) + '…' : nm;
+      const tip = o.tip || (k.w + (id ? ' ' + id : '') + (nm ? ' — ' + nm : '') + (btn ? ' · click to open' : ''));
+      return '<' + (btn ? 'button type="button" onclick="' + o.onclick + '"' : 'span') +
+        ' class="ek ' + k.c + (o.xs ? ' ek--xs' : '') + (o.cls ? ' ' + o.cls : '') +
+        '" title="' + escapeHtml(tip) + '"><span class="ek-g" aria-hidden="true">' + k.g +
+        '</span><span class="ek-sr">' + escapeHtml(k.w) + ' </span>' +
+        (id ? '<span class="ek-id">' + escapeHtml(String(id)) + '</span>' : '') +
+        (short ? '<span class="ek-nm">' + escapeHtml(ekStrip(short)) + '</span>' : '') +
+        '</' + (btn ? 'button' : 'span') + '>';
+    }
+    /* a WBS-coded task, kind resolved for you. o.name:true appends the name. */
+    function ekTask(t, o) {
+      o = o || {};
+      if (!t) return '';
+      return ekTok(ekKindOf(t), t.wbs || '', o.name ? t.name : '', o);
+    }
+
+    /* email / print surfaces (SOW, status report, update-request emails) are
+       built from inline styles only — no stylesheet class reaches them. Same
+       geometry, hand-inlined. Border #64748b = 4.76:1, rail #334155 =
+       10.35:1, glyph #334155 on #fff = 10.35:1. */
+    function ekInline(kind, label) {
+      const k = EK[kind] || EK.wp;
+      const lbl = label == null ? '' : String(label);
+      return '<span style="display:inline-block;border:1px solid #64748b;border-left:2px solid #334155;' +
+        'border-radius:3px;padding:0 3px;margin-right:4px;font-size:10px;font-weight:700;' +
+        'color:#334155;line-height:1.5;white-space:nowrap">' + k.g +
+        (lbl ? ' ' + escapeHtml(lbl) : '') + '</span>';
+    }
+    function ekInlineTask(t, label) { return ekInline(ekKindOf(t), label); }
+
+    /* THE LEGEND. The a11y rule this file sets for itself is that no new
+       information may live in a title alone. This goes in data-help on real
+       .info-icon <button>s, which route through the existing #helpPop
+       handler (14747-14766): tap-reachable, keyboard-reachable, sets
+       aria-expanded + aria-describedby, Escape restores focus.
+       IT MUST BE PLAIN TEXT — #helpPop renders it with textContent (14751).
+       That constraint is precisely why this design's marks are literal
+       Unicode characters: the legend can SHOW them. A CSS-geometry mark
+       family could only ever describe itself in words. */
+    const EK_LEGEND =
+      'Every id carries a small squared mark saying WHAT it is — ' +
+      'E epic · S story · C acceptance criterion · ≡ phase · ▭ activity · ' +
+      '◆ milestone · ◇ test case. ' +
+      'Squared, hairline-bordered and to the LEFT of a name is always what it is. ' +
+      'Rounded, colour-filled and at the RIGHT of a row is always how it is going ' +
+      '(Complete, 3d late, not started). ' +
+      'Letters mark the things you name (EP-1, US-3, AC-3.1) because the id already says the kind; ' +
+      'shapes mark the things you number (2.4.1), because a WBS code cannot tell you whether it is ' +
+      'a phase, an activity, a milestone or a test.';
+    /* single source of truth: the markup carries data-ek-legend, the text
+       lives here. The <script> opens at 1882, after this markup is parsed. */
+    document.querySelectorAll('[data-ek-legend]').forEach(el => { el.dataset.help = EK_LEGEND; });
+
     // ===== PLAIN-ENGLISH GLOSSARY =====
     // Earned-value shorthand is standard on a PMP course and opaque everywhere
     // else, and these panels get turned round to face a client. Every acronym in
@@ -8097,7 +8538,7 @@
           const tcContrib = contrib.filter(isTestCaseTask);
           const totEff = contrib.reduce((s2, t) => s2 + (t.milestone ? 0 : (t.te || 0)), 0);
           const rowsHtml = contrib.map(t => `<tr>
-              <td><span style="cursor:pointer;color:var(--primary)" onclick="openEditModal(${t.id}, true)" title="Click to open this task — re-estimate O/M/P, change owner or Units %, adjust dependencies; the 🕸 impact panel inside shows everything that pulls on it">${escapeHtml(t.name)}</span></td>
+              <td>${ekTask(t)}<span style="cursor:pointer;color:var(--primary)" onclick="openEditModal(${t.id}, true)" title="Click to open this task — re-estimate O/M/P, change owner or Units %, adjust dependencies; the 🕸 impact panel inside shows everything that pulls on it">${escapeHtml(ekName(t))}</span></td>
               <td>${t.milestone ? '◆' : fmtDur(t.te)}</td>
               <td>${t.units}%</td>
               <td>${fmtNice(t.startDate)} → ${fmtNice(t.finishDate)}</td>
@@ -8274,7 +8715,7 @@
           ? `<button class="wbs-twisty" onclick="event.stopPropagation();toggleCollapse(${t.id})" title="${collapsedIds.has(t.id) ? 'Expand' : 'Collapse'}">${collapsedIds.has(t.id) ? '▸' : '▾'}</button>`
           : '<span class="wbs-twisty-spacer"></span>';
         return `<tr class="row-edit" data-wbsrow="${t.id}" style="cursor:pointer;${t.isSummary ? 'font-weight:700;background:#f8fafc' : ''}" onclick="openEditModal(${t.id}, true)" title="Click to edit — deliverable, scope, acceptance, owner, estimate">
-          <td style="white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums">${t.wbs}</td>
+          <td style="white-space:nowrap">${ekTask(t)}</td>
           <td style="padding-left:${8 + depth * 18}px"><span style="display:inline-flex;align-items:center">${twisty}${t.milestone ? '◆ ' : ''}${escapeHtml(t.milestone ? t.name.replace(/^◆\s*/, '') : t.name)}${collapsedIds.has(t.id) ? ` <span class="help-text" style="font-size:0.68rem;margin-left:4px">(+${leafDescendants(t.id).length})</span>` : ''}</span></td>
           <td style="font-size:0.8rem">${t.isSummary ? summaryOwnerCell(t) : escapeHtml(t.owner || '—') + roleSub(t.owner)}</td>
           <td>${dur}</td>
@@ -8296,6 +8737,7 @@
           <button class="btn-sm btn-secondary" onclick="setCollapseLevel(0)">L1 · Phases</button>
           <button class="btn-sm btn-secondary" onclick="setCollapseLevel(1)">L2</button>
           <button class="btn-sm btn-secondary" onclick="setCollapseLevel(Infinity)">Expand all</button>
+          <button type="button" class="info-icon" aria-label="About the entity marks" data-ek-legend data-help="Every id carries a small squared mark saying what it is.">i</button>
         </div>
         <div class="table-wrap"><table>
           <thead><tr><th>WBS</th><th>Element</th><th>Owner</th><th>Dur (${u})</th><th>Start</th><th>Finish</th><th>%</th>${anyCost ? '<th style="text-align:right">Cost</th>' : ''}<th>Deliverable</th><th>Description / scope</th><th>Acceptance</th><th title="Schedule relationships: ↤ predecessors this element waits for, ↦ successors it feeds — hover for the full name and link type. Full detail in the CSV export (Predecessors + Successors columns).">Links</th><th title="User stories traced to this element — hover a chip for the story, click for the Requirements tab">Stories</th></tr></thead>
@@ -8341,8 +8783,8 @@
       const rows = tasksInWbsOrder().map(({ task: t, depth }) => {
         if (t.isSummary) {
           return `<tr style="font-weight:700;background:#f8fafc">
-            <td style="white-space:nowrap;color:var(--muted)">${t.wbs}</td>
-            <td style="padding-left:${8 + depth * 16}px">▾ ${escapeHtml(t.name)}</td>
+            <td style="white-space:nowrap">${ekTask(t)}</td>
+            <td style="padding-left:${8 + depth * 16}px">${escapeHtml(t.name)}</td>
             <td colspan="6"></td></tr>`;
         }
         const bs = t.baseStart, bf = t.baseFinish;
@@ -8390,8 +8832,8 @@
         const cd = rowDelta(actCost, planCost, true), ed = rowDelta(spent, planTe, false);
 
         return `<tr class="${fv > 0 ? 'late' : ''}">
-          <td style="white-space:nowrap;color:var(--muted)">${t.wbs}</td>
-          <td style="padding-left:${8 + depth * 16}px">${t.milestone ? '◆ ' : ''}${escapeHtml(t.name)}${isNew ? ' <span class="badge badge-warn" title="Added after the baseline was set — this is new scope">+ new</span>' : ''}</td>
+          <td style="white-space:nowrap">${ekTask(t)}</td>
+          <td style="padding-left:${8 + depth * 16}px">${escapeHtml(ekName(t))}${isNew ? ' <span class="badge badge-warn" title="Added after the baseline was set — this is new scope">+ new</span>' : ''}</td>
           ${pairCell(hb ? fmtNice(bf) : '<span title="No baseline saved">—</span>', fmtNice(cf) + actNote,
             fv == null ? '' : (fv > 0 ? '+' : '') + fv + 'd', fv,
             hb ? `Baseline ${fmtNice(bs)} → ${fmtNice(bf)}; now ${fmtNice(cs)} → ${fmtNice(cf)}` : 'No baseline saved — this is the live forecast')}
@@ -8535,9 +8977,13 @@
     let pertLevel = localStorage.getItem('pertGantt.pertLevel') || 'auto';
     let pertRollTc = localStorage.getItem('pertGantt.pertRollTc') !== '0'; // default ON
     let pertCritOnly = localStorage.getItem('pertGantt.pertCritOnly') === '1';
+    let pertLabels = localStorage.getItem('pertGantt.pertLabels') !== '0';   // default ON — name every arrow
+    let pertShowImplied = localStorage.getItem('pertGantt.pertImplied') === '1'; // default OFF — matches the Gantt
     function pertSetLevel(v) { pertLevel = v; localStorage.setItem('pertGantt.pertLevel', v); renderPERT(); }
     function pertSetRollTc(on) { pertRollTc = !!on; localStorage.setItem('pertGantt.pertRollTc', on ? '1' : '0'); renderPERT(); }
     function pertSetCritOnly(on) { pertCritOnly = !!on; localStorage.setItem('pertGantt.pertCritOnly', on ? '1' : '0'); renderPERT(); }
+    function pertSetLabels(on) { pertLabels = !!on; localStorage.setItem('pertGantt.pertLabels', on ? '1' : '0'); renderPERT(); }
+    function pertSetImplied(on) { pertShowImplied = !!on; localStorage.setItem('pertGantt.pertImplied', on ? '1' : '0'); renderPERT(); }
     function pertAggregate() {
       const leaves = leafTasks();
       const autoDepth = leaves.length > 60 ? 2 : 99;
@@ -8569,16 +9015,23 @@
           name: rt.name + ' ⊞' + members.length
         });
       });
+      // A link is IMPLIED when a longer chain between the same two activities
+      // already gates it — removing it would not move a single date. The Gantt
+      // has always dropped these; the network drew them, so the two pictures of
+      // one plan disagreed on how many dependencies exist. An aggregate edge only
+      // counts as implied if EVERY leaf link folded into it is implied.
+      const impliedLeaf = new Set(redundantLinkList().map(r => r.task.id + ':' + r.predId));
       const eMap = new Map();
       leaves.forEach(L => effectivePreds(L).forEach(p => {
         const f = repOf[p.id], t2 = repOf[L.id];
         if (f == null || t2 == null || f === t2) return; // internal edge — absorbed
         const pt = tasks.find(x => x.id === p.id);
         const crit = L.isCritical && pt && pt.isCritical;
+        const impl = impliedLeaf.has(L.id + ':' + p.id);
         const key = f + '>' + t2;
         const ex = eMap.get(key);
-        if (!ex) eMap.set(key, { id: f, to: t2, type: p.type, lag: p.lag, _crit: !!crit });
-        else { if (crit) ex._crit = true; if (ex.type !== p.type || ex.lag !== p.lag) { ex.type = 'FS'; ex.lag = 0; } }
+        if (!ex) eMap.set(key, { id: f, to: t2, type: p.type, lag: p.lag, _crit: !!crit, _impl: impl });
+        else { if (crit) ex._crit = true; if (!impl) ex._impl = false; if (ex.type !== p.type || ex.lag !== p.lag) { ex.type = 'FS'; ex.lag = 0; } }
       }));
       let edges = [...eMap.values()];
       if (pertCritOnly) {
@@ -8586,9 +9039,16 @@
         const okIds = new Set(nodes.map(n => n.id));
         edges = edges.filter(e => okIds.has(e.id) && okIds.has(e.to) && e._crit);
       }
+      // count AFTER every other filter, so the tally always matches what is on screen
+      const impliedN = edges.filter(e => e._impl).length;
+      if (!pertShowImplied) edges = edges.filter(e => !e._impl);
       const lvlName = pertLevel === 'auto' ? (depthN === 99 ? 'all activities' : 'phase level (auto — ' + leaves.length + ' activities is too many boxes to read)') : pertLevel === 'all' ? 'all activities' : 'WBS level ' + depthN;
-      const note = 'Showing <b>' + nodes.length + '</b> node(s) at <b>' + lvlName + '</b> from ' + leaves.length + ' scheduled activities' + (pertRollTc ? ' · 🧪 test cases rolled into their UAT activity' : '') + (pertCritOnly ? ' · critical path only' : '') + '. ⊞n = aggregated group — click it to open. Zoom in via the Gantt & WBS tabs.';
-      return { nodes, edges, note };
+      const implNote = impliedN ? (pertShowImplied
+        ? ' · <b>' + impliedN + '</b> implied link(s) shown greyed — <a href="#" onclick="pertSetImplied(false);return false">hide them</a>'
+        : ' · <b>' + impliedN + '</b> implied link(s) hidden (a longer chain already gates them, so drawing them changes no date) — <a href="#" onclick="pertSetImplied(true);return false">show them</a>')
+        : '';
+      const note = 'Showing <b>' + nodes.length + '</b> node(s) at <b>' + lvlName + '</b> from ' + leaves.length + ' scheduled activities' + (pertRollTc ? ' · 🧪 test cases rolled into their UAT activity' : '') + (pertCritOnly ? ' · critical path only' : '') + implNote + '. ⊞n = aggregated group — click it to open. Zoom in via the Gantt & WBS tabs.';
+      return { nodes, edges, note, impliedN };
     }
     function renderPERT() {
       const svgEl = document.getElementById('pertSvg');
@@ -8597,6 +9057,8 @@
       const sel = document.getElementById('pertLevelSel'); if (sel) sel.value = pertLevel;
       const cbT = document.getElementById('pertRollTcCb'); if (cbT) cbT.checked = pertRollTc;
       const cbC = document.getElementById('pertCritCb'); if (cbC) cbC.checked = pertCritOnly;
+      const cbL = document.getElementById('pertLblCb'); if (cbL) cbL.checked = pertLabels;
+      const cbI = document.getElementById('pertImplCb'); if (cbI) cbI.checked = pertShowImplied;
       const noteEl = document.getElementById('pertAggNote'); if (noteEl) noteEl.innerHTML = agg.note;
       const nodes = agg.nodes;
       const idToTask = {}; tasks.forEach(t => idToTask[t.id] = t);
@@ -8643,8 +9105,9 @@
       });
 
       let svg = `<defs>
-        <marker id="p-arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/></marker>
-        <marker id="p-arrC" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/></marker>
+        <marker id="p-arr" markerWidth="9" markerHeight="6.5" refX="8" refY="3.25" orient="auto" markerUnits="userSpaceOnUse"><polygon points="0 0, 9 3.25, 0 6.5" fill="#64748b"/></marker>
+        <marker id="p-arrC" markerWidth="9" markerHeight="6.5" refX="8" refY="3.25" orient="auto" markerUnits="userSpaceOnUse"><polygon points="0 0, 9 3.25, 0 6.5" fill="#dc2626"/></marker>
+        <marker id="p-arrI" markerWidth="9" markerHeight="6.5" refX="8" refY="3.25" orient="auto" markerUnits="userSpaceOnUse"><polygon points="0 0, 9 3.25, 0 6.5" fill="#cbd5e1"/></marker>
         <filter id="p-shadow" x="-10%" y="-10%" width="130%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#0f172a" flood-opacity="0.12"/></filter>
       </defs>`;
       svg += `<rect x="0" y="0" width="${W}" height="${H}" fill="#f8fafc"/>`;
@@ -8656,7 +9119,7 @@
       // onto one point, and per-gap vertical lanes so parallel edges don't overlap.
       const edges = [];
       nodes.forEach(t => predsOf[t.id].forEach(p => {
-        if (pos[p.id] && pos[t.id]) edges.push({ from: p.id, to: t.id, type: p.type, lag: p.lag, crit: !!p._crit });
+        if (pos[p.id] && pos[t.id]) edges.push({ from: p.id, to: t.id, type: p.type, lag: p.lag, crit: !!p._crit, impl: !!p._impl });
       }));
       const outCnt = {}, inCnt = {};
       edges.forEach(e => { outCnt[e.from] = (outCnt[e.from] || 0) + 1; inCnt[e.to] = (inCnt[e.to] || 0) + 1; });
@@ -8689,8 +9152,8 @@
         const tx = pos[e.to].x, ty = portYFor(idToTask[e.to], pos[e.to].y, ii, inCnt[e.to]);
         const k = e.from + '>' + e.to;
         const x1 = Math.min(tx - 12, chXof(level[e.from], laneKeys[k].s));
-        const stroke = e.crit ? '#dc2626' : '#94a3b8';
-        const w = e.crit ? 2.6 : 1.6;
+        const stroke = e.impl ? '#cbd5e1' : e.crit ? '#dc2626' : '#94a3b8';
+        const w = e.impl ? 1.2 : e.crit ? 2.6 : 1.6;
         const dir = ty > sy + 1 ? 1 : ty < sy - 1 ? -1 : 0;
         const span = level[e.to] - level[e.from];
         // would the horizontal approach at the target's height slice through a
@@ -8719,14 +9182,20 @@
           d = `M${sx},${sy} L${x1},${sy} L${x1},${hy} L${x2},${hy} L${x2},${ty} L${tx - 2},${ty}`;
           lx = (x1 + x2) / 2; lyy = hy - 5;
         }
-        svg += `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${w}" opacity="${e.crit ? 0.95 : 0.65}" marker-end="url(#${e.crit ? 'p-arrC' : 'p-arr'})"><title>${escapeXml((idToTask[e.from] ? idToTask[e.from].name : '?') + '  →  ' + (idToTask[e.to] ? idToTask[e.to].name : '?') + '  (' + e.type + (e.lag ? (e.lag > 0 ? ' +' : ' ') + e.lag : '') + ')' + (e.crit ? '  — critical path' : ''))}</title></path>`;
-        // annotate EVERY arrow with its dependency type; non-default links get a chip
         const lbl = e.type + (e.lag ? (e.lag > 0 ? '+' + e.lag : e.lag) : '');
         const plainFS = e.type === 'FS' && !e.lag;
-        const tip = 'Dependency: ' + (idToTask[e.from] ? idToTask[e.from].name : '?') + ' → ' + (idToTask[e.to] ? idToTask[e.to].name : '?') + ' (' + lbl + (e.lag ? ', ' + Math.abs(e.lag) + ' ' + unitLabel() + (e.lag > 0 ? ' lag/wait' : ' lead/overlap') : '') + ') — FS finish→start, SS start→start, FF finish→finish, SF start→finish';
-        if (!plainFS) {
-          svg += `<g><rect x="${lx - lbl.length * 3.1 - 2}" y="${lyy - 8}" width="${lbl.length * 6.2 + 4}" height="12" rx="3" fill="#f8fafc" stroke="${stroke}" stroke-width="0.6" opacity="0.92"/>
-            <text x="${lx}" y="${lyy + 1.5}" font-family="${FF}" font-size="9" font-weight="600" fill="${e.crit ? '#dc2626' : '#64748b'}" text-anchor="middle">${lbl}</text>
+        const tip = 'Dependency: ' + (idToTask[e.from] ? idToTask[e.from].name : '?') + ' → ' + (idToTask[e.to] ? idToTask[e.to].name : '?') + ' (' + lbl + (e.lag ? ', ' + Math.abs(e.lag) + ' ' + unitLabel() + (e.lag > 0 ? ' lag/wait' : ' lead/overlap') : '') + ')' + (e.impl ? ' — IMPLIED: a longer chain already gates this, so deleting it moves no date' : '') + ' — FS finish→start, SS start→start, FF finish→finish, SF start→finish';
+        svg += `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${w}" opacity="${e.impl ? 0.85 : e.crit ? 0.95 : 0.65}"${e.impl ? ' stroke-dasharray="5 4"' : ''} marker-end="url(#${e.impl ? 'p-arrI' : e.crit ? 'p-arrC' : 'p-arr'})"><title>${escapeXml(tip + (e.crit ? '  — critical path' : ''))}</title></path>`;
+        // Annotate EVERY arrow, not just the exotic ones. A plan whose links are
+        // all plain finish-to-start used to render 25 bare lines with nothing to
+        // read, which looks broken rather than conventional. The chip is quiet for
+        // FS and loud for anything that changes the maths; "labels" switches it off.
+        if (pertLabels) {
+          const txt = e.impl ? lbl + ' implied' : lbl;
+          const fill = e.impl ? '#94a3b8' : e.crit ? '#dc2626' : '#64748b';
+          const halfW = txt.length * 2.85 + 3;
+          svg += `<g><rect x="${lx - halfW}" y="${lyy - 8}" width="${halfW * 2}" height="12" rx="3" fill="#f8fafc" stroke="${plainFS && !e.impl ? 'none' : stroke}" stroke-width="0.6" opacity="${plainFS && !e.impl ? 0.85 : 0.92}"/>
+            <text x="${lx}" y="${lyy + 1.5}" font-family="${FF}" font-size="8.5" font-weight="${plainFS && !e.impl ? 500 : 700}" fill="${fill}" text-anchor="middle">${escapeXml(txt)}</text>
             <title>${escapeXml(tip)}</title></g>`;
         }
       });
@@ -8804,7 +9273,7 @@
       svg += `<rect x="${M + 140}" y="${ly - 10}" width="14" height="10" rx="2" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/><text x="${M + 159}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">Complete</text>`;
       svg += `<rect x="${M + 240}" y="${ly - 10}" width="14" height="10" rx="2" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/><text x="${M + 259}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">Non-critical</text>`;
       svg += `<polygon points="${M + 357},${ly - 11} ${M + 364},${ly - 5} ${M + 357},${ly + 1} ${M + 350},${ly - 5}" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/><text x="${M + 369}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">Milestone (zero duration)</text>`;
-      svg += `<text x="${M + 510}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">→ arrows read left to right: predecessor → successor (labels like SS+2 mark non-standard links)</text>`;
+      svg += `<text x="${M + 510}" y="${ly}" font-family="${FF}" font-size="10" fill="#475569">→ arrows read left to right: predecessor → successor. FS = finish→start; SS/FF/SF and ±lag change the maths${agg.impliedN ? (pertShowImplied ? '. Dashed grey = implied (a longer chain already gates it)' : '. ' + agg.impliedN + ' implied link(s) hidden') : ''}</text>`;
       svg += `<text x="${M}" y="${H - 10}" font-family="${FF}" font-size="9.5" fill="#64748b">ES = Early Start   •   DUR = expected duration (O+4M+P)/6   •   EF = Early Finish   •   LS = Late Start   •   SLACK = LS − ES (0 ⇒ critical)   •   LF = Late Finish   —   all in ${escapeXml(unitLabel())} from project start</text>`;
 
       svgEl.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
@@ -8873,12 +9342,12 @@
       const allWarns = stories.reduce((n, s) => n + storyLint(s).length, 0);
       const acCount = stories.reduce((n, s) => n + (s.ac || []).length, 0);
       const tiles = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:0.75rem;margin-bottom:1rem">
-        <div class="stat-card" style="cursor:pointer" onclick="reqScrollTo('reqEpicsAnchor')" title="Click to jump to the epic groupings below"><div class="value">${epics.length}</div><div class="label">Epics</div></div>
-        <div class="stat-card" style="cursor:pointer" onclick="reqScrollTo('reqEpicsAnchor')" title="Click to jump to the story cards — each shows its ACs, NFRs, trace and lint findings"><div class="value">${stories.length}</div><div class="label">User stories</div></div>
-        <div class="stat-card" style="cursor:pointer" onclick="reqScrollTo('traceMatrix', true)" title="Click to open the traceability matrix — one row per criterion with its test cases and status"><div class="value">${acCount}</div><div class="label">Acceptance criteria</div></div>
+        <div class="stat-card" style="cursor:pointer" onclick="reqScrollTo('reqEpicsAnchor')" title="Click to jump to the epic groupings below"><div class="value">${epics.length}</div><div class="label">${ekMark('ep', { xs: true })}Epics</div></div>
+        <div class="stat-card" style="cursor:pointer" onclick="reqScrollTo('reqEpicsAnchor')" title="Click to jump to the story cards — each shows its ACs, NFRs, trace and lint findings"><div class="value">${stories.length}</div><div class="label">${ekMark('us', { xs: true })}User stories</div></div>
+        <div class="stat-card" style="cursor:pointer" onclick="reqScrollTo('traceMatrix', true)" title="Click to open the traceability matrix — one row per criterion with its test cases and status"><div class="value">${acCount}</div><div class="label">${ekMark('ac', { xs: true })}Acceptance criteria</div></div>
         <div class="stat-card ${uncovered.length ? 'warn' : 'success'}" style="cursor:pointer" onclick="${uncovered.length ? `reqScrollTo('covBanner')` : `reqScrollTo('traceMatrix', true)`}" title="${uncovered.length ? 'Client-facing activities without a story: ' + escapeHtml(uncovered.slice(0, 8).map(t => t.name).join(', ')) + (uncovered.length > 8 ? '…' : '') + ' — click for the gap list & targeted draft button' : 'Every client-facing activity has a story — click for the matrix'}${internalLeafCount ? ' · ' + internalLeafCount + ' internal/process activit' + (internalLeafCount === 1 ? 'y' : 'ies') + ' excluded (need no client story)' : ''}"><div class="value">${leaves.length - uncovered.length}/${leaves.length}</div><div class="label">Client-facing coverage</div></div>
         <div class="stat-card ${allWarns ? 'critical' : 'success'}" style="cursor:pointer" onclick="${allWarns ? `reqScrollTo('lintBanner')` : `void(0)`}" title="${allWarns ? 'Click for the lint findings and the one-click AI repair' : 'INVEST/testability lint is clean: every story has error/edge paths, real personas, measurable criteria'}"><div class="value">${allWarns}</div><div class="label">Lint warnings</div></div>
-        ${(() => { const tcs = tasks.filter(isTestCaseTask); const shallow = tcs.filter(t => !hasRealSteps(t)).length; return `<div class="stat-card ${shallow ? 'warn' : ''}" style="cursor:pointer" onclick="reqScrollTo('tcListPanel', true)" title="${tcs.length ? 'Click for the full on-screen test-case sheet — steps, pass conditions, owners, schedule' + (shallow ? ' (⚠ ' + shallow + ' shallow — re-run 🧪 Generate test plan)' : '') : 'No test cases yet — 🧪 Generate test plan creates one per UAT-testable criterion'}"><div class="value">🧪 ${tcs.length}</div><div class="label">Test cases</div></div>`; })()}
+        ${(() => { const tcs = tasks.filter(isTestCaseTask); const shallow = tcs.filter(t => !hasRealSteps(t)).length; return `<div class="stat-card ${shallow ? 'warn' : ''}" style="cursor:pointer" onclick="reqScrollTo('tcListPanel', true)" title="${tcs.length ? 'Click for the full on-screen test-case sheet — steps, pass conditions, owners, schedule' + (shallow ? ' (⚠ ' + shallow + ' shallow — re-run 🧪 Generate test plan)' : '') : 'No test cases yet — 🧪 Generate test plan creates one per UAT-testable criterion'}"><div class="value">${tcs.length}</div><div class="label">${ekMark('tc', { xs: true })}Test cases</div></div>`; })()}
       </div>`;
       let rowPersonas = '';
       if (reqs.personas && (reqs.personas.length || (reqs.stories || []).length)) {
@@ -8934,7 +9403,7 @@
       if (unlinkedList.length) {
         html += `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
           <strong>⚠ ${unlinkedList.length} stor${unlinkedList.length === 1 ? 'y is' : 'ies are'} not linked to any WBS activity:</strong>
-          ${unlinkedList.slice(0, 8).map(s => escapeHtml(s.id)).join(', ')}${unlinkedList.length > 8 ? '…' : ''} —
+          ${unlinkedList.slice(0, 8).map(s => ekTok('us', s.id, '', { xs: true, onclick: `openReqStory('${ekJs(s.id)}')` })).join(' ')}${unlinkedList.length > 8 ? '…' : ''} —
           scope that is written down but <b>not in the plan or the price</b>. Either the activity was renamed/deleted, or the AI found a genuine scope gap.
           <div style="margin-top:0.4rem;display:flex;gap:0.5rem;flex-wrap:wrap">
             <button class="btn-sm btn-secondary" onclick="repairOrphanStories()" title="Re-attach by remembered task name (case/punctuation-insensitive)"><span class="ico" aria-hidden="true">🔗</span> Auto-relink</button>
@@ -8958,7 +9427,7 @@
       if (tcStories.length) {
         html += `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
           <strong>🧹 ${tcStories.length} stor${tcStories.length === 1 ? 'y traces' : 'ies trace'} to TEST CASES:</strong>
-          ${tcStories.slice(0, 8).map(s => escapeHtml(s.id)).join(', ')}${tcStories.length > 8 ? '…' : ''} —
+          ${tcStories.slice(0, 8).map(s => ekTok('us', s.id, '', { xs: true, onclick: `openReqStory('${ekJs(s.id)}')` })).join(' ')}${tcStories.length > 8 ? '…' : ''} —
           these were drafted when test cases wrongly counted as uncovered scope (a fixed bug). A story describes scope; a test case verifies it — a "story about a test case" (and any test cases generated for <i>its</i> criteria) is double-counted noise in coverage, the matrix and the SOW.
           <div style="margin-top:0.4rem"><button class="btn-sm btn-danger" onclick="cleanupTestCaseStories()" title="Deletes these stories AND the test-case tasks generated from their criteria (tests of tests). One ↶ undo reverses all of it.">🧹 Remove them (and their derived test cases)</button></div></div>`;
       }
@@ -8972,7 +9441,7 @@
       if (uncovered.length) {
         html += `<div id="covBanner" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.9rem;font-size:0.83rem">
           <strong>⚠ ${uncovered.length} client-facing activit${uncovered.length === 1 ? 'y has' : 'ies have'} no story:</strong>
-          ${uncovered.slice(0, 12).map(t => escapeHtml(t.wbs + ' ' + t.name)).join(' • ')}${uncovered.length > 12 ? ' …' : ''}
+          ${uncovered.slice(0, 12).map(t => ekTask(t, { name: true, max: 26, xs: true, onclick: `openEditModal(${t.id}, true)` })).join(' ')}${uncovered.length > 12 ? ' …' : ''}
           <div class="help-text" style="margin-top:0.25rem">Internal / delivery-side activities are excluded — tag an activity's audience in its editor to move it either way.</div>
           <div style="margin-top:0.4rem"><button class="btn-sm btn-primary" onclick="draftMissingStories()" title="Sends ONLY these uncovered activities (in small batches with a progress tracker); every one must come back with a story, and you get an explicit report if any are still uncovered afterwards. Existing stories are never touched.">🤖 Draft the missing stories (targeted — keeps existing ones)</button></div></div>`;
       }
@@ -8988,16 +9457,16 @@
         // never just the "I want" fragment
         const sentence = `As a <b>${escapeHtml(s.persona || '?')}</b>, I want to ${escapeHtml(s.want || '?')}, <span style="color:var(--muted)">so that ${escapeHtml(s.soThat || '?')}</span>`;
         const cells = (a, first) => `<tr>
-          ${first ? `<td rowspan="${span}" style="font-size:0.75rem;white-space:nowrap;vertical-align:top">${escapeHtml(s.epicId || '—')}</td>
-          <td rowspan="${span}" style="font-size:0.75rem;vertical-align:top"><b>${escapeHtml(s.id)}</b>${jiraChip(s.jira)}</td>
+          ${first ? `<td rowspan="${span}" style="font-size:0.75rem;white-space:nowrap;vertical-align:top">${s.epicId ? ekMark('ep', { xs: true }) + escapeHtml(s.epicId) : '—'}</td>
+          <td rowspan="${span}" style="font-size:0.75rem;vertical-align:top">${ekTok('us', s.id, '', { xs: true, onclick: `event.stopPropagation();openReqStory('${ekJs(s.id)}')` })}${jiraChip(s.jira)}</td>
           <td rowspan="${span}" style="font-size:0.78rem;min-width:220px;max-width:360px;vertical-align:top">${sentence}</td>` : ''}
-          <td style="font-size:0.75rem;white-space:nowrap">${a ? escapeHtml(a.id) : '—'}</td>
+          <td style="font-size:0.75rem;white-space:nowrap">${a ? ekMark('ac', { xs: true }) + escapeHtml(a.id) : '—'}</td>
           <td style="font-size:0.75rem">${a ? escapeHtml(a.type) : ''}</td>
           <td style="font-size:0.78rem;min-width:260px">${a ? escapeHtml(a.text) : '<i>no acceptance criteria</i>'}</td>
           <td style="font-size:0.72rem;white-space:nowrap">${a ? (() => { const tcs = testCasesForAC(a.id); return tcs.length
-            ? tcs.map(tc => `<span class="badge ${tc.percentComplete >= 100 ? 'badge-done' : tc.percentComplete > 0 ? 'badge-prog' : 'badge-notstarted'}" style="cursor:pointer" onclick="openEditModal(${tc.id})" title="${escapeHtml(tc.name + ' — ' + (tc.percentComplete || 0) + '% complete.' + (tc.description ? '\nSTEPS: ' + (tc.description.length > 260 ? tc.description.slice(0, 258) + '…' : tc.description) : '') + (tc.acceptance ? '\nEXPECTED: ' + (tc.acceptance.length > 160 ? tc.acceptance.slice(0, 158) + '…' : tc.acceptance) : '') + '\nClick to open the test-case task.')}">${escapeHtml((tc.wbs || 'TC'))}</span>`).join(' ')
+            ? tcs.map(tc => `${ekTok('tc', tc.wbs || 'TC', '', { xs: true, onclick: `event.stopPropagation();openEditModal(${tc.id})` })}<span class="badge ${tc.percentComplete >= 100 ? 'badge-done' : tc.percentComplete > 0 ? 'badge-prog' : 'badge-notstarted'}" style="cursor:pointer" onclick="openEditModal(${tc.id})" title="${escapeHtml(tc.name + ' — ' + (tc.percentComplete || 0) + '% complete.' + (tc.description ? '\nSTEPS: ' + (tc.description.length > 260 ? tc.description.slice(0, 258) + '…' : tc.description) : '') + (tc.acceptance ? '\nEXPECTED: ' + (tc.acceptance.length > 160 ? tc.acceptance.slice(0, 158) + '…' : tc.acceptance) : '') + '\nClick to open the test-case task.')}">${tc.percentComplete >= 100 ? '✓ passed' : tc.percentComplete > 0 ? tc.percentComplete + '%' : 'not run'}</span>`).join(' ')
             : (storyAudience(s) === 'internal' ? '<span class="help-text" title="Internal delivery-side criterion — evidenced by its own artifact (signed document, distributed report, log entry); no client verification task needed.">📋 internal</span>' : '<span class="help-text" title="No test-case task references this criterion yet — 🧪 Generate test plan covers it (named TC ' + escapeHtml(a.id) + ' — …)">—</span>'); })() : ''}</td>
-          <td style="font-size:0.75rem;white-space:nowrap;${t ? 'cursor:pointer;color:var(--primary)' : ''}" ${t ? `onclick="openEditModal(${t.id}, true)" title="Open ${escapeHtml(t.wbs + ' ' + t.name)}"` : ''}>${t ? escapeHtml(t.wbs + ' ' + (t.name.length > 24 ? t.name.slice(0, 22) + '…' : t.name)) : '⚠ unlinked'}</td>
+          <td style="font-size:0.75rem;white-space:nowrap;${t ? 'cursor:pointer;color:var(--primary)' : ''}" ${t ? `onclick="openEditModal(${t.id}, true)" title="Open ${escapeHtml(t.wbs + ' ' + t.name)}"` : ''}>${t ? ekTask(t, { name: true, max: 24, xs: true }) : '⚠ unlinked'}</td>
           <td style="font-size:0.75rem">${t ? escapeHtml(t.owner || '—') + roleSub(t.owner) : ''}</td>
           <td style="font-size:0.75rem;white-space:nowrap">${t ? (t.percentComplete || 0) + '% · ' + taskStatus(t).label : ''}</td>
         </tr>`;
@@ -9010,7 +9479,7 @@
           <td style="font-size:0.75rem;color:#b45309">—</td><td style="font-size:0.75rem;color:#b45309">—</td>
           <td style="font-size:0.78rem;color:#b45309;min-width:220px">⚠ <b>No story yet</b> — scoped &amp; priced work with no agreed acceptance criteria. Use “🤖 Draft the missing stories” in the coverage banner.</td>
           <td style="font-size:0.75rem;color:#b45309">—</td><td></td><td style="font-size:0.78rem;color:#b45309"><i>none</i></td><td></td>
-          <td style="font-size:0.75rem;white-space:nowrap;cursor:pointer;color:var(--primary)" onclick="openEditModal(${t.id}, true)" title="Open ${escapeHtml(t.wbs + ' ' + t.name)}">${escapeHtml(t.wbs + ' ' + (t.name.length > 24 ? t.name.slice(0, 22) + '…' : t.name))}</td>
+          <td style="font-size:0.75rem;white-space:nowrap;cursor:pointer;color:var(--primary)" onclick="openEditModal(${t.id}, true)" title="Open ${escapeHtml(t.wbs + ' ' + t.name)}">${ekTask(t, { name: true, max: 24, xs: true })}</td>
           <td style="font-size:0.75rem">${escapeHtml(t.owner || '—') + roleSub(t.owner)}</td>
           <td style="font-size:0.75rem;white-space:nowrap">${(t.percentComplete || 0)}% · ${escapeHtml(taskStatus(t).label)}</td>
         </tr>`);
@@ -9046,8 +9515,8 @@
           : `<span style="color:#b45309">⚠ no executable steps — re-run 🧪 Generate test plan</span>${tc.description ? `<div class="help-text">${escapeHtml(tc.description.slice(0, 120))}</div>` : ''}`;
         const tcAud = testCaseAudience(tc);
         return `<tr class="row-edit" data-audience="${tcAud}" style="cursor:pointer" onclick="openEditModal(${tc.id}, true)" title="Click to edit this test case — steps, pass-when, owner, schedule, % complete">
-          <td style="font-size:0.78rem;min-width:180px;max-width:260px;color:var(--primary)">${tcAud === 'internal' ? '<span class="badge" style="background:#ede9fe;color:#6d28d9" title="Internal / delivery-side test — verifies a process story, not a client-facing outcome. Excluded from the client SOW.">🛠</span> ' : ''}${escapeHtml(tc.name)}${jiraChip(tc.jira)}</td>
-          <td style="font-size:0.75rem;white-space:nowrap" title="${hit ? escapeHtml(hit.a.text) : 'criterion not found in Requirements'}">${hit ? escapeHtml(hit.a.id) + ' <span class="help-text">(' + escapeHtml(hit.s.id) + ')</span>' : escapeHtml(acId.toUpperCase() || '—')}</td>
+          <td style="font-size:0.78rem;min-width:180px;max-width:260px;color:var(--primary)">${tcAud === 'internal' ? '<span class="badge" style="background:#ede9fe;color:#6d28d9" title="Internal / delivery-side test — verifies a process story, not a client-facing outcome. Excluded from the client SOW.">🛠</span> ' : ''}${ekTok('tc', tc.wbs || 'TC', '', { xs: true })}${escapeHtml(tc.name)}${jiraChip(tc.jira)}</td>
+          <td style="font-size:0.75rem;white-space:nowrap" title="${hit ? escapeHtml(hit.a.text) : 'criterion not found in Requirements'}">${hit ? ekMark('ac', { xs: true }) + escapeHtml(hit.a.id) + ' ' + ekTok('us', hit.s.id, '', { xs: true, onclick: `event.stopPropagation();openReqStory('${ekJs(hit.s.id)}')` }) : escapeHtml(acId.toUpperCase() || '—')}</td>
           <td style="font-size:0.76rem;min-width:260px;max-width:380px">${steps}</td>
           <td style="font-size:0.76rem;min-width:180px;max-width:300px">${escapeHtml(tc.acceptance || '—')}</td>
           <td style="font-size:0.75rem;white-space:nowrap">${escapeHtml(tc.owner || '—') + roleSub(tc.owner)}</td>
@@ -9073,7 +9542,7 @@
               <tbody>${nfrRows.map(r => `<tr>
                 <td style="font-size:0.75rem;white-space:nowrap;font-weight:600">${escapeHtml(r.cat)}</td>
                 <td style="font-size:0.78rem;min-width:280px">${escapeHtml(r.text)}</td>
-                <td style="font-size:0.75rem;white-space:nowrap">${r.refs.map(id => `<a href="#" onclick="event.preventDefault();openReqStory('${escapeHtml(id)}')" style="color:var(--primary)" title="Open ${escapeHtml(id)}">${escapeHtml(id)}</a>`).join(', ')}</td>
+                <td style="font-size:0.75rem;white-space:nowrap">${r.refs.map(id => ekTok('us', id, '', { xs: true, onclick: `event.preventDefault();openReqStory('${ekJs(id)}')` })).join(' ')}</td>
               </tr>`).join('')}</tbody></table></div>`
           : '<p class="help-text" style="margin-top:0.5rem">None yet — NFRs are attached per story when drafting (🤖 Draft from WBS) or by hand in the story editor (✎), one per line with a number: “Performance: p95 load ≤ 2 s at 50 users”.</p>'}</div>
       </details>`;
@@ -9098,7 +9567,7 @@
               <tbody>${adRows.map(r => `<tr>
                 <td style="font-size:0.75rem;white-space:nowrap"><span class="badge ${r.kind === 'D' ? 'badge-prog' : 'badge-info'}" title="${r.kind === 'D' ? 'Client dependency — if the client slips this, the stated consequence applies' : 'Assumption — if this proves false, the stated impact applies'}">${r.kind === 'D' ? '🤝 D — client' : 'A — assumption'}</span></td>
                 <td style="font-size:0.78rem;min-width:300px">${escapeHtml(r.text)}</td>
-                <td style="font-size:0.75rem;white-space:nowrap"><a href="#" onclick="event.preventDefault();openReqStory('${escapeHtml(r.ref)}')" style="color:var(--primary)">${escapeHtml(r.ref)}</a></td>
+                <td style="font-size:0.75rem;white-space:nowrap">${ekTok('us', r.ref, '', { xs: true, onclick: `event.preventDefault();openReqStory('${ekJs(r.ref)}')` })}</td>
               </tr>`).join('')}</tbody></table></div>
             <p class="help-text" style="margin-top:0.4rem">Project-level risks/assumptions live in the RAID tab; these story-level ones are contract armor — the D: rows become §7 “Client Responsibilities &amp; Dependencies” in the SOW.</p>`
           : '<p class="help-text" style="margin-top:0.5rem">None yet — added per story when drafting, or by hand in the story editor: “A: … — impact if false: …” / “D: … — if slipped: …”.</p>'}</div>
@@ -9158,17 +9627,17 @@
         // more than the eye could see. Usually the epic covers milestones /
         // sign-off checkpoints, which deliberately carry no stories.
         if (!list.length) return `<div style="margin-bottom:1.1rem;opacity:0.75">
-          <h3 style="font-size:0.95rem;margin:0 0 0.35rem;cursor:${need ? 'help' : 'default'}" title="${escapeHtml(need || '')}">${escapeHtml(eid)}${title ? ' — ' + escapeHtml(title) : ''} <span class="help-text">(0 stories)</span></h3>
+          <h3 style="font-size:0.95rem;margin:0 0 0.35rem;cursor:${need ? 'help' : 'default'}" title="${escapeHtml(need || '')}">${ekMark('ep')}${escapeHtml(eid)}${title ? ' — ' + escapeHtml(title) : ''} <span class="help-text">(0 stories)</span></h3>${need ? `<p class="help-text" style="margin:-0.15rem 0 0.3rem">${escapeHtml(need)}</p>` : ''}
           <p class="help-text" style="margin:0 0 0.3rem">No story traces to this epic — typical when it only covers ◆ milestones or sign-off checkpoints (those need no stories). Group a story under it in the story editor (✎), or remove it.
           <button class="btn-sm btn-secondary no-print" data-epic-rm="${escapeHtml(eid)}" style="margin-left:6px"><span class="ico" aria-hidden="true">🗑</span> Remove empty epic</button></p></div>`;
         list.forEach(s => rendered.add(s.id));
         return `<div style="margin-bottom:1.1rem">
-          <h3 style="font-size:0.95rem;margin:0 0 0.5rem;cursor:${need ? 'help' : 'default'}" title="${escapeHtml(need || '')}">${escapeHtml(eid)}${title ? ' — ' + escapeHtml(title) : ''} <span class="help-text">(${list.length} stor${list.length === 1 ? 'y' : 'ies'})</span></h3>
+          <h3 style="font-size:0.95rem;margin:0 0 0.5rem;cursor:${need ? 'help' : 'default'}" title="${escapeHtml(need || '')}">${ekMark('ep')}${escapeHtml(eid)}${title ? ' — ' + escapeHtml(title) : ''} <span class="help-text">(${list.length} stor${list.length === 1 ? 'y' : 'ies'})</span></h3>${need ? `<p class="help-text" style="margin:-0.25rem 0 0.4rem">${escapeHtml(need)}</p>` : ''}
           <div class="story-grid">${list.map(s => storyCardHtml(s, idToTask, typeIcon, typeTip)).join('')}</div></div>`;
       };
       epics.forEach(ep => { html += epicBlock(ep.id, ep.title, ep.businessNeed); });
       const leftovers = stories.filter(s => !rendered.has(s.id));
-      if (leftovers.length) html += `<div style="margin-bottom:1.1rem"><h3 style="font-size:0.95rem;margin:0 0 0.5rem">Ungrouped stories</h3><div class="story-grid">${leftovers.map(s => storyCardHtml(s, idToTask, typeIcon, typeTip)).join('')}</div></div>`;
+      if (leftovers.length) html += `<div style="margin-bottom:1.1rem"><h3 style="font-size:0.95rem;margin:0 0 0.5rem">${ekMark('ep', { cls: 'ek--new', tip: 'Stories with no epic — group them in the story editor (✎).' })}Ungrouped stories <span class="help-text">(${leftovers.length})</span></h3><div class="story-grid">${leftovers.map(s => storyCardHtml(s, idToTask, typeIcon, typeTip)).join('')}</div></div>`;
       cont.innerHTML = tiles
         + `<div id="reqStoriesView" class="req-view${reqView === 'stories' ? ' active' : ''}" data-view="stories" role="region" aria-label="Stories workflow">`
         + html + `</div>`
@@ -9198,11 +9667,11 @@
       const acHtml = (s.ac || []).map(a => {
         const bw = bannedIn(a.text);
         const tcs = testCasesForAC(a.id);
-        return `<li class="ac-item t-${escapeHtml(a.type || '')}"><div class="ac-head"><span title="${escapeHtml(typeTip[a.type] || '')}" style="cursor:help">${typeIcon[a.type] || '•'}</span><span class="ac-id">${escapeHtml(a.id || '')}</span></div><div class="ac-text">${escapeHtml(a.text)}</div>${tcs.length ? `<div class="ac-tcs">${tcs.map(tc => { const pc = tc.percentComplete || 0; const cls = pc >= 100 ? 's-done' : pc > 0 ? 's-prog' : 's-none'; const lbl = pc >= 100 ? '✓ passed' : pc > 0 ? pc + '%' : 'not run'; return `<span class="ac-tc" onclick="event.preventDefault();event.stopPropagation();openEditModal(${tc.id}, true)" title="${escapeHtml('Open this test case — steps, pass-when, owner, schedule. ' + tc.name)}"><span class="ac-tc-name">🧪 ${escapeHtml(tc.name.replace(/^TC\s+[A-Za-z0-9_.-]+\s*[—-]\s*/i, ''))}</span><span class="ac-tc-state ${cls}">${lbl}</span></span>`; }).join('')}</div>` : '<div class="ac-tcs"><span class="help-text" style="font-size:0.7rem">no test case yet</span></div>'}${bw.length ? ` <span class="risk-tag" style="background:#fee2e2;color:#b91c1c;cursor:help" title="Untestable word(s) — cannot be accepted or invoiced. Replace with a number and its measurement condition.">${escapeHtml(bw.join(', '))}</span>` : ''}</li>`;
+        return `<li class="ac-item t-${escapeHtml(a.type || '')}"><div class="ac-head">${ekMark('ac')}<span class="ac-id">${escapeHtml(a.id || '')}</span><span title="${escapeHtml(typeTip[a.type] || '')}" style="cursor:help">${typeIcon[a.type] || '•'}</span></div><div class="ac-text">${escapeHtml(a.text)}</div>${tcs.length ? `<div class="ac-tcs">${tcs.map(tc => { const pc = tc.percentComplete || 0; const cls = pc >= 100 ? 's-done' : pc > 0 ? 's-prog' : 's-none'; const lbl = pc >= 100 ? '✓ passed' : pc > 0 ? pc + '%' : 'not run'; return `<span class="ac-tc" onclick="event.preventDefault();event.stopPropagation();openEditModal(${tc.id}, true)" title="${escapeHtml('Open this test case — steps, pass-when, owner, schedule. ' + tc.name)}"><span class="ac-tc-name"><span class="ek-sr">Test case </span>${escapeHtml(tc.name.replace(/^TC\s+[A-Za-z0-9_.-]+\s*[—-]\s*/i, ''))}</span><span class="ac-tc-state ${cls}">${lbl}</span></span>`; }).join('')}</div>` : '<div class="ac-tcs"><span class="help-text" style="font-size:0.7rem">no test case yet</span></div>'}${bw.length ? ` <span class="risk-tag" style="background:#fee2e2;color:#b91c1c;cursor:help" title="Untestable word(s) — cannot be accepted or invoiced. Replace with a number and its measurement condition.">${escapeHtml(bw.join(', '))}</span>` : ''}</li>`;
       }).join('');
       const nAc = k => (s.ac || []).filter(a => a.type === k).length;
       const mix = `✅${nAc('happy')} ⚠️${nAc('error')} 🧪${nAc('edge')}${nAc('perf') ? ' 📏' + nAc('perf') : ''}`;
-      const sentence = `<span class="story-sentence"><b class="sc-id">${escapeHtml(s.id)}</b><span class="sc-clause"><span class="sc-lead">As a</span> <b>${escapeHtml(s.persona || '?')}</b></span><span class="sc-clause"><span class="sc-lead">I want to</span> ${escapeHtml(s.want || '?')}</span><span class="sc-clause sc-muted"><span class="sc-lead">so that</span> ${escapeHtml(s.soThat || '?')}</span></span>`;
+      const sentence = `<span class="story-sentence"><b class="sc-id">${ekMark('us')}${escapeHtml(s.id)}</b><span class="sc-clause"><span class="sc-lead">As a</span> <b>${escapeHtml(s.persona || '?')}</b></span><span class="sc-clause"><span class="sc-lead">I want to</span> ${escapeHtml(s.want || '?')}</span><span class="sc-clause sc-muted"><span class="sc-lead">so that</span> ${escapeHtml(s.soThat || '?')}</span></span>`;
       const audience = storyAudience(s);
       const audienceBadge = audience === 'internal'
         ? `<span class="badge" style="background:#ede9fe;color:#6d28d9;cursor:help" title="Internal / delivery-side story — process work (our team), not a client-facing product outcome. Excluded from the client SOW and the client filter. Set the audience in the editor.">🛠 internal</span>`
@@ -9215,7 +9684,7 @@
             <span class="story-chip" style="cursor:help" title="Acceptance-criteria mix: ${nAc('happy')} happy path · ${nAc('error')} error path · ${nAc('edge')} edge case${nAc('perf') ? ' · ' + nAc('perf') + ' performance' : ''}${(s.nfrs || []).length ? ' — plus ' + s.nfrs.length + ' NFR(s)' : ''}. Click the row to expand.">AC ${(s.ac || []).length}</span>
             ${jiraChip(s.jira)}
             ${warns.length ? `<span class="risk-tag" style="background:#fef3c7;color:#b45309;cursor:help" title="${escapeHtml(warns.join('\n'))}">${warns.length} lint</span>` : ''}
-            ${linkTasks.length ? `${linkTasks.map(lt => `<span class="badge badge-info" style="cursor:pointer" onclick="event.preventDefault();event.stopPropagation();openEditModal(${lt.id}, true)" title="Traces to WBS ${escapeHtml(lt.wbs)} ${escapeHtml(lt.name)} — click to open the activity (dictionary inside)">↳ ${escapeHtml(lt.wbs)} ${escapeHtml(lt.name.length > 22 ? lt.name.slice(0, 20) + '…' : lt.name)}</span>`).join('')}
+            ${linkTasks.length ? `${linkTasks.map(lt => ekTask(lt, { name: true, max: 22, onclick: `event.preventDefault();event.stopPropagation();openEditModal(${lt.id}, true)`, tip: 'Traces to ' + lt.wbs + ' ' + lt.name + ' — click to open the activity (dictionary inside)' })).join(' ')}
               <span class="badge ${pct >= 100 ? 'badge-done' : pct > 0 ? 'badge-prog' : 'badge-notstarted'}" title="Status inherited from the primary linked activity${linkTasks.length > 1 ? ' (first of ' + linkTasks.length + ')' : ''} — check work off on the Tasks tab and this follows">${pct >= 100 ? '✓ done' : pct > 0 ? pct + '%' : 'not started'}</span>`
             : `<span class="badge badge-blocked" title="No linked WBS activity — this scope is NOT in the plan or the price. Link it in the editor, or create the missing activity from the story.">unlinked</span>
                <button class="btn-sm btn-secondary" data-story-mk="${escapeHtml(s.id)}" title="Create the missing WBS activity from this story: name from 'I want…', dictionary from the story + happy-path AC, nested under the epic's phase. It then needs an O/M/P estimate.">➕</button>`}
@@ -9226,7 +9695,7 @@
           ${linkTasks.length ? `<div class="story-links">
             <div class="story-links-cap">Builds this story</div>
             ${linkTasks.map((lt, i) => { const p2 = lt.percentComplete || 0; return `<div class="story-link">
-              <span class="sl-wbs">${escapeHtml(lt.wbs || '')}</span>
+              <span class="sl-wbs">${ekTask(lt)}</span>
               <span class="sl-name">${escapeHtml(lt.name)}${i === 0 && linkTasks.length > 1 ? ' <span class="help-text">(primary)</span>' : ''}</span>
               <span class="sl-meta">${lt.owner ? escapeHtml(lt.owner) : '<span class="help-text">unassigned</span>'}${calculated && lt.startDate ? ' · ' + escapeHtml(fmtNice(lt.startDate) + ' → ' + fmtNice(lt.finishDate)) : ''}</span>
               <span class="badge ${p2 >= 100 ? 'badge-done' : p2 > 0 ? 'badge-prog' : 'badge-notstarted'}">${p2 >= 100 ? '✓ done' : p2 > 0 ? p2 + '%' : 'not started'}</span>
@@ -10050,7 +10519,7 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       wrap.innerHTML = storyModalWbsIds.map((id, i) => {
         const t = tasks.find(x => x.id === id);
         const label = t ? ((t.wbs ? t.wbs + ' · ' : '') + t.name) : ('#' + id);
-        return `<span class="chip" data-id="${id}"><span class="chip-lbl" title="${i === 0 ? 'Primary link' : ''}">${i === 0 ? '★ ' : ''}${escapeHtml(label)}</span><button type="button" class="chip-x" data-rm="${id}" aria-label="Unlink ${escapeHtml(label)}">×</button></span>`;
+        return `<span class="chip" data-id="${id}"><span class="chip-lbl" title="${i === 0 ? 'Primary link' : ''}">${i === 0 ? '★ ' : ''}${t ? ekTask(t) + escapeHtml(t.name) : escapeHtml(label)}</span><button type="button" class="chip-x" data-rm="${id}" aria-label="Unlink ${escapeHtml(label)}">×</button></span>`;
       }).join('');
       wrap.querySelectorAll('[data-rm]').forEach(btn => btn.addEventListener('click', e => {
         e.preventDefault(); const id = +btn.dataset.rm;
@@ -10082,7 +10551,7 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       list.innerHTML = rows.map(({ a, tcs }) => `<div class="st-tc-row">
           <div class="st-tc-ac"><b>${escapeHtml(a.id)}</b> <span class="help-text">${escapeHtml((a.text || '').slice(0, 90))}${(a.text || '').length > 90 ? '…' : ''}</span></div>
           ${tcs.length
-            ? tcs.map(tc => { const pc = tc.percentComplete || 0; const cls = pc >= 100 ? 's-done' : pc > 0 ? 's-prog' : 's-none'; const lbl = pc >= 100 ? '✓ passed' : pc > 0 ? pc + '%' : 'not run'; return `<span class="ac-tc" onclick="event.preventDefault();closeStoryModal();openEditModal(${tc.id}, true)" title="${escapeHtml('Open ' + tc.name)}"><span class="ac-tc-name">🧪 ${escapeHtml((tc.wbs ? tc.wbs + ' · ' : '') + tc.name.replace(/^TC\s+[A-Za-z0-9_.-]+\s*[—-]\s*/i, ''))}</span><span class="ac-tc-state ${cls}">${lbl}</span></span>`; }).join('')
+            ? tcs.map(tc => { const pc = tc.percentComplete || 0; const cls = pc >= 100 ? 's-done' : pc > 0 ? 's-prog' : 's-none'; const lbl = pc >= 100 ? '✓ passed' : pc > 0 ? pc + '%' : 'not run'; return `<span class="ac-tc" onclick="event.preventDefault();closeStoryModal();openEditModal(${tc.id}, true)" title="${escapeHtml('Open ' + tc.name)}"><span class="ac-tc-name"><span class="ek-sr">Test case </span>${escapeHtml((tc.wbs ? tc.wbs + ' · ' : '') + tc.name.replace(/^TC\s+[A-Za-z0-9_.-]+\s*[—-]\s*/i, ''))}</span><span class="ac-tc-state ${cls}">${lbl}</span></span>`; }).join('')
             : `<span class="help-text" style="font-size:0.72rem">${artifact ? 'verified by the deliverable — no test case needed' : 'no test case yet — run 🧪 Generate test plan'}</span>`}
         </div>`).join('')
         + `<p class="help-text" style="margin:0.35rem 0 0;font-size:0.72rem">${total} test case${total === 1 ? '' : 's'} across ${acs.length} criteri${acs.length === 1 ? 'on' : 'a'}${artifact ? ' · this story is artifact-verified' : ''}.</p>`;
@@ -13439,7 +13908,7 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
           <td style="font-weight:600">${escapeHtml(r.title)}</td>
           <td>${raidScoreBadge(r)}</td>
           <td style="font-size:0.8rem">${escapeHtml(r.owner || '—') + roleSub(r.owner)}</td>
-          <td style="font-size:0.8rem">${t ? escapeHtml(t.wbs + ' ' + t.name) : '—'}</td>
+          <td style="font-size:0.8rem">${t ? ekTask(t, { name: true, max: 28, xs: true, onclick: `openEditModal(${t.id}, true)` }) : '—'}</td>
           <td style="font-size:0.8rem;max-width:300px">${escapeHtml(r.mitigation || '')}</td>
           <td><select class="mini-inp" style="width:auto" onchange="setRaidStatus(${r.id}, this.value)">
             ${['Open','Mitigating','Closed'].map(st => `<option ${st === r.status ? 'selected' : ''}>${st}</option>`).join('')}</select></td>
@@ -14549,6 +15018,16 @@ IMPORTANT: rows marked [ROLL-UP] are WBS summary rows — the tool schedules and
         const mkLink = (id, tip, label) => put(`<a href="#" style="font-weight:600;color:var(--primary);text-decoration:underline dotted" onclick="event.preventDefault();openEditModal(${id}, true)" title="${tip}">${label}</a>`);
         html = html.replace(/(^|[\s(;:])(\d+(?:\.\d+)+)(?=$|[\s)<.,;:'’])/g, (m, pre, code) =>
           byWbs[code] ? pre + mkLink(byWbs[code].id, 'Open ' + code + ' ' + escapeHtml(byWbs[code].name) + ' in the editor', code) : m);
+        // Entity ids become marks. Stashed through put() like every other
+        // pass, so (a) the \x01N\x01 restore at the end cannot reach inside
+        // this markup and (b) the quoted-name needles below cannot inject an
+        // <a> into one of these title= attributes. Safe against the existing
+        // passes: the stash markers are digits only, and the WBS regex above
+        // requires whitespace/(/;/: before the number, which "AC-3.1" (a
+        // hyphen) never provides.
+        html = html.replace(/\b(US|EP)-\d+\b/g, m =>
+          put(ekTok(m.slice(0, 2) === 'US' ? 'us' : 'ep', m, '', { xs: true, onclick: "event.preventDefault();openReqStory('" + ekJs(m) + "')" })));
+        html = html.replace(/\bAC-\d+(?:\.\d+)+\b/g, m => put(ekMark('ac', { xs: true }) + m));
         nameSorted.forEach(t => {
           if (!t.name) return;
           ['&quot;', '&#039;', '“', '‘'].forEach((q, qi) => {
