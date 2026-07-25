@@ -2381,7 +2381,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1521</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1534</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4509,8 +4509,21 @@
     function updateMilestoneCompletion() {
       leafTasks().forEach(t => {
         if (!t.milestone) return;
+        /* effectivePreds also returns every predecessor INHERITED from ancestor
+           summaries, so a milestone with no incoming link of its own still saw
+           a non-empty list — the phase's upstream gate — and the manual-control
+           escape never fired. It was marked 100% the moment the phase was
+           merely ALLOWED TO START, and applyPctActuals then stamped an actual
+           finish of today, tagged as auto-derived. That put a green complete
+           tick on the client Gantt and the status report for work that had not
+           begun, and the fake date went on to poison the forecast finish and
+           every per-row baseline variance. The milestone's own percent cell
+           renders as a read-only auto badge, so there was no way to correct it
+           from the table either.
+           Auto-completion is a statement about what feeds THIS milestone. */
+        if (!(t.predecessors || []).length) return;   // nothing feeds it — manual
         const preds = effectivePreds(t);
-        if (!preds.length) return; // nothing feeds it — leave manual control
+        if (!preds.length) return;
         const allDone = preds.every(p => {
           const pt = tasks.find(x => x.id === p.id);
           return pt && (pt.percentComplete || 0) >= 100;
@@ -5393,7 +5406,7 @@
           <td${a}${ed('p')}>${summary ? rollCell(t.pUp, 'pessimistic') : t.milestone ? '—' : fmtDurCell(t.p)}</td>
           <td${a}><strong>${noEst ? '⚠ 0' : teStr}</strong></td>`; })()}
           <td data-pred-id="${t.id}" style="font-size:var(--t-md)${summary ? '' : ';cursor:text'}" title="${escapeHtml(summary ? predTitle(t) : (predTitle(t) ? predTitle(t) + '\n' : '') + 'Click to edit right here — comma-separated WBS codes or names, optional FS/SS/FF/SF±lag (e.g. “1.2, 2.1SS+1”). Enter saves, Esc cancels.')}"${summary ? '' : ` onclick="beginPredEdit(${t.id}, this)"`}>${summary ? '—' : (t.predecessors.length ? escapeHtml(predLabel(t)) : '<span class="help-text" style="font-style:italic">+ link</span>')}</td>
-          ${(() => { if (summary) return `<td style="font-size:var(--t-md);white-space:nowrap">${calculated ? fmtNice(t.startDate) : '—'}</td>
+          ${(() => { if (summary) return `<td style="font-size:var(--t-md);white-space:nowrap" title="${t.startNoEarlier ? escapeHtml('📌 Pinned: nothing under this phase starts before ' + t.startNoEarlier + '. Dependencies can push it later, never earlier.') : 'Earliest start across everything under this phase'}">${t.startNoEarlier ? '📌 ' : ''}${calculated ? fmtNice(t.startDate) : (t.startNoEarlier || '—')}</td>
           <td style="font-size:var(--t-md);white-space:nowrap">${calculated ? fmtNice(t.finishDate) : '—'}</td>`;
             const breach = calculated && t.deadline && t.finishDate && fmtISO(t.finishDate) > t.deadline;
             return `<td data-start-id="${t.id}" style="font-size:var(--t-md);white-space:nowrap;cursor:text" onclick="beginStartEdit(${t.id}, this)" title="${t.startNoEarlier ? 'Pinned: starts no earlier than ' + t.startNoEarlier + '. ' : ''}Click to pin a start date (start-no-earlier-than). Dependencies can push the start LATER than the pin, never earlier. Clear the date to unpin.">${t.startNoEarlier ? '📌 ' : ''}${calculated ? fmtNice(t.startDate) : (t.startNoEarlier || '—')}</td>
@@ -5954,14 +5967,37 @@
     // `origin` is the date that offset 0 means for the caller (project start
     // for CPM/MC; TODAY for the re-forecast-from-actuals pass, where a pin in
     // the past correctly stops constraining the remaining work).
+    /* Pins were collected from the scheduled nodes only, and only leaves are
+       scheduled. The moment a pinned task gained a child — an AI decompose,
+       indenting a row under it, or a CSV import that gives it children — the
+       scheduler stopped applying the pin and the table stopped drawing the 📌,
+       while startNoEarlier stayed in the data, stayed serialized and stayed in
+       the export. The start jumped back weeks with no warning, and because the
+       constraint was still written to the file, the discrepancy survived a
+       round trip. A "start no earlier than" cell filled in on a phase row of
+       the workbook was silently ignored the same way.
+       A pin on a roll-up means what it says: nothing underneath it starts
+       before that date. It is pushed down to every leaf descendant, where the
+       later date of a leaf's own pin and its ancestors' always wins. */
     function snetFloorMap(list, origin) {
       const out = {};
       const hs = getHolidaySet(), ps = origin || projectStartDate();
+      const floorOf = t => {
+        let best = null;
+        for (let x = t, guard = 0; x && guard < 200; x = (x.parentId == null ? null : tasks.find(k => k.id === x.parentId)), guard++) {
+          if (!x.startNoEarlier) continue;
+          let d = new Date(x.startNoEarlier + 'T00:00:00');
+          if (isNaN(d.getTime())) continue;
+          d = stripTime(d);
+          if (!best || d.getTime() > best.getTime()) best = d;
+        }
+        return best;
+      };
       list.forEach(t => {
-        if (!t || !t.startNoEarlier) return;
-        let d = new Date(t.startNoEarlier + 'T00:00:00');
-        if (isNaN(d.getTime())) return;
-        d = stripTime(d);
+        if (!t) return;
+        let d = floorOf(t);
+        if (!d) return;
+        d = new Date(d);
         while (!isWorkingDay(d, hs)) d.setDate(d.getDate() + 1);
         const wd = workingDaysBetween(ps, d, hs);
         if (wd > 0) out[t.id] = workingDaysToUnit(wd);
@@ -6340,12 +6376,42 @@
       mcRand = Math.random;
     }
     // map a duration-in-units to a finish calendar date from project start
+    /* A zero-duration milestone finishing at elapsed D sits on working-day index
+       round(D) — the boundary after the last day of work — while an activity
+       spanning to D finishes on index round(D)-1, its own last working day.
+       Both are right for what they describe.
+
+       The PROJECT's finish, though, has to be the date of whatever actually
+       ends it. On the customary plan that closes with "Go-Live" or "Project
+       closed", re-deriving the finish from the duration number landed one
+       working day EARLIER than the milestone the plan itself says ends the
+       project — up to three calendar days across a weekend. The status report
+       printed the headline finish and the milestone table on the same page and
+       disagreed with itself; the committed date was quoted a day before the
+       closing milestone; and on the Gantt the contingency hatch started behind
+       the Go-Live diamond.
+
+       Which convention the terminal element follows is a property of the plan,
+       so it is read from the plan once and applied to every duration→date
+       conversion — the Monte-Carlo percentiles included, since they simulate
+       the same network and therefore end on the same kind of element. That
+       keeps the headline, the P-dates, the contingency date and the SOW
+       mutually consistent instead of merely individually defensible. */
+    function planEndsOnMilestone() {
+      const lv = leafTasks();
+      if (!lv.length) return false;
+      const maxEf = Math.max(0, ...lv.map(t => t.ef || 0));
+      if (!(maxEf > 0)) return false;
+      return lv.some(t => t.milestone && Math.abs((t.ef || 0) - maxEf) < 1e-9);
+    }
     function durationToDate(dur) {
       const holidays = getHolidaySet();
       const start = projectStartDate();
       const wd = unitToWorkingDays(dur);
-      // finish date = start + (round(wd)-1) working days inclusive
-      return addWorkingDays(start, Math.max(0, Math.round(wd) - 1), holidays);
+      // finish date = start + (round(wd)-1) working days inclusive, plus the
+      // boundary day when the thing that ends the plan is a milestone
+      const n = Math.max(0, Math.round(wd) - 1) + (planEndsOnMilestone() ? 1 : 0);
+      return addWorkingDays(start, n, holidays);
     }
     function probabilityByDate(dateStr) {
       if (!mcResult || !dateStr) return null;
@@ -9350,8 +9416,15 @@
         return bxx + (sameDayPred ? dayW : 0);
       };
       let links = '';
-      // transitively-redundant edges add arrows but no gating — don't draw them
+      /* Transitively-redundant edges add arrows but no gating — don't draw them.
+         redundantLinkList is type- and lag-aware, so a lagged or SS/FF link that
+         is the sole reason a task starts when it does is never in this set: it
+         used to be, and the arrow explaining a multi-week gap simply vanished
+         while the note below claimed nothing had been hidden.
+         What is dropped here still counts toward that note, so the tally always
+         matches what is missing from the picture. */
       const redundantEdges = new Set(redundantLinkList().map(r => r.task.id + ':' + r.predId));
+      let redundantDropped = 0;
       // Endpoints hidden inside a collapsed phase REMAP to that phase's summary
       // bar — a link must never silently vanish (a floating, unconnected
       // Go-Live diamond) nor draw once per hidden child (dedupe by pair; the
@@ -9367,7 +9440,7 @@
       const pairList = [], pairByKey = new Map();
       leafOrder.forEach(t0 => {
         effectivePreds(t0).forEach(p => {
-          if (redundantEdges.has(t0.id + ':' + p.id)) return;
+          if (redundantEdges.has(t0.id + ':' + p.id)) { redundantDropped++; return; }
           const pt0 = tasks.find(x => x.id === p.id);
           if (!pt0) return;
           const t = repOf(t0.id), pt = repOf(p.id);
@@ -9422,8 +9495,9 @@
       // never silently thin the picture — say how many arrows were left out
       {
         const el = document.getElementById('ganttImplNote');
-        if (el) el.innerHTML = impliedHidden
-          ? '<b>' + impliedHidden + '</b> implied link(s) not drawn — a longer chain already gates each one, so removing it would move no date. See the <a href="#" onclick="switchTab(\'pert\');return false">PERT</a> tab to inspect them. • '
+        const hidden = impliedHidden + redundantDropped;
+        if (el) el.innerHTML = hidden
+          ? '<b>' + hidden + '</b> implied link(s) not drawn — a longer chain already gates each one, so removing it would move no date. See the <a href="#" onclick="switchTab(\'pert\');return false">PERT</a> tab to inspect them. • '
           : '';
       }
       const mergeGroups = new Map(); // successor id → bus-spine state
