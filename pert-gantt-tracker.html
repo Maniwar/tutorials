@@ -534,6 +534,17 @@
     .rdg-askq::before { content: "You asked: "; color: var(--muted); font-weight: 400; }
     .rdg-askhint { font-size: var(--t-xs); color: var(--muted); margin: 0.3rem 0 0; }
     @media print { .rdg-askrow { display: none !important; } .rdg-ask { background: #fff; } }
+
+    /* ---- SLICE 3. A button that CHANGES the plan must not look like a button
+       that navigates to it. Navigation is .rdg-act, quiet and secondary; this
+       is filled, and it always carries the exact wording of what it will do. */
+    .rdg-fix { margin-left: 0.4rem; }
+    .rdg-done { display: inline-flex; align-items: center; gap: 0.35rem; margin-left: 0.4rem;
+      font-size: var(--t-xs); font-weight: 700; color: var(--success); }
+    .rdg-applied { font-size: var(--t-sm); color: var(--text); background: #f0fdf4;
+      border: 1px solid #bbf7d0; border-radius: 6px; padding: 0.35rem 0.55rem; margin: 0 0 0.4rem; }
+    .rdg-applied b { color: var(--text); }
+    @media print { .rdg-fix { display: none !important; } }
     .rdg-unver { border-bottom: 1px dotted var(--warn); color: var(--warn); cursor: help; }
     @media print { .rdg-go, .rdg-act, .rdg-stale, .rdg-chip { display: none !important; }
                    .rdg { background: #fff; border-left-color: #cbd5e1; } }
@@ -2555,7 +2566,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1733</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.1744</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -16405,7 +16416,7 @@ Rules:
           contract into ONE block puts the mark at >=1.2k tokens for everyone. */
 
     const PT_PREFIX   = 'pertGantt.reading.';
-    const PT_CONTRACT_V = 1;
+    const PT_CONTRACT_V = 2;
     const PT_PANELS   = ['truth', 'price', 'base', 'health', 'bank'];
     const PT_ORPHANS  = ['bank', 'ask'];   // valid panels with no anchor of their own yet
     const PT_TABS     = ['tasks','wbs','req','pert','gantt','resources','baseline','analytics','raid'];
@@ -16631,6 +16642,21 @@ Rules:
         if (claimed.length && !kept.length) { drops.push('every reference it made is not in this plan'); return; }
         // figure audit — the contract forbids digits; a stray one is MARKED, not hidden
         const unver = (text.match(/\d[\d.,]*/g) || []).filter(t => !dg.figs.has(t.replace(/[.,]$/, '')));
+        /* A fix is validated HARDER than a navigation act: the verb must be on
+           the menu AND its precondition must still hold right now. A button
+           offering to size a contingency that is already sized is worse than no
+           button — it teaches the reader that the buttons are decorative. */
+        let fx = null;
+        if (it.fix && typeof it.fix === 'object') {
+          const fv = String(it.fix.v || '');
+          if (!PT_FIX[fv]) drops.push('proposed a change this tool cannot make');
+          else {
+            let ok = null;
+            try { ok = PT_FIX[fv].describe(); } catch (e) { ok = null; }
+            if (!ok) drops.push('proposed “' + PT_FIX[fv].label + '”, which no longer applies');
+            else fx = { v: fv, label: String(it.fix.label || PT_FIX[fv].label).slice(0, 26) };
+          }
+        }
         let a = it.act && typeof it.act === 'object' ? it.act : null;
         if (a) {
           const v = String(a.v || 'none');
@@ -16643,7 +16669,7 @@ Rules:
         per[p] = (per[p] || 0) + 1;
         if (per[p] > (ask ? 3 : 4) || out.length >= (ask ? 3 : 10)) return;
         out.push({ panel: p, sev: ['act', 'watch', 'ok'].indexOf(it.sev) >= 0 ? it.sev : 'watch',
-                   text, refs: kept, unver, act: a });
+                   text, refs: kept, unver, act: a, fix: fx });
       });
       return { items: out, drops, quiet: String((res && res.quiet) || '').slice(0, 200) };
     }
@@ -16733,15 +16759,163 @@ Rules:
         return '<details class="rdg" data-state="' + (stale ? 'stale' : 'quiet') + '"><summary class="rdg-sum">What this means — nothing flagged here</summary>'
           + bar + q + '</details>' + ptAskHtml(panel);
       }
+      const applied = S.applied || null;
       const body = mine.map(i => '<p class="rdg-item rdg-' + i.sev + '">'
         + '<span class="rdg-dot" aria-hidden="true"></span>'
         + ptMarkUnverified(i)
         + (i.refs.length ? '<span class="rdg-refs">' + i.refs.map(ptChip).join('') + '</span>' : '')
-        + (i.act ? ptActBtn(i.act) : '') + '</p>').join('');
+        + (i.act ? ptActBtn(i.act) : '')
+        + (i.fix ? ptFixBtn(i.fix, applied) : '') + '</p>').join('');
       const drop = S.drops.length ? '<p class="rdg-drop">' + S.drops.length + ' suggestion' + (S.drops.length === 1 ? '' : 's')
         + ' discarded before you saw ' + (S.drops.length === 1 ? 'it' : 'them') + ' — ' + escapeHtml(S.drops.slice(0, 3).join('; ')) + '.</p>' : '';
-      return '<div class="rdg" data-state="' + (stale ? 'stale' : 'fresh') + '">' + head + bar + figs + body + drop + '</div>'
+      /* An applied change moves the numbers, which makes the reading stale —
+         so the stale bar fires and, without this, reads as if the plan had
+         drifted on its own. The banner says what did it, and holds the Revert
+         even after the item that offered it stopped being rendered. */
+      const app = (applied && mine.some(i => i.fix && i.fix.v === applied.v))
+        ? '<p class="rdg-applied no-print"><b>✓ ' + escapeHtml(applied.label) + '</b> — applied from this reading; it '
+          + escapeHtml(applied.was) + '.'
+          + (ptCanRevert() ? ' <button class="btn-sm btn-secondary" onclick="ptRevertFix()">↶ Revert</button>'
+              : ' <span class="rdg-askhint">Other changes have happened since, so Revert here is gone — ↶ Undo still steps back through them.</span>')
+          + '</p>' : '';
+      return '<div class="rdg" data-state="' + (stale ? 'stale' : 'fresh') + '">' + head + bar + app + figs + body + drop + '</div>'
         + ptAskHtml(panel);
+    }
+
+    /* ===================== SLICE 3 — ACT ON IT ==============================
+       A reading that ends in "you should size the contingency to the P80 date"
+       and leaves you to find the control is still a document. This turns the
+       recommendation into one press.
+
+       THE MODEL NEVER SUPPLIES A VALUE. It chooses from the fixed menu below,
+       and the TOOL computes what the change is — the same functions the manual
+       buttons call. That is what keeps rule 1 intact: a model that cannot write
+       a number cannot write one into your plan either.
+
+       Three guarantees, in the order they matter:
+         GUARDED AT PRESS TIME. describe() re-derives from the live numbers and
+           returns null when the fix no longer applies. A reading taken twenty
+           minutes ago cannot apply a change to a plan that has moved since; the
+           press refuses and says so.
+         ONE UNDO FRAME. withOneUndoFrame() collapses every nested saveLocal
+           into a single frame, so one press is one ↶.
+         REVERTABLE IN PLACE. While that frame is still the top of the stack the
+           item itself offers Revert, so you never have to go looking for undo.
+       Every describe() is also the button's own tooltip: you read exactly what
+       will change before you change it. */
+    const PT_FIX = {
+      contingency: {
+        label: 'Set contingency from P80',
+        describe: function () {
+          if (!mcResult || !calculated) return null;
+          const r = computeReserves();
+          const want = Math.max(0, mcResult.p80 - r.cpmUnits);
+          if (!(want > 0)) return null;
+          if (Math.abs(want - r.contingencyUnits) < 0.05) return null;   // already sized
+          const u = unitLabel();
+          const to = durationToDate(r.cpmUnits + want);
+          return 'sets the contingency reserve to ' + (Math.round(want * 10) / 10) + ' ' + u
+            + ' (it holds ' + (Math.round(r.contingencyUnits * 10) / 10) + ' now), moving the committed finish from '
+            + fmtNice(r.committedDate) + ' to ' + fmtNice(to) + ' — the date four in five simulations land inside';
+        },
+        run: function () { setContingencyFromP80(); }
+      },
+      rebaseline: {
+        label: 'Freeze today as the baseline',
+        confirm: 'Re-baselining replaces the committed dates and costs every variance on this screen is measured against.',
+        describe: function () {
+          if (!calculated || !tasks.length) return null;
+          /* Re-baselining a plan that already equals its baseline changes
+             nothing and destroys nothing — but a button that does nothing is
+             how a reader learns the buttons are decorative. */
+          if (baselineDate) {
+            const same = t => {
+              const d = (a, b) => (a ? fmtISO(new Date(a)) : '') === (b ? fmtISO(new Date(b)) : '');
+              return d(t.baseStart, t.startDate) && d(t.baseFinish, t.finishDate)
+                && Math.abs((Number(t.baseTe) || 0) - (Number(t.te) || 0)) < 0.005;
+            };
+            if (leafTasks().every(same)) return null;
+          }
+          const f = latestFinish(leafTasks());
+          return (baselineDate
+              ? 'replaces the baseline of ' + baselineDate + ' with today’s plan'
+              : 'freezes today’s plan as the baseline')
+            + (f ? ', committing to a finish of ' + fmtNice(f) : '')
+            + '. Every variance on this screen restarts from zero, and the old comparison is gone';
+        },
+        run: function () { setBaseline(); if (calculated) { renderAnalytics(); renderGantt(); renderBaseline(); } }
+      },
+      snapshot: {
+        label: 'Record a status snapshot',
+        describe: function () {
+          if (!calculated) return null;
+          const today = fmtISO(new Date());
+          if (statusHistory.some(x => x.date === today)) return null;   // already recorded today
+          const last = statusHistory.length ? statusHistory[statusHistory.length - 1].date : null;
+          return 'records today’s forecast, progress, price, margin and open risks into the trend'
+            + (last ? ' — the last one is dated ' + last : ' — this would be the first one');
+        },
+        run: function () { takeStatusSnapshot(false); renderHealth(); }
+      },
+      prune: {
+        label: 'Drop links to deleted activities',
+        describe: function () {
+          const d = ptDeadStoryIds();
+          if (!d.size) return null;
+          return 'removes ' + d.size + ' story ' + ptrPl(d.size, 'link') + ' pointing at '
+            + ptrPl(d.size, 'an activity that no longer exists', 'activities that no longer exist')
+            + ', which is what makes coverage read higher than it is';
+        },
+        run: function () { pruneStoryLinks(ptDeadStoryIds()); computeWbsCodes(); if (calculated) recompute(); renderReqs(); }
+      }
+    };
+    function ptDeadStoryIds() {
+      const live = new Set(tasks.map(t => t.id)), out = new Set();
+      try {
+        ((reqs && reqs.stories) || []).forEach(st => storyWbsIds(st).forEach(x => { if (!live.has(x)) out.add(x); }));
+      } catch (e) {}
+      return out;
+    }
+    function ptFixBtn(fx, applied) {
+      const f = PT_FIX[fx.v];
+      if (!f) return '';
+      if (applied && applied.v === fx.v) {
+        return '<span class="rdg-done">✓ applied</span>'
+          + (ptCanRevert() ? '<button class="btn-sm btn-secondary rdg-fix no-print" onclick="ptRevertFix()" '
+              + 'title="Put the plan back exactly as it was — this change is still the top of the undo stack">↶ Revert</button>' : '');
+      }
+      const now = f.describe();
+      if (!now) return '';                              // it stopped applying since the reading
+      return '<button class="btn-sm btn-primary rdg-fix no-print" onclick="ptApplyFix(\'' + fx.v + '\')" title="'
+        + escapeHtml('This CHANGES the plan: it ' + now + '. One press is one undo step, and you can revert it here.')
+        + '">' + escapeHtml(fx.label || f.label) + '</button>';
+    }
+    function ptApplyFix(v) {
+      const f = PT_FIX[v];
+      if (!f) return;
+      const now = f.describe();
+      // the numbers may have moved since the reading was taken — a stale fix is
+      // refused rather than applied to a plan it was never about
+      if (!now) { flashSaved('That no longer applies — the numbers moved. ⟳ to re-read.'); ptRepaint(); return; }
+      if (f.confirm && !confirm(f.confirm + '\n\nThis ' + now + '.\n\nIt is one undo step, and the reading '
+          + 'will offer Revert straight after. Apply it?')) return;
+      withOneUndoFrame(function () { f.run(); });
+      const S = ptStore[activeProjectId()];
+      if (S) { S.applied = { v: v, label: f.label, was: now, at: new Date().toISOString() }; ptSave(); }
+      flashSaved('✓ ' + f.label + ' — applied as one undo step');
+      ptRepaint();
+    }
+    function ptRevertFix() {
+      const S = ptStore[activeProjectId()];
+      if (!ptCanRevert()) {
+        flashSaved('Something else has changed since — use ↶ Undo to step back through it.');
+        if (S) { S.applied = null; ptSave(); }
+        ptRepaint(); return;
+      }
+      doUndo();
+      ptRevertMark = null;
+      if (S) { S.applied = null; ptSave(); }
+      ptRepaint();
     }
 
     /* ===================== SLICE 2 — ASK THIS PANEL =========================
@@ -17012,7 +17186,8 @@ Return ONLY this JSON. No prose before or after, no code fence.
    "text":"one sentence, no digits, max 220 chars",
    "cite":"verbatim span of >=20 chars copied from the DIGEST",
    "refs":["T#42","R#12"],
-   "act":{"v":"open|goto|raid|none","ref":"T#42","label":"max 22 chars"}}
+   "act":{"v":"open|goto|raid|none","ref":"T#42","label":"max 22 chars"},
+   "fix":{"v":"contingency|rebaseline|snapshot|prune","label":"max 26 chars"}}
  ],
  "quiet":""}
 
@@ -17022,6 +17197,25 @@ Verbs:
           baseline|analytics|raid.
   raid  — start a RAID entry pre-linked to that activity. ref must be a T#.
   none  — no button. Use it whenever no button would genuinely help.
+
+FIXES — the optional \`fix\` field. These are the four changes this tool can make
+to the plan ITSELF in one press. Offer one only when your sentence is actually
+recommending it; most items carry none. YOU NEVER SUPPLY A VALUE — the tool
+computes the change from the same functions its own buttons call, states it in
+words on the button before it is pressed, applies it as a single undo step and
+offers to revert it. A fix whose precondition no longer holds is dropped before
+the reader sees it, so do not offer one speculatively.
+
+  contingency — size the contingency reserve so the committed date becomes the
+                P80 date. Only when the committed date is short of P80.
+  rebaseline  — freeze today's plan as the baseline. Only when the current
+                baseline is genuinely obsolete, e.g. an approved change order
+                has moved the committed scope. It destroys every variance on
+                the board, so recommend it rarely and say why in the sentence.
+  snapshot    — record today's figures into the trend. Only when the trend has
+                nothing recent to compare against.
+  prune       — remove story links pointing at deleted activities. Only when
+                the digest shows coverage resting on links that are dangling.
 
 Severity: "act" = needs a decision this week. "watch" = true and worth knowing,
 no decision yet. "ok" = a reassurance the reader would otherwise not be sure of.
