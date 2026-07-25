@@ -2354,7 +2354,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0640</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0702</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -14289,9 +14289,19 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       catch (e) { /* fall through */ }
       return (bankCache = []);
     }
+    let bankDirty = false;   // set by saveBank; bankInit must never overwrite a real write
     async function bankInit() {
       try {
         const v = await idbGet(BANK_STORE);
+        /* The window between this call and its resolution is small but not zero,
+           and anything that reads the bank inside it bootstraps an EMPTY array
+           from the (now migrated away) localStorage key. If a write then lands in
+           that window — an archive, an import — assigning the stale IndexedDB
+           value here would throw it away in memory while its own idbSet was still
+           in flight, and which one survived would come down to ordering. A bank
+           is the one store meant to accumulate forever, so it does not get to
+           depend on that. A real write wins, always. */
+        if (bankDirty) { updateBankBadge(); return; }
         if (v != null) { const p = JSON.parse(v); if (Array.isArray(p)) bankCache = p; }
         else {
           // one-time migration of a localStorage bank into IndexedDB
@@ -14315,6 +14325,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     // is always said out loud, where the user is looking.
     function saveBank(rows) {
       bankCache = rows;                       // synchronous truth for every reader
+      bankDirty = true;                       // and bankInit must not undo it
       const json = JSON.stringify(rows);
       idbSet(BANK_STORE, json).catch(() => {
         try { localStorage.setItem(BANK_STORE, json); }
