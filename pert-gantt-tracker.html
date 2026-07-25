@@ -484,6 +484,46 @@
     .ptr-k i { width: 9px; height: 9px; border-radius: 2px; flex: none; display: inline-block; }
     .ptr-cap { font-size: var(--t-sm); color: var(--muted); line-height: 1.55; margin-top: 0.5rem; }
     .ptr-cap b { color: var(--text); }
+    /* --- drill-in: the activities carrying a bar's variance -----------------
+       A number without names is not actionable, so each measured row can open
+       a short worst-first list and every entry opens its own editor. It is a
+       <details> and not a modal: the answer stays beside the question, it
+       costs nothing while closed, and whatever the reader left open is what
+       prints. */
+    .ptr-drv { margin-top: 0.45rem; }
+    .ptr-drv > summary {
+      display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer;
+      font-size: var(--t-xs); font-weight: 600; color: var(--primary);
+      list-style: none; padding: 2px 0; min-height: 24px;   /* 2.5.8 target */
+    }
+    .ptr-drv > summary::-webkit-details-marker { display: none; }
+    .ptr-drv > summary::before { content: '▸'; font-size: 0.9em; transition: transform .12s var(--easeo); }
+    .ptr-drv[open] > summary::before { transform: rotate(90deg); }
+    .ptr-drv-n {
+      font-variant-numeric: tabular-nums; font-weight: 700; color: var(--muted);
+      border: 1px solid var(--border); border-radius: 999px; padding: 0 .35rem; font-size: .9em;
+    }
+    .ptr-drv-note { font-size: var(--t-xs); color: var(--muted); margin: 0.3rem 0 0.4rem; line-height: 1.5; }
+    .ptr-drv-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+    .ptr-drv-row {
+      /* a real button so it inherits the zero-specificity focus-visible ring */
+      display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+      width: 100%; text-align: left; background: none; border: 0; border-radius: 5px;
+      padding: 4px 6px; min-height: 32px; cursor: pointer; font: inherit;
+      box-shadow: none;
+    }
+    .ptr-drv-row:hover:not(:disabled), .ptr-drv-row:active:not(:disabled) {
+      background: var(--row-hover, #f1f5f9); transform: none; box-shadow: none;
+    }
+    .ptr-drv-v {
+      flex: none; font-size: var(--t-xs); font-weight: 700; color: var(--text);
+      font-variant-numeric: tabular-nums; white-space: nowrap;
+    }
+    /* critical work is the only sub-set where the variance moves the finish
+       date, so it is the only thing here that earns an alarm colour */
+    .ptr-drv-crit { color: var(--critical); }
+    @media print { .ptr-drv > summary { color: var(--muted); } }
+
     .ptr-foot { font-size: var(--t-xs); color: var(--muted); line-height: 1.55;
       margin-top: 0.75rem; padding-top: 0.6rem; border-top: 1px dashed var(--border); }
 
@@ -2257,7 +2297,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0447</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.25.0459</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -7691,11 +7731,105 @@
         pvNow: pvNow, evNow: evNow
       });
 
+      /* ---- WHO IS DOING THIS TO YOU -------------------------------------
+         A bar that says "8% over" and stops is only half a sentence. Every
+         one of these numbers is a sum over activities, so the answer to
+         "why" is always a short list of names — and the panel already holds
+         every figure needed to build it. Each dimension names the few
+         activities carrying most of its variance, worst first, and each one
+         opens its editor, because that is where the fix is made.
+         Deliberately capped and deliberately worst-first: a list of thirty
+         is another wall of numbers, and the tail never matters. */
+      const DRIVER_MAX = 5;
+      const drivers = (arr, valueOf, label) => arr
+        .map(t => ({ t: t, v: valueOf(t) }))
+        .filter(x => x.v > 0.0001)
+        .sort((a, b) => b.v - a.v)
+        .slice(0, DRIVER_MAX)
+        .map(x => ({ id: x.t.id, name: x.t.name, wbs: x.t.wbs || '', kind: ekKindOf(x.t),
+                     crit: !!x.t.isCritical, txt: label(x.v, x.t) }));
+
+      // Schedule: activities finishing later than the baseline froze them. Only
+      // a critical one can actually move the end date, so those lead, but a
+      // slipping non-critical activity is still eating its own float and is
+      // worth naming — it is next quarter's critical path.
+      if (hb && sch.state !== 'needs') {
+        const slipOf = new Map();
+        const datedFinish = t => {
+          const bf = t.baseFinish, cf = currentFinish(t);
+          return (bf instanceof Date && !isNaN(bf.getTime()) && cf instanceof Date && !isNaN(cf.getTime()))
+            ? calDaysBetween(bf, cf) : null;
+        };
+        tasks.forEach(t => { const s = datedFinish(t); if (s != null) slipOf.set(t.id, s); });
+        // An activity behind a late predecessor is a SYMPTOM, not a cause. Rank
+        // by the slip each activity introduced ITSELF — its own slip minus the
+        // worst slip it inherited — or the list fills with everything downstream
+        // of one late task, all showing the same number, and names the innocent.
+        const ownSlip = t => {
+          const mine = slipOf.get(t.id);
+          if (mine == null || mine <= 0) return 0;
+          let inherited = 0;
+          effectivePreds(t).forEach(p => { const s = slipOf.get(p.id); if (s > inherited) inherited = s; });
+          return Math.max(0, mine - inherited);
+        };
+        const late = leaves.filter(t => slipOf.get(t.id) > 0);
+        sch.drivers = drivers(late, ownSlip,
+          v => '+' + Math.round(v) + ' ' + ptrPl(Math.round(v), 'day'));
+        sch.driverNote = 'Where the delay was introduced, not everything standing behind it: each figure is the slip'
+          + ' an activity added on top of what it inherited from a late predecessor. Critical ones move the finish'
+          + ' date; the rest are spending float they will want later.';
+        if (!sch.drivers.length && late.length) {
+          // everything late inherited its lateness — say so rather than showing nothing
+          sch.driverNote = 'Every late activity inherited its slip from a predecessor rather than adding any of its'
+            + ' own, so the delay entered this plan before the baseline was frozen or through a dependency.';
+        }
+      }
+      // Budget: booked cost above what this activity was budgeted. Money, not a
+      // ratio — a 300% overrun on a $200 task is noise beside 8% on a $90k one.
+      if (bud.state !== 'needs') {
+        const over = leaves.filter(t => !t.milestone);
+        bud.drivers = drivers(over,
+          t => (actOf.get(t.id) || 0) - (hb && Number(t.baseCost) > 0 ? Number(t.baseCost) : taskCost(t)),
+          v => '+' + money(Math.round(v)));
+        bud.driverNote = 'Booked above what each was budgeted, biggest overspend first — dollars, not percentages,'
+          + ' because a 300% overrun on a $200 task is noise beside 8% on a $90k one.';
+      }
+      // Scope: work that was not in the baseline at all, then work that was
+      // re-estimated upward. Two different conversations with a client, so they
+      // are labelled rather than merged into one "scope" number.
+      if (hb && scp.state !== 'needs') {
+        const grew = leaves.filter(t => !t.milestone);
+        scp.drivers = drivers(grew,
+          t => t.baseTe == null ? (Number(t.te) || 0) : (Number(t.te) || 0) - Number(t.baseTe),
+          (v, t) => (t.baseTe == null ? 'new · ' : '+') + (+v.toFixed(1)) + ' ' + u);
+        scp.driverNote = 'Effort added since the baseline. "new" means the activity did not exist when the plan'
+          + ' was frozen; the rest were re-estimated upward.';
+      }
+
       return {
         rows: [sch, bud, scp], cells, leaves, cov, hb, donePct, u, safe,
         curve: curve, budTone: bud.tone || null,
         added: hb ? leaves.filter(t => t.baseTe == null).length : 0
       };
+    }
+    /* One expandable list per dimension. <details> rather than a modal: it keeps
+       the answer beside the number that raised the question, it costs nothing
+       when closed, and it prints open if the reader left it open. */
+    function ptrDrivers(r) {
+      if (!r.drivers || !r.drivers.length) return '';
+      const rows = r.drivers.map(d =>
+        '<li><button type="button" class="ptr-drv-row" onclick="openEditModal(' + d.id + ', true)" '
+        + 'title="Open ' + escapeHtml(d.name) + '">'
+        + ekTok(d.kind, d.wbs, d.name, { xs: true })
+        + '<span class="ptr-drv-v' + (d.crit ? ' ptr-drv-crit' : '') + '">' + d.txt
+        + (d.crit ? ' <span title="Zero slack — this activity is on the critical path, so any delay here moves the finish date too">⚠</span>' : '')
+        + '</span></button></li>').join('');
+      return '<details class="ptr-drv no-print-open"><summary>Which activities? <span class="ptr-drv-n">'
+        + r.drivers.length + '</span></summary>'
+        + (r.driverNote ? '<p class="ptr-drv-note">' + r.driverNote + '</p>' : '')
+        + '<ul class="ptr-drv-list">' + rows + '</ul>'
+        + '<p class="ptr-drv-note">Click any one to open it. Worst first, top ' + r.drivers.length + '.</p>'
+        + '</details>';
     }
 
     function ptrCta(c, lite) {
@@ -7761,7 +7895,7 @@
         + grid + '<i class="ptr-zero"></i>' + shape + '</div>'
         + '<div class="ptr-side"><span class="badge ' + badgeCls + '">' + escapeHtml(r.delta) + '</span>'
         + '<span class="ptr-pct">' + pctTxt + '</span></div>'
-        + '<div class="ptr-note">' + r.note + ptrCta(r.softCta, true) + '</div></div>';
+        + '<div class="ptr-note">' + r.note + ptrCta(r.softCta, true) + ptrDrivers(r) + '</div></div>';
     }
 
     // ===================== SPEND OVER TIME — the picture ======================
