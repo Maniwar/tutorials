@@ -784,6 +784,12 @@
       .pb-row.pb-total, .pb-row.pb-cov { margin-top: 0.6rem; }
       .pb-flag  { display: none; }   /* would collide at this width; the title attributes carry it */
     }
+    /* Acronyms carry a dotted underline and open the same tap-popover the ⓘ
+       buttons use. Project-management shorthand is a wall to anyone who has not
+       sat the exam, and this gets shown to clients. */
+    .acro { border-bottom: 1px dotted currentColor; cursor: help; text-decoration: none; }
+    .acro:hover { border-bottom-style: solid; }
+    @media print { .acro { border-bottom: 0; } }
     /* keyboard-flow hint in modal footers — the shortcuts are useless if nobody
        knows they exist, so they are stated where the save button is */
     .kbd-hint { display: inline-flex; align-items: center; gap: 0.25rem; font-size: var(--t-xs); color: var(--muted); margin-right: 0.5rem; white-space: nowrap; }
@@ -6407,6 +6413,42 @@
         if (document.getElementById('view-req').classList.contains('active')) renderReqs();
       }
     }
+    // ===== PLAIN-ENGLISH GLOSSARY =====
+    // Earned-value shorthand is standard on a PMP course and opaque everywhere
+    // else, and these panels get turned round to face a client. Every acronym in
+    // the UI resolves here, in words a sponsor can act on rather than a textbook
+    // definition. Note AC is deliberately ambiguous in this product — actual cost
+    // in the earned-value block, acceptance criterion in requirements — so each
+    // entry says which one it is.
+    const GLOSSARY = {
+      PV:  ['Planned value', 'The money-value of the work your baseline said would be FINISHED by today. If the plan had $10,000 of work due by now, PV is $10,000 — whether or not any of it happened.'],
+      EV:  ['Earned value', 'The money-value of the work actually finished, priced at what you BUDGETED for it. Half of a $10,000 task done earns $5,000, no matter what it really cost you.'],
+      AC:  ['Actual cost', 'What the finished work has actually cost you so far. (In the Requirements tab, AC means acceptance criterion instead — a different thing entirely.)'],
+      SV:  ['Schedule variance', 'Earned value minus planned value. Positive means more work is finished than the plan called for by now; negative means less.'],
+      CV:  ['Cost variance', 'Earned value minus actual cost. Positive means the finished work cost less than you budgeted for it.'],
+      SPI: ['Schedule performance index', 'Earned value divided by planned value. 1.0 is exactly on plan, below 1.0 is behind. It needs a meaningful amount of work to be due before the division means anything.'],
+      CPI: ['Cost performance index', 'Earned value divided by actual cost. 1.0 means a dollar spent buys a dollar of progress; below 1.0 means you are spending faster than you are earning.'],
+      EAC: ['Estimate at completion', 'What the whole job is forecast to cost if today\'s cost efficiency holds for the rest of it.'],
+      BAC: ['Budget at completion', 'The total budgeted cost of the whole plan — the finish line the forecast is measured against.'],
+      TE:  ['Expected duration', 'The PERT expected duration: (optimistic + 4 x most likely + pessimistic) / 6. It leans on the most likely figure but lets the pessimistic tail pull it out.'],
+      CPM: ['Critical path method', 'Working out the longest chain of dependent activities, which is what actually sets the finish date. Anything on it has zero slack — delay it and the project moves.'],
+      WBS: ['Work breakdown structure', 'The hierarchy of the work: phases containing activities containing sub-activities. The numbering (1.2.3) is its address.'],
+      PERT:['Program evaluation and review technique', 'Estimating with three points — optimistic, most likely, pessimistic — instead of one number, so uncertainty is stated rather than hidden.'],
+      SOW: ['Statement of work', 'The contract document: what you will deliver, for how much, by when, and what is excluded.'],
+      RAID:['Risks, assumptions, issues, dependencies', 'The four things that will change your plan if you do not track them. A risk might happen; an issue already has.'],
+      NFR: ['Non-functional requirement', 'A quality the system must have rather than a feature it must do — speed, uptime, security, accessibility. The most commonly under-scoped part of an estimate.'],
+      UAT: ['User acceptance testing', 'The client\'s own people running the system against the agreed criteria to decide whether they accept it.'],
+      P50: ['50th percentile', 'Half the simulated outcomes land at or under this figure. A coin flip — fine as an expectation, risky as a commitment.'],
+      P80: ['80th percentile', 'Four in five simulated outcomes land at or under this figure. The usual choice for a number you commit to.'],
+      P90: ['90th percentile', 'Nine in ten simulated outcomes land at or under this figure — a conservative commitment.']
+    };
+    // renders an acronym that explains itself on hover AND on tap
+    function acro(k, txt) {
+      const g = GLOSSARY[k];
+      if (!g) return escapeHtml(txt || k);
+      return '<abbr class="acro" data-help="' + escapeHtml(k + ' — ' + g[0] + '. ' + g[1]) + '" title="' + escapeHtml(g[0] + ' — ' + g[1]) + '">' + escapeHtml(txt || k) + '</abbr>';
+    }
+
     // ---- shared metric helpers (single source of truth) ----------------------
     // Client-facing story coverage — ONE definition, used by the Requirements
     // tab tile AND the Analytics header. It was inline in renderReqs(); a second
@@ -6781,7 +6823,14 @@
       add(d.cells.length - done - prog - late - none, 'not started');
       add(none, 'with no estimate');
       add(d.added, 'added since the baseline (ringed)');
-      let cap = '<b>' + d.cells.length + '</b> ' + ptrPl(d.cells.length, 'activity', 'activities')
+      // The strip draws a cell per LEAF, and a milestone is a leaf. Calling the
+      // total "activities" made this disagree with the task list's own count,
+      // which excludes milestones — the same plan reading 22 in one place and 23
+      // in another. Milestones are counted where they are drawn, and named.
+      const msN = d.cells.filter(c => c.round).length;
+      const actN = d.cells.length - msN;
+      let cap = '<b>' + actN + '</b> ' + ptrPl(actN, 'activity', 'activities')
+        + (msN ? ' <span class="help-text">+ <b>' + msN + '</b> ' + ptrPl(msN, 'milestone', 'milestones') + '</span>' : '')
         + (bits.length ? ' — ' + bits.join(' · ') : '') + '.';
       // Story coverage lives here, not on a bar: it measures how well the scope
       // is WRITTEN DOWN, which is a different question from whether the scope
@@ -7152,20 +7201,35 @@
           }, 0);
           if (BAC <= 0) return '';
           const SV = ev - PV, CV = AC > 0 ? ev - AC : null;
-          const SPI = PV > 0 ? ev / PV : null;
+          // SPI divides by planned value, and planned value is "baseline work due
+          // by TODAY". Baseline a plan and immediately tick work complete and PV is
+          // a rounding error while EV is the whole of it — SPI 26, SPI 53, whatever
+          // the ratio happens to be, labelled "on/ahead of schedule". The division
+          // is right and the number is worthless: at 2% of budget due, one task
+          // swings it by tens. Below a twentieth of the budget being due there is
+          // not enough denominator to carry a ratio, so the ratio is withheld and
+          // the absolute lead — which stays perfectly readable — is named instead.
+          const pvThin = PV < BAC * 0.05;
+          const SPI = (PV > 0 && !pvThin) ? ev / PV : null;
           const CPI = AC > 0 ? ev / AC : null;
           const EAC = CPI ? BAC / CPI : null;
           const card = (v, l, sub, bad) => `<div class="stat-card ${bad === true ? 'critical' : bad === false ? 'success' : ''}"><div class="value" style="font-size:1.05rem">${v}</div><div class="label">${l}</div><div class="help-text" style="font-size:0.65rem">${sub}</div></div>`;
           return `<h3 style="margin:1rem 0 0.5rem;font-size:0.95rem">Earned value ${usingBaseline ? `<span class="help-text">(PV/BAC measured against the baseline of ${escapeHtml(baselineDate)})</span>` : '<span class="help-text" style="color:var(--warn)">(no baseline set — PV uses the live schedule; Set Baseline for real EVM)</span>'}</h3>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:0.75rem">
-              ${card(fmtMoney(PV), 'Planned value (PV)', usingBaseline ? 'baseline work due by today' : 'scheduled work by today', null)}
-              ${card(fmtMoney(ev), 'Earned value (EV)', 'monetary value of work done', null)}
-              ${card(fmtMoney(AC), 'Actual cost (AC)', 'entered on tasks', null)}
-              ${card((SV >= 0 ? '+' : '') + fmtMoney(Math.abs(SV)).replace('$', SV < 0 ? '−$' : '$'), 'Schedule variance (SV)', 'EV − PV', SV < -BAC * 0.02)}
-              ${card(CV == null ? '—' : (CV >= 0 ? '+' : '') + fmtMoney(Math.abs(CV)).replace('$', CV < 0 ? '−$' : '$'), 'Cost variance (CV)', CV == null ? 'needs actual costs' : 'EV − AC', CV == null ? null : CV < 0)}
-              ${card(SPI == null ? '—' : SPI.toFixed(2), 'SPI', SPI == null ? '' : SPI < 1 ? 'behind schedule' : 'on/ahead of schedule', SPI == null ? null : SPI < 0.95)}
-              ${card(CPI == null ? '—' : CPI.toFixed(2), 'CPI', CPI == null ? 'needs actual costs' : CPI < 1 ? 'over cost' : 'under cost', CPI == null ? null : CPI < 0.95)}
-              ${card(EAC == null ? '—' : fmtMoney(EAC), 'EAC (BAC/CPI)', EAC == null ? '' : 'BAC ' + fmtMoney(BAC) + (EAC > BAC ? ' → +' + fmtMoney(EAC - BAC) + ' overrun' : ' → under'), EAC == null ? null : EAC > BAC * 1.02)}
+              ${card(fmtMoney(PV), 'Planned value (' + acro('PV') + ')', usingBaseline ? 'baseline work due by today' : 'scheduled work by today', null)}
+              ${card(fmtMoney(ev), 'Earned value (' + acro('EV') + ')', 'monetary value of work done', null)}
+              ${card(fmtMoney(AC), 'Actual cost (' + acro('AC') + ')', 'entered on tasks', null)}
+              ${card((SV >= 0 ? '+' : '') + fmtMoney(Math.abs(SV)).replace('$', SV < 0 ? '−$' : '$'), 'Schedule variance (' + acro('SV') + ')', 'EV − PV', SV < -BAC * 0.02)}
+              ${card(CV == null ? '—' : (CV >= 0 ? '+' : '') + fmtMoney(Math.abs(CV)).replace('$', CV < 0 ? '−$' : '$'), 'Cost variance (' + acro('CV') + ')', CV == null ? 'needs actual costs' : 'EV − AC', CV == null ? null : CV < 0)}
+              ${card(SPI == null ? '—' : SPI.toFixed(2), acro('SPI'),
+                SPI == null
+                  ? (pvThin && PV >= 0
+                      ? 'only ' + fmtMoney(PV) + ' of the ' + fmtMoney(BAC) + ' baseline is due yet — too little to divide by'
+                      : 'needs a baseline with work due by today')
+                  : SPI < 1 ? 'behind schedule' : 'on/ahead of schedule',
+                SPI == null ? null : SPI < 0.95)}
+              ${card(CPI == null ? '—' : CPI.toFixed(2), acro('CPI'), CPI == null ? 'needs actual costs' : CPI < 1 ? 'over cost' : 'under cost', CPI == null ? null : CPI < 0.95)}
+              ${card(EAC == null ? '—' : fmtMoney(EAC), acro('EAC') + ' (' + acro('BAC') + '/' + acro('CPI') + ')', EAC == null ? '' : 'BAC ' + fmtMoney(BAC) + (EAC > BAC ? ' → +' + fmtMoney(EAC - BAC) + ' overrun' : ' → under'), EAC == null ? null : EAC > BAC * 1.02)}
             </div>`;
         })()}
         ${(() => {
@@ -14682,7 +14746,7 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
     // W17: tap/keyboard-reachable help popover (title= is desktop-hover redundancy)
     document.addEventListener('click', e => {
       const pop = document.getElementById('helpPop'); if (!pop) return;
-      const ic = e.target.closest('.info-icon');
+      const ic = e.target.closest('.info-icon, .acro');
       if (ic && ic.dataset.help) {
         e.preventDefault();
         pop.textContent = ic.dataset.help;
