@@ -7166,7 +7166,28 @@
       const phases = tasks.filter(t => t.isSummary && (t.parentId == null || !tasks.some(x => x.id === t.parentId)));
       const phaseRows = phases.map(ph => {
         const c = taskCost(ph);
-        return `<tr><td>${escapeHtml(ph.wbs + ' ' + ph.name)}</td><td style="text-align:right">${fmtMoney(c)}</td><td style="text-align:right">${fmtMoney(c * (ph.percentComplete || 0) / 100)}</td><td style="text-align:right">${ph.percentComplete || 0}%</td></tr>`;
+        const lv = leafDescendants(ph.id);
+        // Earned is summed from the LEAVES, not phaseCost x the phase's rolled-up
+        // percent. The rolled-up percent is TE-weighted while cost is rate-weighted,
+        // so on any phase whose activities have unequal rates the two disagree — the
+        // rows printed $23,206 against the project's own $23,180 EV on the same
+        // screen. Same definition as earnedValue(), so they now reconcile by
+        // construction rather than by luck.
+        const earned = lv.reduce((sx, t) => sx + taskCost(t) * ((t.percentComplete || 0) / 100), 0);
+        const act = lv.reduce((sx, t) => sx + actualCostOf(t), 0);
+        // Earned equals Planned exactly at 100% BY DEFINITION — earned value is
+        // priced at budget, so those two columns alone can never show whether the
+        // work came in over or under. That is what Actual is for, and it was missing.
+        const v = earned - act;                      // + = under, − = over
+        const started = act > 0 || (ph.percentComplete || 0) > 0;
+        return `<tr><td>${escapeHtml(ph.wbs + ' ' + ph.name)}</td>`
+          + `<td style="text-align:right">${fmtMoney(c)}</td>`
+          + `<td style="text-align:right">${fmtMoney(earned)}</td>`
+          + `<td style="text-align:right">${started ? fmtMoney(act) : '<span style="color:var(--muted)">—</span>'}</td>`
+          + `<td style="text-align:right;font-weight:700;color:${!started || Math.abs(v) < 0.5 ? 'var(--muted)' : v < 0 ? 'var(--critical)' : 'var(--success)'}">`
+          + (!started ? '—' : Math.abs(v) < 0.5 ? 'on budget'
+             : (v < 0 ? '−' : '+') + fmtMoney(Math.abs(v)) + ' ' + (v < 0 ? 'over' : 'under')) + `</td>`
+          + `<td style="text-align:right">${ph.percentComplete || 0}%</td></tr>`;
       }).join('');
       const budgetVar = projectBudget ? cost - projectBudget : null;
       const costBlock = `
@@ -7180,7 +7201,7 @@
           </div>
           ${projectBudget ? `<div class="stat-card ${budgetVar > 0 ? 'critical' : 'success'}"><div class="value" style="font-size:1.15rem">${budgetVar > 0 ? '+' : ''}${fmtMoney(budgetVar)}</div><div class="label">${budgetVar > 0 ? 'Over budget' : 'Headroom'}</div></div>` : ''}
         </div>
-        ${phaseRows ? `<div class="table-wrap" style="margin-top:0.75rem"><table><thead><tr><th>Phase</th><th style="text-align:right">Planned cost</th><th style="text-align:right">Earned</th><th style="text-align:right">%</th></tr></thead><tbody>${phaseRows}</tbody></table></div>` : ''}
+        ${phaseRows ? `<div class="table-wrap" style="margin-top:0.75rem"><table><thead><tr><th>Phase</th><th style="text-align:right" title="Budgeted cost of the whole phase">Planned cost</th><th style="text-align:right" title="Budgeted value of the work finished so far — priced at BUDGET, so at 100% it always equals planned cost. It is what the work was worth, not what it cost.">Earned</th><th style="text-align:right" title="What the finished work actually cost, from logged time x rates plus fixed costs">Actual</th><th style="text-align:right" title="Earned minus actual. Negative means this phase cost more than the work it delivered was worth.">Over / under</th><th style="text-align:right">%</th></tr></thead><tbody>${phaseRows}</tbody></table></div>` : ''}
         ${(() => {
           // EVM: PV against the BASELINE (methodologically correct — slipping the
           // live plan must not dampen SPI); falls back to the current schedule with
