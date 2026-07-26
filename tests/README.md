@@ -105,6 +105,39 @@ phrasing you did not anticipate. The protection is that a reading has no
 execution power and is escaped when drawn — so the sweep proves the escaping
 instead of trusting it.
 
+## The golden reference — the one test self-consistency cannot fake
+
+Everything above checks that the application agrees with ITSELF, and with a
+recompute written after reading its source. That has caught every defect so
+far, but it has one blind spot by construction: an error absorbed into both the
+app and the recompute agrees with itself perfectly and nothing notices.
+
+`golden-reference.js` closes it. `fixtures/qa-reference.json` is a five-activity
+plan whose inputs were picked so every derived number is a whole number a person
+can check on paper — three-point estimates that make TE exact ((2+12+4)/6 = 3),
+round day rates, a calendar starting on a Monday with no holidays, and a TYPED
+contract price so nothing depends on a random simulation.
+`fixtures/qa-reference.expected.json` holds the answers, derived from those
+inputs by hand and carrying their arithmetic with them, so you can audit the
+expectation without rerunning anything.
+
+71 checks. A failure here is never style — it means a number the app shows you
+is wrong.
+
+Two things the plan is shaped to catch specifically:
+
+**The two cost measures pointing opposite ways.** Activity D is budgeted at
+$4,000 and never started, so the plan sits $3,500 UNDER the spend curve while
+the work that DID finish came in $500 OVER what it was budgeted. A panel
+reporting only the first number calls a cost overrun a saving.
+
+**The rule that finished conflicts are history.** Bob genuinely works B and C at
+100% each on 5 and 6 March, so a first-principles reading says two
+over-allocated resource-days. The app reports zero, correctly: both are complete
+and you cannot un-double-book a week that already happened. The fixture asserts
+BOTH — zero as shipped, and two when C is set back to unfinished — so the rule
+is pinned rather than rediscovered.
+
 ## Read the colour, not the class
 
 `contradiction-sweep.js` reads `getComputedStyle`, not `className`. A class list

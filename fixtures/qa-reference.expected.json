@@ -1,0 +1,120 @@
+{
+  "_": [
+    "EXPECTED VALUES FOR fixtures/qa-reference.json.",
+    "",
+    "Every number here is derived from the plan's inputs by hand, from first",
+    "principles, NOT read out of a run of the application. That is the entire",
+    "point: the seven semantic sweeps prove the app agrees with itself and with a",
+    "recompute written after reading its source, which cannot catch an error that",
+    "was absorbed into both. These numbers can.",
+    "",
+    "Working-day index from Monday 2 March 2026, weekends off, no holidays:",
+    "  0 Mon 02 Mar    5 Mon 09 Mar   10 Mon 16 Mar",
+    "  1 Tue 03 Mar    6 Tue 10 Mar   11 Tue 17 Mar",
+    "  2 Wed 04 Mar    7 Wed 11 Mar   12 Wed 18 Mar",
+    "  3 Thu 05 Mar    8 Thu 12 Mar",
+    "  4 Fri 06 Mar    9 Fri 13 Mar"
+  ],
+
+  "activities": {
+    "A Design":   { "te": 3, "teFrom": "(2 + 4x3 + 4) / 6 = 18/6",
+                    "variance": 0.1111111111111111, "varFrom": "((4-2)/6)^2 = (1/3)^2",
+                    "es": 0, "ef": 3, "ls": 0, "lf": 3, "slack": 0, "critical": true,
+                    "startDate": "2026-03-02", "finishDate": "2026-03-04",
+                    "datesFrom": "idx 0,1,2 = Mon 02, Tue 03, Wed 04 Mar",
+                    "cost": 3000, "costFrom": "Alice $1,000/day x 3 days x 100%",
+                    "revenue": 6000, "revFrom": "Alice $2,000/day x 3 days x 100%" },
+
+    "B Build":    { "te": 5, "teFrom": "(4 + 4x5 + 6) / 6 = 30/6",
+                    "variance": 0.1111111111111111, "varFrom": "((6-4)/6)^2",
+                    "es": 3, "ef": 8, "ls": 3, "lf": 8, "slack": 0, "critical": true,
+                    "startDate": "2026-03-05", "finishDate": "2026-03-11",
+                    "datesFrom": "idx 3,4,5,6,7 = Thu 05, Fri 06, Mon 09, Tue 10, Wed 11 Mar",
+                    "cost": 2500, "costFrom": "Bob $500/day x 5 days",
+                    "revenue": 5000, "revFrom": "Bob $1,000/day x 5 days" },
+
+    "C Docs":     { "te": 2, "teFrom": "(1 + 4x2 + 3) / 6 = 12/6",
+                    "variance": 0.1111111111111111, "varFrom": "((3-1)/6)^2",
+                    "es": 3, "ef": 5, "ls": 10, "lf": 12, "slack": 7, "critical": false,
+                    "slackFrom": "LF is E's LS = 12; LS = 12 - 2 = 10; slack = 10 - 3 = 7",
+                    "startDate": "2026-03-05", "finishDate": "2026-03-06",
+                    "datesFrom": "idx 3,4 = Thu 05, Fri 06 Mar",
+                    "cost": 1000, "costFrom": "Bob $500/day x 2 days",
+                    "revenue": 2000, "revFrom": "Bob $1,000/day x 2 days" },
+
+    "D Test":     { "te": 4, "teFrom": "(1 + 4x4 + 7) / 6 = 24/6",
+                    "variance": 1, "varFrom": "((7-1)/6)^2 = 1^2",
+                    "es": 8, "ef": 12, "ls": 8, "lf": 12, "slack": 0, "critical": true,
+                    "startDate": "2026-03-12", "finishDate": "2026-03-17",
+                    "datesFrom": "idx 8,9,10,11 = Thu 12, Fri 13, Mon 16, Tue 17 Mar",
+                    "cost": 4000, "costFrom": "Alice $1,000/day x 4 days. Cleo is client-side: $0",
+                    "revenue": 8000, "revFrom": "Alice $2,000/day x 4 days. Cleo bills $0" },
+
+    "E Sign-off": { "te": 0, "teFrom": "milestone, zero duration",
+                    "es": 12, "ef": 12, "ls": 12, "lf": 12, "slack": 0, "critical": true,
+                    "startDate": "2026-03-18", "finishDate": "2026-03-18",
+                    "datesFrom": "idx 12 = Wed 18 Mar. A zero-duration marker sits AT the point the work ends, which is the start of the next working day.",
+                    "cost": 0, "revenue": 0 }
+  },
+
+  "projectDurationDays": 12,
+  "durationFrom": "largest EF = D's 12",
+  "criticalPath": ["A Design", "B Build", "D Test", "E Sign-off"],
+  "criticalPathFrom": "C has 7 days of float, so it is the only non-critical activity",
+
+  "projectCost": 10500,
+  "projectCostFrom": "3,000 + 2,500 + 1,000 + 4,000 + 0",
+  "projectRevenue": 21000,
+  "projectRevenueFrom": "6,000 + 5,000 + 2,000 + 8,000 + 0",
+  "price": 21000,
+  "priceFrom": "typed contract price, so it does not depend on a random simulation",
+  "marginPct": 50,
+  "marginFrom": "(21,000 - 10,500) / 21,000 = 10,500 / 21,000 = exactly one half",
+
+  "evm": {
+    "pv": 10500,
+    "pvFrom": "today is long after the plan finished, so the whole baselined envelope is due",
+    "ev": 6500,
+    "evFrom": "A 3,000 x 100% + B 2,500 x 100% + C 1,000 x 100% + D 4,000 x 0%",
+    "ac": 7000,
+    "acFrom": "3,000 + 3,500 + 500 + 0",
+    "cv": -500,
+    "cvFrom": "EV 6,500 - AC 7,000. The finished work cost $500 MORE than it was budgeted.",
+    "svMoney": -4000,
+    "svFrom": "EV 6,500 - PV 10,500. Four thousand dollars of budgeted work never happened.",
+    "gapAgainstPlanToDate": -3500,
+    "gapFrom": "AC 7,000 - PV 10,500",
+    "reading": [
+      "This is the case the two measures disagree on, which is why the plan was built this way.",
+      "Against the spend curve the project is $3,500 UNDER — but only because D never started.",
+      "Against the value of the work actually finished it is $500 OVER.",
+      "A panel that reports only the first number calls a cost overrun a saving."
+    ]
+  },
+
+  "resourcing": {
+    "asShipped": {
+      "overAllocatedResourceDays": 0,
+      "why": [
+        "Bob really does work B (05-11 Mar) and C (05-06 Mar) at 100% each, so he",
+        "stands at 200% on Thursday 5 and Friday 6 March. A first-principles reading",
+        "says two over-allocated resource-days.",
+        "",
+        "The application reports zero, and it is right to: both B and C are 100%",
+        "complete, and its rule is that a conflict where all the overlapping work is",
+        "finished is history rather than an action item. You cannot un-double-book",
+        "a week that has already happened.",
+        "",
+        "This entry exists to pin that rule down. It is a deliberate design decision",
+        "that a naive reading of 'over-allocated' does not predict, so it should be",
+        "asserted explicitly rather than discovered again later."
+      ]
+    },
+    "withCUnfinished": {
+      "overAllocatedResourceDays": 2,
+      "people": ["Bob"],
+      "dates": ["2026-03-05", "2026-03-06"],
+      "why": "Set C to 0% complete and the same overlap becomes a live conflict: two (person x day) pairs, one person, two distinct dates."
+    }
+  }
+}
