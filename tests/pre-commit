@@ -1,0 +1,113 @@
+#!/bin/sh
+# ═══════════════════════════════════════════════════════════════════════════
+# The commit gate for pert-gantt-tracker.html.
+#
+# This file is the source of truth for the hook. It is not itself active —
+# git only runs .git/hooks/pre-commit, which is outside version control, so a
+# fresh clone has no gate at all. Install it with:
+#
+#     ln -sf ../../tests/pre-commit .git/hooks/pre-commit
+#
+# Two jobs, in order:
+#
+#   1. Rewrite the visible build stamp to now (UTC), so "which build am I
+#      looking at" is answerable from the page footer rather than from memory.
+#
+#   2. Refuse the commit if any check is red. Every commit to this file lands
+#      on a public demo, so a red suite is a shipped defect. The whole set runs
+#      in about forty seconds; that is the price of the file being the release.
+#
+# Escape hatches: SKIP_TESTS=1 git commit, or git commit --no-verify.
+#
+# The checks read the WORKING TREE, not the index. If you stage a subset of
+# your edits the gate is testing the file you can see, not the file you are
+# committing — which is the right default for this repo, where the product is
+# one file and partial staging of it is never intentional.
+# ═══════════════════════════════════════════════════════════════════════════
+set -e
+f=pert-gantt-tracker.html
+[ -f "$f" ] || exit 0
+grep -q 'id="buildStamp"' "$f" || exit 0
+
+stamp=$(date -u +%Y.%m.%d.%H%M)
+perl -pi -e "s/build \d{4}\.\d{2}\.\d{2}\.\d{4}/build $stamp/" "$f"
+git add "$f"
+
+# only gate commits that actually touch the product
+git diff --cached --name-only | grep -qx "$f" || exit 0
+# written as an if, not `[ ... ] && { ... }`: under set -e a false test at the
+# top level is a failed command, and the hook would abort — refusing every
+# commit for the crime of not having SKIP_TESTS set
+if [ -n "$SKIP_TESTS" ]; then
+  echo "pre-commit: SKIP_TESTS set — checks not run"
+  exit 0
+fi
+
+if ! node -e "require('./tests/_harness').requirePlaywright()" >/dev/null 2>&1; then
+  echo "pre-commit: playwright/chromium not available here — checks skipped, NOT passed"
+  exit 0
+fi
+
+echo "pre-commit: checking $stamp …"
+fail=0
+
+# the hand-derived plan first: 42 cases whose expected values were worked out on
+# paper from the fixture inputs, so it can catch an app that is wrong and
+# self-consistent — the failure every other check is blind to
+if node tests/run-test-plan.js > /tmp/ptr-plan.$$ 2>&1; then
+  echo "  ✓ test plan  42 cases"
+else
+  echo "  ✗ TEST PLAN"; sed -n '1,40p' /tmp/ptr-plan.$$ | sed 's/^/      /'; fail=1
+fi
+rm -f /tmp/ptr-plan.$$
+
+for t in tests/golden-reference.js tests/*sweep*.js; do
+  n=$(basename "$t" .js)
+  if node "$t" > /tmp/ptr-t.$$ 2>&1; then
+    echo "  ✓ $n"
+  else
+    echo "  ✗ $n"; sed -n '1,30p' /tmp/ptr-t.$$ | sed 's/^/      /'; fail=1
+  fi
+  rm -f /tmp/ptr-t.$$
+done
+
+# A check is only worth its runtime if it can still fail. Plant defects and
+# confirm the suite names them, so a check that quietly went vacuous is caught
+# here rather than by the user — which is how the PERT weighting was broken with
+# every one of these green.
+if node tests/mutation-drawn-surfaces.js > /tmp/ptr-m.$$ 2>&1; then
+  echo "  ✓ mutation · drawing   every planted defect caught"
+else
+  echo "  ✗ MUTATION · DRAWING — a planted defect went unnoticed, so the sweep has a hole"
+  sed -n '1,30p' /tmp/ptr-m.$$ | sed 's/^/      /'; fail=1
+fi
+rm -f /tmp/ptr-m.$$
+
+# The same question asked of the ENGINE: break TE, variance, criticality and
+# earned value in turn and confirm something goes red. It rebuilds and reloads
+# the app once per mutant, so it costs about a minute — too much for every
+# commit, worth it before anything the user will look at. FULL=1 git commit.
+if [ -n "$FULL" ]; then
+  if node tests/mutation-engine.js > /tmp/ptr-e.$$ 2>&1; then
+    echo "  ✓ mutation · engine    every broken identity caught"
+  else
+    echo "  ✗ MUTATION · ENGINE — an identity can be broken with the suite still green"
+    sed -n '1,30p' /tmp/ptr-e.$$ | sed 's/^/      /'; fail=1
+  fi
+  rm -f /tmp/ptr-e.$$
+else
+  echo "  · mutation · engine    skipped (FULL=1 to run it, ~50s)"
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo ""
+  echo "pre-commit: REFUSING the commit — the checks above are red."
+  echo "            Fix them, or commit with SKIP_TESTS=1 if you mean it."
+  exit 1
+fi
+
+# the results document is generated from the cases, so keep it with the commit
+# that made it true
+if [ -f tests/TEST-RESULTS.md ]; then git add tests/TEST-PLAN.md tests/TEST-RESULTS.md; fi
+echo "pre-commit: all green"
+exit 0

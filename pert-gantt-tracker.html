@@ -2791,7 +2791,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.26.1438</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.26.1705</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3358,7 +3358,7 @@
         const raw = JSON.parse((await projBlobGet(otherId)) || '{}');
         const parentIds = new Set((raw.tasks || []).map(t => t.parentId).filter(x => x != null));
         otherTasks = (raw.tasks || []).filter(t => !parentIds.has(t.id)) // leaves only, matching the current side
-          .map(t => ({ name: t.name, te: t.milestone ? 0 : +(((+t.o || 0) + 4 * (+t.m || 0) + (+t.p || 0)) / 6).toFixed(2) }));
+          .map(t => ({ name: t.name, te: t.milestone ? 0 : +pertTE(t.o, t.m, t.p).toFixed(2) }));
       } catch (e) {}
       const mineNames = new Map(leafTasks().map(t => [t.name.toLowerCase(), t]));
       const otherNames = new Map(otherTasks.map(t => [t.name.toLowerCase(), t]));
@@ -4169,7 +4169,7 @@
       if (isMs) return 0;
       const o = parseDurExpr(paV('mO')), m = parseDurExpr(paV('mM')), p = parseDurExpr(paV('mP'));
       if (![o, m, p].every(v => Number.isFinite(v) && v >= 0)) return mLastEstUnits;
-      return (mLastEstUnits = (o + 4 * m + p) / 6);
+      return (mLastEstUnits = pertTE(o, m, p));
     }
     // A plain task-shaped object built from the LIVE modal fields. Everything the
     // panel shows is then computed by the app's own taskParticipants / taskCost /
@@ -6291,7 +6291,7 @@
       // Dependency sanity: nesting under the new parent can loop the schedule
       // when a moved task still waits for an activity that itself comes AFTER
       // that parent (e.g. a test case verifying a training task moved into UAT).
-      const durOf = t => (t.te || ((t.o + 4 * t.m + t.p) / 6) || 0);
+      const durOf = t => (t.te || pertTE(t.o, t.m, t.p) || 0);
       if (moved.length && !computeSchedule(durOf).ok) {
         const undoMove = () => prevState.forEach((v, id) => { const t = tasks.find(x => x.id === id); if (t) { t.parentId = v.parentId; t.predecessors = JSON.parse(v.preds); } });
         const bad = findBackEdgePreds(moved);
@@ -6799,14 +6799,33 @@
       return { ok: true, topo, idToTask, successors, preds, projectDuration, es, ef, ls, lf };
     }
 
+    /* THE PERT IDENTITY, IN ONE PLACE.
+
+       TE = (O + 4M + P) / 6 was written out by hand at eight separate call
+       sites — the engine, the modal's live readout, two duration fallbacks, the
+       oversized-test-case rule, the cross-project comparison, the AI catalogue
+       and the AI prose. Eight transcriptions of a load-bearing identity is eight
+       chances for one of them to drift, and a drifted copy does not announce
+       itself: it produces a plausible number that quietly disagrees with the
+       rest of the screen. That is precisely the failure class that keeps
+       reaching the user, so remove the possibility rather than test for it.
+
+       Variance travels with it — ((P - O) / 6)^2 is the same identity's second
+       moment and has the same reason to live here. */
+    function pertTE(o, m, p) {
+      const O = +o || 0, M = +m || 0, P = +p || 0;
+      return (O + 4 * M + P) / 6;
+    }
+    function pertVariance(o, p) { return Math.pow(((+p || 0) - (+o || 0)) / 6, 2); }
+
     function recompute() {
       computeWbsCodes(); // sets t.wbs and t.isSummary
       // TE + variance (leaf tasks only; summaries are rolled up afterwards)
       tasks.forEach(t => {
         if (t.milestone || t.isSummary) { t.te = 0; t.variance = 0; }
         else {
-          t.te = (t.o + 4 * t.m + t.p) / 6;
-          t.variance = Math.pow((t.p - t.o) / 6, 2);
+          t.te = pertTE(t.o, t.m, t.p);
+          t.variance = pertVariance(t.o, t.p);
         }
       });
       // Baseline schedule with NO leveling, to learn the un-leveled finish and each
@@ -13684,7 +13703,7 @@ Write the test cases for the criteria above, following the contract exactly. Ret
     }
     function oversizedTcList() {
       return tasks.filter(t => isTestCaseTask(t) && !t.milestone && (t.percentComplete || 0) < 100
-        && ((t.te || 0) || ((t.o || 0) + 4 * (t.m || 0) + (t.p || 0)) / 6) > tcSizeCap());
+        && ((t.te || 0) || pertTE(t.o, t.m, t.p)) > tcSizeCap());
     }
     function rightSizeTestCases() {
       const list = oversizedTcList();
@@ -14850,7 +14869,7 @@ ${existingBatch.length ? 'EXISTING STORIES FOR THIS BRANCH — keep their IDs, i
       // milestones (a Go-Live floating to day one is exactly this)
       const targets = leafTasks().filter(t => sel ? (sel.has(t.id) && !isSummaryId(t.id)) : !effectivePreds(t).length);
       if (!targets.length) { flashSaved(sel ? 'ℹ No linkable leaf tasks in the selection.' : '✓ Every activity already has predecessor links.'); return; }
-      const durOf = t => (t.te || ((t.o + 4 * t.m + t.p) / 6) || 0);
+      const durOf = t => (t.te || pertTE(t.o, t.m, t.p) || 0);
       const outline = tasksInWbsOrder().map(({ task: t, depth }) =>
         `${'  '.repeat(depth)}${t.wbs} | ${t.name}${isSummaryId(t.id) ? ' [phase]' : t.milestone ? ' [milestone]' : ''}${t.predecessors.length ? ' | after: ' + t.predecessors.map(p => (tasks.find(x => x.id === p.id) || {}).name).filter(Boolean).join('; ') : ''}`).join('\n');
       const prompt = `You are repairing the dependency network of a project plan. Propose predecessors ("must FINISH before this starts") for ONLY the target tasks below.
@@ -19113,7 +19132,7 @@ Estimate rules: an estimates[] entry ONLY for rows where new O/M/P numbers were 
       closeDecompModal();
       const unit = document.getElementById('durationUnit').value;
       const siblings = leafTasks().filter(x => x.id !== id).slice(0, 30)
-        .map(x => `${x.name} (~${(x.te || ((x.o + 4 * x.m + x.p) / 6) || 0).toFixed(1)} ${unit}${x.owner ? ', ' + x.owner : ''})`).join('; ');
+        .map(x => `${x.name} (~${(x.te || pertTE(x.o, x.m, x.p) || 0).toFixed(1)} ${unit}${x.owner ? ', ' + x.owner : ''})`).join('; ');
       // full requirements context: for UAT/test-case decomposition the sub-tasks
       // should trace back to acceptance criteria (AC → TC per the estimation guide)
       const reqBlock = (reqs && Array.isArray(reqs.stories) && reqs.stories.length)

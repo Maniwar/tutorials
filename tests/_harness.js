@@ -50,7 +50,11 @@ function chromePath() {
   return undefined;   // let playwright find its own
 }
 
-const APP = 'file://' + path.resolve(__dirname, '..', 'pert-gantt-tracker.html');
+/* APP_FILE lets a check run against a deliberately broken copy of the product.
+   That is how a sweep proves it can still fail: point it at a mutant and it must
+   go red. Unset — which is every real run — it is the shipped file. */
+const APP = 'file://' + path.resolve(process.env.APP_FILE
+  || path.resolve(__dirname, '..', 'pert-gantt-tracker.html'));
 const FIXTURE = () => JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'fixtures', 'crm-rollout.json'), 'utf8'));
 
 module.exports = { requirePlaywright, chromePath, APP, FIXTURE };

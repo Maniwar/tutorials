@@ -15,7 +15,7 @@ every derived number is a whole number checkable on paper. `crm-rollout.json` is
 real export, carrying the shape the sample never had: a baseline taken after the work
 started, so activities finish before their own baseline windows open.
 
-**Last run:** build 2026.07.26.1410 — **42 of 42 passing**.
+**Last run:** build 2026.07.26.1705 — **43 of 44 passing**, **1 FAILING**.
 
 ---
 
@@ -44,6 +44,36 @@ whole three-point method rests on.
 **Derived from.** ((4-2)/6)^2 = 1/9 · ((6-4)/6)^2 = 1/9 · ((3-1)/6)^2 = 1/9 · ((7-1)/6)^2 = 1
 
 **Actual.** `A Design` = 0.1111111111111111 · `B Build` = 0.1111111111111111 · `C Docs` = 0.1111111111111111 · `D Test` = 1
+
+### B22 — The weighted mean is distinguishable from a plain average  ✅ PASS
+
+**Design intent.** Every three-point estimate in the reference plan is symmetric — O and P sit the same
+distance either side of M — and for a symmetric estimate EVERY weighted mean returns M.
+So case N1 is satisfied by (O+4M+P)/6, by (O+M+P)/3, and by simply reading M. It cannot
+fail, which means it was never testing anything. This case uses a SKEWED estimate, where
+the four-times weight on the most likely outcome is the whole difference between the
+Beta-PERT mean and a shrug. That weight is what makes the Monte Carlo mean land on the
+deterministic finish; get it wrong and the two disagree with no visible symptom.
+
+**Expected.** `te` = 3 · `plainAverageWouldSay` = 4 · `medianWouldSay` = 2 · `varianceFromTheRange` = 1.7777777777777777
+
+**Derived from.** O=1 M=2 P=9. PERT (1 + 8 + 9)/6 = 3. Plain mean (1+2+9)/3 = 4. Variance ((9-1)/6)^2 = 16/9.
+
+**Actual.** `te` = 3 · `plainAverageWouldSay` = 4 · `medianWouldSay` = 2 · `varianceFromTheRange` = 1.7777777777777777
+
+### B23 — The editor previews the same estimate the plan will hold  ✅ PASS
+
+**Design intent.** The activity editor computes a live TE from the fields as they are typed, before any of
+it is in the plan. That is a second implementation of the load-bearing identity, and a
+preview that disagrees with the save is worse than no preview — it is the number the
+person actually decided on. Breaking the editor's copy alone left every other check in
+this suite green, which is how this case came to exist.
+
+**Expected.** `previewMatchesPert` = true · `previewMatchesWhatWasSaved` = true
+
+**Derived from.** Type O=1 M=2 P=9 into the editor, read the live readout, save, read the activity.
+
+**Actual.** `previewMatchesPert` = true · `previewMatchesWhatWasSaved` = true
 
 ## Critical path method
 
@@ -359,7 +389,7 @@ because those are exactly the activities now carrying it.
 
 ## Budget drill-in
 
-### B7 — A row's colour follows the overrun, never the total and never the critical path  ✅ PASS
+### B7 — A row's colour follows the overrun, never the total and never the critical path  ❌ **FAIL**
 
 **Design intent.** The figure on a driver row is booked minus what was due by today — the right number to
 explain the bar, and NOT a verdict, because work happening early inflates it while
@@ -371,7 +401,9 @@ for a fact about the schedule.
 
 **Derived from.** Build both states on the real export and read getComputedStyle, not the class list.
 
-**Actual.** `earlyAndUnderIsNotRed` = true · `genuinelyOverIsRed` = true · `colourFollowsOverrun` = true
+**Actual.** `earlyAndUnderIsNotRed` = true · `genuinelyOverIsRed` = false · `colourFollowsOverrun` = false
+
+> **This case failed.** The application does not do what the intent above describes.
 
 ### B8 — The two halves of a row add back to the figure shown  ✅ PASS
 

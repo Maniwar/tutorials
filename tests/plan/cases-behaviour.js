@@ -481,4 +481,57 @@ module.exports = [
                   registerUntouched: raid.length === before };
       closeRaidForm(); return r;
     }` },
+
+  // ══ PERT: the weighting has to be the weighting ═════════════════════════
+  { id: 'B22', area: 'PERT estimation',
+    title: 'The weighted mean is distinguishable from a plain average',
+    intent: 'Every three-point estimate in the reference plan is symmetric — O and P sit the same '
+          + 'distance either side of M — and for a symmetric estimate EVERY weighted mean returns M. '
+          + 'So case N1 is satisfied by (O+4M+P)/6, by (O+M+P)/3, and by simply reading M. It cannot '
+          + 'fail, which means it was never testing anything. This case uses a SKEWED estimate, where '
+          + 'the four-times weight on the most likely outcome is the whole difference between the '
+          + 'Beta-PERT mean and a shrug. That weight is what makes the Monte Carlo mean land on the '
+          + 'deterministic finish; get it wrong and the two disagree with no visible symptom.',
+    expect: { te: 3, plainAverageWouldSay: 4, medianWouldSay: 2, varianceFromTheRange: 16/9 },
+    from: 'O=1 M=2 P=9. PERT (1 + 8 + 9)/6 = 3. Plain mean (1+2+9)/3 = 4. Variance ((9-1)/6)^2 = 16/9.',
+    tol: 1e-9,
+    fn: `() => {
+      const t = leafTasks().find(x => !x.milestone);
+      const keep = { o: t.o, m: t.m, p: t.p };
+      t.o = 1; t.m = 2; t.p = 9; calculate();
+      const got = tasks.find(x => x.id === t.id);
+      const r = { te: got.te, plainAverageWouldSay: 4, medianWouldSay: 2,
+                  varianceFromTheRange: got.variance };
+      Object.assign(t, keep); calculate();
+      return r;
+    }` },
+
+  { id: 'B23', area: 'PERT estimation',
+    title: 'The editor previews the same estimate the plan will hold',
+    intent: 'The activity editor computes a live TE from the fields as they are typed, before any of '
+          + 'it is in the plan. That is a second implementation of the load-bearing identity, and a '
+          + 'preview that disagrees with the save is worse than no preview — it is the number the '
+          + 'person actually decided on. Breaking the editor\'s copy alone left every other check in '
+          + 'this suite green, which is how this case came to exist.',
+    expect: { previewMatchesPert: true, previewMatchesWhatWasSaved: true },
+    from: 'Type O=1 M=2 P=9 into the editor, read the live readout, save, read the activity.',
+    fn: `() => {
+      const t = leafTasks().find(x => !x.milestone && (x.percentComplete || 0) < 1);
+      if (!t) return { previewMatchesPert: true, previewMatchesWhatWasSaved: true };
+      const keep = { o: t.o, m: t.m, p: t.p };
+      const set = (id, v) => { const e = document.getElementById(id); e.value = v;
+        e.dispatchEvent(new Event('input', { bubbles: true }));
+        e.dispatchEvent(new Event('change', { bubbles: true })); };
+      openEditModal(t.id);
+      set('mO', '1'); set('mM', '2'); set('mP', '9');
+      const preview = modalTeUnits(false);
+      saveActivity();
+      const saved = tasks.find(x => x.id === t.id);
+      const r = { previewMatchesPert: Math.abs(preview - 3) < 1e-9,
+                  previewMatchesWhatWasSaved: Math.abs(preview - (saved.te || 0)) < 1e-9 };
+      openEditModal(t.id);
+      set('mO', String(keep.o)); set('mM', String(keep.m)); set('mP', String(keep.p));
+      saveActivity();
+      return r;
+    }` },
 ];

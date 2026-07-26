@@ -39,6 +39,32 @@ whole three-point method rests on.
 
 **Derived from.** ((4-2)/6)^2 = 1/9 · ((6-4)/6)^2 = 1/9 · ((3-1)/6)^2 = 1/9 · ((7-1)/6)^2 = 1
 
+### B22 — The weighted mean is distinguishable from a plain average
+
+**Design intent.** Every three-point estimate in the reference plan is symmetric — O and P sit the same
+distance either side of M — and for a symmetric estimate EVERY weighted mean returns M.
+So case N1 is satisfied by (O+4M+P)/6, by (O+M+P)/3, and by simply reading M. It cannot
+fail, which means it was never testing anything. This case uses a SKEWED estimate, where
+the four-times weight on the most likely outcome is the whole difference between the
+Beta-PERT mean and a shrug. That weight is what makes the Monte Carlo mean land on the
+deterministic finish; get it wrong and the two disagree with no visible symptom.
+
+**Expected.** `te` = 3 · `plainAverageWouldSay` = 4 · `medianWouldSay` = 2 · `varianceFromTheRange` = 1.7777777777777777
+
+**Derived from.** O=1 M=2 P=9. PERT (1 + 8 + 9)/6 = 3. Plain mean (1+2+9)/3 = 4. Variance ((9-1)/6)^2 = 16/9.
+
+### B23 — The editor previews the same estimate the plan will hold
+
+**Design intent.** The activity editor computes a live TE from the fields as they are typed, before any of
+it is in the plan. That is a second implementation of the load-bearing identity, and a
+preview that disagrees with the save is worse than no preview — it is the number the
+person actually decided on. Breaking the editor's copy alone left every other check in
+this suite green, which is how this case came to exist.
+
+**Expected.** `previewMatchesPert` = true · `previewMatchesWhatWasSaved` = true
+
+**Derived from.** Type O=1 M=2 P=9 into the editor, read the live readout, save, read the activity.
+
 ## Critical path method
 
 ### N3 — Forward pass: each activity starts when its last predecessor finishes
