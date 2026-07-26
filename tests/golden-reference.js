@@ -70,7 +70,31 @@ const E = JSON.parse(fs.readFileSync(EXP, 'utf8'));
     c.percentComplete = savedPct; c.actualCost = savedAC;
     calculate();
 
+    // the span the plan actually occupies, and whether the panel explains it
+    const hol = getHolidaySet();
+    const fin = latestFinish(leafTasks());
+    let span = 0, d0 = new Date(projectStartDate());
+    while (fin && stripTime(d0) <= stripTime(fin)) {
+      if (isWorkingDay(d0, hol)) span++; d0.setDate(d0.getDate() + 1);
+    }
+    switchTab('analytics'); renderAnalytics();
+    const dec = h => { const x = document.createElement('div');
+      x.innerHTML = String(h).replace(/<[^>]+>/g, ' '); return (x.textContent || '').replace(/\s+/g, ' '); };
+    const anaTxt = dec(document.getElementById('view-analytics').innerHTML);
+    const cpmLine = (anaTxt.match(/Deterministic \(CPM\) duration:[^:]{0,200}/) || [''])[0].trim();
+    const explains = /marked on the next working day|spans one day more/i.test(cpmLine);
+
+    // and what the finish becomes with no milestone at all
+    const savedTasks = tasks.slice();
+    tasks = tasks.filter(t => !t.milestone);
+    calculate();
+    const finNoMs = latestFinish(leafTasks());
+    const finishWithoutMilestone = finNoMs ? fmtISO(finNoMs) : null;
+    tasks = savedTasks; calculate();
+
     return {
+      spanWorkingDays: span, cpmLine, cpmLineExplainsTheExtraDay: explains,
+      finishWithoutMilestone,
       activities: acts,
       projectDurationDays: Math.max(0, ...leafTasks().map(t => t.ef), 0),
       criticalPath: leafTasks().filter(t => t.isCritical).sort((a, b) => a.es - b.es).map(t => t.name),
@@ -113,6 +137,22 @@ const E = JSON.parse(fs.readFileSync(EXP, 'utf8'));
 
   ['pv', 'ev', 'ac', 'cv', 'svMoney', 'gapAgainstPlanToDate'].forEach(k =>
     cmp(`evm.${k}`, E.evm[k], actual.evm[k], 0.01));
+
+  /* THE MILESTONE CONVENTION, PINNED. Three independent derivations put E on
+     17 March; the app puts it on the 18th, deliberately, because a sign-off is
+     an event attended after the work rather than the instant it stops. The
+     choice is defensible either way — what is not is making it silently, so the
+     panel must NAME the extra day. */
+  if (E.milestoneDayConvention) {
+    cmp('milestone.spanWorkingDays', E.milestoneDayConvention.workingDaysFromStartToProjectFinish,
+        actual.spanWorkingDays);
+    cmp('milestone.workDays', E.milestoneDayConvention.workingDaysOfActualWork, actual.projectDurationDays);
+    if (!actual.cpmLineExplainsTheExtraDay)
+      fails.push('milestone.explained: the CPM line prints "' + actual.cpmLine
+        + '" — the span is one working day longer than the duration and the line does not say why');
+    cmp('milestone.withoutIt', E.milestoneDayConvention.withoutTheMilestone.projectFinish,
+        actual.finishWithoutMilestone);
+  }
 
   cmp('resourcing.asShipped.overAllocatedResourceDays',
       E.resourcing.asShipped.overAllocatedResourceDays, actual.resourcingAsShipped);
