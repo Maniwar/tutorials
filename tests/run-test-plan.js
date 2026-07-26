@@ -197,8 +197,20 @@ function planDoc(results) {
   await b.close();
 
   const results = { stamp: String(stamp).trim(), cases, pageErrors: errs.slice(0, 8) };
-  fs.writeFileSync(path.join(__dirname, 'TEST-PLAN.md'), planDoc(null));
-  fs.writeFileSync(path.join(__dirname, 'TEST-RESULTS.md'), planDoc(results));
+
+  /* Only a run against the SHIPPED file may write the documents. mutation-engine
+     runs this same script against deliberately broken builds, and the results
+     document is committed — so without this guard a mutation check leaves
+     TEST-RESULTS.md on disk saying the product fails a case it passes, and the
+     next commit ships that claim. The exit code still reports the mutant's
+     failures, which is all the mutation check reads. */
+  if (process.env.APP_FILE) {
+    console.error('(APP_FILE set — testing ' + process.env.APP_FILE
+      + '; TEST-PLAN.md and TEST-RESULTS.md left untouched)');
+  } else {
+    fs.writeFileSync(path.join(__dirname, 'TEST-PLAN.md'), planDoc(null));
+    fs.writeFileSync(path.join(__dirname, 'TEST-RESULTS.md'), planDoc(results));
+  }
 
   const pass = cases.filter(c => c.status === 'PASS').length;
   console.log(JSON.stringify({
