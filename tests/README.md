@@ -34,6 +34,25 @@ number wrong in a status report costs money. It caught the report quoting
 earned value with no mention of what had been booked, and reporting "variance
 on plan" while four activities sat 81 activity-days off their own baselines.
 
+`pricing-sweep.js` checks the money you QUOTE — the least-guarded money
+surface and the one where being wrong costs most, since a margin figure is
+what you decide to sign on. It recomputes revenue independently (bill rate ×
+effort × units, client-kind people billing nothing) rather than calling
+`laborRevenue()`: a check that shares a function with the thing it checks
+agrees by construction and proves nothing. It runs five states the sample
+never reaches — fixed fee with and without a typed price, T&M with a
+not-to-exceed cap, a plan priced below cost, and a plan where nobody has a
+day rate — plus the client-kind, rate-card-currency and stale-simulation
+paths. It found no defects, which given the T&M cap-versus-fee bug this
+panel once had is worth having on the record.
+
+Note what it taught about testing rather than about the app: the first
+version called `calculate()` after editing a bill rate, and `calculate()`
+re-runs the Monte Carlo — so it refreshed the exact staleness the detector
+exists to catch and reported a false positive. The paths that genuinely go
+stale are the UI setters that deliberately do not recompute (`setBillRate`,
+`setKind`), and those are what it exercises now.
+
 ## Read the colour, not the class
 
 `contradiction-sweep.js` reads `getComputedStyle`, not `className`. A class list
