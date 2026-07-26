@@ -105,6 +105,41 @@ phrasing you did not anticipate. The protection is that a reading has no
 execution power and is escaped when drawn — so the sweep proves the escaping
 instead of trusting it.
 
+## The written test plan
+
+`node tests/run-test-plan.js` runs 42 cases and writes two documents:
+
+- **`TEST-PLAN.md`** — the plan alone. Every case states the DESIGN INTENT (what
+  the app is meant to do and why), the EXPECTATION, and where the expectation
+  came from. Readable and arguable before anything executes.
+- **`TEST-RESULTS.md`** — the same document with the ACTUAL result and a verdict
+  against each case.
+
+Both are GENERATED from `tests/plan/cases-numbers.js` and
+`tests/plan/cases-behaviour.js`. A written plan maintained separately from the
+checks it describes drifts, and then the document says one thing while the suite
+does another — which is the exact failure this suite exists to catch, so it would
+be poor form to build it in here. Edit the cases; never edit the markdown.
+
+21 cases cover the NUMBERS, against the QA reference plan, where every expected
+value is derived by hand and shown with its arithmetic. 21 cover the BEHAVIOUR,
+because numbers can all be right while the screen still lies — every defect in
+this app's recent history was of that shape: an assumption shown as a cause, work
+finishing early shown as an overrun, a duration percentile attached to a date, a
+person-day count called a calendar day.
+
+Two cases document DELIBERATE choices rather than requirements, so that nobody
+rediscovers them as bugs: N10/B17 (a milestone is marked the working day after
+the work it follows, and the panel must say so) and N20/N21 (a conflict where all
+the overlapping work is finished is not counted, but the same overlap in flight
+is).
+
+Worth knowing how it earned its keep on the first run: it failed one case, and
+the case was wrong, not the app. B8 demanded that every driver row name both its
+halves — but a row with no overrun should not print "$0 ahead of its dates". You
+could read that expectation and disagree with it, which is the whole point of
+writing the plan down instead of only the assertions.
+
 ## The golden reference — the one test self-consistency cannot fake
 
 Everything above checks that the application agrees with ITSELF, and with a
