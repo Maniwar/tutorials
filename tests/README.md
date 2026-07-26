@@ -83,6 +83,28 @@ date absorbs more of the distribution than the percentile it was cut from —
 82.8% on this plan. Conservative, never the other way, but wrong in the
 direction that costs money: you buy more reserve than you meant to.
 
+`ai-boundary-sweep.js` checks what the model is ALLOWED to say — with no API
+key, and none needed. The app's AI safety is not the model behaving; it is the
+CATALOGUE handed to the model (the only ids it may reference) and the
+VALIDATORS that drop anything coming back which cannot resolve. Both are pure
+functions of local state plus a response object, so every response here is
+hand-written adversarially: invented panels, fabricated citations,
+hallucinated ids, owners not on the roster, RAID types the log does not have,
+scores off the 1–5 scale, fix verbs the tool cannot perform, and injected
+markup.
+
+All of it holds. Every drop is reported by name rather than silently. The
+capture path fills the form and never writes to the register. Screen-share
+mode bites inside ptDigest, before a request body is built, so no money is in
+the text even in principle. And the sweep asserts it made ZERO outbound
+requests — if it ever calls out, it is not the thing it claims to be.
+
+One deliberate non-finding: an injected sentence is KEPT. Dropping text for
+containing frightening words is keyword filtering and fails on the first
+phrasing you did not anticipate. The protection is that a reading has no
+execution power and is escaped when drawn — so the sweep proves the escaping
+instead of trusting it.
+
 ## Read the colour, not the class
 
 `contradiction-sweep.js` reads `getComputedStyle`, not `className`. A class list
