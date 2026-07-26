@@ -53,6 +53,20 @@ exists to catch and reported a false positive. The paths that genuinely go
 stale are the UI setters that deliberately do not recompute (`setBillRate`,
 `setKind`), and those are what it exercises now.
 
+`resourcing-sweep.js` checks the panel that answers "can we commit to this
+date". The unit is the trap: `computeResourceLoad` counts (person × day)
+PAIRS over capacity, not days and not people, and those differ the moment two
+people are over on the same date. It found the Level button reporting
+"Over-allocated days" and the Resources tab — the screen you open in order to
+fix the problem — never stating the total at all.
+
+Two things it taught about writing these. It first tested PTO on a COMPLETED
+activity, where the "finished conflicts are history" rule correctly suppressed
+it, and reported a bug that was not there. And every count check ran green
+against a fixture with zero over-allocation, which is vacuous — so it now
+CONSTRUCTS a conflict across two people and several days and makes each
+surface account for it.
+
 ## Read the colour, not the class
 
 `contradiction-sweep.js` reads `getComputedStyle`, not `className`. A class list

@@ -2791,7 +2791,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.26.0523</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.26.0533</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -7300,8 +7300,12 @@
       saveLocal();
       const after = resourceLoad ? resourceLoad.overResourceDays : 0;
       const el = document.getElementById('levelStatus');
-      if (el) el.textContent = `Leveling: applied ${moved} shift(s), project end unchanged. Over-allocated days ${before} → ${after}` +
-        (after ? ' — remaining conflicts can\'t be resolved within slack; reduce Units %, raise capacity, reassign, or accept a later finish.' : ' ✓ resolved.');
+      const stillOver = (resourceLoad && resourceLoad.resourcesOver) ? resourceLoad.resourcesOver.length : 0;
+      if (el) el.textContent = `Leveling: applied ${moved} shift(s), project end unchanged. `
+        + `Over-allocated resource-days ${before} → ${after}`
+        + (after ? ` across ${stillOver} ${stillOver === 1 ? 'person' : 'people'}`
+            + ' — remaining conflicts can\'t be resolved within slack; reduce Units %, raise capacity, reassign, or accept a later finish.'
+          : ' ✓ resolved.');
     }
     // Level allowing the finish date to move: resolve every conflict by delaying
     // tasks until the resource frees up, even past their late start. Use when the
@@ -7351,7 +7355,7 @@
       const endAfter = Math.max(0, ...leafTasks().map(t => t.ef), 0);
       const ext = endAfter - endBefore;
       const el = document.getElementById('levelStatus');
-      if (el) el.textContent = `Extend-leveling: applied ${moved} shift(s). Over-allocated days ${before} → ${after}.` +
+      if (el) el.textContent = `Extend-leveling: applied ${moved} shift(s). Over-allocated resource-days ${before} → ${after}.` +
         (ext > 0.01 ? ` Finish moved out by ${ext.toFixed(1)} ${unitLabel()} — review and re-baseline if you accept the new dates.` : ' Finish date unchanged.') +
         (after ? ' Remaining conflicts cannot be fixed by delaying (a task alone exceeds its owner\'s capacity) — reduce Units %, raise capacity, or reassign.' : '');
     }
@@ -11529,7 +11533,23 @@
       if (!overNames.length) {
         summary = `<div class="conflict-card ok"><strong style="color:var(--success)">✓ No over-allocations.</strong> Every resource is within capacity across the whole schedule.</div>`;
       } else {
-        summary = `<h3 style="margin:1.25rem 0 0.25rem;font-size:1rem">Over-allocation details &amp; suggestions</h3>`;
+        /* THE COUNT LIVED EVERYWHERE EXCEPT HERE. The Analytics card prints it,
+           the status report prints it, and the Resources tab — the one you open
+           in order to DO something about it — showed only per-person detail, so
+           the size of the problem was the one thing missing from the screen
+           where you fix it. Stated in the same words as every other surface, and
+           with the shape spelled out, because N resource-days across two people
+           in one week is a different conversation from N days of one person. */
+        const overDayCount = rl.overResourceDays || 0;
+        const overDistinct = (() => { const d = new Set();
+          overNames.forEach(nm => ((rl.perResource[nm] || {}).overDays || []).forEach(iso => d.add(iso)));
+          return d.size; })();
+        summary = `<h3 style="margin:1.25rem 0 0.25rem;font-size:1rem">Over-allocation details &amp; suggestions</h3>
+          <p class="help-text" style="margin:0 0 0.5rem"><b>${overDayCount}</b> over-allocated
+          ${overDayCount === 1 ? 'resource-day' : 'resource-days'} — one person on one day, counted once each —
+          across <b>${overNames.length}</b> ${overNames.length === 1 ? 'person' : 'people'} on
+          <b>${overDistinct}</b> ${overDistinct === 1 ? 'date' : 'distinct dates'}. The same figure appears on
+          the Analytics tab and in the status report.</p>`;
         overNames.forEach(name => {
           const R = rl.perResource[name];
           const ranges = groupDateRanges(R.overDays).map(([a, b]) => a.getTime() === b.getTime() ? fmtNice(a) : `${fmtNice(a)} – ${fmtNice(b)}`).join(', ');
