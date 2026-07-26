@@ -15,7 +15,7 @@ every derived number is a whole number checkable on paper. `crm-rollout.json` is
 real export, carrying the shape the sample never had: a baseline taken after the work
 started, so activities finish before their own baseline windows open.
 
-**Last run:** build 2026.07.26.1705 — **43 of 44 passing**, **1 FAILING**.
+**Last run:** build 2026.07.26.1708 — **44 of 44 passing**.
 
 ---
 
@@ -389,7 +389,7 @@ because those are exactly the activities now carrying it.
 
 ## Budget drill-in
 
-### B7 — A row's colour follows the overrun, never the total and never the critical path  ❌ **FAIL**
+### B7 — A row's colour follows the overrun, never the total and never the critical path  ✅ PASS
 
 **Design intent.** The figure on a driver row is booked minus what was due by today — the right number to
 explain the bar, and NOT a verdict, because work happening early inflates it while
@@ -401,9 +401,7 @@ for a fact about the schedule.
 
 **Derived from.** Build both states on the real export and read getComputedStyle, not the class list.
 
-**Actual.** `earlyAndUnderIsNotRed` = true · `genuinelyOverIsRed` = false · `colourFollowsOverrun` = false
-
-> **This case failed.** The application does not do what the intent above describes.
+**Actual.** `earlyAndUnderIsNotRed` = true · `genuinelyOverIsRed` = true · `colourFollowsOverrun` = true
 
 ### B8 — The two halves of a row add back to the figure shown  ✅ PASS
 

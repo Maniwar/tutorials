@@ -51,11 +51,15 @@ fi
 echo "pre-commit: checking $stamp …"
 fail=0
 
-# the hand-derived plan first: 42 cases whose expected values were worked out on
-# paper from the fixture inputs, so it can catch an app that is wrong and
-# self-consistent — the failure every other check is blind to
+# the hand-derived plan first: its expected values were worked out on paper from
+# the fixture inputs, so it can catch an app that is wrong and self-consistent —
+# the failure every other check is blind to
 if node tests/run-test-plan.js > /tmp/ptr-plan.$$ 2>&1; then
-  echo "  ✓ test plan  42 cases"
+  # read the count back rather than printing a number that goes stale the next
+  # time a case is added — a hardcoded "42" is the same class of lie the suite
+  # is here to catch
+  n=$(sed -n 's/.*"total": \([0-9]*\).*/\1/p' /tmp/ptr-plan.$$ | head -1)
+  echo "  ✓ test plan  ${n:-?} cases"
 else
   echo "  ✗ TEST PLAN"; sed -n '1,40p' /tmp/ptr-plan.$$ | sed 's/^/      /'; fail=1
 fi
