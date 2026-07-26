@@ -2562,7 +2562,7 @@
         <div class="card-body">
           <div id="reservePanel" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:0.85rem 1rem;margin-bottom:0.75rem">
             <strong style="font-size:0.85rem">⏱ Schedule reserves</strong>
-            <p class="help-text" style="margin:0.25rem 0 0.5rem">Buffers added AFTER the estimated work, drawn as hatched bars at the end of the Gantt. <b>Contingency</b> = buffer for the known risks in your RAID log — it's inside the date you commit to the client (easiest: click <b>from P80</b> and the committed date = the 80%-confidence Monte-Carlo finish). <b>Management reserve</b> = extra held by leadership for surprises, never promised. Quote the committed date externally.</p>
+            <p class="help-text" style="margin:0.25rem 0 0.5rem">Buffers added AFTER the estimated work, drawn as hatched bars at the end of the Gantt. <b>Contingency</b> = buffer for the known risks in your RAID log — it's inside the date you commit to the client (easiest: click <b>from P80</b> to size it off the P80 finish — the committed date it produces lands on a whole working day, so it carries slightly <em>more</em> than 80%, and the panel prints the figure it actually carries). <b>Management reserve</b> = extra held by leadership for surprises, never promised. Quote the committed date externally.</p>
             <div id="reserveInline" style="display:flex;gap:1.25rem;flex-wrap:wrap;align-items:end"></div>
           </div>
           <div id="narrativePanel" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:0.85rem 1rem;margin-bottom:0.75rem">
@@ -2791,7 +2791,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.26.0533</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.26.0748</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -8305,12 +8305,50 @@
           CPM finish <b>${fmtNice(rv.cpmDate)}</b> → commit <b style="color:#b45309">${fmtNice(rv.committedDate)}</b> → incl. mgmt <b style="color:#b91c1c">${fmtNice(rv.totalDate)}</b>
         </div>`;
     }
+    /* ═══ A P80 DURATION IS NOT AN 80% DATE ════════════════════════════════
+       The simulation produces durations, which are continuous. A committed date
+       is a working DAY, which is not — and durationToDate rounds up to the next
+       one. So the date you commit to always absorbs a little more of the
+       distribution than the percentile it was sized from: on this plan a P80 of
+       33.27 units lands on a date that 82.8% of the five thousand simulations
+       finish on or before.
+
+       That is conservative, never the other way round, so nobody was ever sold
+       less confidence than they were promised. But it is still the wrong number
+       against a date, and it is wrong in the direction that costs money: a
+       manager sizing contingency for 80% is buying 82.8% and paying for the
+       difference in quoted duration. The bucket display already leads with the
+       date's own confidence; this is the same fact, for the reserve.
+
+       Counted the same way the buckets count it — map every simulated duration
+       onto the calendar once, then ask how many land on or before the date. */
+    function dateConfidencePct(units) {
+      try {
+        if (!mcResult || !Array.isArray(mcResult.durations) || !mcResult.durations.length) return null;
+        const target = durationToDate(units);
+        if (!target) return null;
+        const tt = stripTime(target).getTime();
+        let n = 0;
+        mcResult.durations.forEach(d => { const x = durationToDate(d); if (x && stripTime(x).getTime() <= tt) n++; });
+        return n / mcResult.durations.length * 100;
+      } catch (e) { return null; }
+    }
+    // the confidence the COMMITTED date actually carries, reserves included
+    function committedDateConfidence() {
+      try { return dateConfidencePct(computeReserves().committedUnits); } catch (e) { return null; }
+    }
     function setContingencyFromP80() {
       if (!mcResult) return;
       const cpmUnits = Math.max(0, ...leafTasks().map(t => t.ef), 0);
       const buffer = Math.max(0, mcResult.p80 - cpmUnits);
       reserves.contingency = { value: Math.round(buffer * 10) / 10, unit: 'units' };
       saveLocal(); renderAnalytics(); renderGantt();
+      // say what the date it produced is actually worth, not what it was sized from
+      const c = committedDateConfidence();
+      const d = computeReserves().committedDate;
+      if (c != null && d) flashSaved('Contingency sized from P80 — committed date ' + fmtNice(d)
+        + ' carries ' + c.toFixed(1) + '% confidence'
+        + (c > 80.5 ? ' (above 80% because a date lands on a whole working day)' : ''));
     }
 
     // ---- Baseline snapshot ----
@@ -10498,7 +10536,7 @@
         <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:0.7rem 0.9rem;margin-bottom:0.75rem;font-size:0.83rem">
           Schedule buffers you add ON TOP of the estimated plan, shown as hatched bars at the end of the Gantt:
           <ul style="margin:0.35rem 0 0.35rem 1.2rem;padding:0">
-            <li><strong>Contingency reserve</strong> covers <em>known</em> risks (the ones in your RAID log). It is part of the date you <strong>commit to the client</strong>. Enter it as days or % of the schedule — or click <strong>from P80</strong> to size it automatically so the committed date matches the 80%-confidence Monte-Carlo finish.</li>
+            <li><strong>Contingency reserve</strong> covers <em>known</em> risks (the ones in your RAID log). It is part of the date you <strong>commit to the client</strong>. Enter it as days or % of the schedule — or click <strong>from P80</strong> to size it off the P80 Monte-Carlo finish. A date is a whole working day and a duration is not, so the committed date absorbs a little more of the distribution than the percentile it was sized from — the panel prints the confidence that date actually carries rather than the one it was cut from.</li>
             <li><strong>Management reserve</strong> covers <em>unknown</em> unknowns. It sits above the commitment and is typically held by leadership, not promised to anyone.</li>
           </ul>
           The three cards below show the resulting dates: raw CPM finish → <strong>committed</strong> (+contingency) → total (+management). Quote the committed date; keep the rest in your pocket.
@@ -10671,7 +10709,7 @@
           <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:0.8rem 1rem;margin-top:0.5rem;font-size:0.85rem;line-height:1.65">
             <b>1. The simulation.</b> Every activity is sampled ${mcResult ? mcResult.iters.toLocaleString() : '5,000'} times from its O/M/P range and the whole schedule is recomputed each time. That turns your estimates into <em>probabilities</em>: the histogram below is the distribution of possible finish dates.<br/>
             <b>2. Reading P-numbers.</b> P50 = a coin flip. <b>P80 is the number to commit to</b> — 80% of simulated outcomes finish by then. The gap between P50 and P80 is exactly how much buffer your plan needs.<br/>
-            <b>3. Set your reserves.</b> In <b>Reserves &amp; Buffers</b> below (or the ⏱ Reserves button on the Gantt): click <b>from P80</b> to size contingency so your committed date carries 80% confidence; add a management reserve on top for unknowns. They appear as hatched bars at the end of the Gantt — quote the <em>committed</em> date to the client.<br/>
+            <b>3. Set your reserves.</b> In <b>Reserves &amp; Buffers</b> below (or the ⏱ Reserves button on the Gantt): click <b>from P80</b> to size contingency off the P80 finish; the committed date lands on a whole working day so it carries a little over 80%, and the panel tells you exactly how much. Add a management reserve on top for unknowns. They appear as hatched bars at the end of the Gantt — quote the <em>committed</em> date to the client.<br/>
             <b>4. Fix what drives risk.</b> The health check and the criticality table tell you which estimates to tighten and what the plan is missing — use the 🔧 buttons to have the AI apply fixes.<br/>
             <b>5. Track the money.</b> Cost &amp; Budget shows planned cost, earned value and (once you enter actual costs) CPI and the at-completion forecast against your baseline.
           </div>

@@ -67,6 +67,22 @@ against a fixture with zero over-allocation, which is vacuous — so it now
 CONSTRUCTS a conflict across two people and several days and makes each
 surface account for it.
 
+`schedule-sweep.js` checks the date you COMMIT to — the planning half, where
+a wrong figure costs the commitment rather than an argument. It recomputes the
+PERT formula, the four network identities (EF−ES, LF−LS, slack both ways),
+every dependency edge against its own type and lag, whether the critical path
+is a continuous chain that reaches the finish, whether every scheduled date
+lands on a working day, and whether the Monte Carlo mean matches the
+deterministic finish (Beta-PERT with lambda 4 has a mean of exactly TE, so a
+gap is proof the sampler and the forward pass disagree — measured drift is
+0.31%).
+
+It found the reserves guidance promising that a committed date "carries 80%
+confidence". A P80 is a DURATION and a date is a whole working day, so the
+date absorbs more of the distribution than the percentile it was cut from —
+82.8% on this plan. Conservative, never the other way, but wrong in the
+direction that costs money: you buy more reserve than you meant to.
+
 ## Read the colour, not the class
 
 `contradiction-sweep.js` reads `getComputedStyle`, not `className`. A class list
