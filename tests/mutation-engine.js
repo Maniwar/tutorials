@@ -75,6 +75,23 @@ const MUTANTS = [
   { what: 'margin: computed against cost instead of price',
     find: '      const margin = (price > 0 && !costBlind) ? (price - cost) / price * 100 : null;',
     with: '      const margin = (price > 0 && !costBlind) ? (price - cost) / cost * 100 : null;' },
+
+  /* ── what leaves the application ──────────────────────────────────────────
+     An export is read by a client, or loaded into Jira, or opened in Excel by
+     someone with no way to tell a total is wrong. It is the one category where
+     the mistake is seen by somebody else first. */
+
+  { what: 'billing CSV: the TOTAL row overstates cost by 10%',
+    find: 'd.totCost.toFixed(0), d.totBill.toFixed(0)]);',
+    with: '(d.totCost*1.1).toFixed(0), d.totBill.toFixed(0)]);' },
+
+  { what: 'Jira CSV: the first story is silently dropped',
+    find: '      reqs.stories.forEach(st => {',
+    with: '      reqs.stories.slice(1).forEach(st => {' },
+
+  { what: 'billing CSV: a line emits its cost as NaN',
+    find: 'r.cost.toFixed(0), r.billed.toFixed(0)',
+    with: '(r.cost*undefined).toFixed(0), r.billed.toFixed(0)' },
 ];
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ptr-mut-'));
@@ -93,7 +110,7 @@ const run = (script, appFile) => {
 const CHECKS = QUICK ? ['run-test-plan.js']
   : ['run-test-plan.js', 'golden-reference.js', 'contradiction-sweep.js',
      'schedule-sweep.js', 'drawn-surfaces-sweep.js', 'pricing-sweep.js',
-     'resourcing-sweep.js', 'persistence-sweep.js', 'cross-surface-sweep.js', 'task-editor-sweep.js',
+     'resourcing-sweep.js', 'persistence-sweep.js', 'export-sweep.js', 'cross-surface-sweep.js', 'task-editor-sweep.js',
      'client-facing-sweep.js'];
 
 let survived = 0;
