@@ -14,8 +14,15 @@
 #      looking at" is answerable from the page footer rather than from memory.
 #
 #   2. Refuse the commit if any check is red. Every commit to this file lands
-#      on a public demo, so a red suite is a shipped defect. The whole set runs
-#      in about forty seconds; that is the price of the file being the release.
+#      on a public demo, so a red suite is a shipped defect. The hand-derived
+#      plan, fourteen sweeps and the drawing mutation check take about a minute
+#      and three quarters — the price of this one file being the release. The
+#      engine mutation check is another two and a half minutes and is opt-in via
+#      FULL=1; run it before anything the user will look at.
+#
+#      Measured, not estimated. If you add a check, re-time it and correct this
+#      line: a stale number here is the same class of thing the suite exists to
+#      catch, and someone deciding whether they have time to commit reads it.
 #
 # Escape hatches: SKIP_TESTS=1 git commit, or git commit --no-verify.
 #
@@ -87,10 +94,12 @@ else
 fi
 rm -f /tmp/ptr-m.$$
 
-# The same question asked of the ENGINE: break TE, variance, criticality and
-# earned value in turn and confirm something goes red. It rebuilds and reloads
-# the app once per mutant, so it costs about a minute — too much for every
-# commit, worth it before anything the user will look at. FULL=1 git commit.
+# The same question asked of the ENGINE: break a load-bearing identity in turn —
+# the PERT weighting, the backward pass, the working calendar, earned value,
+# save/load field coverage, the margin, an export total, undo, the baseline roll
+# — and confirm something goes red. Twenty-six of them, about two and a half
+# minutes: too much for every commit, worth it before anything the user sees.
+# FULL=1 git commit.
 if [ -n "$FULL" ]; then
   if node tests/mutation-engine.js > /tmp/ptr-e.$$ 2>&1; then
     echo "  ✓ mutation · engine    every broken identity caught"
@@ -100,7 +109,7 @@ if [ -n "$FULL" ]; then
   fi
   rm -f /tmp/ptr-e.$$
 else
-  echo "  · mutation · engine    skipped (FULL=1 to run it, ~50s)"
+  echo "  · mutation · engine    skipped (FULL=1 to run it, ~2m30s)"
 fi
 
 if [ "$fail" -ne 0 ]; then

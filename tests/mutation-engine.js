@@ -15,11 +15,19 @@
    region of the product is unguarded, and it names which one.
 
    Usage:  node tests/mutation-engine.js
-           node tests/mutation-engine.js --quick   (test plan only, no sweeps)
+             Every mutant walks every check until one goes red. A SURVIVED here
+             is trustworthy: nothing in the suite noticed.
+
+           node tests/mutation-engine.js --quick
+             Only the check expected to notice, plus the hand-derived plan. Fast
+             enough to run while editing. A SURVIVED here means "the expected
+             check did not catch it" and NOT "the suite has a hole" — some other
+             check may well catch it. Confirm with a full run before believing a
+             survivor.
    ═══════════════════════════════════════════════════════════════════════════ */
 'use strict';
 const fs = require('fs'), path = require('path'), os = require('os');
-const { execFileSync } = require('child_process');
+const { spawn } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const SRC = fs.readFileSync(path.join(ROOT, 'pert-gantt-tracker.html'), 'utf8');
@@ -161,49 +169,88 @@ const MUTANTS = [
     with: 'priceDelta: (p.priceDelta||0)+500, newFinish: p.newFinish' },
 ];
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ptr-mut-'));
-const run = (script, appFile) => {
-  try {
-    execFileSync(process.execPath, [path.join(__dirname, script)],
-      { cwd: ROOT, env: Object.assign({}, process.env, { APP_FILE: appFile }),
-        stdio: 'pipe', timeout: 180000 });
-    return null;                       // exit 0 — nothing noticed
-  } catch (e) {
-    const out = String(e.stdout || '') + String(e.stderr || '');
-    return out.trim() || 'exited non-zero';
-  }
-};
-
 const CHECKS = QUICK ? ['run-test-plan.js']
   : ['run-test-plan.js', 'golden-reference.js', 'contradiction-sweep.js',
      'schedule-sweep.js', 'drawn-surfaces-sweep.js', 'pricing-sweep.js',
      'resourcing-sweep.js', 'persistence-sweep.js', 'export-sweep.js', 'undo-sweep.js', 'baseline-sweep.js', 'cross-surface-sweep.js', 'task-editor-sweep.js',
      'client-facing-sweep.js'];
 
-let survived = 0;
-MUTANTS.forEach((m, i) => {
+/* Which check is EXPECTED to notice. This is a running order, not a shortcut:
+   if the named check does not go red the mutant still walks every other one, so
+   a genuine hole is still found and still reported by name. It exists because
+   the naive order made this file unfinishable — a mutant caught by the last of
+   fourteen checks costs ninety seconds, and twenty-six of those exceeded ten
+   minutes and were killed before ever printing a verdict. A check nobody can
+   afford to run is a check that does not run. */
+const LIKELY = {
+  'billing CSV': 'export-sweep.js', 'Jira CSV': 'export-sweep.js',
+  'save/load': 'persistence-sweep.js', 'undo:': 'undo-sweep.js',
+  'baseline:': 'baseline-sweep.js', 'change order:': 'baseline-sweep.js',
+  'criticality': 'drawn-surfaces-sweep.js', 'resource load': 'resourcing-sweep.js',
+  'margin': 'pricing-sweep.js'
+};
+const orderFor = m => {
+  const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);
+  const first = hit ? LIKELY[hit] : null;
+  return first ? [first].concat(CHECKS.filter(c => c !== first)) : CHECKS.slice();
+};
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ptr-mut-'));
+
+function runAsync(script, appFile) {
+  return new Promise(resolve => {
+    const ch = spawn(process.execPath, [path.join(__dirname, script)],
+      { cwd: ROOT, env: Object.assign({}, process.env, { APP_FILE: appFile }), stdio: 'pipe' });
+    let out = '';
+    ch.stdout.on('data', d => out += d);
+    ch.stderr.on('data', d => out += d);
+    const t = setTimeout(() => { try { ch.kill('SIGKILL'); } catch (e) {} }, 180000);
+    ch.on('close', code => { clearTimeout(t); resolve(code === 0 ? null : (out.trim() || 'exited non-zero')); });
+  });
+}
+
+async function judge(m, i) {
   const n = SRC.split(m.find).length - 1;
-  if (n !== 1) {
-    console.log('SKIPPED  ' + m.what + '\n         its anchor matches ' + n
-      + ' times in the source, so this mutant cannot be trusted to have applied');
-    survived++;
-    return;
-  }
+  if (n !== 1) return { m, skipped: true, why: 'its anchor matches ' + n + ' times in the source, '
+    + 'so this mutant cannot be trusted to have applied' };
   const file = path.join(tmp, 'mutant-' + i + '.html');
   fs.writeFileSync(file, SRC.replace(m.find, m.with));
-
-  const caught = [];
-  for (const c of CHECKS) {
-    const out = run(c, file);
-    if (out) { caught.push(c); break; }   // one red check is enough
+  for (const c of orderFor(m)) {
+    if (await runAsync(c, file)) return { m, by: c };
   }
-  if (caught.length) console.log('CAUGHT   ' + m.what + '\n         → ' + caught[0]);
-  else { console.log('SURVIVED ' + m.what
-    + '\n         nothing in the suite noticed. This identity is unguarded.'); survived++; }
-});
+  return { m, survived: true };
+}
 
-fs.rmSync(tmp, { recursive: true, force: true });
-console.log(survived
-  ? '\n' + survived + ' of ' + MUTANTS.length + ' mutants survived — the suite has holes there.'
-  : '\nall ' + MUTANTS.length + ' mutants were caught.');
-process.exitCode = survived ? 1 : 0;
+(async () => {
+  /* Mutants are independent, so they run several at a time. The cap is small on
+     purpose: each one launches a browser, and oversubscribing turns a fast run
+     into a slow one that also reports flaky timeouts as holes. */
+  const LANES = Math.max(1, Math.min(4, (os.cpus() || []).length - 2 || 2));
+  const results = new Array(MUTANTS.length);
+  let next = 0, done = 0;
+  const lane = async () => {
+    while (true) {
+      const i = next++;
+      if (i >= MUTANTS.length) return;
+      results[i] = await judge(MUTANTS[i], i);
+      done++;
+      if (process.stderr.isTTY) process.stderr.write('\r  ' + done + '/' + MUTANTS.length + ' judged   ');
+    }
+  };
+  await Promise.all(Array.from({ length: LANES }, lane));
+  if (process.stderr.isTTY) process.stderr.write('\r');
+
+  let survived = 0;
+  results.forEach(r => {
+    if (r.skipped) { survived++; console.log('SKIPPED  ' + r.m.what + '\n         ' + r.why); }
+    else if (r.by) console.log('CAUGHT   ' + r.m.what + '\n         → ' + r.by);
+    else { survived++; console.log('SURVIVED ' + r.m.what
+      + '\n         nothing in the suite noticed. This identity is unguarded.'); }
+  });
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+  console.log(survived
+    ? '\n' + survived + ' of ' + MUTANTS.length + ' mutants survived — the suite has holes there.'
+    : '\nall ' + MUTANTS.length + ' mutants were caught.');
+  process.exitCode = survived ? 1 : 0;
+})();
