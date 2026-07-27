@@ -92,6 +92,37 @@ const MUTANTS = [
   { what: 'billing CSV: a line emits its cost as NaN',
     find: 'r.cost.toFixed(0), r.billed.toFixed(0)',
     with: '(r.cost*undefined).toFixed(0), r.billed.toFixed(0)' },
+
+  /* ── undo ─────────────────────────────────────────────────────────────────
+     The one feature a person reaches for when they already believe something
+     has gone wrong, which is what makes a partial restore worse than none.
+
+     Note on a mutant that is NOT here: removing `redoStack = keepRedo` from
+     doRedo. restoreSnapshot sets undoGuard before its internal saveLocal, so
+     trackUndo returns before it can clear the branch — the line is dead defence
+     and its removal changes nothing observable. Verified by tracing redoStack
+     through a three-step redo on both builds: identical. An equivalent mutant
+     no test can catch, so listing it would report a permanent false hole. */
+
+  { what: 'undo: the history is a bag — it pops the oldest state, not the newest',
+    find: '      restoreSnapshot(undoStack.pop());',
+    with: '      restoreSnapshot(undoStack.shift());' },
+
+  { what: 'undo: the guard fails, so undo records itself and stops progressing',
+    find: '      if (undoGuard) { lastSnapshot = currentStr; return; }',
+    with: '      if (false) { lastSnapshot = currentStr; return; }' },
+
+  { what: 'undo: the depth cap discards the newest step instead of the oldest',
+    find: '        if (undoStack.length > 60) undoStack.shift();',
+    with: '        if (undoStack.length > 60) undoStack.pop();' },
+
+  { what: 'undo: editing after an undo keeps the abandoned redo branch alive',
+    find: '        redoStack = [];',
+    with: '        /* mutant: the branch is kept */' },
+
+  { what: 'undo: the restore rewinds the activities but not the RAID log',
+    find: '        hydrate(JSON.parse(str));',
+    with: '        { const _k = raid; hydrate(JSON.parse(str)); raid = _k; }' },
 ];
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ptr-mut-'));
@@ -110,7 +141,7 @@ const run = (script, appFile) => {
 const CHECKS = QUICK ? ['run-test-plan.js']
   : ['run-test-plan.js', 'golden-reference.js', 'contradiction-sweep.js',
      'schedule-sweep.js', 'drawn-surfaces-sweep.js', 'pricing-sweep.js',
-     'resourcing-sweep.js', 'persistence-sweep.js', 'export-sweep.js', 'cross-surface-sweep.js', 'task-editor-sweep.js',
+     'resourcing-sweep.js', 'persistence-sweep.js', 'export-sweep.js', 'undo-sweep.js', 'cross-surface-sweep.js', 'task-editor-sweep.js',
      'client-facing-sweep.js'];
 
 let survived = 0;
