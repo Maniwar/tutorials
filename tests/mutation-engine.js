@@ -44,6 +44,37 @@ const MUTANTS = [
   { what: 'earned value: completed work is valued at its cost, not its budget',
     find: 'const evOf = t => plannedCostOf(t, hb) * ((t.percentComplete || 0) / 100);',
     with: 'const evOf = t => (actOf.get(t.id) || 0);' },
+
+  /* ── the regions that had never been asked this question ──────────────────
+     Four caught mutants proved four regions guarded and said nothing about the
+     rest. These are the ones named as unverified: the backward pass, the working
+     calendar, resource pair counting, the percentile rule, save/load field
+     coverage, and the margin. A survivor here is not a product defect — it is a
+     region where a defect could ship unnoticed, which is worth knowing. */
+
+  { what: 'backward pass: slack measured from the finish instead of the start',
+    find: 't.slack = t.ls - t.es;',
+    with: 't.slack = t.lf - t.ef + 0.5;' },
+
+  { what: 'working calendar: weekends counted as working days',
+    find: '        if (isWorkingDay(d, holidays)) added++;',
+    with: '        added++;' },
+
+  { what: 'resource load: a double-booked day counted once per person, not per pair',
+    find: '            overResourceDays++;',
+    with: '            /* mutant: the day is no longer counted */' },
+
+  { what: 'percentile: P80 reads the 80th value of an UNSORTED series',
+    find: "      const pct = q => durations[Math.min(durations.length - 1, Math.floor(q * durations.length))];",
+    with: "      const pct = q => durations[Math.min(durations.length - 1, Math.floor(q * durations.length * 0.75))];" },
+
+  { what: 'save/load: percentComplete is written but never read back',
+    find: '          percentComplete: t.percentComplete, predecessors: t.predecessors,',
+    with: '          predecessors: t.predecessors,' },
+
+  { what: 'margin: computed against cost instead of price',
+    find: '      const margin = (price > 0 && !costBlind) ? (price - cost) / price * 100 : null;',
+    with: '      const margin = (price > 0 && !costBlind) ? (price - cost) / cost * 100 : null;' },
 ];
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ptr-mut-'));
@@ -60,8 +91,10 @@ const run = (script, appFile) => {
 };
 
 const CHECKS = QUICK ? ['run-test-plan.js']
-  : ['run-test-plan.js', 'task-editor-sweep.js', 'golden-reference.js',
-     'contradiction-sweep.js', 'schedule-sweep.js', 'drawn-surfaces-sweep.js'];
+  : ['run-test-plan.js', 'golden-reference.js', 'contradiction-sweep.js',
+     'schedule-sweep.js', 'drawn-surfaces-sweep.js', 'pricing-sweep.js',
+     'resourcing-sweep.js', 'persistence-sweep.js', 'cross-surface-sweep.js', 'task-editor-sweep.js',
+     'client-facing-sweep.js'];
 
 let survived = 0;
 MUTANTS.forEach((m, i) => {
