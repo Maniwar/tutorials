@@ -40,7 +40,21 @@ const QA = JSON.parse(fs.readFileSync(
       const set = (id, v) => { const e = document.getElementById(id); e.value = v;
         e.dispatchEvent(new Event('input', {bubbles:true}));
         e.dispatchEvent(new Event('change', {bubbles:true})); };
-      const out = { edited: 0 };
+      /* showErr writes into the error element and nothing clears it on a
+         successful save, so a later read picks up a stale reason from an earlier
+         attempt — which had this probe quoting the "log the time spent" message
+         as the reason an out-of-order estimate was rejected. Wipe it before any
+         save whose refusal we intend to read, and read only if it is visible. */
+      const clearErr = () => { const e = document.querySelector('#modal .error');
+        if (e) { e.textContent = ''; e.style.display = 'none'; } };
+      const errNow = () => { const e = document.querySelector('#modal .error');
+        return (e && e.style.display !== 'none') ? e.textContent.trim() : ''; };
+      const out = { edited: 0, ran: [] };
+      // A check that silently does not run is indistinguishable from a check
+      // that passes, and that is how this suite has been fooled before. Every
+      // section records that it reached its assertions, so the output shows
+      // what was actually exercised rather than only what failed.
+      const ran = k => out.ran.push(k);
 
       // A leaf with a crew and a rate, so cost has something to be made of, and
       // one the editor will actually let us save: an activity marked complete
@@ -56,6 +70,7 @@ const QA = JSON.parse(fs.readFileSync(
       // ── 1. THE LIVE TE IS THE ENGINE'S TE ───────────────────────────────
       // O/M/P chosen so the answer is not a round number: any formula that is
       // nearly right (dropping the 4, dividing by 5) lands somewhere else.
+      ran('1·liveTE');
       const TRIALS = [[1, 2, 9], [2, 3, 4], [0.5, 1, 6], [3, 3, 3], [1, 8, 9]];
       TRIALS.forEach(([o, m, p]) => {
         openEditModal(subject.id);
@@ -72,6 +87,7 @@ const QA = JSON.parse(fs.readFileSync(
       // The preview computes from the fields; the table computes from `tasks`.
       // If those two ever part company the editor is a rehearsal of a different
       // play from the one that gets performed.
+      ran('2·previewVsSave');
       const O = 2, M = 5, P = 8;
       openEditModal(subject.id);
       set('mO', String(O)); set('mM', String(M)); set('mP', String(P));
@@ -102,6 +118,7 @@ const QA = JSON.parse(fs.readFileSync(
       // ── 3. REOPENING SHOWS WHAT WAS SAVED ───────────────────────────────
       // A modal that opens with stale or blank fields invites a person to
       // overwrite good data with the default.
+      ran('3·reopen');
       openEditModal(subject.id);
       const back = ['mO', 'mM', 'mP'].map(id => parseFloat(document.getElementById(id).value));
       if (Math.abs(back[0] - O) > 1e-9 || Math.abs(back[1] - M) > 1e-9 || Math.abs(back[2] - P) > 1e-9)
@@ -113,6 +130,7 @@ const QA = JSON.parse(fs.readFileSync(
       closeModal();
 
       // ── 4. A MILESTONE HAS NO DURATION, IN THE PREVIEW TOO ──────────────
+      ran('4·milestone');
       openEditModal(subject.id);
       if (modalTeUnits(true) !== 0)
         say('Editor', 'previews a non-zero estimate for a milestone: ' + modalTeUnits(true));
@@ -122,6 +140,7 @@ const QA = JSON.parse(fs.readFileSync(
       // Deliberate behaviour: the readout must not flicker to "no estimate"
       // between keystrokes. What it must NOT do is silently keep the stale
       // number once the entry is complete and different.
+      ran('5·midTyping');
       openEditModal(subject.id);
       set('mO', '1'); set('mM', '4'); set('mP', '7');
       const good = modalTeUnits(false);
@@ -135,23 +154,43 @@ const QA = JSON.parse(fs.readFileSync(
           + ' instead of ' + ((1 + 4 * 4.5 + 7) / 6));
       closeModal();
 
-      // ── 6. AN IMPOSSIBLE ESTIMATE IS NOT QUIETLY ACCEPTED ───────────────
-      // O > P is not a rounding question, it is a contradiction: it yields a TE
-      // outside the range it claims to describe. Either the editor refuses it
-      // and says why, or it takes it — and then every figure downstream is
-      // built on an estimate that cannot happen.
+      /* ── 6. AN IMPOSSIBLE ESTIMATE IS REFUSED, AND SAYS SO ──────────────
+         O > P is not a rounding question, it is a contradiction: the range runs
+         backwards, so TE lands outside the interval the estimate claims to
+         describe and the variance is computed from a negative span.
+
+         This check was originally written as "if the editor accepted it, then
+         assert TE is out of range" — and the editor refuses, so the branch never
+         ran. It passed every time while testing nothing, which is the precise
+         failure this whole suite exists to catch, committed inside the suite.
+         Written the right way round it asserts the REFUSAL: the save is blocked,
+         the reason names the ordering rather than saying "invalid", and the
+         activity is left exactly as it was. If the guard is ever removed this
+         goes red instead of quietly congratulating itself. */
+      ran('6·impossibleEstimate');
       const before = { o: after.o, m: after.m, p: after.p };
       openEditModal(subject.id);
       set('mO', '9'); set('mM', '5'); set('mP', '1');
+      clearErr();
       saveActivity();
       const t6 = tasks.find(t => t.id === subject.id);
-      if (t6.o === 9 && t6.p === 1) {
-        if (t6.te < 1 || t6.te > 9)
-          say('Editor', 'accepted O=9 > P=1, giving TE ' + (t6.te || 0).toFixed(2)
-            + ' outside the range the estimate describes');
-        if ((t6.variance || 0) > 0)
-          say('Editor', 'accepted O=9 > P=1 and reports a positive variance of '
-            + (t6.variance || 0).toFixed(2) + ' from a range that runs backwards');
+      // whether the save went through is decided by what the PLAN now holds,
+      // not by whether the dialog looks closed — closeOverlay animates, so the
+      // open class outlives a successful save by the length of a transition
+      const took = t6.o === 9 && t6.m === 5 && t6.p === 1;
+      if (took) {
+        say('Editor', 'stored O=9 M=5 P=1 — a range that runs backwards — without objection');
+        if (t6.te < Math.min(t6.o, t6.p) || t6.te > Math.max(t6.o, t6.p))
+          say('Editor', 'and the resulting TE ' + (t6.te || 0).toFixed(2)
+            + ' lies outside the range the estimate claims to describe');
+      } else {
+        const why6 = errNow();
+        if (!/optimistic|pessimistic|≤|<=/i.test(why6))
+          say('Editor', 'refused O=9 > P=1 but the reason shown does not name the ordering: "'
+            + (why6 || '(nothing shown)') + '"');
+        if (t6.o !== before.o || t6.m !== before.m || t6.p !== before.p)
+          say('Editor', 'refused O=9 > P=1 and changed the estimate anyway: '
+            + [before.o, before.m, before.p].join('/') + ' became ' + [t6.o, t6.m, t6.p].join('/'));
       }
       closeModal();
 
@@ -162,16 +201,18 @@ const QA = JSON.parse(fs.readFileSync(
       // modal is still open saying it did not save.
       const done100 = leafTasks().find(t => !t.milestone && !t.isSummary
         && (t.percentComplete || 0) >= 100 && t.actualEffort == null);
+      if (!done100) out.ran.push('7·SKIPPED-no-completed-activity-without-effort');
       if (done100) {
+        ran('7·refusedSaveIsAtomic');
         const snap = JSON.stringify({o: done100.o, m: done100.m, p: done100.p,
           name: done100.name, owner: done100.owner, pct: done100.percentComplete});
         openEditModal(done100.id);
         set('mO', '11'); set('mM', '12'); set('mP', '13');
         set('mName', 'RENAMED BY THE PROBE');
+        clearErr();
         saveActivity();
-        const still = document.getElementById('modal').classList.contains('open');
-        const errTxt = [...document.querySelectorAll('#modal .error')]
-          .map(e => e.textContent.trim()).filter(Boolean).join(' ');
+        const errTxt = errNow();
+        const still = !!errTxt;   // a stated reason IS the refusal; see clearErr
         const now = tasks.find(t => t.id === done100.id);
         const after7 = JSON.stringify({o: now.o, m: now.m, p: now.p,
           name: now.name, owner: now.owner, pct: now.percentComplete});
