@@ -261,6 +261,44 @@ const QA = JSON.parse(fs.readFileSync(
         out.stories = stories.length; out.criteria = acs;
       }
 
+      /* ═══ 4b. A CHART DRAWN IN HTML HAS VISIBLE MARKS ═══════════════════
+         Not every chart here is SVG. The Monte Carlo histogram is flex boxes,
+         and it shipped rendering nothing: the base `button` rule sets
+         align-items:center, the bar rule overrode display/direction/justify but
+         inherited that centring, and in a COLUMN flex container each bar shrank
+         to its empty content width. Every bar kept a correct height and drew
+         0px wide — a chart that reads as "no data" while every bar is still
+         hoverable, which is why no structural check noticed.
+
+         So measure what is on screen. A mark with height and no width is
+         invisible, and so is one with width and no height. */
+      switchTab('analytics');
+      {
+        const marks = [...document.querySelectorAll('.mch-wrap .mch-b > i')];
+        if (marks.length) {
+          const r = marks.map(m => m.getBoundingClientRect());
+          const flat = marks.filter((m, i) => r[i].height > 0.5 && r[i].width < 0.5);
+          if (flat.length)
+            say('Analytics', flat.length + ' of ' + marks.length + ' histogram bars have a height '
+              + 'and no width — the distribution is invisible but still hoverable');
+          if (!r.some(x => x.height > 1 && x.width > 1))
+            say('Analytics', 'the completion-distribution histogram drew no visible bar at all');
+          out.histogramBars = marks.length;
+        }
+        // the same shape anywhere else: a flex button whose child has height but
+        // no width is a mark nobody can see
+        const blind = [];
+        document.querySelectorAll('button').forEach(btn => {
+          if (!/flex/.test(getComputedStyle(btn).display)) return;
+          [...btn.children].forEach(c => {
+            const b = c.getBoundingClientRect();
+            if (b.height > 0.5 && b.width < 0.5) blind.push(btn.className || btn.id || 'button');
+          });
+        });
+        if (blind.length)
+          say('Analytics', blind.length + ' chart mark(s) render with no width: ' + blind.slice(0, 3).join(', '));
+      }
+
       // ═══ 5. NOTHING ANYWHERE PRINTS A BROKEN FIGURE ══════════════════════
       ['gantt', 'pert', 'tasks', 'req', 'analytics', 'resources', 'raid', 'baseline'].forEach(tab => {
         try {

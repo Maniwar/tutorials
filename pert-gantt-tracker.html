@@ -446,7 +446,7 @@
     .ptr-lead-do { background: var(--primary-50); border: 1px solid var(--primary-200); color: var(--primary-700); }
     .ptr-lead-ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
 
-    .ptr-row { display: grid; grid-template-columns: 172px minmax(0, 1fr) 176px;
+    .ptr-row { display: grid; grid-template-columns: 186px minmax(0, 1fr) 176px;
       gap: 0.15rem 0.9rem; align-items: center; padding: 0.55rem 0; border-top: 1px solid var(--border); }
     .ptr-axis { border-top: 0; padding: 0 0 0.2rem; }
 
@@ -455,9 +455,15 @@
       color: var(--muted); display: flex; align-items: center; }
     /* plan → actual, reusing the app's own pair grammar (.pa-nums/.pa-ar 523-525,
        pairCell() in renderBaseline 7492) so the two screens read identically */
-    .ptr-pair { font-size: var(--t-md); line-height: 1.35; overflow-wrap: anywhere; }
+    .ptr-pair { font-size: var(--t-md); line-height: 1.35; display: block; }
+    .ptr-pair .ptr-plan, .ptr-pair .ptr-actline { display: block; white-space: nowrap; }
+    /* Each number says what it IS. Two figures either side of a glyph invite
+       the reader to assume the first became the second, which is true of the
+       schedule and scope rows and false of the budget row. */
+    .ptr-pl { font-size: var(--t-xs); font-weight: 600; letter-spacing: .03em;
+      text-transform: uppercase; color: var(--muted); }
     .ptr-plan { color: var(--muted); }
-    .ptr-arr { color: var(--slack); margin: 0 0.25rem; }
+    .ptr-arr { color: var(--slack); font-size: var(--t-sm); font-weight: 600; }
     .ptr-act { color: var(--text); font-weight: 700; }
     .ptr-na { color: var(--muted); font-style: italic; }
 
@@ -561,6 +567,14 @@
       font-size: var(--t-sm); color: var(--muted); line-height: 1.5; }
     .stu-li b { color: var(--text); }
     .stu-more { font-size: var(--t-xs); color: var(--muted); font-style: italic; }
+    /* States what is being compared against what. It was only ever shown on the
+       empty state, so the moment there was something to read the reader lost
+       the sentence explaining how to read it. */
+    .stu-what { font-size: var(--t-sm); color: var(--muted); line-height: 1.5;
+      margin: 0.15rem 0 0.5rem; padding-bottom: 0.45rem; border-bottom: 1px solid var(--border); }
+    .stu-what b { color: var(--text); font-weight: 600; }
+    .stu-pl { display: inline; margin: 0; font-size: var(--t-xs); font-weight: 600;
+      color: var(--muted); text-transform: none; letter-spacing: 0; }
     .stu-pick { font-size: var(--t-sm); padding: 0.15rem 0.35rem; border: 1px solid var(--border);
       border-radius: 6px; background: var(--card); color: var(--text); }
     .stu-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-top: 0.6rem; }
@@ -1036,7 +1050,15 @@
        "17.1 days: 153" — a duration in abstract units and a count, to an
        operator who needs a DATE and a confidence. They are buttons now. */
     .mch-wrap { display: flex; align-items: flex-end; gap: 2px; height: 120px; }
+    /* align-items: stretch is load-bearing, not tidying. The base `button` rule
+       sets align-items:center for icon buttons; this one overrides display,
+       flex-direction and justify-content but inherited that centring, so in a
+       COLUMN flex container the bar was centred on the cross axis and shrank to
+       its content width — zero, because <i> is empty. Every bar kept its correct
+       height and rendered 0px wide, which reads on screen as a chart with no
+       data while every bar is still hoverable. */
     .mch-b { flex: 1; display: flex; flex-direction: column; justify-content: flex-end;
+      align-items: stretch; gap: 0;
       height: 100%; padding: 0; border: 0; background: none; cursor: pointer;
       border-radius: 2px 2px 0 0; box-shadow: none; }
     .mch-b:hover:not(:disabled), .mch-b.mch-on { background: rgba(59, 130, 246, 0.14); transform: none; box-shadow: none; }
@@ -2791,7 +2813,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.27.1657</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.27.1734</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -8801,6 +8823,7 @@
         const span = Math.max(1, calDaysBetween(new Date(Math.min.apply(null, bS)), baseFin) + 1);
         const slip = varianceDays(baseFin, curFin);   // CALENDAR days (the comment on 7465 is wrong)
         sch.planTxt = fmtNice(baseFin);
+        sch.pairLbl = ['committed', 'forecast'];
         sch.pct = slip / span * 100;
         sch.state = slip === 0 ? 'flat' : 'ok';
         sch.delta = slip === 0 ? 'on the baseline date' : (slip > 0 ? '+' : '−') + Math.abs(slip) + ' cal d';
@@ -8952,6 +8975,17 @@
         const bv = budgetVerdict(actCost, pvNow, evNow, ref);
         bud.planTxt = money(pvNow);
         bud.actTxt = money(actCost);
+        /* These two are NOT the same measure at two times — they are two
+           different measures at ONE time: what the plan says should have been
+           spent by today, and what has actually been booked. The other two rows
+           really are before → after (a date that moved, an effort total that
+           moved), and the standup uses the same arrow for before → after
+           explicitly. One glyph meaning two things on one screen is how "$2,280
+           → $27,900" reads as a budget that quintupled rather than a comparison
+           against the curve. Marked so the pair renders as "vs", and both
+           numbers are labelled either way. */
+        bud.pairLbl = ['plan to date', 'booked'];
+        bud.pairVs = true;
         bud.pct = bv.gap / ref * 100;
         bud.tone = bv.tone;
         bud.state = (Math.abs(bud.pct) < 0.5 && bv.tone === 'good') ? 'flat' : 'ok';
@@ -9051,6 +9085,7 @@
         const drift = planTe - baseTe;
         const reEst = drift - addedTe;
         scp.planTxt = (Math.round(baseTe * 10) / 10) + ' ' + u;
+        scp.pairLbl = ['baselined', 'now'];
         scp.actTxt = (Math.round(planTe * 10) / 10) + ' ' + u;
         scp.pct = drift / baseTe * 100;
         scp.state = Math.abs(drift) < 0.05 ? 'flat' : 'ok';
@@ -9461,8 +9496,20 @@
         + '</span>' + r.dim + '</span>'
         + (r.state === 'needs'
           ? '<span class="ptr-pair ptr-na">not measurable yet</span>'
-          : '<span class="ptr-pair"><span class="ptr-plan">' + escapeHtml(r.planTxt) + '</span>'
-            + '<span class="ptr-arr" aria-hidden="true">→</span><b class="ptr-act">' + escapeHtml(r.actTxt) + '</b></span>')
+          : (function () {
+              /* Two lines, not two columns: the head is a 186px grid cell and a
+                 side-by-side pair wrapped mid-word into "COMMITTE D" and
+                 "$27,90 0". One measure per line, each wearing its own name. */
+              const L = r.pairLbl || ['plan', 'actual'];
+              const join = r.pairVs ? 'vs' : '→';
+              return '<span class="ptr-pair">'
+                + '<span class="ptr-plan"><span class="ptr-pl">' + escapeHtml(L[0]) + '</span> '
+                + escapeHtml(r.planTxt) + '</span>'
+                + '<span class="ptr-actline"><span class="ptr-arr"'
+                + (r.pairVs ? '' : ' aria-hidden="true"') + '>' + join + '</span> '
+                + '<b class="ptr-act"><span class="ptr-pl">' + escapeHtml(L[1]) + '</span> '
+                + escapeHtml(r.actTxt) + '</b></span></span>';
+            })())
         + '</div>';
 
       // A hatched dashed track, the reason in words, and the one button that
@@ -21154,10 +21201,36 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         if (!!o.milestone !== !!n.milestone)
           add('estimate', escapeHtml(nameOf(n)) + ' is ' + (n.milestone ? 'now a <b>milestone</b>' : 'no longer a milestone'), id);
         // sequence
+        /* The COUNT is not the change. Re-pointing a dependency from one
+           activity to another leaves the count identical, so this row used to
+           read "dependencies 1 → 1" — a change the reader can see happened and
+           cannot see the shape of. The detection was always right (it compares
+           id+type+lag); only the sentence was wrong. Say which predecessor came
+           and which went, because that is the thing someone has to agree with. */
         const pl = t => (t.predecessors || []).map(p => p.id + p.type + (p.lag || 0)).sort().join(',');
-        if (pl(o) !== pl(n))
-          add('sequence', escapeHtml(nameOf(n)) + ' dependencies <b>' + (o.predecessors || []).length
-            + ' → ' + (n.predecessors || []).length + '</b>', id);
+        if (pl(o) !== pl(n)) {
+          const pn = pid => escapeHtml(nameOf(nT.get(pid)) || nameOf(oT.get(pid)) || ('task ' + pid));
+          const lag = p => p.type + (p.lag ? (p.lag > 0 ? '+' : '') + p.lag + 'd' : '');
+          const oldP = new Map((o.predecessors || []).map(p => [p.id, p]));
+          const newP = new Map((n.predecessors || []).map(p => [p.id, p]));
+          const gone = [...oldP.keys()].filter(k => !newP.has(k));
+          const came = [...newP.keys()].filter(k => !oldP.has(k));
+          const retimed = [...newP.keys()].filter(k => oldP.has(k)
+            && (oldP.get(k).type !== newP.get(k).type || (oldP.get(k).lag || 0) !== (newP.get(k).lag || 0)));
+          const bits = [];
+          if (gone.length === 1 && came.length === 1)
+            bits.push('now waits for <b>' + pn(came[0]) + '</b> instead of <b>' + pn(gone[0]) + '</b>');
+          else {
+            if (came.length) bits.push((oldP.size ? 'now also waits for ' : 'now waits for ')
+              + came.map(k => '<b>' + pn(k) + '</b>').join(' and '));
+            if (gone.length) bits.push(newP.size
+              ? 'no longer waits for ' + gone.map(k => '<b>' + pn(k) + '</b>').join(' and ')
+              : 'no longer waits for anything');
+          }
+          retimed.forEach(k => bits.push('link to <b>' + pn(k) + '</b> ' + lag(oldP.get(k))
+            + ' → <b>' + lag(newP.get(k)) + '</b>'));
+          add('sequence', escapeHtml(nameOf(n)) + ' ' + (bits.join('; ') || 'dependencies changed'), id);
+        }
         if ((o.parentId || null) !== (n.parentId || null))
           add('sequence', escapeHtml(nameOf(n)) + ' moved under <b>'
             + escapeHtml(nameOf(nT.get(n.parentId)) || 'the top level') + '</b>', id);
@@ -21285,7 +21358,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       const when = 'since the start of ' + escapeHtml(a.date)
         + (a.date === fmtISO(new Date()) ? ' — today' : '');
       const pick = dayRing.length > 1
-        ? '<select class="stu-pick no-print" onchange="stuSetPick(this.value)" title="Compare against the start of an earlier day">'
+        ? '<select id="stuPick" class="stu-pick no-print" onchange="stuSetPick(this.value)" title="Compare against the start of an earlier day">'
           + dayRing.slice().reverse().map(x => '<option value="' + escapeHtml(x.date) + '"'
               + (x.date === a.date ? ' selected' : '') + '>' + escapeHtml(x.date)
               + (x.date === fmtISO(new Date()) ? ' (today)' : '') + '</option>').join('')
@@ -21293,7 +21366,9 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       if (!d.total) {
         host.innerHTML = '<p class="stu-none"><b>Nothing has changed ' + when + '.</b> '
           + 'Not "nothing important" — nothing at all: every field this file stores is identical to the copy '
-          + 'taken then.</p><div class="stu-bar no-print">' + pick + '</div>';
+          + 'taken then.</p><div class="stu-bar no-print">'
+          + (pick ? '<label class="stu-pl" for="stuPick">Compare against the start of</label>' + pick : '')
+          + '</div>';
         return;
       }
       const MAXR = 8;
@@ -21309,11 +21384,20 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
           + '</ul>' + (rows.length > MAXR ? '<p class="stu-more">and ' + (rows.length - MAXR) + ' more</p>' : '')
           + '</div>';
       }).join('');
+      /* The panel explained itself only when it was EMPTY. With content on
+         screen the reader got a count, a list, an unlabelled date box and a
+         button called "Copy" — and no statement of what is being compared
+         against what, which is the first thing anyone asks. Say it above the
+         list, label the control, and put the verb in the button. */
+      const stored = 'Every field the file stores, compared against the copy taken at the start of '
+        + escapeHtml(a.date) + '. Each row reads <b>before → after</b>; click one to open that activity.';
       host.innerHTML = '<details class="stu" open><summary class="stu-sum"><span class="stu-n">' + d.total
         + '</span> ' + ptrPl(d.total, 'change') + ' <span class="stu-when">' + when + '</span></summary>'
+        + '<p class="stu-what">' + stored + '</p>'
         + body
-        + '<div class="stu-bar no-print">' + pick
-        + '<button class="btn-sm btn-secondary" onclick="stuCopy()" title="Plain text, ready to paste into a stand-up note or an email">📋 Copy</button>'
+        + '<div class="stu-bar no-print">'
+        + (pick ? '<label class="stu-pl" for="stuPick">Compare against the start of</label>' + pick : '')
+        + '<button class="btn-sm btn-secondary" onclick="stuCopy()" title="Copies the list above as plain text — nothing leaves this file, it goes to your clipboard">📋 Copy as text</button>'
         + '</div></details>';
     }
     function stuText() {

@@ -123,6 +123,42 @@ const MUTANTS = [
   { what: 'undo: the restore rewinds the activities but not the RAID log',
     find: '        hydrate(JSON.parse(str));',
     with: '        { const _k = raid; hydrate(JSON.parse(str)); raid = _k; }' },
+
+  /* ── the reference every variance is measured against ─────────────────────
+     Break the baseline and nothing looks broken: the plan reports itself
+     against the wrong past, confidently and self-consistently. */
+
+  { what: 'baseline: it freezes the dates but not the effort',
+    find: '        t.baseTe = t.te;',
+    with: '        t.baseTe = t.te * 1.15;' },
+
+  { what: 'baseline: the feature set is committed at a different moment than the dates',
+    find: '      reqsBaseline = {\n        at: baselineDate,',
+    with: "      reqsBaseline = {\n        at: '2020-01-01'," },
+
+  { what: 'baseline: the reference tracks the plan instead of holding still',
+    find: '        t.baseCost = taskCost(t);',
+    with: "        t.baseCost = taskCost(t);\n        Object.defineProperty(t,'baseTe',{get(){return this.te;},configurable:true});" },
+
+  { what: 'baseline: clearing keeps the committed feature set',
+    find: '      reqsBaseline = null;\n      saveLocal(); renderBaseline();',
+    with: '      /* mutant: feature set kept */\n      saveLocal(); renderBaseline();' },
+
+  { what: 'baseline: the reference dates are never written to the file',
+    find: '          baseStart: t.baseStart ? fmtISO(new Date(t.baseStart)) : null,',
+    with: '          baseStart: null,' },
+
+  { what: 'change order: approval does not roll the baseline, so the next one re-bills',
+    find: '      sowBaseline = snapshotSowBaseline(); // next CO diffs from here',
+    with: '      /* mutant: the baseline is not rolled */' },
+
+  { what: 'change order: approval leaves the draft pending and it can be logged twice',
+    find: '      draftChangeOrder._pending = null;\n      saveLocal();\n      renderCoHistory();',
+    with: '      saveLocal();\n      renderCoHistory();' },
+
+  { what: 'change order: the log records a price delta the client never approved',
+    find: 'priceDelta: p.priceDelta, newFinish: p.newFinish',
+    with: 'priceDelta: (p.priceDelta||0)+500, newFinish: p.newFinish' },
 ];
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ptr-mut-'));
@@ -141,7 +177,7 @@ const run = (script, appFile) => {
 const CHECKS = QUICK ? ['run-test-plan.js']
   : ['run-test-plan.js', 'golden-reference.js', 'contradiction-sweep.js',
      'schedule-sweep.js', 'drawn-surfaces-sweep.js', 'pricing-sweep.js',
-     'resourcing-sweep.js', 'persistence-sweep.js', 'export-sweep.js', 'undo-sweep.js', 'cross-surface-sweep.js', 'task-editor-sweep.js',
+     'resourcing-sweep.js', 'persistence-sweep.js', 'export-sweep.js', 'undo-sweep.js', 'baseline-sweep.js', 'cross-surface-sweep.js', 'task-editor-sweep.js',
      'client-facing-sweep.js'];
 
 let survived = 0;
