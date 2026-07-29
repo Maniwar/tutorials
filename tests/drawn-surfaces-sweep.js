@@ -299,6 +299,54 @@ const QA = JSON.parse(fs.readFileSync(
           say('Analytics', blind.length + ' chart mark(s) render with no width: ' + blind.slice(0, 3).join(', '));
       }
 
+      /* ═══ 4c. THE RECONCILIATION ADDS UP AS PRINTED ═════════════════════
+         The budget bar's drill-in used to show the five biggest movers, which
+         cannot justify a total — a reader was shown a number and five figures
+         that need not sum to it, and reasonably refused to believe it. The full
+         table claims an exact identity per row and in total:
+
+             off its dates  +  vs its own budget  =  contributes
+             Σ contributes  +  cost with no activity  =  the bar
+
+         Parse the RENDERED cells, not the data behind them. A table that is
+         right in memory and mis-columned on screen is still a table nobody can
+         check, and this whole panel exists to be checkable. */
+      switchTab('analytics');
+      {
+        const t = document.querySelector('.ptr-rc-t');
+        if (t) {
+          const cash = c => { const v = (c.textContent || '').replace(/[\s,]/g, '');
+            if (/^—?$/.test(v)) return 0;
+            const n = parseFloat(v.replace(/[^0-9.]/g, ''));
+            return Number.isFinite(n) ? (/[−-]/.test(v) ? -n : n) : NaN; };
+          const body = [...t.querySelectorAll('tbody tr')];
+          let sum = 0, broke = 0;
+          body.forEach(tr => {
+            const c = [...tr.children]; if (c.length < 4) return;
+            const timing = cash(c[1]), over = cash(c[2]), total = cash(c[3]);
+            if (![timing, over, total].every(Number.isFinite)) { broke++; return; }
+            sum += total;
+            // the residual line deliberately prints — for its two halves
+            if (!/no activity behind it/.test(tr.textContent) && Math.abs((timing + over) - total) > 1.5)
+              say('Reconciliation', 'a row prints ' + timing + ' off its dates and ' + over
+                + ' against its budget, which is ' + (timing + over) + ', and calls it ' + total);
+          });
+          if (broke) say('Reconciliation', broke + ' row(s) print a figure that will not parse as money');
+          const foot = [...t.querySelectorAll('tfoot tr td')];
+          if (foot.length >= 4) {
+            const bar = cash(foot[3]);
+            if (Number.isFinite(bar) && Math.abs(bar - sum) > 1.5)
+              say('Reconciliation', 'the rows add to ' + sum + ' and the total row calls the bar '
+                + bar + ' — the table does not justify the figure it sits under');
+            const ft = cash(foot[1]), fo = cash(foot[2]);
+            if (Number.isFinite(ft) && Number.isFinite(fo) && Math.abs((ft + fo) - bar) > 1.5)
+              say('Reconciliation', 'the total row prints ' + ft + ' timing and ' + fo
+                + ' overrun against a bar of ' + bar);
+          }
+          out.reconRows = body.length;
+        }
+      }
+
       // ═══ 5. NOTHING ANYWHERE PRINTS A BROKEN FIGURE ══════════════════════
       ['gantt', 'pert', 'tasks', 'req', 'analytics', 'resources', 'raid', 'baseline'].forEach(tab => {
         try {

@@ -463,6 +463,22 @@
     .ptr-pl { font-size: var(--t-xs); font-weight: 600; letter-spacing: .03em;
       text-transform: uppercase; color: var(--muted); }
     .ptr-plan { color: var(--muted); }
+    .ptr-rc { margin-top: 0.5rem; }
+    .ptr-rc > summary { cursor: pointer; font-size: var(--t-sm); font-weight: 600; color: var(--primary); }
+    .ptr-rc-t { width: 100%; border-collapse: collapse; font-size: var(--t-sm); margin-top: 0.4rem; }
+    .ptr-rc-t th, .ptr-rc-t td { padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--border); }
+    .ptr-rc-t th { font-size: var(--t-xs); text-transform: uppercase; letter-spacing: .04em;
+      color: var(--muted); text-align: left; }
+    .ptr-rc-n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .ptr-rc-bad { color: var(--critical); font-weight: 600; }
+    .ptr-rc-good { color: var(--success); }
+    .ptr-rc-a { width: 52%; }
+    .ptr-rc-open { background: none; border: 0; padding: 0; text-align: left; font: inherit;
+      color: inherit; cursor: pointer; }
+    .ptr-rc-open:hover { box-shadow: none; transform: none; text-decoration: underline; }
+    .ptr-rc-resid td { color: var(--muted); font-style: italic; }
+    .ptr-rc-why { font-size: var(--t-xs); }
+    .ptr-rc-t tfoot td { border-top: 2px solid var(--text); border-bottom: 0; font-weight: 700; }
     .ptr-arr { color: var(--slack); font-size: var(--t-sm); font-weight: 600; }
     .ptr-act { color: var(--text); font-weight: 700; }
     .ptr-na { color: var(--muted); font-style: italic; }
@@ -2813,7 +2829,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.27.1831</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.29.0835</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -9375,6 +9391,33 @@
         // measured against the BAR's own gap, not a re-derived one, so the
         // sentence can never disagree with the figure printed above it
         const budRest = (actCostAll - pvNow) - budShownSum;
+
+        /* THE FULL RECONCILIATION. Five rows cannot justify a total. They are
+           the biggest movers, capped and one-sided, so a reader is shown
+           "+$25,620" and five numbers that do not add to it — and correctly
+           refuses to believe it. This is EVERY activity that moves the bar,
+           both signs, the two halves kept apart, and a total that is the bar.
+
+           The identity is exact and worth stating because it is what makes the
+           table checkable: for each activity, contribution = (EV − PV) + (AC −
+           EV) = AC − PV, so the timing column plus the overrun column is the
+           contribution column, and the contributions sum to booked minus
+           plan-to-date. Anything left over is money with no activity behind it
+           and gets its own line rather than being quietly absorbed. */
+        bud.recon = (function () {
+          const rows = work.map(t => {
+            const v = gap(t);
+            if (!Number.isFinite(v) || Math.abs(v) < 0.5) return null;
+            const dt = budDetail(t, v);
+            return { id: t.id, wbs: t.wbs || '', name: t.name, kind: ekKindOf(t),
+                     crit: !!t.isCritical, timing: dt.timing, over: dt.over, total: v };
+          }).filter(Boolean).sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+          const sum = rows.reduce((a, r) => a + r.total, 0);
+          const barGap = actCostAll - pvNow;
+          return { rows: rows, sum: sum, barGap: barGap, residual: barGap - sum,
+                   timing: rows.reduce((a, r) => a + r.timing, 0),
+                   over: rows.reduce((a, r) => a + r.over, 0) };
+        })();
         bud.driverNote = (overspent
           ? 'Booked above what the baseline says should have been spent on each one BY TODAY — the same subtraction'
             + ' as the bar, per activity.'
@@ -9481,7 +9524,61 @@
         + (r.driverNote ? '<p class="ptr-drv-note">' + r.driverNote + '</p>' : '')
         + '<ul class="ptr-drv-list">' + rows + '</ul>'
         + '<p class="ptr-drv-note">Click any one to open it. Worst first, top ' + r.drivers.length + '.</p>'
+        + ptrRecon(r)
         + '</details>';
+    }
+
+
+    /* ═══ THE FULL RECONCILIATION ═══════════════════════════════════════════
+       The list above is the five biggest movers. Five rows cannot justify a
+       total: they are capped and one-sided, so a reader is shown "+$25,620" and
+       five numbers that do not add up to it, and correctly refuses to believe
+       the figure. Being told "top 5" does not help — it names the omission
+       without repairing it.
+
+       This is every activity that moves the bar, both signs, with the two
+       halves kept apart and a total that IS the bar. The identity is exact and
+       is printed, because that is what makes the table checkable rather than
+       merely longer: per activity, contribution = (EV − PV) + (AC − EV) = AC −
+       PV. So the timing column plus the overrun column is the contribution
+       column, and the contributions sum to booked minus plan-to-date. Money
+       with no activity behind it gets its own line rather than being quietly
+       absorbed into a rounding difference nobody can see. */
+    function ptrRecon(r) {
+      const R = r.recon;
+      if (!R || !R.rows.length) return '';
+      const m = v => (clientSafeReports ? '•••' : fmtMoney(Math.round(Math.abs(v))));
+      const sign = v => (v > 0 ? '+' : v < 0 ? '−' : '');
+      const cell = (v, colour) => '<td class="ptr-rc-n' + (colour && Math.abs(v) >= 1
+        ? (v > 0 ? ' ptr-rc-bad' : ' ptr-rc-good') : '') + '">'
+        + (Math.abs(v) < 1 ? '—' : sign(v) + m(v)) + '</td>';
+      const body = R.rows.map(x =>
+        '<tr><td class="ptr-rc-a"><button type="button" class="ptr-rc-open" onclick="openEditModal('
+        + x.id + ', true)" title="Open ' + escapeHtml(x.name) + '">'
+        + ekTok(x.kind, x.wbs, x.name, { xs: true, max: 40 })
+        + (x.crit ? ' <span class="ptr-drv-crit" title="On the critical path">⚠</span>' : '')
+        + '</button></td>'
+        + cell(x.timing, false) + cell(x.over, true) + cell(x.total, false) + '</tr>').join('');
+      const resid = Math.abs(R.residual) >= 1
+        ? '<tr class="ptr-rc-resid"><td class="ptr-rc-a">Booked cost with no activity behind it'
+          + '<span class="ptr-rc-why"> — a figure logged on the project rather than on a line of work,'
+          + ' so it moves the bar and has nothing to open</span></td>'
+          + '<td class="ptr-rc-n">—</td><td class="ptr-rc-n">—</td>' + cell(R.residual, false) + '</tr>'
+        : '';
+      return '<details class="ptr-rc"><summary>Show the full reconciliation — all '
+        + R.rows.length + ' activit' + (R.rows.length === 1 ? 'y' : 'ies') + ' that move this bar'
+        + '</summary>'
+        + '<p class="ptr-drv-note">Every activity, both directions. <b>Off its dates</b> plus '
+        + '<b>vs its own budget</b> is <b>contributes</b>, and the contributions add to the bar. '
+        + 'Only the middle column is a fault — the first is work landing earlier or later than the '
+        + 'baseline planned it, which costs nothing.</p>'
+        + '<div class="table-wrap"><table class="ptr-rc-t"><thead><tr>'
+        + '<th>Activity</th><th class="ptr-rc-n">Off its dates</th>'
+        + '<th class="ptr-rc-n">Vs its own budget</th><th class="ptr-rc-n">Contributes</th>'
+        + '</tr></thead><tbody>' + body + resid + '</tbody>'
+        + '<tfoot><tr><td class="ptr-rc-a"><b>Total — this is the bar</b></td>'
+        + cell(R.timing, false) + cell(R.over, true) + cell(R.barGap, false) + '</tr></tfoot>'
+        + '</table></div></details>';
     }
 
     function ptrCta(c, lite) {
@@ -17928,15 +18025,44 @@ Rules:
       let d = null; try { d = planTruthData(); } catch (e) {}
       if (d) {
         line('\nTRUTH (rendered on the Plan-truth panel)');
+        /* The vocabulary, before any number. The budget figure is booked minus
+           what the baseline said was due BY TODAY, and it is the SUM of two
+           unlike things: work landing off its planned dates, which costs
+           nothing, and finished work costing more than its own budget, which is
+           the only half that is a fault. The panel prints that distinction in
+           its caption and colours only the second half.
+
+           The digest did not carry it. A reading was handed "budget +47.2%" and
+           five activities each wearing a bare "+$7,800", and answered that
+           Solution Design was the biggest driver of the OVERRUN — of an activity
+           $433 UNDER its own budget. That is not the model inventing something:
+           given the gap with the split stripped off, it was the only reading
+           available. Say the words here, and hand over the halves below. */
+        line('  HOW TO READ THE BUDGET ROW: the figure is booked minus what the baseline said was'
+          + ' due BY TODAY. It is timing PLUS overrun. Timing is work landing off its planned dates'
+          + ' and costs nothing. Only the overrun half — finished work against its own budget — is'
+          + ' a fault. Never call the gap an overrun, and never attribute added cost to an activity'
+          + ' whose overrun is zero or negative.');
         d.rows.forEach(r => {
           line(`  ${r.key.padEnd(9)} ${r.state === 'ok'
             ? 'plan ' + num(r.planTxt) + ' → actual ' + num(r.actTxt) + '  ' + num((r.pct >= 0 ? '+' : '') + (r.pct || 0).toFixed(1)) + '%  state ok'
             : 'state ' + r.state + ' — ' + num(plain(r.why).slice(0, 200))}`);
+          /* The row's own explanation went only to non-ok rows — so it was
+             withheld exactly when it is needed most: a large gap that is NOT a
+             fault is the case a reader, and a model, most easily misreads. */
+          if (r.note) line(`      what this row means: ${num(plain(r.note).slice(0, 420))}`);
           // The drill-in already worked out WHICH activities move each row. Those
           // are the only rows on this panel a reading can point a finger at, so
           // they go in the digest and their ids go on the citable list.
           (r.drivers || []).forEach(x => { refs.add('T#' + x.id);
-            line(`    ↳ T#${x.id} ${x.wbs} "${x.name}"${x.crit ? ' [critical path]' : ''}  ${num(plain(x.txt))}`); });
+            // the halves, named — the panel shows them on the row's second line
+            const half = (x.timing == null && x.over == null) ? ''
+              : '  [' + money(Math.round(Math.abs(x.timing || 0)))
+                + ((x.timing || 0) >= 0 ? ' ahead of its dates' : ' behind its dates')
+                + ', costs nothing; ' + money(Math.round(Math.abs(x.over || 0)))
+                + ((x.over || 0) > 0 ? ' OVER its own budget — this half is the fault'
+                                     : ' under its own budget — no overrun here') + ']';
+            line(`    ↳ T#${x.id} ${x.wbs} "${x.name}"${x.crit ? ' [critical path]' : ''}  ${num(plain(x.txt))}${num(half)}`); });
         });
       }
 
