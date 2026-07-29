@@ -96,10 +96,10 @@ rm -f /tmp/ptr-m.$$
 
 # The same question asked of the ENGINE: break a load-bearing identity in turn —
 # the PERT weighting, the backward pass, the working calendar, earned value,
-# save/load field coverage, the margin, an export total, undo, the baseline roll
-# — and confirm something goes red. Twenty-six of them, about two and a half
-# minutes: too much for every commit, worth it before anything the user sees.
-# FULL=1 git commit.
+# save/load field coverage, the margin, an export total, undo, the baseline roll,
+# a wizard button that acts on the wrong object — and confirm something goes red.
+# Twenty-nine of them, about three minutes: too much for every commit, worth it
+# before anything the user sees. FULL=1 git commit.
 if [ -n "$FULL" ]; then
   if node tests/mutation-engine.js > /tmp/ptr-e.$$ 2>&1; then
     echo "  ✓ mutation · engine    every broken identity caught"

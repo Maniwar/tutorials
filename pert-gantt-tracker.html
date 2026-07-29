@@ -2830,7 +2830,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.29.2157</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.29.2345</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -6578,28 +6578,66 @@
     // ============== DEPENDENCY FIX WIZARD ==============
     // Shows the loop as cards — "X waits for Y via <stored link>" — with a
     // one-click 🗑 per link, plus an AI path that cuts the loop and re-links.
+    //
+    // Every button here NAMES THE OBJECT IT ACTS ON, because the row has two
+    // different pairs in it and they are only sometimes the same pair:
+    //
+    //   the EFFECTIVE edge   — leaf waits for leaf, which is what makes the
+    //                          circle, and what the cycle walk hands us
+    //   the STORED link      — the predecessor entry a person can actually
+    //                          delete, which may sit on an ANCESTOR PHASE of
+    //                          the waiting task and may POINT AT a phase too
+    //
+    // The first version showed the effective edge and acted on the stored one
+    // without saying so, and the gap between them is where "the buttons don't
+    // do anything" came from: ✎ Open opened the effective task, whose
+    // Dependencies list is EMPTY — the link lives on its phase — so the person
+    // arrived at an editor with nothing in it and concluded the wizard was
+    // broken. Worse, ⑂ Nest under it read as the activity in the headline and
+    // re-parented the test case under a PHASE instead, tearing it out of the
+    // UAT activity it decomposes. Open now opens the holder, Nest names its real
+    // target and is withheld when that target is a phase.
     function openDepFixWizard() {
       const body = document.getElementById('depFixBody');
       const loop = findScheduleCycleIds();
       if (!body || !loop) { closeDepFixWizard(); return; }
       computeWbsCodes();
       const nm = id => { const t = tasks.find(x => x.id === id); return t ? ekTask(t, { name: true, max: 26, xs: true }) : '#' + id; };
+      const shortName = (t, n) => { const s = (t && t.name) || '?'; return escapeHtml(s.length > (n || 20) ? s.slice(0, (n || 20) - 1) + '…' : s); };
       let rows = '';
       loop.forEach((id, i) => {
         const nxt = loop[(i + 1) % loop.length];
         const link = resolveStoredLink(id, nxt);
-        const onPhase = link && link.holder.id !== id;
-        rows += `<div style="display:flex;align-items:flex-start;gap:0.6rem;padding:0.5rem 0.65rem;border:1px solid var(--border);border-radius:8px;margin-bottom:0.45rem;background:${onPhase ? '#fffbeb' : '#fff'}">
-          <div style="flex:1;font-size:0.84rem;line-height:1.45">${nm(id)}
+        const holder = link && link.holder;                       // whose list holds it
+        const predT = link && tasks.find(x => x.id === link.pred.id);   // what it points at
+        const onPhase = !!(holder && holder.id !== id);           // link inherited from a phase
+        const predIsPhase = !!(predT && isSummaryId(predT.id));   // and/or points at a phase
+        // Nest is only the right fix when the target is a real activity: a test
+        // case decomposes the work it verifies, and a phase is not work.
+        const canNest = !!(link && holder && isTestCaseTask(holder) && !isSummaryId(holder.id)
+          && predT && !isTestCaseTask(predT) && !predIsPhase && !wouldCreateCycleParent(holder.id, predT.id));
+        const openId = holder ? holder.id : id;                   // the editor that has something in it
+        const openT = tasks.find(x => x.id === openId);
+        /* The buttons get their OWN line rather than a column beside the text.
+           Named labels are the whole point of this row — "Open" alone was what
+           sent people to an empty editor — but three named buttons beside a
+           wrapping sentence do not fit 640px: the first attempt pushed ✎ Open
+           clean off the right edge of the dialog, where it could not be clicked
+           at all. Below the text they have the full width. */
+        rows += `<div style="padding:0.5rem 0.65rem;border:1px solid var(--border);border-radius:8px;margin-bottom:0.45rem;background:${onPhase || predIsPhase ? '#fffbeb' : '#fff'}">
+          <div style="font-size:0.84rem;line-height:1.5">${nm(id)}
             <span style="color:var(--muted)">waits for</span> ${nm(nxt)}
-            ${link ? `<div class="help-text" style="margin-top:2px">stored link: “${escapeHtml(link.holder.name)}” ← “${escapeHtml((tasks.find(x => x.id === link.pred.id) || { name: '?' }).name)}”${onPhase ? ' — ⚠ sits on the PHASE, removing it affects every task inside' : ''}</div>` : '<div class="help-text" style="margin-top:2px">inherited link — open the task to inspect</div>'}
+            ${!link ? '<div class="help-text" style="margin-top:3px">inherited link — open the task to inspect</div>'
+              /* Only say where the stored entry lives when it is somewhere ELSE.
+                 On a plain row it is the same pair as the headline, and repeating
+                 it buries the two rows where the difference is the whole point. */
+              : (holder.id === id && link.pred.id === nxt) ? ''
+              : `<div class="help-text" style="margin-top:3px">the predecessor entry behind it sits on ${nm(holder.id)} and points at ${nm(link.pred.id)}${onPhase ? ' — ⚠ a PHASE above “' + shortName(tasks.find(x => x.id === id), 26) + '”, so cutting it affects every task inside' : ''}${predIsPhase && !onPhase ? ' — ⚠ it waits for a whole PHASE, not that one activity' : ''}</div>`}
           </div>
-          <div style="display:flex;gap:0.35rem;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
-            ${(() => { if (!link) return ''; const predT = tasks.find(x => x.id === link.pred.id);
-              return (isTestCaseTask(link.holder) && !isSummaryId(link.holder.id) && predT && !isTestCaseTask(predT) && !wouldCreateCycleParent(link.holder.id, predT.id))
-                ? `<button class="btn-sm btn-primary" onclick="depFixNestTC(${link.holder.id}, ${link.pred.id})" title="The usual RIGHT fix for a test case: move it under the activity it verifies (WBS decomposition) — the link becomes unnecessary, nothing is cut, and all other sequencing stays."><span class="ico" aria-hidden="true">⑂</span> Nest under it</button>` : ''; })()}
-            ${link ? `<button class="btn-sm btn-danger" onclick="depFixRemove(${link.holder.id}, ${link.pred.id})" title="Delete this predecessor link. Cutting ONE link breaks the loop — usually the one pointing backwards (waiting for something that happens later in the plan)."><span class="ico" aria-hidden="true">🗑</span> Remove link</button>` : ''}
-            <button class="btn-sm btn-secondary" onclick="closeDepFixWizard();openEditModal(${id}, true)" title="Open this task to edit its predecessors by hand">✎ Open</button>
+          <div style="display:flex;gap:0.35rem;flex-wrap:wrap;justify-content:flex-end;margin-top:0.4rem">
+            ${canNest ? `<button class="btn-sm btn-primary" onclick="depFixNestTC(${holder.id}, ${predT.id})" title="The usual RIGHT fix for a test case: move “${escapeHtml(holder.name)}” under “${escapeHtml(predT.name)}”, the activity it verifies (WBS decomposition) — the link becomes unnecessary, nothing is cut, and all other sequencing stays."><span class="ico" aria-hidden="true">⑂</span> Nest under ${shortName(predT, 18)}</button>` : ''}
+            ${link ? `<button class="btn-sm btn-danger" onclick="depFixRemove(${holder.id}, ${link.pred.id})" title="Delete “${escapeHtml(holder.name)}” ← “${escapeHtml((predT || {name:'?'}).name)}”. Cutting ONE link breaks the loop — usually the one pointing backwards (waiting for something that happens later in the plan)."><span class="ico" aria-hidden="true">🗑</span> Cut ${shortName(holder, 16)} ← ${shortName(predT, 16)}</button>` : ''}
+            <button class="btn-sm btn-secondary" onclick="closeDepFixWizard();openEditModal(${openId}, true)" title="Open ${escapeHtml((openT || {name:'?'}).name)} — the one whose Dependencies list actually holds this link — and edit it by hand">✎ Open ${shortName(openT, 18)}</button>
           </div></div>`;
       });
       body.innerHTML = `<p style="font-size:0.85rem;margin:0 0 0.65rem">These <b>${loop.length}</b> tasks wait on each other in a circle, so none of them can ever start. Cut <b>one</b> link to break it — usually the one pointing <i>backwards</i> in the plan. The wizard reopens automatically if another loop remains, and ↶ Undo restores anything you cut.</p>${rows}`;
@@ -6612,7 +6650,12 @@
     // the TC into circles it doesn't belong to.
     function depFixNestTC(holderId, predId) {
       const h = tasks.find(x => x.id === holderId), pr = tasks.find(x => x.id === predId);
-      if (!h || !pr || wouldCreateCycleParent(h.id, pr.id)) return;
+      // A test case decomposes the WORK it verifies. Nesting it under a phase is
+      // not that: it pulls the case out of the activity it belongs to and drops
+      // it loose at the top of a phase, which the caller reads as a success
+      // because the loop does clear. Refuse here as well as hiding the button,
+      // so no future caller can reach the same damage.
+      if (!h || !pr || isSummaryId(pr.id) || wouldCreateCycleParent(h.id, pr.id)) return;
       h.parentId = pr.id;
       h.predecessors = h.predecessors.filter(p => p.id !== predId);
       collapsedIds.delete(pr.id);

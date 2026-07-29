@@ -167,13 +167,38 @@ const MUTANTS = [
   { what: 'change order: the log records a price delta the client never approved',
     find: 'priceDelta: p.priceDelta, newFinish: p.newFinish',
     with: 'priceDelta: (p.priceDelta||0)+500, newFinish: p.newFinish' },
+
+  /* ── the dependency wizard: a button that acts on something else ───────────
+     These three are not arithmetic. They are the shape of defect the user hit
+     and no check could see: the control is wired, the handler runs, the data
+     changes — and it is the WRONG object, or the button is off the edge of the
+     dialog where no click can reach it. Reported as "the buttons don't do
+     anything", which is what a correct handler on an unreachable or misaddressed
+     control looks like from the outside. */
+
+  { what: 'wizard: ✎ Open sends you to the task in the headline, whose link list is empty',
+    find: 'const openId = holder ? holder.id : id;',
+    with: 'const openId = id;' },
+
+  { what: 'wizard: ⑂ Nest offers to re-parent a test case under a phase',
+    find: '&& predT && !isTestCaseTask(predT) && !predIsPhase',
+    with: '&& predT && !isTestCaseTask(predT)' },
+
+  /* Two edits, because either alone still fits: putting the buttons back beside
+     the text only overflows once they also stop wrapping, and a mutant that
+     survives for being too small reads as a hole in the sweep that is not one. */
+  { what: 'wizard: the buttons sit beside the text again and run off the dialog',
+    find: ['rows += `<div style="padding:0.5rem 0.65rem;border:1px solid',
+           '<div style="display:flex;gap:0.35rem;flex-wrap:wrap;justify-content:flex-end;margin-top:0.4rem">'],
+    with: ['rows += `<div style="display:flex;align-items:flex-start;gap:0.6rem;padding:0.5rem 0.65rem;border:1px solid',
+           '<div style="display:flex;gap:0.35rem;flex-shrink:0;flex-wrap:nowrap;justify-content:flex-end">'] },
 ];
 
 const CHECKS = QUICK ? ['run-test-plan.js']
   : ['run-test-plan.js', 'golden-reference.js', 'contradiction-sweep.js',
      'schedule-sweep.js', 'drawn-surfaces-sweep.js', 'pricing-sweep.js',
      'resourcing-sweep.js', 'persistence-sweep.js', 'export-sweep.js', 'undo-sweep.js', 'baseline-sweep.js', 'cross-surface-sweep.js', 'task-editor-sweep.js',
-     'client-facing-sweep.js'];
+     'client-facing-sweep.js', 'dialog-sweep.js'];
 
 /* Which check is EXPECTED to notice. This is a running order, not a shortcut:
    if the named check does not go red the mutant still walks every other one, so
@@ -187,7 +212,7 @@ const LIKELY = {
   'save/load': 'persistence-sweep.js', 'undo:': 'undo-sweep.js',
   'baseline:': 'baseline-sweep.js', 'change order:': 'baseline-sweep.js',
   'criticality': 'drawn-surfaces-sweep.js', 'resource load': 'resourcing-sweep.js',
-  'margin': 'pricing-sweep.js'
+  'margin': 'pricing-sweep.js', 'wizard:': 'dialog-sweep.js'
 };
 const orderFor = m => {
   const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);
@@ -209,12 +234,26 @@ function runAsync(script, appFile) {
   });
 }
 
+/* One mutant may need more than one edit. A defect is not always one line: the
+   wizard's layout regression was a flex container and a shrink rule, and either
+   half alone leaves a page that still fits, so a single-edit mutant would
+   SURVIVE and be reported as a hole in the sweep that isn't one. `find`/`with`
+   therefore accept arrays, applied in order, each still required to match
+   exactly once — the anchor check is the whole reason a mutant can be trusted
+   to have applied at all. */
 async function judge(m, i) {
-  const n = SRC.split(m.find).length - 1;
-  if (n !== 1) return { m, skipped: true, why: 'its anchor matches ' + n + ' times in the source, '
-    + 'so this mutant cannot be trusted to have applied' };
+  const finds = [].concat(m.find), withs = [].concat(m.with);
+  if (finds.length !== withs.length) return { m, skipped: true,
+    why: 'it lists ' + finds.length + ' anchor(s) and ' + withs.length + ' replacement(s)' };
+  let src = SRC;
+  for (let k = 0; k < finds.length; k++) {
+    const n = src.split(finds[k]).length - 1;
+    if (n !== 1) return { m, skipped: true, why: 'anchor ' + (k + 1) + ' of ' + finds.length
+      + ' matches ' + n + ' times in the source, so this mutant cannot be trusted to have applied' };
+    src = src.replace(finds[k], withs[k]);
+  }
   const file = path.join(tmp, 'mutant-' + i + '.html');
-  fs.writeFileSync(file, SRC.replace(m.find, m.with));
+  fs.writeFileSync(file, src);
   for (const c of orderFor(m)) {
     if (await runAsync(c, file)) return { m, by: c };
   }
