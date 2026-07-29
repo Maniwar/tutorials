@@ -2829,7 +2829,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.29.0835</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.29.1830</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -17958,6 +17958,22 @@ Rules:
 
     // ---- the board fingerprint. Cheap, synchronous, and derived only from
     // objects already in memory. NEVER calls recompute().
+    /* The BASIS version, bumped whenever the digest changes what a reading is
+       told or how it is told to read it.
+
+       The fingerprint below is a fingerprint of the PLAN, and that was the whole
+       of it — so a stored reading was marked stale only when the numbers moved.
+       When the digest itself was corrected, every saved answer produced from the
+       old one came back after a refresh looking perfectly current: the plan had
+       not changed, so nothing said the reasoning behind the answer had.
+
+       That is the worst shape a stale reading can take. It is a sentence about
+       this engagement, in the file, presented as current, and now contradicted
+       by the very row it sits above. Reading is cheap and re-reading is a
+       button; carrying a superseded explanation is not.
+
+       Bump this string on any change to ptDigest's content or instructions. */
+    const PT_BASIS = 'basis-2: budget gap split into timing and overrun, row notes always sent';
     function ptFp() {
       let price = 0, margin = 'x', stale = 0;
       if (calculated) { try { const f = pricingFigures(); price = Math.round(f.price); margin = (f.margin == null ? 'x' : f.margin.toFixed(1)); stale = f.staleSim ? 1 : 0; } catch (e) {} }
@@ -17970,14 +17986,23 @@ Rules:
         raid.filter(r => r.status !== 'Closed').length,
         ((reqs && reqs.stories) || []).length,
         healthFindings ? healthFindings.findings.length : -1,
-        clientSafeReports ? 1 : 0].join('|');
+        clientSafeReports ? 1 : 0, PT_BASIS].join('|');
     }
     // A named, human-readable diff between two fingerprints — this is what the
     // stale bar says instead of blanking the reading.
-    const PT_FP_LABELS = ['activities','leaves','effort','progress','cost','price','margin','sim','baseline','model','basis','open RAID','stories','findings','client-safe'];
+    const PT_FP_LABELS = ['activities','leaves','effort','progress','cost','price','margin','sim','baseline','model','basis','open RAID','stories','findings','client-safe','how this panel explains itself'];
+    const PT_FP_BASIS_IX = PT_FP_LABELS.length - 1;
     function ptFpDelta(a, b) {
       const x = String(a || '').split('|'), y = String(b || '').split('|'), out = [];
-      PT_FP_LABELS.forEach((lab, i) => { if (x[i] !== y[i] && x[i] != null && y[i] != null) out.push(lab + ' ' + x[i] + ' → ' + y[i]); });
+      PT_FP_LABELS.forEach((lab, i) => {
+        if (x[i] === y[i] || x[i] == null || y[i] == null) return;
+        // the basis is a sentence, not a figure: printing "old → new" would put
+        // two paragraphs in a one-line banner and say nothing a reader can use
+        out.push(i === PT_FP_BASIS_IX
+          ? 'this panel now explains its numbers differently, so the earlier answer was'
+            + ' reasoning from a description that has since been corrected'
+          : lab + ' ' + x[i] + ' → ' + y[i]);
+      });
       return out.slice(0, 4).join(' · ');
     }
 
