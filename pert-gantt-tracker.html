@@ -2830,7 +2830,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.29.1900</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.29.1916</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -6590,8 +6590,8 @@
         const link = resolveStoredLink(id, nxt);
         const onPhase = link && link.holder.id !== id;
         rows += `<div style="display:flex;align-items:flex-start;gap:0.6rem;padding:0.5rem 0.65rem;border:1px solid var(--border);border-radius:8px;margin-bottom:0.45rem;background:${onPhase ? '#fffbeb' : '#fff'}">
-          <div style="flex:1;font-size:0.84rem;line-height:1.45"><b>${escapeHtml(nm(id))}</b>
-            <span style="color:var(--muted)">waits for</span> <b>${escapeHtml(nm(nxt))}</b>
+          <div style="flex:1;font-size:0.84rem;line-height:1.45">${nm(id)}
+            <span style="color:var(--muted)">waits for</span> ${nm(nxt)}
             ${link ? `<div class="help-text" style="margin-top:2px">stored link: “${escapeHtml(link.holder.name)}” ← “${escapeHtml((tasks.find(x => x.id === link.pred.id) || { name: '?' }).name)}”${onPhase ? ' — ⚠ sits on the PHASE, removing it affects every task inside' : ''}</div>` : '<div class="help-text" style="margin-top:2px">inherited link — open the task to inspect</div>'}
           </div>
           <div style="display:flex;gap:0.35rem;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
