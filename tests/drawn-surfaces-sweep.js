@@ -319,11 +319,27 @@ const QA = JSON.parse(fs.readFileSync(
             if (/^—?$/.test(v)) return 0;
             const n = parseFloat(v.replace(/[^0-9.]/g, ''));
             return Number.isFinite(n) ? (/[−-]/.test(v) ? -n : n) : NaN; };
+          /* Resolve the columns by HEADER, never by position. This check read
+             c[1]/c[2]/c[3] and went quietly wrong the moment four source columns
+             were inserted before them: it started comparing "Budget" against
+             "Done", parsed the 100% as 100, and reported four confident
+             contradictions about arithmetic nobody had written. A positional
+             read of a table is a check that silently measures something else
+             when the table grows. */
+          const heads = [...t.querySelectorAll('thead th')]
+            .map(h => (h.textContent || '').toLowerCase());
+          const ix = want => heads.findIndex(h => h.indexOf(want) >= 0);
+          const iT = ix('off its dates'), iO = ix('vs its own budget'), iC = ix('contributes');
+          if (iT < 0 || iO < 0 || iC < 0) {
+            say('Reconciliation', 'the table no longer has the columns this check reads — '
+              + 'headers are: ' + heads.join(' | '));
+            return;
+          }
           const body = [...t.querySelectorAll('tbody tr')];
           let sum = 0, broke = 0;
           body.forEach(tr => {
-            const c = [...tr.children]; if (c.length < 4) return;
-            const timing = cash(c[1]), over = cash(c[2]), total = cash(c[3]);
+            const c = [...tr.children]; if (c.length <= iC) return;
+            const timing = cash(c[iT]), over = cash(c[iO]), total = cash(c[iC]);
             if (![timing, over, total].every(Number.isFinite)) { broke++; return; }
             sum += total;
             // the residual line deliberately prints — for its two halves
@@ -333,12 +349,12 @@ const QA = JSON.parse(fs.readFileSync(
           });
           if (broke) say('Reconciliation', broke + ' row(s) print a figure that will not parse as money');
           const foot = [...t.querySelectorAll('tfoot tr td')];
-          if (foot.length >= 4) {
-            const bar = cash(foot[3]);
+          if (foot.length > iC) {
+            const bar = cash(foot[iC]);
             if (Number.isFinite(bar) && Math.abs(bar - sum) > 1.5)
               say('Reconciliation', 'the rows add to ' + sum + ' and the total row calls the bar '
                 + bar + ' — the table does not justify the figure it sits under');
-            const ft = cash(foot[1]), fo = cash(foot[2]);
+            const ft = cash(foot[iT]), fo = cash(foot[iO]);
             if (Number.isFinite(ft) && Number.isFinite(fo) && Math.abs((ft + fo) - bar) > 1.5)
               say('Reconciliation', 'the total row prints ' + ft + ' timing and ' + fo
                 + ' overrun against a bar of ' + bar);

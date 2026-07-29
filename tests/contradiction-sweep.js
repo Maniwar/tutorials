@@ -53,9 +53,9 @@ const DATA = FIXTURE();
       const over = AC - EV, timing = EV - PV;
       const tol = Math.max(1, BUDG * 0.005);
       if (d.tone === 'bad' && over <= tol)
-        say(t.name, 'coloured as a fault but finished work cost ' + money(Math.round(-over)) + ' LESS than budgeted');
+        say(t.name, 'coloured as a fault but finished work cost ' + fmtMoney(Math.round(-over)) + ' LESS than budgeted');
       if (d.tone === 'good' && over > tol)
-        say(t.name, 'coloured as good but is ' + money(Math.round(over)) + ' over its own budget');
+        say(t.name, 'coloured as good but is ' + fmtMoney(Math.round(over)) + ' over its own budget');
       if (Math.abs((timing + over) - (AC - PV)) > 0.01)
         say(t.name, 'the two halves do not add back to the figure shown');
       if (Math.abs(d.over - over) > 0.01 || Math.abs(d.timing - timing) > 0.01)
@@ -86,11 +86,18 @@ const DATA = FIXTURE();
     const PV = accrualAt(pvSpread(hb, leafTasks()).segs, today);
     const EV = earnedValue();
     const bv = budgetVerdict(AC, PV, EV, budgetAtCompletion(hb));
-    if (!/[+−]\$?[\d,]+ vs plan to date|on the plan to date/.test(bud.delta || ''))
+    /* The badge now carries a VERDICT as well as the gap — "+$21,664 spent
+       ahead of the curve · finished work $2,517 under budget" — because the gap
+       alone read as an alarm on a plan that is ahead and under. So the check
+       reads the leading figure specifically rather than stripping every digit
+       out of the whole string, which would have swallowed the verdict's number
+       and compared a concatenation against the gap. */
+    if (!/^[+−]\$?[\d,]+ (spent ahead of the curve|behind the curve)|^on the plan to date/.test(bud.delta || ''))
       say('Budget bar', 'delta is not in the expected form: ' + bud.delta);
-    const shownDelta = Number(String(bud.delta).replace(/[^0-9.]/g, '')) * (/−/.test(bud.delta) ? -1 : 1);
-    if (bud.delta && Math.abs(shownDelta - bv.gap) > 2)
-      say('Budget bar', 'prints ' + bud.delta + ' but AC−PV recomputes to ' + money(Math.round(bv.gap)));
+    const lead = String(bud.delta || '').split('·')[0];
+    const shownDelta = Number(lead.replace(/[^0-9.]/g, '')) * (/−/.test(lead) ? -1 : 1);
+    if (bud.delta && /\d/.test(lead) && Math.abs(shownDelta - bv.gap) > 2)
+      say('Budget bar', 'prints ' + bud.delta + ' but AC−PV recomputes to ' + fmtMoney(Math.round(bv.gap)));
     // the bar says "timing not overspend" only when that is actually true
     const saysTiming = /Timing, not overspend/.test(bud.note || '');
     if (saysTiming && bv.overValue)
@@ -104,7 +111,7 @@ const DATA = FIXTURE();
     const rest = bv.gap - shown;
     const claimsWhole = /account for the whole of the bar/.test(bud.driverNote || '');
     if (claimsWhole && Math.abs(rest) > Math.max(1, Math.abs(shown) * 0.02))
-      say('Budget list', 'claims the rows account for the whole bar; they miss ' + money(Math.round(rest)));
+      say('Budget list', 'claims the rows account for the whole bar; they miss ' + fmtMoney(Math.round(rest)));
     if (!claimsWhole && Math.abs(rest) <= Math.max(1, Math.abs(shown) * 0.02))
       say('Budget list', 'names a remainder that is actually zero');
 

@@ -472,7 +472,8 @@
     .ptr-rc-n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
     .ptr-rc-bad { color: var(--critical); font-weight: 600; }
     .ptr-rc-good { color: var(--success); }
-    .ptr-rc-a { width: 52%; }
+    .ptr-rc-a { width: 26%; }
+    .ptr-rc-src { color: var(--muted); font-weight: 400; }
     .ptr-rc-open { background: none; border: 0; padding: 0; text-align: left; font: inherit;
       color: inherit; cursor: pointer; }
     .ptr-rc-open:hover { box-shadow: none; transform: none; text-decoration: underline; }
@@ -2829,7 +2830,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.29.1830</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.29.1900</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -9005,11 +9006,39 @@
         bud.pct = bv.gap / ref * 100;
         bud.tone = bv.tone;
         bud.state = (Math.abs(bud.pct) < 0.5 && bv.tone === 'good') ? 'flat' : 'ok';
-        bud.delta = bud.state === 'flat' ? 'on the plan to date'
-          : (bv.gap > 0 ? '+' : '−') + money(Math.abs(bv.gap)) + ' vs plan to date';
+        /* THE HEADLINE MUST CARRY THE VERDICT, NOT JUST THE GAP.
+
+           The badge said "+$21,664 vs plan to date" beside a long bar in the
+           OVER PLAN half, on a plan where every activity is finished, the work
+           came in UNDER budget, and nothing is off the rails. The gap is real —
+           money has been spent ahead of the curve — but the gap is not the
+           verdict, and a reader looking at a chart does not read the third
+           paragraph before forming one. The panel already knew: bv.tone is
+           computed from the overrun alone and the note ends "Timing, not
+           overspend." It simply never said so where the alarm was.
+
+           So the badge states both: how far ahead of the curve, and then the
+           thing that actually answers "is anything wrong" — what the finished
+           work cost against what it was budgeted. */
+        const overAll = bv.cv == null ? null : -bv.cv;   // cv = EV − AC, so −cv is the overrun
+        const verdict = overAll == null ? ''
+          : Math.abs(overAll) < Math.max(1, ref * 0.005) ? ' · finished work on budget'
+          : overAll > 0 ? ' · finished work ' + money(Math.abs(overAll)) + ' OVER budget'
+                        : ' · finished work ' + money(Math.abs(overAll)) + ' under budget';
+        bud.delta = (bud.state === 'flat' ? 'on the plan to date'
+          : (bv.gap > 0 ? '+' : '−') + money(Math.abs(bv.gap))
+            + (bv.gap > 0 ? ' spent ahead of the curve' : ' behind the curve')) + verdict;
         bud.denom = money(ref) + ' ' + (baseCost > 0 ? 'baselined' : 'planned') + ' envelope, phased over the '
           + (baseCost > 0 ? 'baselined' : 'current') + ' dates';
-        bud.note = 'What the ' + (baseCost > 0 ? 'baseline' : 'live plan') + ' says should have been spent <b>by '
+        /* WHICH plan. The row said "plan to date" and never once said whose plan
+           — leaving a reader to wonder whether they are being measured against
+           an org standard, a portfolio, or their own file. It is always the
+           latter, and nothing else exists in this file, so say so rather than
+           letting the ambiguity sit under every number on the row. */
+        bud.note = 'Measured against <b>this project\u2019s own baseline'
+          + (baselineDate ? ', taken ' + escapeHtml(baselineDate) : '')
+          + '</b> — there is no organisation or portfolio reference in this file. '
+          + 'What the ' + (baseCost > 0 ? 'baseline' : 'live plan') + ' says should have been spent <b>by '
           + 'today</b> — <b>' + money(pvNow) + '</b> of the ' + money(ref) + ' envelope — against what is '
           + 'actually booked. Spend curves up, so this is <em>not</em> money-spent against work-finished: the '
           + 'curve below is the same comparison drawn across the whole span, and this bar is its vertical gap at '
@@ -9409,14 +9438,27 @@
             const v = gap(t);
             if (!Number.isFinite(v) || Math.abs(v) < 0.5) return null;
             const dt = budDetail(t, v);
+            /* The OPERANDS, not just the differences. "+$8,233 off its dates"
+               cannot be checked and cannot be believed: the reader has no way to
+               see that it means "the baseline expected $0 spent on this by today
+               and $8,233 of budgeted value has been earned". Showing budget, due
+               by today and booked makes every cell in the row a subtraction the
+               reader can do themselves — which is the whole point of a
+               reconciliation, and the reason five differences alone still read
+               as an assertion. */
             return { id: t.id, wbs: t.wbs || '', name: t.name, kind: ekKindOf(t),
-                     crit: !!t.isCritical, timing: dt.timing, over: dt.over, total: v };
+                     crit: !!t.isCritical, timing: dt.timing, over: dt.over, total: v,
+                     budget: plannedCostOf(t, hb), due: planToDate(t),
+                     earned: evOf(t), booked: (actOf.get(t.id) || 0),
+                     pct: t.percentComplete || 0 };
           }).filter(Boolean).sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
           const sum = rows.reduce((a, r) => a + r.total, 0);
           const barGap = actCostAll - pvNow;
           return { rows: rows, sum: sum, barGap: barGap, residual: barGap - sum,
                    timing: rows.reduce((a, r) => a + r.timing, 0),
-                   over: rows.reduce((a, r) => a + r.over, 0) };
+                   over: rows.reduce((a, r) => a + r.over, 0),
+                   budget: rows.reduce((a, r) => a + r.budget, 0),
+                   due: pvNow, booked: actCostAll };
         })();
         bud.driverNote = (overspent
           ? 'Booked above what the baseline says should have been spent on each one BY TODAY — the same subtraction'
@@ -9552,18 +9594,23 @@
       const cell = (v, colour) => '<td class="ptr-rc-n' + (colour && Math.abs(v) >= 1
         ? (v > 0 ? ' ptr-rc-bad' : ' ptr-rc-good') : '') + '">'
         + (Math.abs(v) < 1 ? '—' : sign(v) + m(v)) + '</td>';
+      const plain = v => '<td class="ptr-rc-n ptr-rc-src">' + (Math.abs(v) < 1 ? '—' : m(v)) + '</td>';
       const body = R.rows.map(x =>
         '<tr><td class="ptr-rc-a"><button type="button" class="ptr-rc-open" onclick="openEditModal('
         + x.id + ', true)" title="Open ' + escapeHtml(x.name) + '">'
-        + ekTok(x.kind, x.wbs, x.name, { xs: true, max: 40 })
+        + ekTok(x.kind, x.wbs, x.name, { xs: true, max: 34 })
         + (x.crit ? ' <span class="ptr-drv-crit" title="On the critical path">⚠</span>' : '')
         + '</button></td>'
+        + plain(x.budget) + '<td class="ptr-rc-n ptr-rc-src">' + Math.round(x.pct) + '%</td>'
+        + plain(x.due) + plain(x.booked)
         + cell(x.timing, false) + cell(x.over, true) + cell(x.total, false) + '</tr>').join('');
       const resid = Math.abs(R.residual) >= 1
         ? '<tr class="ptr-rc-resid"><td class="ptr-rc-a">Booked cost with no activity behind it'
           + '<span class="ptr-rc-why"> — a figure logged on the project rather than on a line of work,'
           + ' so it moves the bar and has nothing to open</span></td>'
-          + '<td class="ptr-rc-n">—</td><td class="ptr-rc-n">—</td>' + cell(R.residual, false) + '</tr>'
+          + '<td class="ptr-rc-n">—</td><td class="ptr-rc-n">—</td><td class="ptr-rc-n">—</td>'
+          + '<td class="ptr-rc-n">—</td><td class="ptr-rc-n">—</td><td class="ptr-rc-n">—</td>'
+          + cell(R.residual, false) + '</tr>'
         : '';
       return '<details class="ptr-rc"><summary>Show the full reconciliation — all '
         + R.rows.length + ' activit' + (R.rows.length === 1 ? 'y' : 'ies') + ' that move this bar'
@@ -9573,12 +9620,24 @@
         + 'Only the middle column is a fault — the first is work landing earlier or later than the '
         + 'baseline planned it, which costs nothing.</p>'
         + '<div class="table-wrap"><table class="ptr-rc-t"><thead><tr>'
-        + '<th>Activity</th><th class="ptr-rc-n">Off its dates</th>'
-        + '<th class="ptr-rc-n">Vs its own budget</th><th class="ptr-rc-n">Contributes</th>'
+        + '<th>Activity</th>'
+        + '<th class="ptr-rc-n ptr-rc-src" title="What this activity is budgeted at">Budget</th>'
+        + '<th class="ptr-rc-n ptr-rc-src" title="How much of it is done">Done</th>'
+        + '<th class="ptr-rc-n ptr-rc-src" title="What the baseline curve said should have been spent on it BY TODAY">Due by today</th>'
+        + '<th class="ptr-rc-n ptr-rc-src" title="What has actually been booked against it">Booked</th>'
+        + '<th class="ptr-rc-n" title="Budgeted value earned minus what was due by today — work landing earlier or later than the baseline placed it">Off its dates</th>'
+        + '<th class="ptr-rc-n" title="Booked minus the budgeted value of the work done — the only column that is a fault">Vs its own budget</th>'
+        + '<th class="ptr-rc-n" title="Booked minus due by today — this activity\u2019s share of the bar">Contributes</th>'
         + '</tr></thead><tbody>' + body + resid + '</tbody>'
         + '<tfoot><tr><td class="ptr-rc-a"><b>Total — this is the bar</b></td>'
+        + plain(R.budget) + '<td class="ptr-rc-n ptr-rc-src">—</td>'
+        + plain(R.due) + plain(R.booked)
         + cell(R.timing, false) + cell(R.over, true) + cell(R.barGap, false) + '</tr></tfoot>'
-        + '</table></div></details>';
+        + '</table></div>'
+        + '<p class="ptr-drv-note"><b>The bar is one subtraction:</b> booked <b>' + m(R.booked)
+        + '</b> minus <b>' + m(R.due) + '</b> due by today = <b>' + (R.barGap < 0 ? '−' : '+')
+        + m(R.barGap) + '</b>. The last two columns split that per activity into calendar and cost.'
+        + '</p></details>';
     }
 
     function ptrCta(c, lite) {
