@@ -2830,7 +2830,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.29.1916</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.29.2157</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -12937,7 +12937,7 @@
           : `<span style="color:#b45309">⚠ no executable steps — re-run 🧪 Generate test plan</span>${tc.description ? `<div class="help-text">${escapeHtml(tc.description.slice(0, 120))}</div>` : ''}`;
         const tcAud = testCaseAudience(tc);
         return `<tr class="row-edit" data-audience="${tcAud}" style="cursor:pointer" onclick="openEditModal(${tc.id}, true)" title="Click to edit this test case — steps, pass-when, owner, schedule, % complete">
-          <td style="font-size:0.78rem;min-width:180px;max-width:260px;color:var(--primary)">${tcAud === 'internal' ? '<span class="badge" style="background:#ede9fe;color:#6d28d9" title="Internal / delivery-side test — verifies a process story, not a client-facing outcome. Excluded from the client SOW.">🛠</span> ' : ''}${ekTok('tc', tc.wbs || 'TC', '', { xs: true })}${escapeHtml(tc.name)}${jiraChip(tc.jira)}</td>
+          <td style="font-size:0.78rem;min-width:180px;max-width:260px;color:var(--primary)">${tcAud === 'internal' ? '<span class="badge" style="background:#ede9fe;color:#6d28d9" title="Internal / delivery-side test — verifies a process story, not a client-facing outcome. Excluded from the client SOW.">🛠</span> ' : tcAud === 'unclassified' ? '<span class="badge" style="background:#fef3c7;color:#92400e" title="Unclassified — this test case verifies no acceptance criterion in the plan and carries no audience of its own, so nothing here can say whether a client should see it. It is kept OUT of the client filter rather than assumed client-facing. Open it and set the audience, or link it to a criterion.">? audience</span> ' : ''}${ekTok('tc', tc.wbs || 'TC', '', { xs: true })}${escapeHtml(tc.name)}${jiraChip(tc.jira)}</td>
           <td style="font-size:0.75rem;white-space:nowrap" title="${hit ? escapeHtml(hit.a.text) : 'criterion not found in Requirements'}">${hit ? ekMark('ac', { xs: true }) + escapeHtml(hit.a.id) + ' ' + ekTok('us', hit.s.id, '', { xs: true, onclick: `event.stopPropagation();openReqStory('${ekJs(hit.s.id)}')` }) : escapeHtml(acId.toUpperCase() || '—')}</td>
           <td style="font-size:0.76rem;min-width:260px;max-width:380px">${steps}</td>
           <td style="font-size:0.76rem;min-width:180px;max-width:300px">${escapeHtml(tc.acceptance || '—')}</td>
@@ -13379,10 +13379,30 @@
     }
     function isInternalStory(s) { return storyAudience(s) === 'internal'; }
     // a test case's audience follows the story of the AC it verifies
+    /* Two defects lived in four lines here, and both pointed the same way: at
+       the client.
+
+       It never consulted the test case's OWN audience. Marking a case internal
+       in the editor wrote t.audience and this function ignored it, so the
+       explicit answer lost to an inferred one — backwards from every other
+       audience decision in the file, where a typed value beats a heuristic.
+
+       And an unmatched case returned 'client'. A test case whose name carries no
+       acceptance-criterion id — every internal admin case — fell straight into
+       that branch and was reported as client-facing. "I don't know" was being
+       answered as "show it to the client", which is the wrong direction for a
+       default to fail in: the cost of hiding a client case from a client view is
+       a moment's confusion, and the cost of showing an internal one is an
+       internal note in front of the client.
+
+       So: explicit first, then the story it verifies, then 'unclassified' —
+       which is a real answer, gets its own badge, and is deliberately not
+       claimed by either the client or the internal filter. */
     function testCaseAudience(tc) {
+      if (tc && (tc.audience === 'client' || tc.audience === 'internal')) return tc.audience;
       const acId = ((tc.name.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').toLowerCase();
-      const s = ((reqs && reqs.stories) || []).find(x => (x.ac || []).some(a => a.id.toLowerCase() === acId));
-      return s ? storyAudience(s) : 'client';
+      const s = acId ? ((reqs && reqs.stories) || []).find(x => (x.ac || []).some(a => a.id.toLowerCase() === acId)) : null;
+      return s ? storyAudience(s) : 'unclassified';
     }
     function storyTraceText(taskId, withAc) {
       return storiesForTask(taskId).map(s =>
@@ -13948,7 +13968,13 @@ Write the test cases for the criteria above, following the contract exactly. Ret
     let reqAudienceFilter = 'all';
     function setStoryAudienceFilter(f) { reqAudienceFilter = (f === 'client' || f === 'internal') ? f : 'all'; applyStoryAudienceFilter(); }
     function applyStoryAudienceFilter() {
-      const show = a => reqAudienceFilter === 'all' || reqAudienceFilter === (a || 'client');
+      /* `a || 'client'` made every unset audience client-facing here too — the
+         same wrong-direction default as testCaseAudience, in the control a
+         person uses precisely to decide what a client sees. Unclassified now
+         answers to 'all' only: it shows up where you are looking for things to
+         fix, and never inside a client view on an assumption. */
+      const show = a => reqAudienceFilter === 'all'
+        || (a !== 'unclassified' && a !== '' && a != null && reqAudienceFilter === a);
       document.querySelectorAll('#reqContainer details.story-card').forEach(d => { d.style.display = show(d.getAttribute('data-audience')) ? '' : 'none'; });
       document.querySelectorAll('#tcListPanel tbody tr[data-audience]').forEach(tr => { tr.style.display = show(tr.getAttribute('data-audience')) ? '' : 'none'; });
       document.querySelectorAll('.aud-filter').forEach(b => b.classList.toggle('active', b.dataset.aud === reqAudienceFilter));

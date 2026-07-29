@@ -154,7 +154,45 @@ const DATA = FIXTURE();
       if (/NaN|Infinity|undefined/.test(reading)) say('AI reading', 'contains a broken figure');
     } catch (e) { say('AI reading', 'threw: ' + e.message); }
 
-    return { contradictions: bad,
+      /* ── AUDIENCE: EXPLICIT BEATS INFERRED, AND UNKNOWN IS NOT "CLIENT" ──
+         testCaseAudience ignored the test case's own audience field and looked
+         up the story instead, then answered 'client' when no story matched. On
+         the real export that made all ten test cases — every one of them
+         carrying audience:"internal" on the task — report as client-facing, so
+         the client filter showed 10 of 10 internal admin cases.
+
+         Two invariants, and both are about which way a default fails. A typed
+         audience must win: it is the one answer a person gave on purpose. And an
+         audience nobody can determine must not be presented as client-facing —
+         the cost of hiding a client case is a moment's confusion, the cost of
+         showing an internal one is an internal note in front of the client. */
+      const aud = {};
+      {
+        const tcs = tasks.filter(t => isTestCaseTask(t));
+        aud.testCases = tcs.length;
+        let ignored = 0, guessedClient = 0;
+        tcs.forEach(t => {
+          const got = testCaseAudience(t);
+          if ((t.audience === 'client' || t.audience === 'internal') && got !== t.audience) ignored++;
+          const acId = ((t.name.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').toLowerCase();
+          const linked = acId && ((reqs && reqs.stories) || [])
+            .some(x => (x.ac || []).some(a => a.id.toLowerCase() === acId));
+          if (!linked && !t.audience && got === 'client') guessedClient++;
+        });
+        if (ignored)
+          say('Audience', ignored + ' test case(s) carry an explicit audience that is overridden by an '
+            + 'inferred one — the value somebody typed on purpose is losing to a guess');
+        if (guessedClient)
+          say('Audience', guessedClient + ' test case(s) verify no criterion and carry no audience, and '
+            + 'are reported CLIENT-FACING anyway — an unknown answered in the direction that puts '
+            + 'internal notes in front of a client');
+        aud.internal = tcs.filter(t => testCaseAudience(t) === 'internal').length;
+        aud.client = tcs.filter(t => testCaseAudience(t) === 'client').length;
+        aud.unclassified = tcs.filter(t => testCaseAudience(t) === 'unclassified').length;
+      }
+
+
+    return { contradictions: bad, audience: aud,
       truth: { booked: Math.round(AC), dueByToday: Math.round(PV), earned: Math.round(EV),
                envelope: Math.round(BAC), livePlan: Math.round(projectCost()),
                projectBudgetField: projectBudget, gap: Math.round(bv.gap) },
