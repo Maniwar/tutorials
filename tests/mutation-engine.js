@@ -200,6 +200,19 @@ const MUTANTS = [
     find: '      return { on: stripTime(new Date(dayAt(hiD))), days: hiD };',
     with: '      return { on: stripTime(new Date(dayAt(hiD) - 86400000)), days: hiD };' },
 
+  /* ── the side readout ─────────────────────────────────────────────────────
+     Three separate facts that used to be one middot-joined sentence in a badge.
+     Split apart, each can now disagree with the others on its own, and two of
+     those disagreements would put an alarm back on a plan that is fine. */
+
+  { what: 'readout: the caption contradicts the direction of the figure beside it',
+    find: "          : bv.gap > 0 ? 'ahead of the spend curve' : 'behind the spend curve';",
+    with: "          : bv.gap > 0 ? 'behind the spend curve' : 'ahead of the spend curve';" },
+
+  { what: 'readout: an underrun is painted as a fault',
+    find: "          bud.deltaVerdictTone = tiny ? 'flat' : overAll > 0 ? 'bad' : 'good';",
+    with: "          bud.deltaVerdictTone = 'bad';" },
+
   /* ── the two surfaces that had no checks at all ────────────────────────────
      The commitment history and the estimate bank. The bank matters most: it is
      the only data here that outlives the project file, and a wrong median in it
@@ -266,7 +279,7 @@ const LIKELY = {
   'margin': 'pricing-sweep.js', 'wizard:': 'dialog-sweep.js',
   'budget bar:': 'chart-reconciliation-sweep.js', 'catch-up:': 'chart-reconciliation-sweep.js',
   'test plan:': 'run-test-plan.js', 'baseline history:': 'baseline-sweep.js',
-  'bank:': 'bank-sweep.js'
+  'bank:': 'bank-sweep.js', 'readout:': 'contradiction-sweep.js'
 };
 const orderFor = m => {
   const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);

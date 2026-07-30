@@ -86,18 +86,44 @@ const DATA = FIXTURE();
     const PV = accrualAt(pvSpread(hb, leafTasks()).segs, today);
     const EV = earnedValue();
     const bv = budgetVerdict(AC, PV, EV, budgetAtCompletion(hb));
-    /* The badge now carries a VERDICT as well as the gap — "+$21,664 spent
-       ahead of the curve · finished work $2,517 under budget" — because the gap
-       alone read as an alarm on a plan that is ahead and under. So the check
-       reads the leading figure specifically rather than stripping every digit
-       out of the whole string, which would have swallowed the verdict's number
-       and compared a concatenation against the gap. */
-    if (!/^[+−]\$?[\d,]+ (spent ahead of the curve|behind the curve)|^on the plan to date/.test(bud.delta || ''))
-      say('Budget bar', 'delta is not in the expected form: ' + bud.delta);
-    const lead = String(bud.delta || '').split('·')[0];
-    const shownDelta = Number(lead.replace(/[^0-9.]/g, '')) * (/−/.test(lead) ? -1 : 1);
-    if (bud.delta && /\d/.test(lead) && Math.abs(shownDelta - bv.gap) > 2)
+    /* The side column carries three separate facts, and they were once one
+       middot-joined sentence inside a badge — "+$21,664 spent ahead of the curve
+       · finished work $2,517 under budget" — which wrapped to four ragged lines
+       and gave a gap and a verdict identical weight. They are now three fields,
+       so each is checked as itself: the FIGURE must be the gap and nothing else
+       (a check that stripped digits out of the whole string would have swallowed
+       the verdict's number and compared a concatenation), the CAPTION must agree
+       with the figure's direction, and the VERDICT must be the overrun, which is
+       a different quantity and independently wrong-able. */
+    if (!/^[+−]\$?[\d,]+$|^on the plan to date$/.test(String(bud.delta || '').trim()))
+      say('Budget bar', 'the figure is not a bare signed amount: ' + bud.delta);
+    const shownDelta = Number(String(bud.delta || '').replace(/[^0-9.]/g, ''))
+      * (/−/.test(String(bud.delta || '')) ? -1 : 1);
+    if (bud.delta && /\d/.test(bud.delta) && Math.abs(shownDelta - bv.gap) > 2)
       say('Budget bar', 'prints ' + bud.delta + ' but AC−PV recomputes to ' + fmtMoney(Math.round(bv.gap)));
+    if (bud.delta && /\d/.test(bud.delta)) {
+      const wantAhead = bv.gap > 0;
+      if (!new RegExp(wantAhead ? '^ahead of the spend curve$' : '^behind the spend curve$')
+            .test(String(bud.deltaWhy || '')))
+        say('Budget bar', 'the figure is ' + bud.delta + ' and the caption beside it reads "'
+          + bud.deltaWhy + '" — they disagree about which side of the curve the spend is on');
+    }
+    if (bud.deltaVerdict) {
+      const over = -bv.cv;                                   // cv = EV − AC
+      const vNum = Number(String(bud.deltaVerdict).replace(/[^0-9.]/g, ''));
+      const tiny = /on budget/.test(bud.deltaVerdict);
+      if (!tiny && Math.abs(vNum - Math.abs(over)) > 2)
+        say('Budget bar', 'the verdict says "' + bud.deltaVerdict + '" and AC−EV recomputes to '
+          + fmtMoney(Math.round(over)));
+      if (!tiny && /over budget/.test(bud.deltaVerdict) !== (over > 0))
+        say('Budget bar', 'the verdict says "' + bud.deltaVerdict + '" while the finished work came in '
+          + (over > 0 ? 'OVER' : 'UNDER') + ' its budget');
+      const wantTone = tiny ? 'flat' : over > 0 ? 'bad' : 'good';
+      if (bud.deltaVerdictTone !== wantTone)
+        say('Budget bar', 'the verdict "' + bud.deltaVerdict + '" is coloured ' + bud.deltaVerdictTone
+          + ' and should be ' + wantTone + ' — an underrun painted as a fault is the alarm this row exists '
+          + 'to stop raising');
+    }
     // the bar says "timing not overspend" only when that is actually true
     const saysTiming = /Timing, not overspend/.test(bud.note || '');
     if (saysTiming && bv.overValue)
@@ -187,4 +213,25 @@ const DATA = FIXTURE();
   R.pageErrors = errs.slice(0, 8);
   console.log(JSON.stringify(R, null, 1));
   await b.close();
+  /* FAIL when something was found. This file printed its contradictions and
+     exited 0, which made it decorative: the commit gate and the mutation harness
+     both judge by exit code, so a red finding here read as a tick. Seven of the
+     seventeen sweeps were in that state, and it only surfaced when two deliberate
+     defects were planted, reported by name in this very output, and still counted
+     as SURVIVED by mutation-engine. A check that cannot fail is worse than no
+     check, because it is counted.
+
+     Findings here are NESTED rather than in one top-level array — the sweep,
+     the drill-in and the colour pass each carry their own list — so all of them
+     are gathered rather than only the first, or the fix would leave two thirds
+     of the file still decorative. */
+  const found = [].concat(
+    ((R.sweep || {}).contradictions) || [],
+    ((R.sweep || {}).budget) || [],
+    ((R.colour || {}).wrong) || []
+  ).filter(Boolean);
+  if (found.length || errs.length) {
+    if (found.length) console.error('\n' + found.length + ' contradiction(s):\n  ' + found.join('\n  '));
+    process.exitCode = 1;
+  }
 })();

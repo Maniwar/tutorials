@@ -206,4 +206,12 @@ const DATA = FIXTURE();
   R.pageErrors = errs.slice(0, 8);
   console.log(JSON.stringify(R, null, 1));
   await b.close();
+  /* FAIL when something was found. This file printed its contradictions and
+     exited 0, which made it decorative: the commit gate and the mutation harness
+     both judge by exit code, so a red finding here read as a tick. Seven of the
+     seventeen sweeps were in that state, and it only surfaced when two deliberate
+     defects were planted, reported by name in this output, and still reported as
+     SURVIVED by mutation-engine. A check that cannot fail is worse than no check,
+     because it is counted. */
+  if ((R.contradictions || []).length || errs.length) process.exitCode = 1;
 })();

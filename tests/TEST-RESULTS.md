@@ -15,7 +15,7 @@ every derived number is a whole number checkable on paper. `crm-rollout.json` is
 real export, carrying the shape the sample never had: a baseline taken after the work
 started, so activities finish before their own baseline windows open.
 
-**Last run:** build 2026.07.30.0029 — **45 of 45 passing**.
+**Last run:** build 2026.07.30.0103 — **45 of 45 passing**.
 
 ---
 

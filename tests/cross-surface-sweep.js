@@ -25,6 +25,12 @@ const DATA = FIXTURE();
   await page.evaluate(data => { hydrate(data); calculate(); }, DATA);
   await page.waitForTimeout(700);
 
+  /* money() is LOCAL to planTruthData(); the global formatter is fmtMoney().
+     Eleven calls here used the wrong one, and every single one sat inside the
+     branch that REPORTS a finding — so this sweep threw at the exact moment it
+     had something to say, and never once on a healthy build. Combined with the
+     missing exit code below, a real contradiction produced a stack trace, an exit
+     status of 0, and a tick in the commit gate. */
   const R = await page.evaluate(() => {
     const bad = [];
     const say = (a, b2) => bad.push(a + ' :: ' + b2);
@@ -46,11 +52,11 @@ const DATA = FIXTURE();
     const bud = pt.rows.find(r => r.key === 'budget');
     const sch = pt.rows.find(r => r.key === 'sched');
     if (bud.delta && !/on the plan/.test(bud.delta) && !near(num(bud.delta), Math.abs(bv.gap), 2))
-      say('Plan-truth budget bar', 'prints ' + bud.delta + ' against a recomputed gap of ' + money(bv.gap));
+      say('Plan-truth budget bar', 'prints ' + bud.delta + ' against a recomputed gap of ' + fmtMoney(bv.gap));
     if (bud.actTxt && !near(num(bud.actTxt), AC, 2))
-      say('Plan-truth budget bar', 'says ' + bud.actTxt + ' booked; the tasks sum to ' + money(AC));
+      say('Plan-truth budget bar', 'says ' + bud.actTxt + ' booked; the tasks sum to ' + fmtMoney(AC));
     if (bud.planTxt && !near(num(bud.planTxt), PV, 2))
-      say('Plan-truth budget bar', 'says ' + bud.planTxt + ' due by today; PV recomputes to ' + money(PV));
+      say('Plan-truth budget bar', 'says ' + bud.planTxt + ' due by today; PV recomputes to ' + fmtMoney(PV));
 
     // ── 2. the SPEND CURVE footer restates the bar ─────────────────────────
     let curveSaid = null;
@@ -58,10 +64,10 @@ const DATA = FIXTURE();
       const c = pt.curve;
       if (c) {
         curveSaid = { pv: c.pv, ac: c.ac };
-        if (!near(c.ac, AC, 2)) say('Spend curve', 'says ' + money(c.ac) + ' booked; tasks sum to ' + money(AC));
-        if (!near(c.pv, PV, 2)) say('Spend curve', 'says ' + money(c.pv) + ' due by today; PV recomputes to ' + money(PV));
+        if (!near(c.ac, AC, 2)) say('Spend curve', 'says ' + fmtMoney(c.ac) + ' booked; tasks sum to ' + fmtMoney(AC));
+        if (!near(c.pv, PV, 2)) say('Spend curve', 'says ' + fmtMoney(c.pv) + ' due by today; PV recomputes to ' + fmtMoney(PV));
         if (!near(c.ac - c.pv, bv.gap, 2))
-          say('Spend curve', 'its own gap ' + money(c.ac - c.pv) + ' disagrees with the bar\'s ' + money(bv.gap));
+          say('Spend curve', 'its own gap ' + fmtMoney(c.ac - c.pv) + ' disagrees with the bar\'s ' + fmtMoney(bv.gap));
       }
     } catch (e) { say('Spend curve', 'threw: ' + e.message); }
 
@@ -83,9 +89,9 @@ const DATA = FIXTURE();
       if (m) {
         const v = num(m[1]) * (m[2] === 'above' ? 1 : -1);
         if (!near(v, bv.gap, 2))
-          say('Plan vs actual · Budget card', 'says ' + m[0] + '; the Plan-truth bar says ' + money(bv.gap));
+          say('Plan vs actual · Budget card', 'says ' + m[0] + '; the Plan-truth bar says ' + fmtMoney(bv.gap));
       } else if (Math.abs(bv.gap) > Math.max(1, BAC * 0.005)) {
-        say('Plan vs actual · Budget card', 'states no gap while the bar states ' + money(bv.gap));
+        say('Plan vs actual · Budget card', 'states no gap while the bar states ' + fmtMoney(bv.gap));
       }
       // and it must not colour the project red when the bar does not
       const red = /rgb\(\s*2[0-2]\d\s*,\s*[0-5]?\d\s*,/.test(budCard.deltaColour || '');
@@ -104,7 +110,7 @@ const DATA = FIXTURE();
         const left = num(pair[1]), right = num(pair[2]);
         const delta = num(dm[1]) * (dm[2] === 'above' ? 1 : -1);
         if (!near(right - left, delta, 2))
-          say('Plan vs actual · Budget card', 'reads "' + money(left) + ' → ' + money(right)
+          say('Plan vs actual · Budget card', 'reads "' + fmtMoney(left) + ' → ' + fmtMoney(right)
             + '" but its delta says ' + dm[0] + ' — the pair and the delta use different references');
       }
     }
@@ -142,8 +148,8 @@ const DATA = FIXTURE();
       const act = actualCostOf(t);
       // for FINISHED work the table's signed delta is exactly the drill-in's overrun
       if ((t.percentComplete || 0) >= 100 && !near(act - planCost, d.over, 1))
-        say(t.name, 'Plan vs actual shows ' + money(act - planCost) + ' over/under; the drill-in says '
-          + money(d.over));
+        say(t.name, 'Plan vs actual shows ' + fmtMoney(act - planCost) + ' over/under; the drill-in says '
+          + fmtMoney(d.over));
     });
 
     // ── 5. the health check must not contradict the panel ──────────────────
@@ -169,4 +175,12 @@ const DATA = FIXTURE();
   R.pageErrors = errs.slice(0, 8);
   console.log(JSON.stringify(R, null, 1));
   await b.close();
+  /* FAIL when something was found. This file printed its contradictions and
+     exited 0, which made it decorative: the commit gate and the mutation harness
+     both judge by exit code, so a red finding here read as a tick. Seven of the
+     seventeen sweeps were in that state, and it only surfaced when two deliberate
+     defects were planted, reported by name in this output, and still reported as
+     SURVIVED by mutation-engine. A check that cannot fail is worse than no check,
+     because it is counted. */
+  if ((R.contradictions || []).length || errs.length) process.exitCode = 1;
 })();

@@ -272,8 +272,14 @@ module.exports = [
       const txt = el ? el.textContent.replace(/\\s+/g, ' ') : '';
       const bar = planTruthData().rows.find(r => r.key === 'sched');
       const cardN = (txt.match(/(\\d+)\\s+activit/) || [])[1];
-      const barN = (String(bar.delta).match(/(\\d+)\\s+off/) || [])[1];
-      return { cardNamesTheDisplacement: !!cardN, agreesWithTheBar: cardN === barN };
+      /* The bar's side column is a READOUT, not one string: the token is in
+         .delta and the count that qualifies it is in .deltaWhy, because the two
+         crammed into one badge wrapped to four ragged lines. Read what a person
+         reads — the whole readout — so this case keeps testing whether the card
+         and the bar agree, rather than which field the number happens to sit in. */
+      const readout = [bar.delta, bar.deltaWhy].filter(Boolean).join(' ');
+      const barN = (readout.match(/(\\d+)\\s+activit/) || readout.match(/(\\d+)\\s+off/) || [])[1];
+      return { cardNamesTheDisplacement: !!cardN, agreesWithTheBar: !!barN && cardN === barN };
     }` },
 
   // ══ What leaves the building ════════════════════════════════════════════

@@ -446,7 +446,10 @@
     .ptr-lead-do { background: var(--primary-50); border: 1px solid var(--primary-200); color: var(--primary-700); }
     .ptr-lead-ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
 
-    .ptr-row { display: grid; grid-template-columns: 186px minmax(0, 1fr) 176px;
+    /* The last column widened 176 → 200 when the side cell became a three-line
+       readout: at 176 the caption broke after two or three words on every row,
+       and the plot has a minmax(0,1fr) to give it from. */
+    .ptr-row { display: grid; grid-template-columns: 186px minmax(0, 1fr) 200px;
       gap: 0.15rem 0.9rem; align-items: center; padding: 0.55rem 0; border-top: 1px solid var(--border); }
     .ptr-axis { border-top: 0; padding: 0 0 0.2rem; }
 
@@ -532,9 +535,36 @@
       background: repeating-linear-gradient(135deg, var(--bg) 0 6px, var(--card) 6px 12px); }
     .ptr-voidtxt { font-size: var(--t-xs); color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
 
-    .ptr-side { display: flex; align-items: center; justify-content: flex-end; gap: 0.4rem; flex-wrap: wrap; min-width: 0; }
-    .ptr-side .badge { white-space: normal; text-align: right; max-width: 100%; line-height: 1.3; }
+    /* A READOUT, NOT A LABEL.
+       This was one flex row with a single badge in it, and the badge carried a
+       whole sentence: "+$18,279 spent ahead of the curve · finished work $2,517
+       under budget". At 176px that wrapped to four right-aligned ragged lines —
+       the hardest alignment there is to read — inside a rounded amber blob
+       taller than the bar it was annotating, with two clauses of unrelated
+       meaning joined by a middot and given identical weight.
+
+       Now it stacks: figure, caption, verdict. Left-aligned, because the ragged
+       edge was half the problem and the column sits at the right margin anyway,
+       so a clean left edge lines up directly off the plot. The badge keeps only
+       what a badge is for — a short token that never wraps. */
+    .ptr-side { display: flex; flex-direction: column; align-items: flex-start;
+      justify-content: center; gap: 0.1rem; min-width: 0; }
+    .ptr-fig { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: nowrap; }
+    .ptr-side .badge { white-space: nowrap; font-variant-numeric: tabular-nums; }
     .ptr-pct { font-size: var(--t-md); font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .ptr-why { font-size: var(--t-sm); color: var(--muted); line-height: 1.35; }
+    /* The verdict answers a different question from the figure above it, so it
+       gets its own colour rather than inheriting the bar's. A rule down the left
+       marks it as a second reading rather than a continuation of the first. */
+    .ptr-verdict { font-size: var(--t-sm); line-height: 1.35; font-weight: 600;
+      margin-top: 0.15rem; padding-left: 0.45rem; border-left: 2px solid currentColor; }
+    /* The label is deliberately its own line, so the verdict never breaks with a
+       single orphaned word — "finished work $2,517 under / budget" was the
+       accidental version of the same two lines. */
+    .ptr-vl { display: block; font-weight: 500; opacity: .8; }
+    .ptr-v-good { color: var(--success); }
+    .ptr-v-bad { color: var(--critical); }
+    .ptr-v-flat { color: var(--muted); }
 
     .ptr-note { grid-column: 1 / -1; font-size: var(--t-sm); color: var(--muted); line-height: 1.55; margin-top: 0.1rem; }
     .ptr-note b { color: var(--text); }
@@ -752,6 +782,10 @@
     .ptr-tick-s { transform: none; } .ptr-tick-e { transform: translateX(-100%); }
     .ptr-end { font-size: var(--t-xs); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
     .ptr-head.ptr-end { justify-content: flex-end; }
+    /* The axis header shares .ptr-side with the readouts below it but is not one:
+       it is the right end of the scale and belongs against the right margin,
+       where the readouts are deliberately left-aligned. */
+    .ptr-side.ptr-end { align-items: flex-end; }
 
     /* the evidence strip: one cell per leaf, in task-list order. This is the only
        part of the header that carries real geometry on a brand-new plan, which is
@@ -2852,7 +2886,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0029</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0103</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -9166,7 +9200,9 @@
              which reads as good news, while activities underneath are late. */
           if (slip === 0) {
             sch.tone = 'chg';
-            sch.delta = 'end date held · ' + disp.length + ' off ' + (disp.length === 1 ? 'its' : 'their') + ' own dates';
+            sch.delta = 'end date held';
+            sch.deltaWhy = disp.length + ' ' + ptrPl(disp.length, 'activity', 'activities') + ' off '
+              + (disp.length === 1 ? 'its' : 'their') + ' own dates';
             sch.rankByDisp = true;
           } else if (slip < 0 && lateN) {
             sch.tone = 'chg';
@@ -9309,13 +9345,30 @@
            thing that actually answers "is anything wrong" — what the finished
            work cost against what it was budgeted. */
         const overAll = bv.cv == null ? null : -bv.cv;   // cv = EV − AC, so −cv is the overrun
-        const verdict = overAll == null ? ''
-          : Math.abs(overAll) < Math.max(1, ref * 0.005) ? ' · finished work on budget'
-          : overAll > 0 ? ' · finished work ' + money(Math.abs(overAll)) + ' OVER budget'
-                        : ' · finished work ' + money(Math.abs(overAll)) + ' under budget';
-        bud.delta = (bud.state === 'flat' ? 'on the plan to date'
-          : (bv.gap > 0 ? '+' : '−') + money(Math.abs(bv.gap))
-            + (bv.gap > 0 ? ' spent ahead of the curve' : ' behind the curve')) + verdict;
+        /* THE SIDE COLUMN IS A READOUT, NOT A LABEL.
+           This was one string — "+$18,279 spent ahead of the curve · finished
+           work $2,517 under budget" — dropped into a rounded badge 176px wide,
+           where it wrapped to four right-aligned ragged lines beside a 16px bar.
+           A pill is for a state token you read at a glance; a signed figure with
+           a qualifier and an independent second measure is three facts, and
+           joining them with a middot inside a blob made the shape of a label out
+           of the content of a paragraph.
+
+           Split into the three things they are: the FIGURE (what the bar is
+           worth), the CAPTION (what that figure means), and the VERDICT (the
+           separate question of whether any money was actually lost), which
+           carries its own colour because it answers on its own terms. */
+        bud.delta = bud.state === 'flat' ? 'on the plan to date'
+          : (bv.gap > 0 ? '+' : '−') + money(Math.abs(bv.gap));
+        bud.deltaWhy = bud.state === 'flat' ? ''
+          : bv.gap > 0 ? 'ahead of the spend curve' : 'behind the spend curve';
+        if (overAll != null) {
+          const tiny = Math.abs(overAll) < Math.max(1, ref * 0.005);
+          bud.deltaVerdictLbl = 'finished work';
+          bud.deltaVerdict = tiny ? 'on budget'
+            : money(Math.abs(overAll)) + (overAll > 0 ? ' over budget' : ' under budget');
+          bud.deltaVerdictTone = tiny ? 'flat' : overAll > 0 ? 'bad' : 'good';
+        }
         bud.denom = money(ref) + ' ' + (baseCost > 0 ? 'baselined' : 'planned') + ' envelope, phased over the '
           + (baseCost > 0 ? 'baselined' : 'current') + ' dates';
         /* WHICH plan. The row said "plan to date" and never once said whose plan
@@ -10072,8 +10125,18 @@
       return '<div class="ptr-row" data-dim="' + r.key + '">' + head
         + '<div class="ptr-plot" title="' + escapeHtml(pctTxt + ' against ' + (r.denom || 'plan')) + '">'
         + grid + '<i class="ptr-zero"></i>' + shape + '</div>'
-        + '<div class="ptr-side"><span class="badge ' + badgeCls + '">' + escapeHtml(r.delta) + '</span>'
-        + '<span class="ptr-pct">' + pctTxt + '</span></div>'
+        /* Figure and axis-share on one line, then the caption, then the verdict.
+           Reading order matches the question order: how much, of what, and is
+           anything actually wrong. The figure keeps the pill because it IS the
+           token — short, tabular, one line, never wrapped; everything that used
+           to be crammed in beside it now has a line of its own. */
+        + '<div class="ptr-side"><div class="ptr-fig"><span class="badge ' + badgeCls + '">'
+        + escapeHtml(r.delta) + '</span><span class="ptr-pct">' + pctTxt + '</span></div>'
+        + (r.deltaWhy ? '<div class="ptr-why">' + escapeHtml(r.deltaWhy) + '</div>' : '')
+        + (r.deltaVerdict ? '<div class="ptr-verdict ptr-v-' + (r.deltaVerdictTone || 'flat') + '">'
+            + (r.deltaVerdictLbl ? '<span class="ptr-vl">' + escapeHtml(r.deltaVerdictLbl) + '</span>' : '')
+            + escapeHtml(r.deltaVerdict) + '</div>' : '')
+        + '</div>'
         + '<div class="ptr-note">' + r.note + ptrCta(r.softCta, true) + ptrDrivers(r) + '</div></div>';
     }
 
