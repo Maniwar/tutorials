@@ -105,6 +105,27 @@ phrasing you did not anticipate. The protection is that a reading has no
 execution power and is escaped when drawn — so the sweep proves the escaping
 instead of trusting it.
 
+`dynamic-prose-sweep.js` checks that no sentence is FAKING it. The panels do
+not just show numbers, they narrate them — "this is not a scope change, all 22
+changed rows are test cases", "the gap closes Aug 11, 2026", "$18,279 of it is
+overrun". That kind of line is the most valuable thing on the screen and the
+easiest thing in the codebase to fake, because a sentence typed once from one
+run of one plan is indistinguishable from a computed one: correct on the plan it
+was written against and quietly wrong on every other plan forever. Nothing else
+here would notice — the numbers it describes are still computed correctly, the
+DOM still renders, no arithmetic identity is violated.
+
+The property is mechanical. Run two materially different plans through
+Analytics, Plan vs actual, Resources and the Gantt narrative, and harvest every
+text node stating money or a calendar date. They must all come out DIFFERENT,
+because the plans are different. One that survives both character for character
+is not reading either. Two carve-outs, because otherwise it reports noise:
+today's date is the same day in both runs and is stripped before a line is
+judged, and a legend ("$/hr") is not a claim, so a claim needs three digits of
+money or a real date. It also fails if either plan yields under five claims —
+a run that harvested nothing proves nothing, and would go green forever the day
+a container id changed.
+
 ## The written test plan
 
 `node tests/run-test-plan.js` runs 42 cases and writes two documents:

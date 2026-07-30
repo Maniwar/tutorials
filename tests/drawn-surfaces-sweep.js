@@ -418,6 +418,71 @@ const QA = JSON.parse(fs.readFileSync(
             + hits.slice(0, 2).join(' · '));
       })();
 
+      /* ── THE RAID FORM'S CONTROLS MUST BE CONTROLS ──────────────────────
+         Owner carries list="ownerList" and always has, so it was written to be a
+         type-ahead — but the datalist is filled by populateOwnerList(), and for a
+         long time nothing on the way into this form called it. Whether names
+         appeared depended on whether some other screen had happened to run first
+         in that browser session, so from the reader's side it was a plain text
+         box that sometimes suggested and usually did not. Reported exactly that
+         way: "this panel owner is not a drop down/type ahead field for some
+         reason".
+
+         The datalist is EMPTIED first on purpose. It is shared with the activity
+         editor, so a check that merely counts options after opening the form
+         passes on a build that never populates anything — the options left over
+         from an earlier screen answer for it. Emptying it makes the question
+         "did opening THIS form fill it", which is the actual property.
+
+         Two more from the same report, checked here because they are the same
+         class of thing — a form field with nothing behind it: Status had no
+         control at all (new entries were hard-coded Open, and the one field the
+         log is filtered and counted by could only be changed from the table),
+         and the 1–5 boxes never said what 1 or 5 meant. */
+      (() => {
+        try { switchTab('raid'); } catch (e) { return; }
+        const dl = document.getElementById('ownerList');
+        if (!dl) { say('RAID form', 'there is no ownerList datalist for the owner box to point at'); return; }
+        dl.innerHTML = '';
+        try { openRaidForm(); } catch (e) { say('RAID form', 'openRaidForm threw: ' + e.message); return; }
+        const own = document.getElementById('rOwner');
+        const opts = [...dl.querySelectorAll('option')].map(o => o.value);
+        out.raidOwnerSuggestions = opts.length;
+        const roster = new Set([...tasks.map(t => (t.owner || '').trim()).filter(Boolean),
+                                ...Object.keys(resources || {})]);
+        if (!own) say('RAID form', 'there is no owner field');
+        else if (!own.getAttribute('list'))
+          say('RAID form', 'the owner box is a plain text field — every name has to be typed from memory and '
+            + 'spelled the same way it was spelled on the activity, or the log and the plan stop agreeing');
+        else if (!opts.length && roster.size)
+          say('RAID form', 'the owner box points at a datalist that opening the form leaves EMPTY, with '
+            + roster.size + ' names on the plan — it looks like a picker and behaves like a text box');
+        else if (opts.length && ![...roster].some(n => opts.indexOf(n) >= 0))
+          say('RAID form', 'the owner suggestions do not include a single name from the plan or the roster');
+
+        const st = document.getElementById('rStatus');
+        out.raidStatusOptions = st ? st.options.length : 0;
+        if (!st || st.tagName !== 'SELECT')
+          say('RAID form', 'Status has no control in the form that creates and edits a RAID entry, and it is '
+            + 'the field the log is filtered and counted by');
+        else if (!st.options.length) say('RAID form', 'the Status control offers nothing to choose');
+
+        /* Read the HINT, not the whole form. The first version tested the form's
+           entire textContent for "1 =" or "5 =" and passed on the CRM fixture
+           and failed on the other two — with identical static markup, which is
+           the tell: it was matching an equals sign somewhere in that plan's
+           linked-entity picker, not the scale legend at all. A phrase that can
+           be satisfied by unrelated plan data is not testing the product. */
+        const hint = (document.getElementById('rScaleHint') || {}).textContent || '';
+        if (!/1\s*[–-]\s*5/.test(hint))
+          say('RAID form', 'nothing beside the Probability and Impact boxes says they are a 1–5 judgement');
+        else if (!/\b1\s+[a-z]/.test(hint) || !/\b5\s+[a-z]/.test(hint))
+          say('RAID form', 'the scale says 1–5 and never says what 1 or 5 MEANS, so two people scoring the '
+            + 'same risk are not using the same scale and the product they are multiplied into is not '
+            + 'comparable between them');
+        try { closeRaidForm(); } catch (e) {}
+      })();
+
       /* ── THE RED RING MUST SAY WHAT IT MEANS ────────────────────────────
          It lands on cells that are GREEN for complete, and a red ring on a
          finished activity reads as "done badly" — reported by someone whose

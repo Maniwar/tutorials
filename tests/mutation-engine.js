@@ -363,6 +363,18 @@ const MUTANTS = [
            '<div style="display:flex;gap:0.35rem;flex-wrap:wrap;justify-content:flex-end;margin-top:0.4rem">'],
     with: ['rows += `<div style="display:flex;align-items:flex-start;gap:0.6rem;padding:0.5rem 0.65rem;border:1px solid',
            '<div style="display:flex;gap:0.35rem;flex-shrink:0;flex-wrap:nowrap;justify-content:flex-end">'] },
+
+  /* ── prose that only pretends to read the plan ────────────────────────────
+     Every other mutant here breaks a computation. This one leaves the
+     computation perfectly correct and stops the SENTENCE from using it — the
+     figure is still right everywhere else on the page, and one caption states
+     a number typed by hand. That is the shape of defect a reader cannot catch
+     by eye, because a hardcoded claim reads exactly like a computed one, and it
+     is the shape nothing in the suite could see before dynamic-prose-sweep. */
+
+  { what: 'prose: the booked-to-date caption states a figure typed by hand',
+    find: "escapeHtml(hasAc ? money(c.ac) + ' booked' : 'nothing booked')",
+    with: "escapeHtml(hasAc ? '$27,900 booked' : 'nothing booked')" },
 ];
 
 const CHECKS = QUICK ? ['run-test-plan.js']
@@ -370,7 +382,7 @@ const CHECKS = QUICK ? ['run-test-plan.js']
      'schedule-sweep.js', 'drawn-surfaces-sweep.js', 'pricing-sweep.js',
      'resourcing-sweep.js', 'persistence-sweep.js', 'export-sweep.js', 'undo-sweep.js', 'baseline-sweep.js', 'cross-surface-sweep.js', 'task-editor-sweep.js',
      'client-facing-sweep.js', 'dialog-sweep.js', 'chart-reconciliation-sweep.js',
-     'bank-sweep.js', 'corrupt-file-sweep.js'];
+     'bank-sweep.js', 'corrupt-file-sweep.js', 'dynamic-prose-sweep.js'];
 
 /* Which check is EXPECTED to notice. This is a running order, not a shortcut:
    if the named check does not go red the mutant still walks every other one, so
@@ -391,7 +403,8 @@ const LIKELY = {
   'blocked tab:': 'dialog-sweep.js', 'changes panel:': 'drawn-surfaces-sweep.js',
   'corrupt file:': 'corrupt-file-sweep.js', 'ring:': 'drawn-surfaces-sweep.js',
   'envelope:': 'chart-reconciliation-sweep.js', 'scope:': 'chart-reconciliation-sweep.js',
-  'form:': 'drawn-surfaces-sweep.js', 'drill-in:': 'chart-reconciliation-sweep.js'
+  'form:': 'drawn-surfaces-sweep.js', 'drill-in:': 'chart-reconciliation-sweep.js',
+  'prose:': 'dynamic-prose-sweep.js'
 };
 const orderFor = m => {
   const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);

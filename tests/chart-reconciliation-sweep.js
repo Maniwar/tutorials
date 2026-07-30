@@ -265,6 +265,36 @@ const FIELD = JSON.parse(fs.readFileSync(
   note.driverCounts = D.rows.filter(r => (r.drivers || []).length)
     .map(r => r.key + ':' + r.drivers.length + '/' + (r.drivers.matched == null ? '?' : r.drivers.matched));
 
+  /* …and the DRAWN badge has to be the one carrying that count. The three lines
+     above interrogate planTruthData(), which is where `matched` is recorded —
+     and a build whose renderer computes its badge as `totalN = shownN`, throwing
+     the pre-cut count away at the last moment, passes all three. The data is
+     impeccable and the reader still sees 22 on the row and 5 in the disclosure.
+     Same lesson as the budget segments: an arithmetic identity is blind to what
+     is painted, so ask the painting. */
+  {
+    const host = document.getElementById('planTruth') || document.getElementById('view-analytics');
+    const drawn = host ? [...host.querySelectorAll('details.ptr-drv')] : [];
+    const withDrv = D.rows.filter(r => (r.drivers || []).length);
+    note.drawnDrillIns = drawn.length;
+    if (drawn.length !== withDrv.length)
+      say('Drill-in', withDrv.length + ' row(s) computed a driver list and ' + drawn.length
+        + ' disclosure(s) were drawn, so the pairing below cannot be trusted');
+    else drawn.forEach((el, i) => {
+      const r = withDrv[i];
+      const badge = Number(((el.querySelector('.ptr-drv-n') || {}).textContent || '').replace(/[^\d]/g, ''));
+      const shown = el.querySelectorAll('.ptr-drv-list > li').length;
+      const want = r.drivers.matched || r.drivers.length;
+      if (badge !== want)
+        say(r.dim + ' drill-in', 'the badge reads ' + badge + ' and ' + want + ' activities matched — the row '
+          + 'above states a figure covering all ' + want + ' and the disclosure beside it offers a smaller '
+          + 'number as though that were the whole set');
+      const cap = (el.textContent || '').replace(/\s+/g, ' ');
+      if (want > shown && !new RegExp('top\\s*' + shown + '\\s*of\\s*' + want).test(cap))
+        say(r.dim + ' drill-in', 'it shows ' + shown + ' of ' + want + ' and never says the list is a sample');
+    });
+  }
+
   // 2. spend curve: does its "at today" equal the Budget row's pair?
   const hb=hasBaseline(), today=stripTime(new Date()).getTime();
   const spread=pvSpread(hb, leafTasks());

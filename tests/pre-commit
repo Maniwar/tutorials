@@ -15,8 +15,8 @@
 #
 #   2. Refuse the commit if any check is red. Every commit to this file lands
 #      on a public demo, so a red suite is a shipped defect. The hand-derived
-#      plan, seventeen sweeps and the drawing mutation check take about a minute
-#      and fifty seconds — the price of this one file being the release. The
+#      plan, eighteen sweeps and the drawing mutation check take about two
+#      minutes — the price of this one file being the release. The
 #      engine mutation check is another four minutes and is opt-in via FULL=1;
 #      run it before anything the user will look at.
 #
@@ -98,9 +98,9 @@ rm -f /tmp/ptr-m.$$
 # the PERT weighting, the backward pass, the working calendar, earned value,
 # save/load field coverage, the margin, an export total, undo, the baseline roll,
 # the commitment log, the estimate bank's calibration, a wizard button that acts
-# on the wrong object — and confirm something goes red. Thirty-eight of them,
-# about four minutes: too much for every commit, worth it before anything the
-# user sees. FULL=1 git commit.
+# on the wrong object, a caption that states a figure typed by hand — and confirm
+# something goes red. Fifty-nine of them, about four minutes: too much for every
+# commit, worth it before anything the user sees. FULL=1 git commit.
 #
 # It fails on a SKIPPED mutant as well as a survivor, and the two mean different
 # things: a survivor says the product has an unguarded region, a skip says this
