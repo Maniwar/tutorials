@@ -2886,7 +2886,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0103</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0134</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3098,6 +3098,7 @@
        what"). A cleared baseline appends its own entry rather than truncating,
        or clearing would erase the history of what was promised. */
     let baselineLog = [];
+    const BASELINE_LOG_CAP = 40;
     let collapsedIds = new Set(); // WBS summaries currently collapsed in Gantt/tables
     let levelMode = 'none';       // 'none' | 'slack' | 'extend' — how levelDelay is treated
     let unleveledDuration = null; // CPM duration with all leveling removed (for banners)
@@ -4002,6 +4003,11 @@
          from the one date the file does carry, marked so nothing later claims
          aggregates it does not have. */
       baselineLog = Array.isArray(data.baselineLog) ? data.baselineLog.map(e => Object.assign(
+        /* trimmedSets is deliberately NOT defaulted: it exists only on a log the
+           cap has actually trimmed, and adding a zero here on load rewrote every
+           entry serialize never wrote — which broke round-trip identity and was
+           caught by the save/load case the moment it went in. Absent means zero,
+           and every reader already spells that. */
         { at: '', ts: 0, kind: 'set', envelope: 0, effort: 0, start: '', finish: '', activities: 0, stories: 0, acs: 0 }, e))
         : (data.baselineDate ? [{ at: data.baselineDate, ts: 0, kind: 'set', envelope: 0, effort: 0, start: '',
             finish: '', activities: 0, stories: 0, acs: 0, inferred: true }] : []);
@@ -8616,7 +8622,26 @@
         stories: kind === 'clear' ? 0 : stories.length,
         acs: kind === 'clear' ? 0 : stories.reduce((n, s) => n + ((s.ac || []).length), 0)
       });
-      if (baselineLog.length > 40) baselineLog.shift();    // a log, not an archive
+      /* A log, not an archive — but the cap must never take the FIRST entry.
+         shift() did, and that is the original commitment: the one entry
+         baselineOriginal() exists to return and the only thing "not against the
+         original commitment of <date>" can be measured from. Past the cap the
+         panel quietly began comparing against the oldest SURVIVOR and calling it
+         the original — on the real export, claiming a $59,693 original against a
+         true $54,293, and reporting 40 re-baselines where there had been 46. A
+         feature whose entire job is to stop a moved commitment hiding, hiding a
+         moved commitment.
+
+         So the original is pinned and the trim comes out of the middle, with a
+         count kept on the entry that survives so the reset number and the table
+         can both still tell the truth about what is missing. Same shape as the
+         undo cap, which must drop the OLDEST step and not the newest: in both
+         cases the naive end is the load-bearing one. */
+      if (baselineLog.length > BASELINE_LOG_CAP) {
+        const gone = baselineLog.splice(1, 1)[0];
+        if (gone && baselineLog[0]) baselineLog[0].trimmedSets =
+          (baselineLog[0].trimmedSets || 0) + (gone.kind === 'set' ? 1 : 0);
+      }
     }
     /* The ORIGINAL commitment — the first 'set' in the log. Everything the panel
        says about "since the very start" is measured from this and nothing else,
@@ -8629,7 +8654,12 @@
       // comparing dates then reports "no original" on a plan that has one
       return (sets.length > 1 && sets[0] !== sets[sets.length - 1]) ? sets[0] : null;
     }
-    function baselineResetCount() { return baselineLog.filter(e => e.kind === 'set').length; }
+    function baselineResetCount() {
+      // + the ones the cap took, or a long engagement under-reports how many
+      // times its own commitment was replaced
+      return baselineLog.filter(e => e.kind === 'set').length
+        + ((baselineLog[0] && baselineLog[0].trimmedSets) || 0);
+    }
     /* "Are we measuring from the very start or from when we reset it?" — the
        question a re-baselined plan cannot answer from one date. One sentence,
        emitted only when there IS a distinction to draw: the reset number, the
@@ -8721,6 +8751,17 @@
         + rows + '</tbody></table>'
         + (inferred ? '<p class="help-text">One row is marked from a file saved before this history existed — '
             + 'its date is real, its totals were never recorded, so they read as “—” rather than as zero.</p>' : '')
+        /* Say what is missing. The cap keeps the original and the most recent
+           forty and takes the trim out of the middle, so a very long engagement
+           has a hole in this table — and a table with a silent hole in it is
+           worse than a shorter one, because the reset number above will not
+           match the rows you can count. */
+        + ((baselineLog[0] && baselineLog[0].trimmedSets)
+            ? '<p class="help-text">⋯ <b>' + baselineLog[0].trimmedSets + '</b> commitment'
+              + (baselineLog[0].trimmedSets === 1 ? '' : 's') + ' between the original and the oldest row shown '
+              + ' were dropped to keep this log bounded. The original is never dropped — every "against the '
+              + 'original commitment" figure on the Analytics tab is measured from it — and the count above '
+              + 'includes the missing ones, so it will be larger than the number of rows here.</p>' : '')
         + '<p class="help-text">Re-baselining is the honest move when scope changed and a change order was '
             + 'agreed; it is a way to hide a slip when it was not. This table is the difference between those '
             + 'two, and it is why the row is here rather than only in the file.</p></details>';

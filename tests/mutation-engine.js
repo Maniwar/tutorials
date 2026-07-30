@@ -227,6 +227,14 @@ const MUTANTS = [
     find: "      baselineLogPush('clear');",
     with: '      baselineLog = [];' },
 
+  { what: 'baseline history: the cap drops the ORIGINAL commitment',
+    find: '        const gone = baselineLog.splice(1, 1)[0];',
+    with: '        const gone = baselineLog.splice(0, 1)[0];' },
+
+  { what: 'baseline history: the reset count ignores what the cap took',
+    find: "      return baselineLog.filter(e => e.kind === 'set').length\n        + ((baselineLog[0] && baselineLog[0].trimmedSets) || 0);",
+    with: "      return baselineLog.filter(e => e.kind === 'set').length;" },
+
   { what: 'baseline history: the log is never written to the file',
     find: '        resources, reserves, baselineDate, baselineLog, levelMode, projectBudget,',
     with: '        resources, reserves, baselineDate, levelMode, projectBudget,' },

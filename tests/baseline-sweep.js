@@ -300,6 +300,54 @@ const QA = JSON.parse(fs.readFileSync(
           say('Baseline history', 'clearing the baseline shortened the commitment history — what was once '
             + 'promised is no longer knowable');
         out.logLen = baselineLog.length;
+
+        /* THE CAP MUST NEVER TAKE THE ORIGINAL.
+           It used to: shift() dropped the first entry, so past forty
+           commitments baselineOriginal() returned the oldest SURVIVOR and the
+           panel called it the original — measuring "not against the original
+           commitment" from a commitment that was not the original, and
+           under-reporting the reset count by however many had been dropped. A
+           feature whose entire job is to stop a moved commitment hiding, hiding
+           a moved commitment.
+
+           The first probe of this could not see it: forty-six baselines taken
+           on one afternoon from one plan produce forty-six IDENTICAL entries, so
+           the oldest survivor matched the original on every field and the check
+           passed on the broken build. Each commitment has to be
+           DISTINGUISHABLE, which is why the plan grows between them. */
+        resetUndo();
+        baselineLog = []; baselineDate = '';
+        setBaseline();
+        const trueFirst = { at: baselineLog[0].at, env: baselineLog[0].envelope, ts: baselineLog[0].ts };
+        const grow = leafTasks().find(x => !x.milestone && !x.isSummary);
+        const N = 46;
+        for (let i = 1; i < N; i++) {
+          if (grow) { grow.o += 1; grow.m += 1; grow.p += 1; recompute(); }
+          setBaseline();
+        }
+        out.cappedLen = baselineLog.length;
+        out.cappedResetCount = baselineResetCount();
+        if (baselineLog.length > 41)
+          say('Baseline history', 'the log grew to ' + baselineLog.length + ' entries against a cap of 40');
+        const kept = baselineLog[0];
+        if (!kept || kept.ts !== trueFirst.ts || Math.abs(kept.envelope - trueFirst.env) > 0.5)
+          say('Baseline history', 'past the cap the log no longer holds the ORIGINAL commitment — it holds an '
+            + 'envelope of ' + Math.round((kept || {}).envelope) + ' where the original committed '
+            + Math.round(trueFirst.env) + ', so every "against the original" figure is measured from the wrong '
+            + 'commitment');
+        const orig2 = baselineOriginal();
+        if (!orig2 || Math.abs(orig2.envelope - trueFirst.env) > 0.5)
+          say('Baseline history', 'baselineOriginal() past the cap returns an envelope of '
+            + Math.round((orig2 || {}).envelope) + ' and the original committed ' + Math.round(trueFirst.env));
+        if (baselineResetCount() !== N)
+          say('Baseline history', N + ' baselines were taken and the panel reports '
+            + baselineResetCount() + ' — the cap is swallowing resets out of the count the row leads with');
+        // and the table must not have a silent hole in it
+        switchTab('baseline'); renderBaseline();
+        const shown = (document.getElementById('view-baseline') || document.body).textContent;
+        if (baselineLog.length < N && !/commitments? between the original/.test(shown))
+          say('Baseline history', 'the table is missing ' + (N - baselineLog.length) + ' commitment(s) and says '
+            + 'nothing about it, so the reset count above will not match the rows anyone can count');
       }
 
       return { contradictions: bad, counts: out };
