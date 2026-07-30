@@ -223,6 +223,19 @@ const QA = JSON.parse(fs.readFileSync(
           if (/Add activities/i.test(pt2) || !/cannot be computed|circle|loop/i.test(pt2))
             say('blocked tab', 'the reason survives opening the tab but not a repaint — renderPlanTruth() puts '
               + 'the first-run sentence back, so the truth is whatever happened to render last');
+          /* THE HEALTH PANEL IS BLOCKED BY THE SAME THING AND MUST SAY SO.
+             Plan truth writes its own reason from inside its renderer; the health
+             panel has no renderer that runs at all when the schedule is missing,
+             so switchTab paints it. Two different mechanisms for the same fact,
+             and only one of them was checked — the mutant that removed the
+             painting survived a full run because every assertion here was reading
+             planTruth, which fixes itself. */
+          const hb = (document.getElementById('healthContainer') || {}).textContent || '';
+          out.blockedHealth = hb.replace(/\s+/g, ' ').trim().slice(0, 40);
+          if (!/cannot be computed|circle|loop/i.test(hb))
+            say('blocked tab', 'the health panel is blocked by the same loop and says nothing about it: "'
+              + (hb.replace(/\s+/g, ' ').trim().slice(0, 60) || '(completely empty)') + '"');
+
           /* AND PRESSING THE BUTTON MUST DO SOMETHING VISIBLE.
              calculate() returned early on a loop with no message of its own,
              relying entirely on the wizard it opens. Dismiss that wizard once and

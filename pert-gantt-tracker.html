@@ -2901,7 +2901,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0338</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0348</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -7205,7 +7205,12 @@
          no schedule, so it still works and blanking it with an error would take a
          working panel away at the moment the reader most needs to see what
          changed. */
-      const el = document.getElementById('healthBody');
+      /* healthContainer, not "healthBody" — the first version of this wrote to an
+         id that does not exist in the document, so it ran, found nothing, and
+         reported nothing, on every blocked plan. A no-op that looks like a fix is
+         the worst kind, and the only reason it surfaced is that the check finally
+         asserted on the PANEL instead of on the function having been called. */
+      const el = document.getElementById('healthContainer');
       if (el) el.innerHTML = scheduleBlockedHtml();
     }
     function ensureCalculated() {
