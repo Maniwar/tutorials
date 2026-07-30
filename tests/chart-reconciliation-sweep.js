@@ -25,6 +25,13 @@ const fs = require('fs'), path = require('path');
 const CRM = FIXTURE();
 const QA = JSON.parse(fs.readFileSync(
   path.resolve(__dirname, '..', 'fixtures', 'qa-reference.json'), 'utf8'));
+/* A real export. Neither of the other two fixtures has a single activity added
+   after its baseline, so the scope-verdict check below never ran on them — it sat
+   there green and vacuous. This one carries twenty-two: twelve test cases the
+   generator created and ten it re-estimated, against a feature set that never
+   moved, which is exactly the shape the verdict exists to name. */
+const FIELD = JSON.parse(fs.readFileSync(
+  path.resolve(__dirname, '..', 'fixtures', 'field-export.json'), 'utf8'));
 
 (async () => {
   const b = await chromium.launch({headless:true,args:['--no-sandbox'],executablePath: chromePath()});
@@ -191,6 +198,57 @@ const QA = JSON.parse(fs.readFileSync(
     }
   }
 
+  /* 1e. "IS THIS A SCOPE CHANGE?" MUST BE ANSWERED, AND ANSWERED CORRECTLY.
+     The scope bar measures EFFORT. Re-running the test-plan generator adds and
+     re-estimates test cases, which moves effort while the committed criteria sit
+     exactly where they were — a completely different conversation from agreeing
+     to build something more, and the only one of the two that owes a change
+     order. A reader looking at twelve new rows, every one a generated test case,
+     asked the question outright, because the bar said +1.7% and the decisive
+     clause was buried at the end of the third sentence.
+
+     The dangerous half is the CONVERSE: this verdict must never appear when real
+     scope moved, because "no change order is due" is the most expensive sentence
+     on the page to get wrong. So it is tested in both directions. */
+  {
+    const scp = D.rows.find(x => x.key === 'scope');
+    const hb4 = hasBaseline();
+    const moved4 = leafTasks().filter(t => !t.isSummary && (t.baseTe == null
+      || Math.abs((Number(t.te) || 0) - (Number(t.baseTe) || 0)) > 1e-9));
+    const allTc = moved4.length > 0 && moved4.every(isTestCaseTask);
+    const fs4 = featureScope();
+    const held = fs4.hb && !fs4.added.length && !fs4.removed.length && fs4.netAcs === 0;
+    note.scopeMoved = moved4.length;
+    note.scopeMovedAllTestCases = allTc;
+    note.scopeFeatureSetHeld = held;
+    note.scopeVerdict = scp && scp.deltaVerdict ? scp.deltaVerdict : null;
+    if (hb4 && allTc && held && scp && scp.state !== 'flat') {
+      if (!/not new scope/i.test(scp.deltaVerdict || ''))
+        say('Scope bar', moved4.length + ' activities moved and every one is a generated test case against an '
+          + 'unchanged feature set, and the row does not say so — a reader has to work out from three separate '
+          + 'clauses whether they owe a change order');
+      if (!/not a scope change/i.test(scp.note || ''))
+        say('Scope bar', 'the verdict is on the readout and the note never states it');
+      if (scp.unpriced)
+        say('Scope bar', 'the row calls test-case regeneration UNPRICED SCOPE — an accusation that a team gave '
+          + 'work away, when the committed criteria never moved');
+    }
+    /* the converse, on a plan where real scope was added */
+    const victim = leafTasks().find(t => !t.isSummary && !isTestCaseTask(t) && t.baseTe != null);
+    if (hb4 && victim) {
+      const keepTe = { o: victim.o, m: victim.m, p: victim.p };
+      victim.o += 5; victim.m += 5; victim.p += 5;
+      recompute();
+      const scp2 = planTruthData().rows.find(x => x.key === 'scope');
+      note.scopeVerdictAfterRealGrowth = scp2 && scp2.deltaVerdict ? scp2.deltaVerdict : null;
+      if (scp2 && /not new scope/i.test(scp2.deltaVerdict || ''))
+        say('Scope bar', 'a NON-test-case activity was re-estimated upward by 5 units and the row still says '
+          + '"verification work, not new scope" — it is clearing a change order that may well be owed');
+      Object.assign(victim, keepTe);
+      recompute();
+    }
+  }
+
   // 2. spend curve: does its "at today" equal the Budget row's pair?
   const hb=hasBaseline(), today=stripTime(new Date()).getTime();
   const spread=pvSpread(hb, leafTasks());
@@ -239,8 +297,9 @@ const QA = JSON.parse(fs.readFileSync(
 
   const qa = await sweep('QA reference', QA);
   const crm = await sweep('Real export', CRM);
-  const R = { contradictions: [].concat(qa.contradictions, crm.contradictions),
-              qaCounts: qa.counts, crmCounts: crm.counts,
+  const fld = await sweep('Field export', FIELD);
+  const R = { contradictions: [].concat(qa.contradictions, crm.contradictions, fld.contradictions),
+              qaCounts: qa.counts, crmCounts: crm.counts, fieldCounts: fld.counts,
               pageErrors: errs.slice(0, 8) };
   console.log(JSON.stringify(R, null, 1));
   await b.close();

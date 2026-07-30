@@ -33,15 +33,18 @@
      circle that does not exist, so a panel that says "cut a link" would be
      sending someone after a loop that was never there.
 
-   The fixture is the user's own export, corruption intact. Nothing about it is
-   synthetic, which is the point: three sweeps and forty-five hand-derived cases
-   were green on the day this plan could not draw a single chart.
+   The fixture is a real export, corruption intact — fixtures/field-export.json,
+   named for what it IS rather than for this one property, because the same file
+   also carries the only post-baseline test-case regeneration in the repo and is
+   read by chart-reconciliation-sweep for that. Nothing about it is synthetic,
+   which is the point: three sweeps and forty-five hand-derived cases were green
+   on the day this plan could not draw a single chart.
    ═══════════════════════════════════════════════════════════════════════════ */
 const { requirePlaywright, chromePath, APP } = require('./_harness');
 const { chromium } = requirePlaywright();
 const fs = require('fs'), path = require('path');
 const DUP = JSON.parse(fs.readFileSync(
-  path.resolve(__dirname, '..', 'fixtures', 'duplicate-ids.json'), 'utf8'));
+  path.resolve(__dirname, '..', 'fixtures', 'field-export.json'), 'utf8'));
 
 (async () => {
   const b = await chromium.launch({headless:true,args:['--no-sandbox'],executablePath: chromePath()});

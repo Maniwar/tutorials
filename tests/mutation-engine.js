@@ -200,6 +200,34 @@ const MUTANTS = [
     find: '      return { on: stripTime(new Date(dayAt(hiD))), days: hiD };',
     with: '      return { on: stripTime(new Date(dayAt(hiD) - 86400000)), days: hiD };' },
 
+  /* ── one envelope, not three ───────────────────────────────────────────────
+     The Budget bar divides by an envelope, the spend curve totals one, and the
+     note says the bar IS the curve's vertical gap at today. On a plan with work
+     added after the baseline they were three different numbers, because
+     pvSpread never fell back to live DATES the way plannedCostOf falls back to
+     live COST, and the bar's denominator summed `baseCost || 0` — the exact bug
+     budgetAtCompletion carries a comment about. Invisible until a real export
+     with twelve post-baseline test cases arrived. */
+
+  { what: 'envelope: the curve drops work the baseline never dated',
+    find: '        const s1 = (ub ? t.baseStart : t.startDate) || t.startDate;\n        const f1 = (ub ? t.baseFinish : t.finishDate) || t.finishDate;',
+    with: '        const s1 = ub ? t.baseStart : t.startDate;\n        const f1 = ub ? t.baseFinish : t.finishDate;' },
+
+  { what: 'envelope: the bar divides by the frozen sum instead of the plan',
+    find: '        const ref = baseCost > 0 ? budgetAtCompletion(hb) : planCost;',
+    with: '        const ref = baseCost > 0 ? baseCost : planCost;' },
+
+  /* the scope verdict, in both directions — "no change order is due" is the most
+     expensive sentence on the page to get wrong */
+
+  { what: 'scope: test-case regeneration is never named as verification work',
+    find: "        if (verificationOnly && featureHeld && scp.state !== 'flat') {",
+    with: '        if (false) {' },
+
+  { what: 'scope: real growth is cleared as verification work',
+    find: '        const verificationOnly = moved.length > 0 && movedTc === moved.length;',
+    with: '        const verificationOnly = moved.length > 0;' },
+
   /* ── the red ring ─────────────────────────────────────────────────────────
      It lands on GREEN cells, so a red ring on a finished activity reads as "done
      badly". It never means that: only that the RECORD of what happened is
@@ -349,7 +377,8 @@ const LIKELY = {
   'test plan:': 'run-test-plan.js', 'baseline history:': 'baseline-sweep.js',
   'bank:': 'bank-sweep.js', 'readout:': 'contradiction-sweep.js',
   'blocked tab:': 'dialog-sweep.js', 'changes panel:': 'drawn-surfaces-sweep.js',
-  'corrupt file:': 'corrupt-file-sweep.js', 'ring:': 'drawn-surfaces-sweep.js'
+  'corrupt file:': 'corrupt-file-sweep.js', 'ring:': 'drawn-surfaces-sweep.js',
+  'envelope:': 'chart-reconciliation-sweep.js', 'scope:': 'chart-reconciliation-sweep.js'
 };
 const orderFor = m => {
   const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);

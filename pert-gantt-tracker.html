@@ -2901,7 +2901,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0523</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0614</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -8354,8 +8354,28 @@
       const out = { segs: [], phased: 0, msN: 0, msCash: 0, offN: 0, offCash: 0 };
       (leaves || leafTasks()).forEach(t => {
         const c1 = plannedCostOf(t, ub);
-        const s1 = ub ? t.baseStart : t.startDate;
-        const f1 = ub ? t.baseFinish : t.finishDate;
+        /* BASELINE DATES, FALLING BACK TO LIVE ONES — the same rule plannedCostOf
+           already applies to the COST, and for the same reason.
+
+           plannedCostOf deliberately returns `baseCost || taskCost(t)` so that an
+           activity created after the baseline still contributes to the envelope;
+           the comment on budgetAtCompletion says so outright, because summing
+           baseCost alone left BAC below a PV that included the new work. But this
+           function did NOT make the matching fallback for DATES: baseStart is
+           null on a post-baseline activity, so its money fell straight into
+           offCash and never entered the curve at all. The two halves of the same
+           intention disagreed, and the result was two different envelopes on one
+           panel — the curve totalling the baselined 51,893 while the Budget bar
+           divided by 52,066, exactly the 173 of test cases the generator had
+           added since. Found on a real export; neither committed fixture has a
+           single activity added after its baseline, so nothing could see it.
+
+           Live dates for work the baseline never dated is the only answer that
+           keeps PV able to reach BAC. It is also the honest one: the plan really
+           does intend to spend that money, on those dates, and the SCOPE row is
+           where "this was not in the commitment" gets said. */
+        const s1 = (ub ? t.baseStart : t.startDate) || t.startDate;
+        const f1 = (ub ? t.baseFinish : t.finishDate) || t.finishDate;
         /* A milestone has a date but no span, so its money used to be counted
            aside and never enter the curve at all — while EV and BAC both
            included it. PV therefore topped out permanently below BAC by exactly
@@ -9452,10 +9472,22 @@
         // Hoisted above this IIFE and walked once — see the note at the top of
         // planTruthData(). The names are kept so every reference below is unchanged.
         const planCost = planCostAll, baseCost = baseCostAll, actCost = actCostAll;
-        // No silent `|| planCost` while still captioning it "baseline": a
-        // baseline taken before rates were entered froze $0, and claiming to
-        // measure against it would be a lie with a date attached.
-        const ref = baseCost > 0 ? baseCost : planCost;
+        /* No silent `|| planCost` while still captioning it "baseline": a
+           baseline taken before rates were entered froze $0, and claiming to
+           measure against it would be a lie with a date attached. baseCost stays
+           the FROZEN sum for exactly that test — did the baseline capture money
+           at all — and nothing else.
+
+           The DENOMINATOR is budgetAtCompletion, not that frozen sum. Summing
+           `Number(t.baseCost) || 0` drops every activity created after the
+           baseline, which is the precise bug the comment on budgetAtCompletion
+           was written about, repeated here. It left three envelopes on one panel:
+           the bar dividing by 51,893, the curve totalling 52,066 and BAC agreeing
+           with the curve — so "this bar is the curve's vertical gap at today",
+           which the note states outright, was not quite true. Small here, 0.3% on
+           a plan with twelve added test cases; it grows with everything added
+           after a commitment. */
+        const ref = baseCost > 0 ? budgetAtCompletion(hb) : planCost;
 
         if (!(ref > 0) && !(actCost > 0)) {
           // $0 has three different causes with three different cures. Asserting
@@ -9724,12 +9756,26 @@
         const addedTc = added.filter(isTestCaseTask).length;
         const drift = planTe - baseTe;
         const reEst = drift - addedTe;
+        /* WHICH activities moved, not just how much. Re-running the test-plan
+           generator adds and re-estimates test cases, and that is a completely
+           different conversation from agreeing to build something more: the
+           criteria are the same criteria, nothing was sold, and no change order
+           is owed. The bar cannot tell the difference — it measures effort — so a
+           reader asking "did scope change?" got +1.7% amber and had to assemble
+           the answer from three clauses, the decisive one ("exactly the set
+           committed") buried at the end of the last. Asked outright by someone
+           looking at twelve new rows that were all generated test cases. */
+        const moved = leaves.filter(t => t.baseTe == null
+          || Math.abs((Number(t.te) || 0) - (Number(t.baseTe) || 0)) > 1e-9);
+        const movedTc = moved.filter(isTestCaseTask).length;
+        const verificationOnly = moved.length > 0 && movedTc === moved.length;
         scp.planTxt = (Math.round(baseTe * 10) / 10) + ' ' + u;
         scp.pairLbl = ['baselined', 'now'];
         scp.actTxt = (Math.round(planTe * 10) / 10) + ' ' + u;
         scp.pct = drift / baseTe * 100;
         scp.state = Math.abs(drift) < 0.05 ? 'flat' : 'ok';
         scp.delta = scp.state === 'flat' ? 'unchanged' : ptrNum(drift, u);
+        scp.deltaWhy = scp.state === 'flat' ? '' : 'against the baselined effort';
         scp.denom = 'baselined effort ' + (Math.round(baseTe * 10) / 10) + ' ' + u;
         // "Unpriced scope" is an accusation. It fires only when scope was
         // genuinely ADDED — a team that merely re-estimated existing work upward
@@ -9751,8 +9797,30 @@
            So the row states both, and says so out loud when they diverge. */
         const fs2 = featureScope();
         const featLine = featureScopeLine(fs2);
-        scp.note = (bits.length ? bits.join(' plus ') + '.' : 'Effort is unchanged since the baseline was taken.')
-          + (featLine ? ' ' + featLine : '')
+        /* THE VERDICT, where the readout puts the answer to "is anything wrong".
+           Same treatment the Budget row gets: the figure says how much, the line
+           underneath says whether it matters. Effort drift made entirely of test
+           cases, against a feature set that has not moved, is not scope growth
+           and owes nobody a change order. */
+        const featureHeld = fs2.hb && !fs2.added.length && !fs2.removed.length && fs2.netAcs === 0;
+        if (verificationOnly && featureHeld && scp.state !== 'flat') {
+          scp.deltaVerdict = 'verification work, not new scope';
+          scp.deltaVerdictLbl = 'all ' + moved.length + ' changed rows are test cases';
+          scp.deltaVerdictTone = 'good';
+        }
+        scp.note = (verificationOnly && featureHeld
+            ? '<b>This is not a scope change.</b> Every one of the <b>' + moved.length + '</b> activities that '
+              + 'moved since the baseline is a generated <b>test case</b>, and the committed feature set is '
+              + 'untouched — <b>' + fs2.nowStories + '</b> stories and <b>' + fs2.nowAcs + '</b> criteria, exactly '
+              + 'what was agreed on ' + escapeHtml(fs2.at || baselineDate) + '. Re-running the test plan writes '
+              + 'more verification for the SAME commitments; it does not add anything you owe the client, and no '
+              + 'change order is due. What it does cost is the effort below. '
+            : '')
+          + (bits.length ? bits.join(' plus ') + '.' : 'Effort is unchanged since the baseline was taken.')
+          // the verification-only lead already states the committed feature set,
+          // and saying "13 stories and 40 criteria" twice in four lines reads as
+          // a bug rather than as emphasis
+          + (featLine && !(verificationOnly && featureHeld) ? ' ' + featLine : '')
           + (fs2.hb && fs2.netAcs > 0 && Math.abs(scp.pct) < 2
               ? ' <b>The effort did not move and the feature set did</b> — those criteria were absorbed into '
                 + 'estimates that were written before they existed, which is the least visible way to give work away.'
