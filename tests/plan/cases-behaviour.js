@@ -534,4 +534,38 @@ module.exports = [
       saveActivity();
       return r;
     }` },
+
+  // ══ the test pack is a pack, not a queue ════════════════════════════════
+  { id: 'B24', area: 'Test plan',
+    title: 'No test case waits on another test case, in the sample or after a repair',
+    intent: 'A test case verifies an activity. Chaining one case to the next puts the whole pack on a '
+          + 'serial line: the finish date carries the SUM of every case rather than the longest, one '
+          + 'failure blocks everything behind it, and — because a chain can reach across story groups '
+          + 'to a case whose own activity runs later — it is where the schedule loops come from. The '
+          + 'sample used to ship forty cases in one chain, which meant the demo everyone opens first '
+          + 'showed the defect and the warning banner about it. loadSample now runs the same repair the '
+          + 'app offers, so the rule is proved on the data it ships with. Nothing checked that, and a '
+          + 'silent removal of that one line would put the chain back on the public demo.',
+    expect: { sampleShipsChained: 0, sampleHasCases: true, sampleHasNoLoop: true,
+              repairClearsAChain: 0, repairPointsAtTheActivityNotACase: true },
+    from: 'Load the sample and count. Then chain three cases by hand, repair, and count again.',
+    fn: `() => {
+      loadSample();
+      const cases = tasks.filter(t => isTestCaseTask(t) && !t.isSummary);
+      const r = { sampleShipsChained: tcChainedList().length,
+                  sampleHasCases: cases.length >= 5,
+                  sampleHasNoLoop: !findScheduleCycleIds() };
+      // now put a chain back and confirm the repair takes it out again, and that
+      // what each case ends up waiting on is an ACTIVITY — a repair that merely
+      // deleted the links would pass a count and leave the pack unanchored
+      const pack = cases.slice(0, 4);
+      for (let i = 1; i < pack.length; i++) pack[i].predecessors = [{ id: pack[i - 1].id, type: 'FS', lag: 0 }];
+      recompute();
+      const chainedNow = tcChainedList().length;
+      unchainTestCases({ silent: true });
+      r.repairClearsAChain = tcChainedList().length;
+      r.repairPointsAtTheActivityNotACase = chainedNow > 0 && pack.every(t =>
+        (t.predecessors || []).every(p => { const q = tasks.find(x => x.id === p.id); return q && !isTestCaseTask(q); }));
+      return r;
+    }` },
 ];

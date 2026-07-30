@@ -500,3 +500,20 @@ form.
 
 **Derived from.** Call the draft path and compare the register length before and after.
 
+## Test plan
+
+### B24 — No test case waits on another test case, in the sample or after a repair
+
+**Design intent.** A test case verifies an activity. Chaining one case to the next puts the whole pack on a
+serial line: the finish date carries the SUM of every case rather than the longest, one
+failure blocks everything behind it, and — because a chain can reach across story groups
+to a case whose own activity runs later — it is where the schedule loops come from. The
+sample used to ship forty cases in one chain, which meant the demo everyone opens first
+showed the defect and the warning banner about it. loadSample now runs the same repair
+the app offers, so the rule is proved on the data it ships with. Nothing checked that,
+and a silent removal of that one line would put the chain back on the public demo.
+
+**Expected.** `sampleShipsChained` = 0 · `sampleHasCases` = true · `sampleHasNoLoop` = true · `repairClearsAChain` = 0 · `repairPointsAtTheActivityNotACase` = true
+
+**Derived from.** Load the sample and count. Then chain three cases by hand, repair, and count again.
+

@@ -149,8 +149,8 @@ const MUTANTS = [
     with: "        t.baseCost = taskCost(t);\n        Object.defineProperty(t,'baseTe',{get(){return this.te;},configurable:true});" },
 
   { what: 'baseline: clearing keeps the committed feature set',
-    find: '      reqsBaseline = null;\n      saveLocal(); renderBaseline();',
-    with: '      /* mutant: feature set kept */\n      saveLocal(); renderBaseline();' },
+    find: "      reqsBaseline = null;\n      // logged, not truncated",
+    with: "      // logged, not truncated" },
 
   { what: 'baseline: the reference dates are never written to the file',
     find: '          baseStart: t.baseStart ? fmtISO(new Date(t.baseStart)) : null,',
@@ -180,6 +180,56 @@ const MUTANTS = [
     find: 'const openId = holder ? holder.id : id;',
     with: 'const openId = id;' },
 
+  /* ── the split budget bar and the catch-up date ────────────────────────────
+     Both of these went wrong on the way in, and neither threw: the segments
+     stacked naively so the drawn far end stated the timing figure while the
+     badge stated the net, and the catch-up search bisected on instants and then
+     floored the answer, naming a day on which the curve had not yet reached the
+     booked total. A panel that talks a reader out of an alarm has to be right
+     about the date it does it with. */
+
+  { what: 'budget bar: the neutral segment carries the overrun instead of the timing',
+    find: '        const timing = (evNow != null && pvNow != null) ? evNow - pvNow : null;',
+    with: '        const timing = (evNow != null && pvNow != null) ? actCost - evNow : null;' },
+
+  { what: 'budget bar: the segments stack naively, so the drawn end is not the gap',
+    find: '            const lo = counter ? Math.min(a, b2) : Math.max(Math.min(a, b2), loN);',
+    with: '            const lo = Math.min(a, b2);' },
+
+  { what: 'catch-up: the crossing date is floored to the midnight before it',
+    find: '      return { on: stripTime(new Date(dayAt(hiD))), days: hiD };',
+    with: '      return { on: stripTime(new Date(dayAt(hiD) - 86400000)), days: hiD };' },
+
+  /* ── the two surfaces that had no checks at all ────────────────────────────
+     The commitment history and the estimate bank. The bank matters most: it is
+     the only data here that outlives the project file, and a wrong median in it
+     surfaces as a quote that is light — on the next engagement, to a different
+     client, with nothing on any screen looking wrong. */
+
+  { what: 'baseline history: taking a baseline no longer records the commitment',
+    find: "      baselineLogPush('set');",
+    with: '      /* mutant: the commitment is not recorded */' },
+
+  { what: 'baseline history: clearing truncates the log instead of appending to it',
+    find: "      baselineLogPush('clear');",
+    with: '      baselineLog = [];' },
+
+  { what: 'baseline history: the log is never written to the file',
+    find: '        resources, reserves, baselineDate, baselineLog, levelMode, projectBudget,',
+    with: '        resources, reserves, baselineDate, levelMode, projectBudget,' },
+
+  { what: 'bank: forgetting a project shortens the list without dropping the records',
+    find: '      const keep = all.filter(r => r.proj !== proj);',
+    with: '      const keep = all.slice(0, Math.max(0, all.length - 1));' },
+
+  { what: 'bank: span-derived actuals are taught to the estimator as measured effort',
+    find: "    function bankCalibration() {\n      const rows = loadBank().filter(r => r.basis === 'logged' && r.ratio > 0);",
+    with: "    function bankCalibration() {\n      const rows = loadBank().filter(r => r.ratio > 0);" },
+
+  { what: 'test plan: the sample ships its test cases as one serial chain again',
+    find: '      unchainTestCases({ silent: true });',
+    with: '      /* mutant: the sample ships chained */' },
+
   { what: 'wizard: ⑂ Nest offers to re-parent a test case under a phase',
     find: '&& predT && !isTestCaseTask(predT) && !predIsPhase',
     with: '&& predT && !isTestCaseTask(predT)' },
@@ -198,7 +248,8 @@ const CHECKS = QUICK ? ['run-test-plan.js']
   : ['run-test-plan.js', 'golden-reference.js', 'contradiction-sweep.js',
      'schedule-sweep.js', 'drawn-surfaces-sweep.js', 'pricing-sweep.js',
      'resourcing-sweep.js', 'persistence-sweep.js', 'export-sweep.js', 'undo-sweep.js', 'baseline-sweep.js', 'cross-surface-sweep.js', 'task-editor-sweep.js',
-     'client-facing-sweep.js', 'dialog-sweep.js'];
+     'client-facing-sweep.js', 'dialog-sweep.js', 'chart-reconciliation-sweep.js',
+     'bank-sweep.js'];
 
 /* Which check is EXPECTED to notice. This is a running order, not a shortcut:
    if the named check does not go red the mutant still walks every other one, so
@@ -212,7 +263,10 @@ const LIKELY = {
   'save/load': 'persistence-sweep.js', 'undo:': 'undo-sweep.js',
   'baseline:': 'baseline-sweep.js', 'change order:': 'baseline-sweep.js',
   'criticality': 'drawn-surfaces-sweep.js', 'resource load': 'resourcing-sweep.js',
-  'margin': 'pricing-sweep.js', 'wizard:': 'dialog-sweep.js'
+  'margin': 'pricing-sweep.js', 'wizard:': 'dialog-sweep.js',
+  'budget bar:': 'chart-reconciliation-sweep.js', 'catch-up:': 'chart-reconciliation-sweep.js',
+  'test plan:': 'run-test-plan.js', 'baseline history:': 'baseline-sweep.js',
+  'bank:': 'bank-sweep.js'
 };
 const orderFor = m => {
   const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);
@@ -279,17 +333,29 @@ async function judge(m, i) {
   await Promise.all(Array.from({ length: LANES }, lane));
   if (process.stderr.isTTY) process.stderr.write('\r');
 
-  let survived = 0;
+  /* SURVIVED and SKIPPED are different findings and were reported as one number.
+     A survivor says a region of the PRODUCT is unguarded. A skip says this FILE
+     is stale — its anchor no longer matches, usually because the code it aimed at
+     was edited — and the region may be perfectly well covered. Printing "1 of 38
+     survived — the suite has holes there" for a stale anchor sends someone
+     hunting for a hole that is not there, and worse, hides a real survivor behind
+     a number that is routinely nonzero. Both still fail the run: a mutant that
+     cannot apply is proving nothing and has to be repaired. */
+  let survived = 0, skipped = 0;
   results.forEach(r => {
-    if (r.skipped) { survived++; console.log('SKIPPED  ' + r.m.what + '\n         ' + r.why); }
+    if (r.skipped) { skipped++; console.log('SKIPPED  ' + r.m.what + '\n         ' + r.why); }
     else if (r.by) console.log('CAUGHT   ' + r.m.what + '\n         → ' + r.by);
     else { survived++; console.log('SURVIVED ' + r.m.what
       + '\n         nothing in the suite noticed. This identity is unguarded.'); }
   });
 
   fs.rmSync(tmp, { recursive: true, force: true });
-  console.log(survived
-    ? '\n' + survived + ' of ' + MUTANTS.length + ' mutants survived — the suite has holes there.'
+  const parts = [];
+  if (survived) parts.push(survived + ' of ' + MUTANTS.length
+    + ' mutants SURVIVED — those regions of the product are unguarded');
+  if (skipped) parts.push(skipped + ' mutant(s) could not be applied — this FILE is stale, not the suite: '
+    + 'the anchor was edited out of the product. Repair the anchor; it is proving nothing until you do');
+  console.log(parts.length ? '\n' + parts.join('.\n') + '.'
     : '\nall ' + MUTANTS.length + ' mutants were caught.');
-  process.exitCode = survived ? 1 : 0;
+  process.exitCode = (survived || skipped) ? 1 : 0;
 })();

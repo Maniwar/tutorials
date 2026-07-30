@@ -36,6 +36,13 @@ const QA = JSON.parse(fs.readFileSync(
   const sweep = async (label, data) => {
     await page.evaluate(d => { hydrate(d); calculate(); }, data);
     await page.waitForTimeout(600);
+    /* The panel has to be DRAWN for the geometry checks below. Every other check
+       in this file works from planTruthData(), which is the right level for an
+       arithmetic identity and blind to what is painted — a mutant that stacked
+       the budget segments so the visible bar ended past the figure in the badge
+       survived this whole suite for exactly that reason. */
+    await page.evaluate(() => { switchTab('analytics'); renderAnalytics(); });
+    await page.waitForTimeout(500);
     return page.evaluate(lbl => {
       const bad = [];
       const say = (w, x) => bad.push(lbl + ' \u00b7 ' + w + ' :: ' + x);
@@ -71,6 +78,117 @@ const QA = JSON.parse(fs.readFileSync(
     if (missing.length)
       say('Reconciliation', missing.length + ' activit(ies) move the bar and are absent from the table, '
         + 'e.g. "' + missing[0].name + '" — the residual is hiding them rather than naming them');
+  }
+
+  /* 1b. THE SPLIT BAR MUST STILL STATE THE GAP.
+     The Budget bar's length is a SUM — timing (EV − PV) plus overrun (AC − EV) —
+     drawn as two segments so a large neutral timing figure stops reading as a
+     large problem. Two ways that can go wrong and neither shows up as an error:
+     the parts can stop adding to the whole, and the DRAWN far end can disagree
+     with the badge. The second one actually happened: the segments stacked
+     naively, so an under-budget overrun drew back over the tip of the timing bar
+     and the longest thing on screen ended at the timing figure while the badge
+     and the percentage stated the net. */
+  const hb2 = hasBaseline();
+  if (Array.isArray(bud.segs) && bud.segs.length) {
+    const sum = bud.segs.reduce((n, s) => n + s.pct, 0);
+    note.segPcts = bud.segs.map(s => +s.pct.toFixed(3));
+    note.segSum = +sum.toFixed(3);
+    note.budPct = +(bud.pct || 0).toFixed(3);
+    if (Math.abs(sum - (bud.pct || 0)) > 0.01)
+      say('Budget bar', 'the segments add to ' + sum.toFixed(2) + '% and the bar states '
+        + (bud.pct || 0).toFixed(2) + '% — the parts no longer make the whole');
+    // and the identity they claim to be: gap = timing + overrun
+    const evNow2 = leafTasks().reduce((s2, t) => s2 + plannedCostOf(t, hb2) * ((t.percentComplete || 0) / 100), 0);
+    const acNow2 = leafTasks().reduce((s2, t) => s2 + actualCostOf(t), 0);
+    const pvNow2 = accrualAt(pvSpread(hb2, leafTasks()).segs, stripTime(new Date()).getTime());
+    const ref2 = leafTasks().reduce((s2, t) => s2 + plannedCostOf(t, hb2), 0);
+    const wantTiming = (evNow2 - pvNow2) / ref2 * 100, wantOver = (acNow2 - evNow2) / ref2 * 100;
+    if (Math.abs(bud.segs[0].pct - wantTiming) > 0.01)
+      say('Budget bar', 'the timing segment is ' + bud.segs[0].pct.toFixed(2) + '% and EV−PV is '
+        + wantTiming.toFixed(2) + '% — the neutral part is not the timing');
+    if (bud.segs[1] && Math.abs(bud.segs[1].pct - wantOver) > 0.01)
+      say('Budget bar', 'the overrun segment is ' + bud.segs[1].pct.toFixed(2) + '% and AC−EV is '
+        + wantOver.toFixed(2) + '% — the coloured part is not the overrun');
+  }
+
+  // 1c. THE CATCH-UP DATE IS A LOOKUP, SO IT HAS TO BE THE RIGHT DAY.
+  // The panel tells the reader the gap closes on a named date and that nothing
+  // has to be done about it. If that date is off, the panel is talking someone
+  // out of an alarm on a promise it cannot keep. accrualAt is monotonic, so the
+  // answer is exactly characterised: at the date the curve has reached the
+  // booked total, and the day before it has not.
+  {
+    const hb3 = hasBaseline();
+    const segs3 = pvSpread(hb3, leafTasks()).segs;
+    const ac3 = leafTasks().reduce((s2, t) => s2 + actualCostOf(t), 0);
+    const cu = ptrCurveCatchesUp(segs3, ac3, new Date());
+    note.catchUp = cu.on ? fmtISO(cu.on) : (cu.never ? 'never' : 'already there');
+    if (cu.on) {
+      const atIt = accrualAt(segs3, cu.on.getTime());
+      const dayBefore = accrualAt(segs3, cu.on.getTime() - 86400000);
+      if (!(atIt >= ac3 - 0.5))
+        say('Budget bar', 'the panel says the gap closes ' + fmtISO(cu.on) + ' but the curve is only at '
+          + Math.round(atIt) + ' there, against ' + Math.round(ac3) + ' booked');
+      if (dayBefore >= ac3 + 0.5)
+        say('Budget bar', 'the gap had already closed before ' + fmtISO(cu.on)
+          + ' — the date named is later than the real crossing');
+      if (cu.days !== Math.max(0, Math.round((cu.on.getTime() - stripTime(new Date()).getTime()) / 86400000)))
+        say('Budget bar', 'the "days from now" figure does not match the date beside it');
+    } else if (cu.never) {
+      const total3 = segs3.reduce((n, g) => n + (g.c || 0), 0);
+      if (total3 >= ac3 - 0.5)
+        say('Budget bar', 'the panel says the curve never reaches the booked total, but the plan sums to '
+          + Math.round(total3) + ' against ' + Math.round(ac3) + ' booked');
+    }
+  }
+
+  /* 1d. WHAT IS DRAWN MUST END WHERE THE BADGE SAYS.
+     The one thing the data-level checks above cannot see. When the timing and
+     overrun segments point in OPPOSITE directions the solid bar has to stop at
+     the net and the hollow "given back" band has to start there — touching, not
+     overlapping. Stacking them naively drew the band back OVER the tip of the
+     solid bar, so the longest mark on the row ended at the timing figure while
+     the badge and the percentage beside it stated the net. Every identity above
+     still held; only the picture lied. Expressed as a relationship between the
+     two drawn spans, so it needs no knowledge of the axis scale. */
+  {
+    const row = document.querySelector('.ptr-row[data-dim="budget"]');
+    const plot = row && row.querySelector('.ptr-plot');
+    const pw = plot ? plot.getBoundingClientRect().width : 0;
+    if (!plot) say('Budget bar', 'the budget row is not on the page, so nothing below tested the drawing');
+    else if (!(pw > 50)) note.plotWidth = Math.round(pw);   // panel not laid out; geometry unreadable
+    else {
+      const pb = plot.getBoundingClientRect();
+      const span = el => { const r = el.getBoundingClientRect();
+        return { a: (r.left - pb.left) / pw * 100, b: (r.right - pb.left) / pw * 100 }; };
+      const segEls = [...plot.querySelectorAll('.ptr-seg')];
+      const solid = segEls.filter(e => !e.classList.contains('ptr-return')).map(span);
+      const ret = segEls.filter(e => e.classList.contains('ptr-return')).map(span);
+      note.drawnSolid = solid.map(s2 => [+s2.a.toFixed(1), +s2.b.toFixed(1)]);
+      note.drawnReturn = ret.map(s2 => [+s2.a.toFixed(1), +s2.b.toFixed(1)]);
+      if (segEls.length && !solid.length)
+        say('Budget bar', 'the bar is drawn entirely as give-back bands with no solid part, so it states no gap');
+      ret.forEach(rb => {
+        solid.forEach(sb => {
+          const overlap = Math.min(rb.b, sb.b) - Math.max(rb.a, sb.a);
+          if (overlap > 0.3)
+            say('Budget bar', 'the hollow give-back band overlaps the solid bar by '
+              + overlap.toFixed(1) + '% of the axis — the solid bar therefore ends past the gap stated in the '
+              + 'badge, so the longest mark on the row contradicts the number beside it');
+        });
+      });
+      // and the two spans have to actually meet, or there is a gap of nothing
+      // between the bar and the band that reads as a third quantity
+      if (ret.length === 1 && solid.length) {
+        const far = Math.max.apply(null, solid.map(s2 => Math.max(s2.a, s2.b)));
+        const near = Math.min.apply(null, solid.map(s2 => Math.min(s2.a, s2.b)));
+        const touches = Math.abs(ret[0].a - far) < 0.6 || Math.abs(ret[0].b - near) < 0.6;
+        if (!touches)
+          say('Budget bar', 'the give-back band does not start where the solid bar ends ('
+            + ret[0].a.toFixed(1) + '% against ' + far.toFixed(1) + '%) — the space between them means nothing');
+      }
+    }
   }
 
   // 2. spend curve: does its "at today" equal the Budget row's pair?

@@ -15,10 +15,10 @@
 #
 #   2. Refuse the commit if any check is red. Every commit to this file lands
 #      on a public demo, so a red suite is a shipped defect. The hand-derived
-#      plan, fourteen sweeps and the drawing mutation check take about a minute
-#      and three quarters — the price of this one file being the release. The
-#      engine mutation check is another two and a half minutes and is opt-in via
-#      FULL=1; run it before anything the user will look at.
+#      plan, seventeen sweeps and the drawing mutation check take about a minute
+#      and fifty seconds — the price of this one file being the release. The
+#      engine mutation check is another four minutes and is opt-in via FULL=1;
+#      run it before anything the user will look at.
 #
 #      Measured, not estimated. If you add a check, re-time it and correct this
 #      line: a stale number here is the same class of thing the suite exists to
@@ -97,9 +97,15 @@ rm -f /tmp/ptr-m.$$
 # The same question asked of the ENGINE: break a load-bearing identity in turn —
 # the PERT weighting, the backward pass, the working calendar, earned value,
 # save/load field coverage, the margin, an export total, undo, the baseline roll,
-# a wizard button that acts on the wrong object — and confirm something goes red.
-# Twenty-nine of them, about three minutes: too much for every commit, worth it
-# before anything the user sees. FULL=1 git commit.
+# the commitment log, the estimate bank's calibration, a wizard button that acts
+# on the wrong object — and confirm something goes red. Thirty-eight of them,
+# about four minutes: too much for every commit, worth it before anything the
+# user sees. FULL=1 git commit.
+#
+# It fails on a SKIPPED mutant as well as a survivor, and the two mean different
+# things: a survivor says the product has an unguarded region, a skip says this
+# file is stale because the code its anchor pointed at was edited. Read which one
+# it printed before going hunting.
 if [ -n "$FULL" ]; then
   if node tests/mutation-engine.js > /tmp/ptr-e.$$ 2>&1; then
     echo "  ✓ mutation · engine    every broken identity caught"
@@ -109,7 +115,7 @@ if [ -n "$FULL" ]; then
   fi
   rm -f /tmp/ptr-e.$$
 else
-  echo "  · mutation · engine    skipped (FULL=1 to run it, ~2m30s)"
+  echo "  · mutation · engine    skipped (FULL=1 to run it, ~4m)"
 fi
 
 if [ "$fail" -ne 0 ]; then

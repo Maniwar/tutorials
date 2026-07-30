@@ -248,6 +248,60 @@ const QA = JSON.parse(fs.readFileSync(
           say('Change order', 'the signed change-order history does not survive save and load');
       }
 
+      /* ── 11. THE COMMITMENT HISTORY ────────────────────────────────────────
+         Pressing 📌 Set baseline used to overwrite the only reference in the
+         file, so the original commitment stopped existing the moment it was
+         replaced and nothing on screen could tell a plan that has held its dates
+         from one that has moved them three times and measures itself against the
+         third. The log exists to answer that, which makes three things
+         load-bearing: it must record every commitment, it must survive save and
+         load (or it is a session-only fiction), and exactly ONE entry may be
+         marked current — the first version marked by DATE and put the badge on
+         both of two same-afternoon resets. */
+      ran('11·commitmentHistory');
+      {
+        const n0 = baselineResetCount();
+        setBaseline();
+        if (baselineResetCount() !== n0 + 1)
+          say('Baseline history', 'taking a baseline did not add an entry to the commitment log');
+        const first = baselineLog.filter(e => e.kind === 'set')[0];
+        // move the plan, then commit again: the log must show the commitment moving
+        const t2 = leafTasks().find(x => !x.milestone && !x.isSummary);
+        if (t2) { t2.o *= 3; t2.m *= 3; t2.p *= 3; recompute(); }
+        setBaseline();
+        const sets = baselineLog.filter(e => e.kind === 'set');
+        const cur = sets[sets.length - 1];
+        if (sets.length < n0 + 2) say('Baseline history', 'the second commitment was not recorded');
+        if (t2 && !(cur.envelope > first.envelope || cur.effort > first.effort || cur.finish !== first.finish))
+          say('Baseline history', 'the plan grew between two commitments and the log records them as identical, '
+            + 'so a re-baseline that gave something away is indistinguishable from one that did not');
+        const orig = baselineOriginal();
+        if (!orig) say('Baseline history', 'with two commitments taken, the original is still not identifiable — '
+          + 'a plan cannot say whether it is measured from the start or from the last reset');
+        else if (orig === cur) say('Baseline history', 'the "original commitment" and the current one are the '
+          + 'same entry, so the distinction the panel draws is not real');
+        // exactly one row wears "current"
+        switchTab('baseline'); renderBaseline();
+        const marks = (document.getElementById('view-baseline') || document.body).textContent
+          .split('· current').length - 1;
+        out.currentMarks = marks;
+        if (marks !== 1) say('Baseline history', marks + ' rows of the commitment history are marked "current" — '
+          + 'exactly one is, and marking by date puts the badge on every reset taken the same day');
+        // it is a stored fact, not a session one
+        const logJson2 = JSON.stringify(baselineLog);
+        hydrate(JSON.parse(JSON.stringify(serialize()))); calculate();
+        if (JSON.stringify(baselineLog) !== logJson2)
+          say('Baseline history', 'the commitment history does not survive save and load');
+        // clearing LOGS rather than truncating, or the record of what was once
+        // promised disappears with the reference to it
+        const beforeClear = baselineLog.length;
+        clearBaseline();
+        if (baselineLog.length <= beforeClear)
+          say('Baseline history', 'clearing the baseline shortened the commitment history — what was once '
+            + 'promised is no longer knowable');
+        out.logLen = baselineLog.length;
+      }
+
       return { contradictions: bad, counts: out };
     }, label);
   };

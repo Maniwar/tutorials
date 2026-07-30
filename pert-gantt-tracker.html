@@ -496,6 +496,26 @@
     .ptr-good { background: var(--success); }
     .ptr-bad { background: var(--critical); }
     .ptr-chg { background: var(--warn); }
+    /* A bar whose length is a SUM is drawn as its parts. The timing part is
+       deliberately NOT a status colour: money that moved in time costs nothing
+       and closes on its own, so it reads as texture rather than as a verdict,
+       and only the part that is a real overrun or underrun is coloured. */
+    .ptr-seg { border-radius: 2px; }
+    .ptr-seg + .ptr-seg { box-shadow: -1px 0 0 var(--card); }
+    .ptr-timing { background: repeating-linear-gradient(135deg,
+      #cbd5e1 0 4px, #e2e8f0 4px 8px); }
+    .ptr-flatseg { background: var(--border); }
+    /* A component pointing AGAINST the net — an underrun taking money off a
+       timing gap — is space the bar does not occupy, so it is hollow. Filling it
+       would make the bar longer than the gap it is stating. */
+    .ptr-return { background: none !important; border: 1.5px dashed currentColor;
+      opacity: .8; animation: none; }
+    /* The same two textures at text size, so the key below the chart shows the
+       thing itself rather than describing it. NOT .ptr-key — that name is already
+       the strip's legend container 260 lines down, and taking it collapsed that
+       legend from one row into a stack that overlapped the paragraph beneath. */
+    .ptr-swatch { display: inline-block; width: 22px; height: 9px; vertical-align: -1px;
+      border-radius: 2px; position: static; }
     /* zero variance is a measurement, not an absence — a dot ON the plan line */
     .ptr-dot { position: absolute; left: 50%; top: 50%; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px;
       border-radius: 999px; background: var(--success); box-shadow: 0 0 0 3px var(--card), 0 0 0 4.5px var(--success); }
@@ -2261,8 +2281,8 @@
 - Build: 10d base + 4d per integration; Salesforce→SAP ran 1.4x estimate
 - UAT: never under 5d regardless of size…" onchange="saveHistData()"></textarea>
               <div style="margin-top:0.75rem;padding-top:0.6rem;border-top:1px solid var(--border)">
-                <label>Estimate bank — measured actuals across every project</label><button type="button" class="info-icon" aria-label="About the estimate bank" data-help="The notes above are what you write; this is what the tool measures. Archiving a finished project (Analytics ▸ Archive to historical data) files one record per activity — estimate vs the effort actually logged — and the records accumulate ACROSS projects. Every AI estimate is then calibrated against your real track record: if your UAT test cases habitually run 1.4× estimate, it stops quoting the optimistic number. Export it to carry the record between browsers or share it with your team.">i</button>
-                <div id="bankBadge" class="help-text" style="margin:2px 0 0.4rem">empty — archive a finished project to start it</div>
+                <label>Estimate bank — measured actuals across every project</label><button type="button" class="info-icon" aria-label="About the estimate bank" data-help="The notes above are what you write; this is what the tool measures. Archiving a finished project (header Export ▾ ▸ 🗄 Archive to estimation history) files one record per activity — estimate vs the effort actually logged — and the records accumulate ACROSS projects. Every AI estimate is then calibrated against your real track record: if your UAT test cases habitually run 1.4× estimate, it stops quoting the optimistic number. Export it to carry the record between browsers or share it with your team.">i</button>
+                <div id="bankBadge" class="help-text" style="margin:2px 0 0.4rem">empty — fill it from the header menu: Export ▾ ▸ 🗄 Archive to estimation history</div>
                 <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
                   <button class="btn-sm btn-secondary" onclick="bankExportCSV()" title="One row per measured activity: estimate, actual effort, ratio, basis, cost">⬇ Bank (.csv)</button>
                   <button class="btn-sm btn-secondary" onclick="bankExportJSON()" title="Full records — the portable form; re-import on another machine">⬇ Bank (.json)</button>
@@ -2768,6 +2788,8 @@
           <h2><span class="ico" aria-hidden="true">📚</span> Estimate bank — your own track record</h2>
           <div class="toolbar no-print">
             <button class="btn-secondary btn-sm" onclick="bankExportCSV()" title="One row per measured activity">⬇ .csv</button>
+            <button class="btn-secondary btn-sm" onclick="bankExportJSON()" title="The PORTABLE form — re-import this on another machine or share it with the team; duplicates are skipped on merge. The .csv beside it is for reading in a spreadsheet and cannot be re-imported.">⬇ .json</button>
+            <label class="btn-sm btn-secondary" style="cursor:pointer;margin:0" title="Merge another bank export into this one — duplicates are skipped, nothing is overwritten">⬆ Import<input type="file" accept="application/json,.json" style="display:none" onchange="bankImportJSON(event)" /></label>
           </div>
         </div>
         <div class="card-body"><div id="bankPanel"></div></div>
@@ -2830,7 +2852,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.29.2345</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0029</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3024,6 +3046,24 @@
       management: { value: 0, unit: 'percent' }
     };
     let baselineDate = ''; // ISO date the baseline snapshot was taken
+    /* EVERY COMMITMENT EVER MADE, oldest first.
+       baselineDate alone answers "what am I being measured against" and cannot
+       answer "and is that still the thing we promised" — which is the question
+       behind every re-baseline. Pressing 📌 Set baseline overwrote the only
+       reference in the file, so the original commitment stopped existing the
+       moment it was replaced and nothing on screen could tell a plan that has
+       held its dates from one that has moved them three times and is measuring
+       itself against the third.
+
+       Per-activity frozen values are NOT kept per entry — that would be four
+       copies of the plan in every save file. The AGGREGATES are, because they are
+       what the question is actually about: the envelope, the finish, the effort
+       and the committed feature set. So the bars keep measuring against the
+       current baseline (the right reference for "how are we doing") and the log
+       says how the reference itself has moved (the right answer to "against
+       what"). A cleared baseline appends its own entry rather than truncating,
+       or clearing would erase the history of what was promised. */
+    let baselineLog = [];
     let collapsedIds = new Set(); // WBS summaries currently collapsed in Gantt/tables
     let levelMode = 'none';       // 'none' | 'slack' | 'extend' — how levelDelay is treated
     let unleveledDuration = null; // CPM duration with all leveling removed (for banners)
@@ -3346,7 +3386,7 @@
         sowDraft = ''; statusNarrative = null; projectBudget = 0;
         reserves = { contingency: { value: 0, unit: 'percent' }, management: { value: 0, unit: 'percent' } };
         pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 };
-        baselineDate = ''; collapsedIds = new Set(); levelMode = 'none';
+        baselineDate = ''; baselineLog = []; collapsedIds = new Set(); levelMode = 'none';
         reqs = null; sowBaseline = null; coDraft = ''; coLog = [];
         document.getElementById('projectName').value = 'New Engagement';
         document.getElementById('holidays').value = '';
@@ -3843,7 +3883,7 @@
         holidays: document.getElementById('holidays').value,
         weekendDays: [...weekendDays].sort().join(','),
         nextId,
-        resources, reserves, baselineDate, levelMode, projectBudget,
+        resources, reserves, baselineDate, baselineLog, levelMode, projectBudget,
         raid, nextRaidId, statusHistory, sowDraft, statusNarrative, pricing, reqsBaseline,
         clientSafeReports, sowBaseline, reqs, sowUserEdited, coLog,
         collapsedIds: [...collapsedIds],
@@ -3923,6 +3963,14 @@
         };
       } else reserves = { contingency: { value: 0, unit: 'percent' }, management: { value: 0, unit: 'percent' } };
       baselineDate = data.baselineDate || '';
+      /* An older file has no log. Rather than leaving it empty — which would make
+         a long-running project look like it had never been baselined — seed it
+         from the one date the file does carry, marked so nothing later claims
+         aggregates it does not have. */
+      baselineLog = Array.isArray(data.baselineLog) ? data.baselineLog.map(e => Object.assign(
+        { at: '', ts: 0, kind: 'set', envelope: 0, effort: 0, start: '', finish: '', activities: 0, stories: 0, acs: 0 }, e))
+        : (data.baselineDate ? [{ at: data.baselineDate, ts: 0, kind: 'set', envelope: 0, effort: 0, start: '',
+            finish: '', activities: 0, stories: 0, acs: 0, inferred: true }] : []);
       levelMode = ['none','slack','extend'].includes(data.levelMode) ? data.levelMode : 'none';
       projectBudget = Number(data.projectBudget) || 0;
       raid = Array.isArray(data.raid) ? data.raid.map(r => Object.assign({ id: 0, type: 'Risk', title: '', description: '', probability: 3, impact: 3, owner: '', status: 'Open', mitigation: '', taskId: null, createdAt: '', links: null, outcome: '', outcomeNote: '', v: 1 }, r)) : [];
@@ -8015,6 +8063,41 @@
     // on screen beats theoretical purity in a panel whose whole thesis is that the
     // numbers must agree. Switching to working days would mean changing the card
     // in the same edit or acquiring exactly the defect above.
+    /* THE DAY THE PLAN CATCHES UP TO WHAT HAS ALREADY BEEN SPENT.
+       accrualAt is monotonic non-decreasing in the date — every segment
+       contributes 0, a rising fraction, then its full cost, and costs are never
+       negative — so the first date where the curve reaches a target is found by
+       bisection with no iteration limit worries: 60 halvings of any plausible
+       span lands inside a millisecond.
+
+       Answering "when does this close" from the curve rather than from a burn
+       rate matters: a rate extrapolates a trend that the plan does not contain,
+       while this is a lookup on frozen numbers, so it is either exactly right or
+       honestly absent. Returns { on, days } when the curve reaches the target,
+       { never, planTotal } when the whole commitment is smaller than what has
+       already been booked — a case worth naming rather than rounding to "soon". */
+    function ptrCurveCatchesUp(segs, target, today) {
+      const total = segs.reduce((n, g) => n + (g.c || 0), 0);
+      if (!(target > 0) || !segs.length) return {};
+      if (total < target) return { never: true, planTotal: total };
+      const t0 = stripTime(today).getTime();
+      if (accrualAt(segs, t0) >= target) return {};        // already there — no gap to close
+      /* Bisect on WHOLE DAYS, not on instants. Bisecting on milliseconds and then
+         calling stripTime() on the answer floors it to the midnight BEFORE the
+         crossing — so the panel named a date on which the curve had not in fact
+         reached the booked total yet, by up to a full day's accrual. The claim
+         being made is "by this date the plan has caught up", which is a claim
+         about a day boundary, so the search has to be over day boundaries. */
+      const dayAt = n => t0 + n * 86400000;
+      let hiD = Math.ceil((Math.max.apply(null, segs.map(g => g.f)) - t0) / 86400000) + 1;
+      if (hiD < 1 || accrualAt(segs, dayAt(hiD)) < target) return { never: true, planTotal: total };
+      let loD = 0;
+      while (hiD - loD > 1) {
+        const mid = Math.floor((loD + hiD) / 2);
+        if (accrualAt(segs, dayAt(mid)) >= target) hiD = mid; else loD = mid;
+      }
+      return { on: stripTime(new Date(dayAt(hiD))), days: hiD };
+    }
     function accrualAt(segs, atMs) {
       let v = 0;
       for (let i = 0; i < segs.length; i++) {
@@ -8471,14 +8554,151 @@
           ac: ((s.ac || []).map(a => String(a.id)))
         }))
       };
+      baselineLogPush('set');
       saveLocal(); renderBaseline(); renderTaskTable(); renderGantt();
       try { if (document.getElementById('view-req').classList.contains('active')) renderReqs(); } catch (e) {}
+    }
+    /* One entry per commitment, written from the plan as it stands at that
+       instant. Called AFTER baselineDate and the frozen fields are in place, so
+       the aggregates describe the thing actually committed rather than the plan
+       a moment before it. */
+    function baselineLogPush(kind) {
+      const leaves = leafTasks();
+      const fin = leaves.map(t => t.baseFinish || t.finishDate).filter(Boolean).map(d => +new Date(d));
+      const sts = leaves.map(t => t.baseStart || t.startDate).filter(Boolean).map(d => +new Date(d));
+      const stories = ((reqs && reqs.stories) || []);
+      baselineLog.push({
+        at: kind === 'clear' ? fmtISO(new Date()) : baselineDate,
+        /* The DATE is what a reader wants to see; it is not an identity. Two
+           resets on one afternoon share it, and marking "current" by date then
+           put the badge on both of them. ts is the identity. */
+        ts: Date.now(),
+        kind: kind,                                       // 'set' | 'clear'
+        envelope: kind === 'clear' ? 0 : +leaves.reduce((n, t) => n + (Number(t.baseCost) || 0), 0).toFixed(2),
+        effort: kind === 'clear' ? 0 : +leaves.reduce((n, t) => n + (Number(t.baseTe) || 0), 0).toFixed(3),
+        start: (kind !== 'clear' && sts.length) ? fmtISO(new Date(Math.min.apply(null, sts))) : '',
+        finish: (kind !== 'clear' && fin.length) ? fmtISO(new Date(Math.max.apply(null, fin))) : '',
+        activities: kind === 'clear' ? 0 : leaves.length,
+        stories: kind === 'clear' ? 0 : stories.length,
+        acs: kind === 'clear' ? 0 : stories.reduce((n, s) => n + ((s.ac || []).length), 0)
+      });
+      if (baselineLog.length > 40) baselineLog.shift();    // a log, not an archive
+    }
+    /* The ORIGINAL commitment — the first 'set' in the log. Everything the panel
+       says about "since the very start" is measured from this and nothing else,
+       so there is exactly one definition of it in the file. Returns null on a
+       plan whose only baseline is its current one, where the two questions have
+       the same answer and drawing a distinction would invent one. */
+    function baselineOriginal() {
+      const sets = baselineLog.filter(e => e.kind === 'set');
+      // by IDENTITY, not by date: two resets on one afternoon share a date, and
+      // comparing dates then reports "no original" on a plan that has one
+      return (sets.length > 1 && sets[0] !== sets[sets.length - 1]) ? sets[0] : null;
+    }
+    function baselineResetCount() { return baselineLog.filter(e => e.kind === 'set').length; }
+    /* "Are we measuring from the very start or from when we reset it?" — the
+       question a re-baselined plan cannot answer from one date. One sentence,
+       emitted only when there IS a distinction to draw: the reset number, the
+       original date, and how far the commitment itself has moved since. The
+       movement of the COMMITMENT is a different quantity from every bar on this
+       panel, which measures delivery against the current commitment, so it is
+       stated in its own words and never mixed into a variance. */
+    function ptrBaselineLineage() {
+      const n = baselineResetCount();
+      if (n <= 1) return '';
+      const o = baselineOriginal();
+      if (!o) return 'It has been re-baselined <b>' + n + '</b> times; every bar here measures against the '
+        + 'most recent one. ';
+      const cur = baselineLog.filter(e => e.kind === 'set').slice(-1)[0] || {};
+      const bits = [];
+      if (o.envelope > 0 && cur.envelope > 0 && Math.abs(cur.envelope - o.envelope) > 1)
+        bits.push('the envelope ' + (cur.envelope > o.envelope ? 'grew' : 'shrank') + ' by <b>'
+          + fmtMoney(Math.abs(cur.envelope - o.envelope)) + '</b> (' + fmtMoney(o.envelope) + ' → '
+          + fmtMoney(cur.envelope) + ')');
+      if (o.finish && cur.finish && o.finish !== cur.finish) {
+        const d = Math.round((+new Date(cur.finish) - +new Date(o.finish)) / 86400000);
+        bits.push('the committed finish moved <b>' + Math.abs(d) + ' day' + (Math.abs(d) === 1 ? '' : 's')
+          + ' ' + (d > 0 ? 'later' : 'earlier') + '</b> (' + escapeHtml(o.finish) + ' → '
+          + escapeHtml(cur.finish) + ')');
+      }
+      if (o.acs > 0 && cur.acs > 0 && cur.acs !== o.acs)
+        bits.push('the committed criteria went from <b>' + o.acs + '</b> to <b>' + cur.acs + '</b>');
+      return 'This is <b>re-baseline ' + n + '</b> — every bar here measures against it, <em>not</em> against '
+        + 'the original commitment of <b>' + escapeHtml(o.at) + '</b>. '
+        + (bits.length
+            ? 'Between those two commitments ' + bits.join(', ') + '. Delivery against the current baseline can '
+              + 'read clean while the baseline itself has moved this far; both are true and they are different '
+              + 'questions. '
+            : (o.envelope > 0 || o.finish ? 'The two commitments carry the same envelope, finish and criteria '
+                + 'count, so nothing was given away in the reset. '
+                : 'The original was recorded before this file kept commitment totals, so only its date is '
+                  + 'knowable — not what it committed to. '));
+    }
+    /* THE COMMITMENT HISTORY, where the buttons that write it live.
+       Every variance on the Plan vs actual tab is measured against the newest
+       row here. Before this existed, pressing 📌 Set baseline a second time
+       silently replaced the only reference in the file, and the plan then
+       reported itself as on-track against a commitment made after the slip. The
+       point is not the list — it is that a reader can see the reference has moved
+       and by how much, without having to remember. */
+    function baselineLogHtml() {
+      const sets = baselineLog.filter(e => e.kind === 'set');
+      if (!baselineLog.length) return '';
+      const dur = v => (Number(v) > 0 ? fmtDurCell(v) : '—');
+      const current = baselineDate ? sets[sets.length - 1] : null;   // one row, by identity not by date
+      const rows = baselineLog.slice().reverse().map((e, i) => {
+        const isCur = !!current && e === current;
+        const prev = (() => {  // the 'set' immediately before this one, for the delta column
+          const idx = baselineLog.indexOf(e);
+          for (let k = idx - 1; k >= 0; k--) if (baselineLog[k].kind === 'set') return baselineLog[k];
+          return null;
+        })();
+        const blindPrev = !!prev && !(prev.envelope > 0) && !prev.finish;   // pre-history row: date only
+        const delta = e.kind === 'clear' ? '<span class="help-text">reference removed</span>'
+          : !prev ? '<span class="help-text">the original commitment</span>'
+          : blindPrev ? '<span class="help-text">the one before it recorded no totals, so nothing here is '
+              + 'comparable to it</span>'
+          : [prev.envelope > 0 && e.envelope > 0 && Math.abs(e.envelope - prev.envelope) > 1
+               ? (e.envelope > prev.envelope ? '+' : '−') + fmtMoney(Math.abs(e.envelope - prev.envelope)) + ' envelope' : '',
+             prev.finish && e.finish && prev.finish !== e.finish
+               ? (() => { const d = Math.round((+new Date(e.finish) - +new Date(prev.finish)) / 86400000);
+                   return Math.abs(d) + 'd ' + (d > 0 ? 'later' : 'earlier') + ' finish'; })() : '',
+             prev.acs !== e.acs && prev.acs > 0 ? (e.acs > prev.acs ? '+' : '−') + Math.abs(e.acs - prev.acs) + ' criteria' : ''
+            ].filter(Boolean).join(' · ') || '<span class="help-text">nothing changed</span>';
+        return '<tr' + (isCur ? ' style="background:#eff6ff"' : '') + '>'
+          + '<td style="white-space:nowrap">' + (e.kind === 'clear' ? '🧹 cleared' : '📌 ' + (sets.indexOf(e) === 0 ? 'original' : 'reset ' + sets.indexOf(e)))
+          + (isCur ? ' <b>· current</b>' : '') + '</td>'
+          + '<td style="white-space:nowrap">' + escapeHtml(e.at || '—') + '</td>'
+          + '<td style="white-space:nowrap">' + (e.envelope > 0 ? fmtMoney(e.envelope) : '—') + '</td>'
+          + '<td style="white-space:nowrap">' + dur(e.effort) + '</td>'
+          + '<td style="white-space:nowrap">' + escapeHtml(e.finish || '—') + '</td>'
+          + '<td style="white-space:nowrap">' + (e.acs > 0 ? e.stories + ' / ' + e.acs : '—') + '</td>'
+          + '<td>' + delta + '</td></tr>';
+      }).join('');
+      const inferred = baselineLog.some(e => e.inferred);
+      return '<details style="margin-top:0.9rem"' + (sets.length > 1 ? ' open' : '') + '>'
+        + '<summary style="cursor:pointer;font-size:0.9rem;font-weight:600">📌 Commitment history — '
+        + sets.length + ' baseline' + (sets.length === 1 ? '' : 's') + ' taken'
+        + (sets.length > 1 ? ' <span class="help-text" style="font-weight:400">· every variance above is measured '
+            + 'against the newest one, not against the original</span>' : '') + '</summary>'
+        + '<table class="data-table" style="margin-top:0.5rem;font-size:0.82rem"><thead><tr>'
+        + '<th>Commitment</th><th>Taken</th><th>Envelope</th><th>Effort</th><th>Finish</th>'
+        + '<th>Stories / criteria</th><th>Change from the one before</th></tr></thead><tbody>'
+        + rows + '</tbody></table>'
+        + (inferred ? '<p class="help-text">One row is marked from a file saved before this history existed — '
+            + 'its date is real, its totals were never recorded, so they read as “—” rather than as zero.</p>' : '')
+        + '<p class="help-text">Re-baselining is the honest move when scope changed and a change order was '
+            + 'agreed; it is a way to hide a slip when it was not. This table is the difference between those '
+            + 'two, and it is why the row is here rather than only in the file.</p></details>';
     }
     function clearBaseline() {
       if (!confirm('Clear the saved baseline?')) return;
       tasks.forEach(t => { t.baseStart = null; t.baseFinish = null; t.baseTe = null; t.baseCost = null; });
       baselineDate = '';
       reqsBaseline = null;
+      // logged, not truncated: what was once promised stays knowable after the
+      // reference to it is gone, which is the only reason to keep a log at all
+      baselineLogPush('clear');
       saveLocal(); renderBaseline(); renderTaskTable(); renderGantt();
       try { if (document.getElementById('view-req').classList.contains('active')) renderReqs(); } catch (e) {}
     }
@@ -9049,6 +9269,31 @@
         bud.pct = bv.gap / ref * 100;
         bud.tone = bv.tone;
         bud.state = (Math.abs(bud.pct) < 0.5 && bv.tone === 'good') ? 'flat' : 'ok';
+        /* THE BAR IS TWO THINGS ADDED TOGETHER, SO IT IS DRAWN AS TWO THINGS.
+           gap = (EV − PV) + (AC − EV) — timing plus overrun — and on a finished
+           plan that came in under budget, timing is nearly all of it. Colouring
+           the row from the overrun alone stopped the badge lying, but a bar
+           reaching most of the way across the OVER PLAN half still reads as a
+           large problem before anyone gets to the words: that is the false alarm,
+           and it lives in the LENGTH, not the colour.
+
+           So the length is split. The timing segment is neutral and hatched —
+           money that moved in time, which costs nothing and closes itself. The
+           overrun segment carries the verdict colour and is the only part that
+           means a dollar was lost or saved. They stack from the plan line in that
+           order, so the far end still lands exactly on the gap and the identity
+           stays visible: an under-budget overrun points back toward the line and
+           visibly SHORTENS the bar, which is what it does to the money. */
+        const timing = (evNow != null && pvNow != null) ? evNow - pvNow : null;
+        const overrun = (evNow != null) ? actCost - evNow : null;
+        if (timing != null && overrun != null && Math.abs(timing) > Math.max(1, ref * 0.002)) {
+          bud.segs = [
+            { pct: timing / ref * 100, cls: 'ptr-timing',
+              lbl: 'timing: ' + money(Math.abs(timing)) + (timing > 0 ? ' of finished work the baseline expected later' : ' of baselined work not started yet') },
+            { pct: overrun / ref * 100, cls: overrun > Math.max(1, ref * 0.005) ? 'ptr-bad' : overrun < -Math.max(1, ref * 0.005) ? 'ptr-good' : 'ptr-flatseg',
+              lbl: 'overrun: finished work cost ' + money(Math.abs(overrun)) + (overrun > 0 ? ' MORE than budgeted' : overrun < 0 ? ' LESS than budgeted' : ' exactly what was budgeted') }
+          ];
+        }
         /* THE HEADLINE MUST CARRY THE VERDICT, NOT JUST THE GAP.
 
            The badge said "+$21,664 vs plan to date" beside a long bar in the
@@ -9081,6 +9326,13 @@
         bud.note = 'Measured against <b>this project\u2019s own baseline'
           + (baselineDate ? ', taken ' + escapeHtml(baselineDate) : '')
           + '</b> — there is no organisation or portfolio reference in this file. '
+          /* WHICH baseline, when there has been more than one. Every bar on this
+             panel measures from the CURRENT reference, which is the right answer
+             to "how are we doing" and the wrong answer to "against what we
+             promised" once that reference has been replaced. Naming the reset and
+             how the commitment itself moved separates the two questions instead
+             of leaving one number to serve both. */
+          + ptrBaselineLineage()
           + 'What the ' + (baseCost > 0 ? 'baseline' : 'live plan') + ' says should have been spent <b>by '
           + 'today</b> — <b>' + money(pvNow) + '</b> of the ' + money(ref) + ' envelope — against what is '
           + 'actually booked. Spend curves up, so this is <em>not</em> money-spent against work-finished: the '
@@ -9098,6 +9350,25 @@
           bud.note += ' Here it is above the curve but <b>not</b> above the value of the work done, so you are '
             + 'spending ahead of the plan because you are working ahead of it'
             + (schTxt && sch.pct < 0 ? ' — the forecast is ' + schTxt + '. ' : '. ') + 'Timing, not overspend.';
+          /* "It closes on its own" is only credible with a DATE on it. The plan is
+             a closed curve of frozen per-activity costs and dates, so the day it
+             reaches the amount already booked is not a forecast — it is a lookup,
+             and it answers the question a reader actually has: when does this bar
+             stop being long? Without it the panel says "timing" and leaves the
+             reader to take that on faith while the alarm keeps sitting there. */
+          const catchUp = ptrCurveCatchesUp(sp.segs, actCost, today);
+          if (catchUp.on) {
+            bud.note += ' <b>The gap closes ' + escapeHtml(fmtNice(catchUp.on)) + '</b> — that is the day the '
+              + 'baseline curve itself reaches ' + money(actCost) + ', the amount already booked, '
+              + (catchUp.days <= 0 ? 'which is today' : catchUp.days === 1 ? 'one day from now'
+                 : 'about ' + catchUp.days + ' days from now')
+              + '. Nothing has to be done to close it; the plan catches up.';
+          } else if (catchUp.never) {
+            bud.note += ' The baseline curve <b>never</b> reaches ' + money(actCost) + ' — it ends at '
+              + money(catchUp.planTotal) + ', so ' + money(actCost - catchUp.planTotal) + ' of what is booked is '
+              + 'above the whole commitment and will not be closed by waiting. That part is a real overrun '
+              + 'against the envelope even though the finished work came in on budget.';
+          }
         } else if (bv.overValue && !bv.overCurve) {
           bud.note += ' Here it is under the plan-to-date, but the finished work still cost <b>'
             + money(-bv.cv) + '</b> more than it was budgeted at — under the curve because the work has not '
@@ -9746,9 +10017,51 @@
         const xv = at(r.pct);
         const w = Math.max(0.8, Math.abs(xv - 50));   // floor: a real-but-tiny gap must stay visible
         const l = over ? 50 : 50 - w;                 // always anchored exactly on the plan line
+        /* A row may declare that its length is a SUM, and then it is drawn as its
+           parts stacked from the plan line rather than as one block. Budget is the
+           case: the gap is timing plus overrun, and one colour over the total made
+           a large neutral timing figure look like a large problem. Each segment
+           gets its own tone and its own hover text; the far end still lands on
+           r.pct, so the total and the badge continue to agree, and a segment that
+           runs BACK toward the line (an under-budget overrun) shortens the bar
+           exactly as it shortens the money. */
+        if (Array.isArray(r.segs) && r.segs.length) {
+          /* The components can point in OPPOSITE directions — an under-budget
+             overrun subtracts from a timing gap — and stacking them naively drew
+             the second one back OVER the tip of the first. The solid bar then
+             ended at the timing figure while the badge and the percentage stated
+             the net, so the longest thing on screen contradicted the two numbers
+             beside it. That is the same class of defect as the false alarm this
+             split exists to fix.
+
+             So the SOLID bar is clipped to the net — it always ends exactly on
+             r.pct — and a component running counter to the net is drawn beyond
+             that end as a hollow "given back" band. The bar states the gap; the
+             band states what a component took off it. Clipping to [0, total]
+             also handles the ordinary same-direction case, where nothing is
+             counter and the parts simply stack. */
+          const total = r.segs.reduce((n, s) => n + s.pct, 0);
+          const loN = Math.min(0, total), hiN = Math.max(0, total);
+          let cursor = 0;
+          shape = r.segs.map(sg => {
+            const a = cursor, b2 = cursor + sg.pct;
+            cursor = b2;
+            const counter = total >= 0 ? sg.pct < 0 : sg.pct > 0;
+            const lo = counter ? Math.min(a, b2) : Math.max(Math.min(a, b2), loN);
+            const hi = counter ? Math.max(a, b2) : Math.min(Math.max(a, b2), hiN);
+            if (!(hi > lo)) return '';
+            const x1 = at(lo), x2 = at(hi), sw = Math.abs(x2 - x1);
+            if (sw < 0.05) return '';                 // below a pixel: drawing it would only add a seam
+            return '<i class="ptr-bar ptr-seg ' + sg.cls + (counter ? ' ptr-return ' + sg.cls + '-t' : '')
+              + '" style="left:' + Math.min(x1, x2).toFixed(2) + '%;width:' + Math.max(0.35, sw).toFixed(2)
+              + '%" title="' + escapeHtml((sg.lbl || '') + (counter ? ' — drawn beyond the bar’s end because it '
+                + 'comes OFF the gap rather than adding to it' : '')) + '"></i>';
+          }).join('');
+        } else {
         shape = '<i class="ptr-bar ' + cls + (over ? '' : ' ptr-neg') + '" style="left:' + l.toFixed(2)
-          + '%;width:' + w.toFixed(2) + '%"></i>'
-          + (Math.abs(r.pct) > R
+          + '%;width:' + w.toFixed(2) + '%"></i>';
+        }
+        shape += (Math.abs(r.pct) > R
             ? '<i class="ptr-over ' + (over ? 'ptr-over-r' : 'ptr-over-l') + ' ' + cls + '-t">'
               + (over ? '▸' : '◂') + '</i>' : '');
         badgeCls = r.tone ? (r.tone === 'bad' ? 'badge-blocked' : r.tone === 'chg' ? 'badge-warn' : 'badge-ok')
@@ -10442,8 +10755,20 @@
         + 'own plan</b> — the only scale on which days, dollars and effort can sit side by side'
         + (denoms ? ' (' + denoms + ')' : '') + '. On the Budget bar the <b>length</b> is how far booked cost '
         + 'is from the plan’s own spend curve for today, and the <b>colour</b> is the verdict: spending ahead '
-        + 'of that curve is only a problem when the finished work is not there to show for it. Every square '
-        + 'below the chart is one activity, in the same order as the task list; hover any of them.' + (d.safe ? ' Money is hidden while client-safe mode is on.' : '')
+        + 'of that curve is only a problem when the finished work is not there to show for it. '
+        /* The split needs a key, or a hatched block and a dashed outline are two
+           unexplained textures on the one bar people take a verdict from. Only
+           shown when the bar is actually drawn in parts. */
+        + (d.rows.some(r => Array.isArray(r.segs) && r.segs.length)
+            ? 'That gap is <b>two things added together</b>, so it is drawn as two: '
+              + '<i class="ptr-swatch ptr-timing"></i> <b>timing</b> — work finished earlier or later than the '
+              + 'baseline said, which costs nothing and closes itself — and a coloured block for the '
+              + '<b>overrun</b>, the only part where a dollar was actually lost or saved. A '
+              + '<i class="ptr-swatch ptr-return ptr-good-t"></i> hollow band past the bar’s end is an underrun '
+              + 'taking money <em>off</em> the gap, so the solid bar always ends on the figure in the badge. '
+            : '')
+        + 'Every square below the chart is one activity, in the same order as the task list; hover any of '
+        + 'them.' + (d.safe ? ' Money is hidden while client-safe mode is on.' : '')
         + '</p></div>';
     }
     /* ============== THE COMPLETION DISTRIBUTION, MADE READABLE ==============
@@ -12346,6 +12671,7 @@
             <th title="Record reality here — feeds variance, actual cost and the cross-project estimate bank">Actual start / finish</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
+        ${baselineLogHtml()}
         <p class="help-text" style="margin-top:0.75rem">${hb ? 'Baseline set ' + escapeHtml(baselineDate) + '. ' : ''}“Now” uses actual dates where entered, otherwise the live forecast. Positive variance = later, dearer or longer than planned. Effort compares the logged time spent against the estimate — the same figure the estimate bank calibrates future projects from.</p>`;
     }
     function setActual(id, field, val) {
@@ -16643,7 +16969,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       reqsBaseline = null;
       pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 };
       reserves = { contingency: { value: 10, unit: 'percent' }, management: { value: 5, unit: 'percent' } };
-      baselineDate = ''; collapsedIds = new Set(); levelMode = 'none'; projectBudget = 0; calculated = false;
+      baselineDate = ''; baselineLog = []; collapsedIds = new Set(); levelMode = 'none'; projectBudget = 0; calculated = false;
       document.getElementById('projectName').value = 'Sample Client Engagement – CRM Rollout';
       if (!document.getElementById('projectStart').value) document.getElementById('projectStart').value = fmtISO(new Date());
       /* The sample used to ship its test cases as one long chain — TC 20 → 21
@@ -17235,7 +17561,7 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
     }
     function bankExportCSV() {
       const rows = loadBank();
-      if (!rows.length) { alert('The estimate bank is empty — archive a project with logged actuals first (Analytics ▸ Archive to historical data).'); return; }
+      if (!rows.length) { alert('The estimate bank is empty — archive a project with logged actuals first: header Export \u25be \u25b8 \ud83d\uddc4 Archive to estimation history.'); return; }
       const head = ['Project', 'Archived', 'WBS', 'Activity', 'Kind', 'Audience', 'Work type', 'Tag source', 'Owner', 'Role', 'Unit', 'Est O', 'Est M', 'Est P', 'Est TE', 'Actual effort', 'Ratio', 'Basis', 'Planned cost', 'Actual cost'];
       const body = rows.map(r => [r.proj, r.at, r.wbs, r.name, r.kind, r.audience || '', taxLabel(r.tax) || '', r.taxSrc || '', r.owner, r.role, r.unit,
         r.o, r.m, r.p, r.te, r.actual, r.ratio == null ? '' : r.ratio, r.basis, r.costEst, r.costActual]);
@@ -17286,7 +17612,7 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
         tw = (lit.length ? ' · work type: ' + c.byTax.map(x => x.k.split(' ')[0].toLowerCase() + ' ' + x.median + '×').join(', ') : '')
           + (warm.length ? ' · warming up: ' + warm.map(x => x.k.split(' ')[0].toLowerCase() + ' n=' + x.n).join(', ') + ' (needs ' + TAX_MIN_N + ')' : '');
       }
-      el.textContent = n ? (n + ' record' + (n === 1 ? '' : 's') + (c ? ' · median ' + c.overall + '× vs estimate' : '') + tw) : 'empty — archive a finished project to start it';
+      el.textContent = n ? (n + ' record' + (n === 1 ? '' : 's') + (c ? ' · median ' + c.overall + '× vs estimate' : '') + tw) : 'empty — fill it from the header menu: Export ▾ ▸ 🗄 Archive to estimation history';
     }
     /* ===================== THE BANK, LOOKED AT ==============================
        Every archived activity has been filed for months — estimate, actual,
@@ -17461,7 +17787,8 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
       const all = loadBank();
       if (!all.length) {
         host.innerHTML = '<p class="bk-note"><b>Nothing filed yet.</b> Finish a project with actuals logged and '
-          + 'press <b>Archive to historical data</b> — one record per activity, estimate against what it actually '
+          + 'use the header menu <b>Export \u25be \u25b8 \ud83d\uddc4 Archive to estimation history</b> — one record '
+          + 'per activity, estimate against what it actually '
           + 'took. The records live outside any project and outlive all of them, and every AI estimate this tool '
           + 'makes is calibrated against them.</p>';
         return;
@@ -17570,7 +17897,76 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
         + 'calibration is worth trusting. Consistently 20% over and wildly unpredictable are opposite problems '
         + 'with opposite fixes, which is why the distribution is drawn before the average.</p>';
 
-      host.innerHTML = head + hist + bankCalHtml() + cards + bar + table + notes;
+      host.innerHTML = head + hist + bankCalHtml() + cards + bar + table + notes + bankManageHtml(all, projects);
+    }
+
+    /* HOW THE BANK IS MANAGED — the half of this feature that was never on screen.
+       The panel could show what the record SAYS and nothing about how it works: a
+       reader could not tell where the records live, what puts them there, what
+       they change, how to move them to another machine, or how to take one
+       project's records out. Worse, three separate places told them to press
+       "Archive to historical data" on the Analytics tab — a button under a name
+       that does not exist, on a tab it is not on. It is Export ▾ ▸ 🗄 Archive to
+       estimation history, in the header. An instruction pointing at nothing is
+       why a feature reads as unmanageable even when it works.
+
+       Forgetting one project is the one operation that had no path at all short
+       of hand-editing the exported JSON. A bank that cannot forget a project is a
+       bank nobody dares archive into: one bad engagement, or one test run, would
+       skew every future estimate permanently. */
+    function bankManageHtml(all, projects) {
+      const byProj = {};
+      all.forEach(r => { (byProj[r.proj] = byProj[r.proj] || []).push(r); });
+      const rows = Object.keys(byProj).sort().map(k => {
+        const rs = byProj[k], lg = rs.filter(r => r.basis === 'logged' && r.ratio > 0).length;
+        return '<li class="bk-li"><span class="bk-k">' + escapeHtml(k) + '</span>'
+          + '<span class="bk-n">' + rs.length + ' ' + ptrPl(rs.length, 'record')
+          + (lg < rs.length ? ' · ' + lg + ' measured' : '') + '</span>'
+          + '<button type="button" class="btn-sm btn-secondary" style="margin-left:0.5rem"'
+          + ' onclick="bankForgetProject(' + JSON.stringify(k).replace(/"/g, '&quot;') + ')"'
+          + ' title="Remove every record filed from this project. It stops affecting every future AI estimate.'
+          + ' There is no undo for this — export the bank first if you might want it back.">✕ Forget</button></li>';
+      }).join('');
+      return '<details class="bk-card" style="margin-top:0.9rem">'
+        + '<summary style="cursor:pointer;font-weight:600;font-size:0.9rem">🛠 How this bank works, and how to '
+        + 'manage it</summary>'
+        + '<ol class="bk-note" style="margin:0.5rem 0 0.6rem;padding-left:1.2rem;line-height:1.6">'
+        + '<li><b>What puts records in.</b> Header menu <b>Export ▾ ▸ 🗄 Archive to estimation history</b>, on a '
+        + 'project with actuals logged. One record per leaf activity: its three-point estimate, its work type, and '
+        + 'what it actually took. Archiving the same project twice updates its rows rather than duplicating them.</li>'
+        + '<li><b>Where they live.</b> In this browser, in IndexedDB, under a key of their own — <em>outside</em> '
+        + 'every project file. They are not in your saved plan, they do not travel with it, and clearing a project '
+        + 'or starting a new one does not touch them. Clearing browser site data does.</li>'
+        + '<li><b>What they change.</b> Every AI estimate this tool makes carries the medians above as calibration. '
+        + 'If your data-migration work runs 1.6× estimate, it stops quoting the optimistic number for the next one. '
+        + 'A bucket needs about five measured activities before its median means anything, which is why thin rows '
+        + 'are marked.</li>'
+        + '<li><b>Only logged actuals teach.</b> A row whose actual came from the distance between two dates is a '
+        + 'calendar span, not measured effort. Those are kept and counted but excluded from every median, because '
+        + 'mixing them is how a bank quietly teaches itself the wrong lesson.</li>'
+        + '<li><b>Moving them.</b> <b>⬇ .json</b> is the portable form — re-import it on another machine or share '
+        + 'it with the team, and duplicates are skipped on merge. <b>⬇ .csv</b> is for reading in a spreadsheet, '
+        + 'not for re-importing.</li>'
+        + '</ol>'
+        + (rows ? '<p class="bk-ch">Filed from ' + projects.length + ' '
+            + ptrPl(projects.length, 'project') + ' — remove any of them</p><ul class="bk-l">' + rows + '</ul>'
+            + '<p class="bk-note">Forgetting a project is permanent and has no undo. A bank you cannot take a bad '
+            + 'engagement out of is a bank you would never risk archiving into, so this is the button that makes '
+            + 'the rest of it safe to use. Export first if you are unsure.</p>'
+          : '');
+    }
+    function bankForgetProject(proj) {
+      const all = loadBank();
+      const keep = all.filter(r => r.proj !== proj);
+      const gone = all.length - keep.length;
+      if (!gone) { flashSaved('No records are filed under “' + proj + '”.'); return; }
+      if (!confirm('Remove ' + gone + ' record(s) filed from “' + proj + '”?\n\n'
+        + 'They stop calibrating every future AI estimate. There is no undo — the bank lives outside the '
+        + 'project file, so ↶ Undo does not reach it. Export ⬇ .json first if you might want them back.')) return;
+      saveBank(keep);
+      renderBank(); updateBankBadge();
+      flashSaved('🗄 ' + gone + ' record(s) from “' + proj.slice(0, 40) + '” removed — future estimates no longer '
+        + 'calibrate against them.');
     }
 
     function histPromptBlock() {
