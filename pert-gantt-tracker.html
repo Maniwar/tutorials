@@ -562,6 +562,11 @@
        single orphaned word — "finished work $2,517 under / budget" was the
        accidental version of the same two lines. */
     .ptr-vl { display: block; font-weight: 500; opacity: .8; }
+    .raid-score { font-weight: 700; font-size: var(--t-md); padding: 0.35rem 0.5rem; border-radius: 6px;
+      background: var(--bg); border: 1px solid var(--border); white-space: nowrap; }
+    .raid-score-hi { background: #fee2e2; border-color: #fca5a5; color: #b91c1c; }
+    .raid-score-mid { background: #fef3c7; border-color: #fcd34d; color: #b45309; }
+    .raid-score-lo { background: #f1f5f9; color: #475569; }
     .ptr-v-good { color: var(--success); }
     .ptr-v-bad { color: var(--critical); }
     .ptr-v-flat { color: var(--muted); }
@@ -2758,12 +2763,24 @@
                 <option>Risk</option><option>Assumption</option><option>Issue</option><option>Decision</option><option>Exclusion</option></select></div>
               <div><label for="rTitle">Title *</label><input id="rTitle" type="text" placeholder="e.g. Client sandbox access may be delayed" /></div>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 2fr;gap:0.75rem;margin-bottom:0.75rem">
-              <div><label for="rProb">Probability (1–5)</label><input id="rProb" type="number" min="1" max="5" value="3" /></div>
-              <div><label for="rImpact">Impact (1–5)</label><input id="rImpact" type="number" min="1" max="5" value="3" /></div>
-              <div><label for="rOwner">Owner</label><input id="rOwner" type="text" list="ownerList" /></div>
-              <div><label for="rOwner2" style="visibility:hidden">.</label><span class="help-text" style="margin:0">Score ${'' /* prob x impact, shown in the table */}</span></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1.4fr;gap:0.75rem;margin-bottom:0.25rem">
+              <div><label for="rProb">Probability (1–5)</label><input id="rProb" type="number" min="1" max="5" value="3" oninput="raidScoreSync()" /></div>
+              <div><label for="rImpact">Impact (1–5)</label><input id="rImpact" type="number" min="1" max="5" value="3" oninput="raidScoreSync()" /></div>
+              <div><label for="rOwner">Owner</label><input id="rOwner" type="text" list="ownerList" placeholder="start typing a name…" autocomplete="off" /></div>
+              <div><label for="rStatus">Status</label><select id="rStatus"></select></div>
+              <!-- The score was a LITERAL "${'' /* prob x impact, shown in the
+                   table */}" printed at the user: a JS comment written inside
+                   static HTML, where there is no template literal to evaluate it.
+                   It reached a form people type client-facing risks into. It now
+                   shows the number it always meant to. -->
+              <div><label for="rScore" style="visibility:hidden">.</label>
+                <div id="rScore" class="raid-score">—</div></div>
             </div>
+            <p class="help-text" id="rScaleHint" style="margin:0 0 0.75rem">Probability and impact are a 1–5
+              judgement, and their product is the score the log sorts by — <b>1</b> remote / negligible,
+              <b>3</b> even odds / a day or two and some money, <b>5</b> near-certain / it moves the date or the
+              price. Nothing computes them for you: they are the two numbers you would defend on a call, and only
+              their ORDER matters, which is why a rough 3 beats an agonised 3.4.</p>
             <div class="form-group">
               <span class="fg-head"><label for="rLinkPick">Linked to</label><button type="button" class="info-icon" aria-label="About links" data-help="What this entry actually touches. A risk usually hits several activities, is raised against a story or one of its acceptance criteria, is evidenced by a failing test case, and may end up justifying a change order — link all of them. Every link works in both directions: the entry appears on the activity, in the Plan-truth drill-in beside that activity's variance, and here. The first activity you link is also written to the old single-task field, so a file saved here still opens in an older copy of this tool. If something you linked is later deleted the link is shown broken rather than quietly dropped — a link that disappears silently is how test cases once ended up pointing at the wrong criteria.">i</button></span>
               <div id="rLinks" class="chip-static" style="display:flex;flex-wrap:wrap;gap:0.3rem;align-items:center;margin-bottom:0.4rem"></div>
@@ -2901,7 +2918,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0614</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.1725</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -9927,10 +9944,18 @@
       // minus what was due by today" is two different findings added together.
       const drivers = (arr, valueOf, label, dir, extra) => {
         dir = dir || 1;
-        return arr
+        /* HOW MANY THERE WERE BEFORE THE TOP-5 CUT.
+           The list is capped and the count was thrown away, so the row could say
+           "22 activities moved" and the drill-in under it show a badge reading 5
+           and a note reading "top 5" — three numbers about one set, with nothing
+           saying the last two are a sample of the first. Asked about directly.
+           The total rides on the array so the renderer can say "top 5 of 22"
+           without recomputing anything or guessing. */
+        const matched = arr
           .map(t => ({ t: t, v: valueOf(t) }))
           .filter(x => Number.isFinite(x.v) && x.v * dir > 0.0001)
-          .sort((a, b) => (b.v - a.v) * dir)
+          .sort((a, b) => (b.v - a.v) * dir);
+        const out = matched
           .slice(0, DRIVER_MAX)
           .map(x => Object.assign({ id: x.t.id, name: x.t.name, wbs: x.t.wbs || '', kind: ekKindOf(x.t),
                        crit: !!x.t.isCritical, txt: label(x.v, x.t),
@@ -9943,6 +9968,8 @@
                        // never silences the offer to say what actually happened
                        unexplained: !raidHasFaultCause(x.t.id) },
                      extra ? extra(x.t, x.v) : null));
+        out.matched = matched.length;      // before the cap, so the list can own up to being a sample
+        return out;
       };
 
       // Schedule: activities finishing later than the baseline froze them. Only
@@ -10231,11 +10258,16 @@
         + (d.unexplained ? ptrRaidBtn(d.id, d.name, d.txt + ' on ' + String(r.dim).toLowerCase()) : '')
         + (d.watch || '')
         + '</li>').join('');
+      // the badge counts what MATCHED, not what survived the cap — otherwise the
+      // row says 22 and the disclosure beside it says 5, about the same set
+      const shownN = r.drivers.length, totalN = r.drivers.matched || shownN;
       return '<details class="ptr-drv no-print-open"><summary>Which activities? <span class="ptr-drv-n">'
-        + r.drivers.length + '</span></summary>'
+        + totalN + '</span></summary>'
         + (r.driverNote ? '<p class="ptr-drv-note">' + r.driverNote + '</p>' : '')
         + '<ul class="ptr-drv-list">' + rows + '</ul>'
-        + '<p class="ptr-drv-note">Click any one to open it. Worst first, top ' + r.drivers.length + '.</p>'
+        + '<p class="ptr-drv-note">Click any one to open it. Worst first, '
+        + (totalN > shownN ? 'showing the top <b>' + shownN + '</b> of <b>' + totalN + '</b>.'
+                           : 'all <b>' + shownN + '</b> shown.') + '</p>'
         + ptrRecon(r)
         + '</details>';
     }
@@ -20513,6 +20545,22 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
       document.getElementById('rProb').value = r ? r.probability : 3;
       document.getElementById('rImpact').value = r ? r.impact : 3;
       document.getElementById('rOwner').value = r ? r.owner : '';
+      /* The owner box has always carried list="ownerList", so it was MEANT to be
+         a type-ahead — but the datalist is filled by populateOwnerList(), and
+         nothing on the way into this form called it. Whether names appeared
+         depended entirely on whether some other screen had happened to run first,
+         which from the outside is a field that silently is not a picker.
+         Reported exactly that way. */
+      populateOwnerList();
+      /* Status had no control at all. New entries were hard-coded Open and an
+         existing one could only be changed from a dropdown in the table, so the
+         form that creates and edits a RAID entry could not set the one field the
+         log is filtered and counted by. */
+      const st = document.getElementById('rStatus');
+      const cur = r ? String(r.status || 'Open') : 'Open';
+      st.innerHTML = (RAID_STATUSES.indexOf(cur) < 0 ? '<option>' + escapeHtml(cur) + '</option>' : '')
+        + RAID_STATUSES.map(x => '<option' + (x === cur ? ' selected' : '') + '>' + x + '</option>').join('');
+      st.value = cur;
       document.getElementById('rMitigation').value = r ? (r.mitigation || '') : '';
       // mitigation used to fall back to description because there was nowhere to
       // put a description; now there is, so the two stop sharing one box
@@ -20523,6 +20571,7 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
       // draft links live outside `raid` until Save, so cancelling cannot half-link
       raidDraftLinks = r ? raidLinks(r).map(l => ({ k: l.k, id: l.id, was: l.was })) : [];
       raidFillPicker(); raidRenderDraft();
+      raidScoreSync();
       document.getElementById('raidForm').style.display = 'block';
       document.getElementById('rTitle').focus();
     }
@@ -20584,6 +20633,9 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
           ? String(document.getElementById('rOutcome').value || '') : '',
         outcomeNote: raidOutcomeOpts(document.getElementById('rType').value)
           ? document.getElementById('rOutcomeNote').value.trim() : '',
+        // whatever the Status control now holds — the form used to write nothing,
+        // so a new entry was Open forever until someone found the table dropdown
+        status: (document.getElementById('rStatus') || {}).value || 'Open',
         v: 2
       };
       raidSyncTaskId(entry);   // keep the legacy single-task field a true mirror
@@ -20700,6 +20752,19 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
     // The three the log understands. Anything else is not silently coerced —
     // the caller says so and leaves the entry as it was.
     const RAID_STATUSES = ['Open', 'Mitigating', 'Closed'];
+    /* The score, live, in the form — not only in the table after saving. It is
+       probability × impact and nothing else, and seeing it move as the two
+       numbers are typed is the whole reason a 1–5 scale is worth using: the
+       reader is calibrating an ORDER, not measuring anything. */
+    function raidScoreSync() {
+      const el = document.getElementById('rScore');
+      if (!el) return;
+      const p = Math.max(1, Math.min(5, Number(document.getElementById('rProb').value) || 0));
+      const i = Math.max(1, Math.min(5, Number(document.getElementById('rImpact').value) || 0));
+      const n = p * i;
+      el.textContent = n + (n >= 15 ? ' · top of the log' : n >= 8 ? ' · worth a mitigation' : ' · watch it');
+      el.className = 'raid-score ' + (n >= 15 ? 'raid-score-hi' : n >= 8 ? 'raid-score-mid' : 'raid-score-lo');
+    }
     /* ===== DID IT ACTUALLY HAPPEN? ========================================
        A RAID log holds two completely different kinds of statement, and until
        now this file could not tell them apart.

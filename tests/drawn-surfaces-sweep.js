@@ -375,6 +375,49 @@ const QA = JSON.parse(fs.readFileSync(
         } catch (e) { say('Tab "' + tab + '"', 'threw on switch: ' + e.message); }
       });
 
+      /* ── NO SOURCE CODE IN THE RENDERED PAGE ────────────────────────────
+         A JS comment shipped into the RAID entry form, verbatim: the word Score
+         followed by a dollar-brace placeholder wrapping a block comment, written
+         inside STATIC html where there is no template literal to evaluate it. It
+         sat in a form people type client-facing risks into. (Quoting it here
+         literally is what broke this file on the first attempt — the comment
+         terminator inside it closed this comment early, which is a rather
+         on-the-nose demonstration of the hazard.) dialog-sweep already scans for markup rendered as text, but only
+         inside .modal-overlay, and this is an inline panel on a tab: the same
+         "a dialog is not a tab" lesson, inverted. So the scan is page-wide and
+         looks for the syntax of the language rather than for tag names. */
+      (() => {
+        const CODE = /\$\{|\/\*|\*\/|=>\s|function\s*\(|escapeHtml\(/;
+        const hits = [];
+        ['tasks', 'wbs', 'req', 'pert', 'gantt', 'resources', 'baseline', 'analytics', 'raid'].forEach(tab => {
+          try { switchTab(tab); } catch (e) { return; }
+          const root = document.getElementById('view-' + tab);
+          if (!root) return;
+          const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+            acceptNode: n => /^(script|style)$/i.test((n.parentElement || {}).tagName || '')
+              ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+          let n; while ((n = w.nextNode())) {
+            const v = (n.nodeValue || '').trim();
+            if (v && CODE.test(v)) hits.push(tab + ': "' + v.slice(0, 70) + '"');
+          }
+        });
+        // the RAID entry form only exists once opened, and it is where this shipped
+        try { switchTab('raid'); openRaidForm(); } catch (e) {}
+        const rf = document.getElementById('raidForm');
+        if (rf) {
+          const w2 = document.createTreeWalker(rf, NodeFilter.SHOW_TEXT);
+          let n2; while ((n2 = w2.nextNode())) {
+            const v = (n2.nodeValue || '').trim();
+            if (v && CODE.test(v)) hits.push('RAID form: "' + v.slice(0, 70) + '"');
+          }
+        }
+        try { closeRaidForm(); } catch (e) {}
+        out.codeInText = hits.length;
+        if (hits.length)
+          say('Rendered text', hits.length + ' place(s) print source code at the reader — '
+            + hits.slice(0, 2).join(' · '));
+      })();
+
       /* ── THE RED RING MUST SAY WHAT IT MEANS ────────────────────────────
          It lands on cells that are GREEN for complete, and a red ring on a
          finished activity reads as "done badly" — reported by someone whose

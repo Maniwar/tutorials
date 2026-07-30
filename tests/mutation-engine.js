@@ -228,6 +228,18 @@ const MUTANTS = [
     find: '        const verificationOnly = moved.length > 0 && movedTc === moved.length;',
     with: '        const verificationOnly = moved.length > 0;' },
 
+  { what: 'form: a template placeholder is printed at the reader again',
+    find: '<div id="rScore" class="raid-score">\u2014</div>',
+    with: '<span class="help-text">Score $' + '{\'\' /' + '* prob x impact *' + '/}</span>' },
+
+  { what: 'form: the RAID owner box is no longer a type-ahead',
+    find: '      populateOwnerList();\n      /* Status had no control at all.',
+    with: '      /* Status had no control at all.' },
+
+  { what: 'drill-in: the badge counts the top 5 rather than everything that matched',
+    find: '      const shownN = r.drivers.length, totalN = r.drivers.matched || shownN;',
+    with: '      const shownN = r.drivers.length, totalN = shownN;' },
+
   /* ── the red ring ─────────────────────────────────────────────────────────
      It lands on GREEN cells, so a red ring on a finished activity reads as "done
      badly". It never means that: only that the RECORD of what happened is
@@ -378,7 +390,8 @@ const LIKELY = {
   'bank:': 'bank-sweep.js', 'readout:': 'contradiction-sweep.js',
   'blocked tab:': 'dialog-sweep.js', 'changes panel:': 'drawn-surfaces-sweep.js',
   'corrupt file:': 'corrupt-file-sweep.js', 'ring:': 'drawn-surfaces-sweep.js',
-  'envelope:': 'chart-reconciliation-sweep.js', 'scope:': 'chart-reconciliation-sweep.js'
+  'envelope:': 'chart-reconciliation-sweep.js', 'scope:': 'chart-reconciliation-sweep.js',
+  'form:': 'drawn-surfaces-sweep.js', 'drill-in:': 'chart-reconciliation-sweep.js'
 };
 const orderFor = m => {
   const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);

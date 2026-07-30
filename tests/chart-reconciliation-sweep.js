@@ -249,6 +249,22 @@ const FIELD = JSON.parse(fs.readFileSync(
     }
   }
 
+  /* 1f. A CAPPED LIST MUST OWN UP TO BEING A SAMPLE.
+     The drill-in slices to the worst five and threw the pre-cut count away, so a
+     row saying "22 activities moved" sat above a disclosure badge reading 5 and a
+     note reading "top 5" — three numbers about one set with nothing saying the
+     last two are a sample of the first. Asked about directly. */
+  D.rows.forEach(r => {
+    if (!Array.isArray(r.drivers) || !r.drivers.length) return;
+    if (r.drivers.matched == null)
+      say(r.dim + ' drill-in', 'the driver list does not record how many activities matched before the cap, '
+        + 'so nothing on screen can say whether five is all of them or the worst five of twenty-two');
+    else if (r.drivers.matched < r.drivers.length)
+      say(r.dim + ' drill-in', 'it claims ' + r.drivers.matched + ' matched and shows ' + r.drivers.length);
+  });
+  note.driverCounts = D.rows.filter(r => (r.drivers || []).length)
+    .map(r => r.key + ':' + r.drivers.length + '/' + (r.drivers.matched == null ? '?' : r.drivers.matched));
+
   // 2. spend curve: does its "at today" equal the Budget row's pair?
   const hb=hasBaseline(), today=stripTime(new Date()).getTime();
   const spread=pvSpread(hb, leafTasks());
