@@ -210,6 +210,14 @@ const MUTANTS = [
     find: '      if (!schedOk && tasks.length) paintScheduleBlocked();',
     with: '      /* mutant: nothing says why the tab is empty */' },
 
+  { what: 'blocked tab: the reason is overwritten by the next repaint',
+    find: '      if (!calculated) { host.innerHTML = scheduleBlockedHtml(); return; }',
+    with: '      if (!calculated) { host.innerHTML = blank; return; }' },
+
+  { what: 'blocked tab: Calculate fails silently again',
+    find: '      if (!recompute()) {\n        const loop = findScheduleCycleIds() || [];',
+    with: '      if (!recompute()) { return; }\n      if (false) {\n        const loop = findScheduleCycleIds() || [];' },
+
   { what: 'changes panel: a large diff expands over the whole tab again',
     find: '      const BIG = d.total > 12;',
     with: '      const BIG = false;' },

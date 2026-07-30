@@ -2901,7 +2901,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0325</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0338</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4265,8 +4265,16 @@
       if (name === 'gantt' && (calculated || !tasks.length)) { renderGantt(); renderNarrativePanel(); }
       if (name === 'resources' && calculated) renderResources();
       if (name === 'baseline' && (calculated || !tasks.length)) renderBaseline();
-      if (name === 'analytics') { try { renderBank(); } catch (e) {} }
-      if (name === 'analytics' && calculated) { renderAnalytics(); renderHealth(); }
+      if (name === 'analytics') {
+        try { renderBank(); } catch (e) {}
+        if (calculated) { renderAnalytics(); renderHealth(); }
+        /* and when it is NOT calculated, still ask the panel to state its own
+           state. It used to be skipped entirely, so it kept the first-run markup
+           it was born with and told a reader with a full plan to add activities.
+           A panel that renders only when everything is fine cannot report that
+           anything is wrong. */
+        else try { renderPlanTruth(); } catch (e) {}
+      }
       if (name === 'raid') {
         renderRaid(); renderCoHistory();
         if (sowDraft && !draftChangeOrder._pending) document.getElementById('sowContainer').innerHTML = sowDraft;
@@ -7123,7 +7131,22 @@
 
     function calculate() {
       if (tasks.length === 0) { alert('Add at least one activity first.'); return; }
-      if (!recompute()) return;
+      /* A BUTTON THAT DOES NOTHING IS A BROKEN BUTTON, even when the code is
+         behaving. recompute() fails on one thing only — a dependency loop — and
+         it opens the wizard on its way out. But a wizard that has already been
+         dismissed once, or that opens behind where the reader is looking, leaves
+         a person pressing Calculate and watching absolutely nothing happen, with
+         no text anywhere saying why. Reported exactly that way. The press now
+         always produces a visible answer of its own. */
+      if (!recompute()) {
+        const loop = findScheduleCycleIds() || [];
+        const nm = loop.map(id => (tasks.find(t => t.id === id) || {}).name).filter(Boolean);
+        flashSaved('⚠ Cannot calculate — ' + (nm.length
+          ? nm.length + ' activities wait on each other in a circle (' + nm.slice(0, 2).join(' → ')
+            + (nm.length > 2 ? ' → …' : '') + '). Cut one link to break it — the wizard is open.'
+          : 'the dependencies contain a circle, so the schedule has no answer.'));
+        return;
+      }
       renderTaskTable();
       renderWBS();
       renderAnalytics();
@@ -7156,7 +7179,7 @@
        Painted into the hosts a reader is actually looking at rather than a single
        banner, because the complaint that found this was about a specific panel
        still claiming there was nothing to compare. */
-    function paintScheduleBlocked() {
+    function scheduleBlockedHtml() {
       const loop = findScheduleCycleIds();
       const names = (loop || []).map(id => { const t = tasks.find(x => x.id === id); return t ? t.name : '#' + id; });
       const who = names.length
@@ -7169,10 +7192,21 @@
         + 'answer until the circle is cut — this is not an empty plan, it is a blocked one.'
         + (loop ? ' <button class="btn-sm btn-primary" style="margin-top:0.5rem" onclick="openDepFixWizard()">'
             + '<span class="ico" aria-hidden="true">🔗</span> Fix the loop</button>' : '') + '</p>';
-      ['planTruth', 'healthBody', 'standupBody'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.innerHTML = msg;
-      });
+      return msg;
+    }
+    /* Painted into the other hosts on the way in. planTruth is NOT among them: it
+       writes its own, from inside renderPlanTruth, because anything that
+       repaints would overwrite a message put there from out here. */
+    function paintScheduleBlocked() {
+      /* healthBody only. planTruth writes its own from inside renderPlanTruth,
+         because anything that repaints would overwrite a message put there from
+         out here — which is exactly how the first attempt at this failed. And the
+         CHANGES panel is deliberately left alone: a diff of two saved copies needs
+         no schedule, so it still works and blanking it with an error would take a
+         working panel away at the moment the reader most needs to see what
+         changed. */
+      const el = document.getElementById('healthBody');
+      if (el) el.innerHTML = scheduleBlockedHtml();
     }
     function ensureCalculated() {
       if (calculated) return true;
@@ -10855,7 +10889,19 @@
       if (!host) return;
       const blank = '<p class="ptr-blank"><b>Nothing to compare yet.</b> Add activities and press '
         + '<b>Calculate</b> — schedule, budget and scope then appear as one bar each on one shared scale.</p>';
-      if (!calculated || !tasks.length) { host.innerHTML = blank; return; }
+      /* THE EMPTY STATE HAS TO KNOW WHICH EMPTY IT IS, HERE.
+         The first attempt at this painted the real reason from switchTab, and it
+         did not survive: every repaint runs renderPlanTruth() again, this line
+         writes the first-run sentence back over it, and the reader is told to add
+         activities to a plan holding 41 of them. The truth has to live where the
+         blank is written, not beside one of the callers — same lesson as the
+         wizard's ✎ Open, which acted on the row's headline instead of the object
+         that actually holds the link.
+
+         !calculated with activities present means exactly one thing: recompute()
+         refused, and it only refuses on a dependency loop. */
+      if (!tasks.length) { host.innerHTML = blank; return; }
+      if (!calculated) { host.innerHTML = scheduleBlockedHtml(); return; }
       // renderAnalytics() has no error boundary and keeps writing #analyticsContent
       // for another 300 lines after this call. A throw here would blank the whole
       // tab, including the EVM and Monte-Carlo blocks people already rely on.

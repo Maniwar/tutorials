@@ -211,6 +211,35 @@ const QA = JSON.parse(fs.readFileSync(
           if (!/depFixWizard|Fix the loop/i.test((document.getElementById('planTruth') || {}).innerHTML || ''))
             say('blocked tab', 'the panel names the problem and offers no way to fix it, on the one screen '
               + 'where the fix is one click away');
+          /* AND IT HAS TO SURVIVE A REPAINT.
+             The first version of this fix painted the reason from switchTab, so
+             it read correctly the instant the tab opened and was overwritten by
+             the next renderPlanTruth() — which writes the first-run sentence
+             unconditionally. The panel then went back to telling a reader with a
+             full plan to add activities, and the check, which only looked once on
+             entry, stayed green. Ask again after a repaint. */
+          renderPlanTruth();
+          const pt2 = (document.getElementById('planTruth') || {}).textContent || '';
+          if (/Add activities/i.test(pt2) || !/cannot be computed|circle|loop/i.test(pt2))
+            say('blocked tab', 'the reason survives opening the tab but not a repaint — renderPlanTruth() puts '
+              + 'the first-run sentence back, so the truth is whatever happened to render last');
+          /* AND PRESSING THE BUTTON MUST DO SOMETHING VISIBLE.
+             calculate() returned early on a loop with no message of its own,
+             relying entirely on the wizard it opens. Dismiss that wizard once and
+             the button becomes a control that produces no observable effect —
+             which is how it was reported. */
+          switchTab('tasks');
+          const ind = document.getElementById('savedIndicator');
+          if (ind) ind.textContent = '';
+          closeDepFixWizard();
+          calculate();
+          const said = (ind || {}).textContent || '';
+          out.calcSaid = said.slice(0, 40);
+          if (!said.trim())
+            say('blocked tab', 'pressing Calculate on a looped plan produced no message at all — the button '
+              + 'reads as dead to anyone who has dismissed the wizard');
+          else if (!/circle|loop/i.test(said))
+            say('blocked tab', 'Calculate said "' + said.slice(0, 60) + '" and did not name the loop as the reason');
           tasks.forEach((t, i) => { t.predecessors = keepAll[i]; });
           try { calculate(); } catch (e) {}
         }
