@@ -200,6 +200,20 @@ const MUTANTS = [
     find: '      return { on: stripTime(new Date(dayAt(hiD))), days: hiD };',
     with: '      return { on: stripTime(new Date(dayAt(hiD) - 86400000)), days: hiD };' },
 
+  /* ── the two the user found on the live demo ──────────────────────────────
+     Both are about what a panel says when it has nothing to show. One told a
+     reader with 41 activities to add activities; the other showed forty-four
+     full-sentence rows where a count belonged. Neither is an arithmetic error,
+     and neither would ever throw. */
+
+  { what: 'blocked tab: a plan with a dependency loop shows the first-run message again',
+    find: '      if (!schedOk && tasks.length) paintScheduleBlocked();',
+    with: '      /* mutant: nothing says why the tab is empty */' },
+
+  { what: 'changes panel: a large diff expands over the whole tab again',
+    find: '      const BIG = d.total > 12;',
+    with: '      const BIG = false;' },
+
   /* ── the side readout ─────────────────────────────────────────────────────
      Three separate facts that used to be one middot-joined sentence in a badge.
      Split apart, each can now disagree with the others on its own, and two of
@@ -287,7 +301,8 @@ const LIKELY = {
   'margin': 'pricing-sweep.js', 'wizard:': 'dialog-sweep.js',
   'budget bar:': 'chart-reconciliation-sweep.js', 'catch-up:': 'chart-reconciliation-sweep.js',
   'test plan:': 'run-test-plan.js', 'baseline history:': 'baseline-sweep.js',
-  'bank:': 'bank-sweep.js', 'readout:': 'contradiction-sweep.js'
+  'bank:': 'bank-sweep.js', 'readout:': 'contradiction-sweep.js',
+  'blocked tab:': 'dialog-sweep.js', 'changes panel:': 'drawn-surfaces-sweep.js'
 };
 const orderFor = m => {
   const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);

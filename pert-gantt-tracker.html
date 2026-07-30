@@ -633,6 +633,21 @@
     .stu-li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; padding: 2px 0;
       font-size: var(--t-sm); color: var(--muted); line-height: 1.5; }
     .stu-li b { color: var(--text); }
+    /* ONE LINE PER CHANGE, whatever it says.
+       A renamed test case prints its old sentence and its new one — 286
+       characters measured on a real plan — and a test-plan regeneration produces
+       twenty of them at once. Forty-four changes then ran to 726 pixels of
+       full-width prose above everything else on the tab, which is not a summary
+       of what happened, it is the diff itself. Clamped to a line, with the whole
+       row in the tooltip and the activity one click away, the panel goes back to
+       answering "what moved" instead of reciting it. */
+    .stu-li > button, .stu-li > span { display: block; max-width: 100%; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+    .stu-li > button { border: 0; background: none; padding: 0; font: inherit; color: inherit;
+      cursor: pointer; border-bottom: 1px dotted var(--border); }
+    .stu-li > button:hover { color: var(--primary); }
+    /* the activity is context for the change, not the other way round */
+    .stu-sub { color: var(--muted); font-weight: 400; }
     .stu-more { font-size: var(--t-xs); color: var(--muted); font-style: italic; }
     /* States what is being compared against what. It was only ever shown on the
        empty state, so the moment there was something to read the reader lost
@@ -2886,7 +2901,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0134</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0325</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4226,8 +4241,18 @@
       // bottom-right on every other tab
       const sbox = document.getElementById('aiStreamBox');
       if (sbox && sbox.style.display !== 'none') sbox.classList.toggle('stream-float', name !== 'tasks');
-      // schedule-dependent tabs compute on entry so they never open blank
-      if (['pert', 'gantt', 'resources', 'baseline', 'analytics', 'raid'].includes(name)) ensureCalculated();
+      /* Schedule-dependent tabs compute on entry so they never open blank — but
+         ensureCalculated() can FAIL, and until now nothing looked at whether it
+         had. recompute() returns false on a dependency loop, so a plan with a
+         circle in it left `calculated` false, every render below was skipped by
+         its own `&& calculated` guard, and the panels kept the first-run markup
+         they were born with: a reader with 41 activities was told "Nothing to
+         compare yet. Add activities and press Calculate." The application knew
+         exactly what was wrong — it has a wizard for it — and said nothing.
+         Reproduced end to end: 41 tasks, a two-node loop, that sentence. */
+      const schedOk = ['pert', 'gantt', 'resources', 'baseline', 'analytics', 'raid'].includes(name)
+        ? ensureCalculated() : true;
+      if (!schedOk && tasks.length) paintScheduleBlocked();
       if (name === 'wbs') renderWBS();
       if (name === 'req') renderReqs();
       /* `&& calculated` meant a project with NO activities never wrote to these
@@ -7119,6 +7144,36 @@
     // the schedule pass once when it's stale; returns whether a schedule exists.
     // recompute() sets calculated=true on success and returns false only when it
     // can't (e.g. a circular dependency) — then the tab shows its own guidance.
+    /* WHY THE PANELS ARE EMPTY, in place of a first-run message that is a lie
+       on any plan that has activities.
+
+       Only one thing makes recompute() fail: a circle in the dependencies. The
+       whole schedule then has no answer, so every panel that reads it stays as
+       it was — and "as it was" is the markup shipped in the file, which talks to
+       someone who has not started yet. Naming the loop and putting the wizard one
+       click away turns a dead tab into the one screen that can fix it.
+
+       Painted into the hosts a reader is actually looking at rather than a single
+       banner, because the complaint that found this was about a specific panel
+       still claiming there was nothing to compare. */
+    function paintScheduleBlocked() {
+      const loop = findScheduleCycleIds();
+      const names = (loop || []).map(id => { const t = tasks.find(x => x.id === id); return t ? t.name : '#' + id; });
+      const who = names.length
+        ? ' <b>' + names.length + '</b> ' + ptrPl(names.length, 'activity', 'activities') + ' wait on each other in '
+          + 'a circle — ' + names.slice(0, 3).map(n => '“' + escapeHtml(n.slice(0, 34)) + '”').join(' → ')
+          + (names.length > 3 ? ' → …' : '') + '.'
+        : '';
+      const msg = '<p class="ptr-blank"><b>The schedule cannot be computed, so nothing on this tab can be '
+        + 'measured.</b>' + who + ' Every date, cost and variance here depends on a schedule, and there is no '
+        + 'answer until the circle is cut — this is not an empty plan, it is a blocked one.'
+        + (loop ? ' <button class="btn-sm btn-primary" style="margin-top:0.5rem" onclick="openDepFixWizard()">'
+            + '<span class="ico" aria-hidden="true">🔗</span> Fix the loop</button>' : '') + '</p>';
+      ['planTruth', 'healthBody', 'standupBody'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = msg;
+      });
+    }
     function ensureCalculated() {
       if (calculated) return true;
       if (!tasks.length) return false;
@@ -21939,7 +21994,29 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
     function stuNum(v) { return v == null || v === '' ? null : +v; }
     function standupDiff(oldObj, cur) {
       const G = {};
-      const add = (g, txt, id) => { (G[g] = G[g] || []).push({ txt, id }); };
+      /* `full` carries the UNCLIPPED text. Clipping a rename so it fits one line
+         is a display decision, and letting it reach the tooltip and the "Copy as
+         text" output would make an ellipsis the thing someone pastes into an
+         email — the display fix quietly damaging the export. Rows without a
+         clipped form leave it null and both readers fall back to the row. */
+      const add = (g, txt, id, full) => { (G[g] = G[g] || []).push({ txt, id, full: full || null }); };
+      /* CHANGE FIRST, ACTIVITY SECOND.
+         Every row used to open with the activity's full name and finish with
+         what changed. On a test case that name is 150 characters, so once rows
+         were clamped to one line the ellipsis ate the ONLY part anyone came for:
+         "…full activity history 0.02–0.04–0.08 → 0.03–0.06–0…". The estimate was
+         the change and the estimate was what got cut. Leading with the change
+         means the tail that gets dropped is context the tooltip still carries. */
+      const chg = (g, change, subject, id) =>
+        add(g, change + ' <span class="stu-sub">· ' + escapeHtml(subject) + '</span>', id);
+      /* A rename is the one row where BOTH sides are long, and neither can move
+         to the end out of the ellipsis's way. Clipping each side in the data
+         keeps the before → after grammar the panel promises and still fits a
+         line; the tooltip carries both names in full. 46 characters is enough
+         for "TC AC-6.1 — happy path: " plus the first few words of what actually
+         differs, which is where a rename's meaning lives. */
+      const clip = (v, n) => { const t = String(v == null ? '' : v);
+        return t.length > (n || 46) ? t.slice(0, (n || 46) - 1).trimEnd() + '…' : t; };
       if (!oldObj || !cur) return { groups: G, total: 0 };
       const oT = new Map((oldObj.tasks || []).map(t => [t.id, t]));
       const nT = new Map((cur.tasks || []).map(t => [t.id, t]));
@@ -21956,29 +22033,30 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
 
       nT.forEach((n, id) => {
         const o = oT.get(id);
-        if (!o) { add('scope', '<b>added</b> ' + escapeHtml(nameOf(n)), id); return; }
+        if (!o) { add('scope', '<b>added</b> ' + escapeHtml(clip(nameOf(n), 70)), id, 'added ' + nameOf(n)); return; }
         if (String(o.name) !== String(n.name))
-          add('scope', 'renamed <b>' + escapeHtml(nameOf(o)) + '</b> → ' + escapeHtml(nameOf(n)), id);
+          add('scope', 'renamed <b>' + escapeHtml(clip(nameOf(o))) + '</b> → ' + escapeHtml(clip(nameOf(n))), id,
+            'renamed ' + nameOf(o) + ' → ' + nameOf(n));
         const rolled = parents.has(id);
         // progress and actuals
         if (!rolled && pct(o.percentComplete) !== pct(n.percentComplete))
-          add('progress', escapeHtml(nameOf(n)) + ' <b>' + pct(o.percentComplete) + '% → ' + pct(n.percentComplete) + '%</b>', id);
+          chg('progress', '<b>' + pct(o.percentComplete) + '% → ' + pct(n.percentComplete) + '%</b>', nameOf(n), id);
         [['actualStart', 'actual start'], ['actualFinish', 'actual finish']].forEach(([k, lab]) => {
           const a = o[k] || '', b2 = n[k] || '';
           if (rolled || a === b2) return;
-          add('progress', escapeHtml(nameOf(n)) + ' ' + lab + ' '
+          chg('progress', lab + ' '
             + (a && b2 ? '<b>' + escapeHtml(a) + ' → ' + escapeHtml(b2) + '</b>'
-               : b2 ? 'logged <b>' + escapeHtml(b2) + '</b>' : '<b>cleared</b>'), id);
+               : b2 ? 'logged <b>' + escapeHtml(b2) + '</b>' : '<b>cleared</b>'), nameOf(n), id);
         });
         if (!rolled && stuNum(o.actualEffort) !== stuNum(n.actualEffort))
-          add('progress', escapeHtml(nameOf(n)) + ' time spent <b>' + (o.actualEffort == null ? '—' : o.actualEffort)
-            + ' → ' + (n.actualEffort == null ? '—' : n.actualEffort) + '</b>', id);
+          chg('progress', 'time spent <b>' + (o.actualEffort == null ? '—' : o.actualEffort)
+            + ' → ' + (n.actualEffort == null ? '—' : n.actualEffort) + '</b>', nameOf(n), id);
         // estimates
         if (!rolled && (o.o !== n.o || o.m !== n.m || o.p !== n.p))
-          add('estimate', escapeHtml(nameOf(n)) + ' <b>' + o.o + '–' + o.m + '–' + o.p + ' → '
-            + n.o + '–' + n.m + '–' + n.p + '</b>', id);
+          chg('estimate', '<b>' + o.o + '–' + o.m + '–' + o.p + ' → '
+            + n.o + '–' + n.m + '–' + n.p + '</b>', nameOf(n), id);
         if (!!o.milestone !== !!n.milestone)
-          add('estimate', escapeHtml(nameOf(n)) + ' is ' + (n.milestone ? 'now a <b>milestone</b>' : 'no longer a milestone'), id);
+          chg('estimate', (n.milestone ? 'now a <b>milestone</b>' : 'no longer a <b>milestone</b>'), nameOf(n), id);
         // sequence
         /* The COUNT is not the change. Re-pointing a dependency from one
            activity to another leaves the count identical, so this row used to
@@ -22008,32 +22086,33 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
           }
           retimed.forEach(k => bits.push('link to <b>' + pn(k) + '</b> ' + lag(oldP.get(k))
             + ' → <b>' + lag(newP.get(k)) + '</b>'));
-          add('sequence', escapeHtml(nameOf(n)) + ' ' + (bits.join('; ') || 'dependencies changed'), id);
+          chg('sequence', (bits.join('; ') || 'dependencies changed'), nameOf(n), id);
         }
         if ((o.parentId || null) !== (n.parentId || null))
-          add('sequence', escapeHtml(nameOf(n)) + ' moved under <b>'
-            + escapeHtml(nameOf(nT.get(n.parentId)) || 'the top level') + '</b>', id);
+          chg('sequence', 'moved under <b>'
+            + escapeHtml(nameOf(nT.get(n.parentId)) || 'the top level') + '</b>', nameOf(n), id);
         [['deadline', 'deadline'], ['startNoEarlier', 'start-no-earlier']].forEach(([k, lab]) => {
           if ((o[k] || '') === (n[k] || '')) return;
-          add('sequence', escapeHtml(nameOf(n)) + ' ' + lab + ' '
-            + (n[k] ? 'set to <b>' + escapeHtml(n[k]) + '</b>' : '<b>cleared</b>'), id);
+          chg('sequence', lab + ' '
+            + (n[k] ? 'set to <b>' + escapeHtml(n[k]) + '</b>' : '<b>cleared</b>'), nameOf(n), id);
         });
         // people
         if ((o.owner || '') !== (n.owner || ''))
-          add('people', escapeHtml(nameOf(n)) + ' owner <b>' + escapeHtml(o.owner || 'nobody') + ' → '
-            + escapeHtml(n.owner || 'nobody') + '</b>', id);
+          chg('people', 'owner <b>' + escapeHtml(o.owner || 'nobody') + ' → '
+            + escapeHtml(n.owner || 'nobody') + '</b>', nameOf(n), id);
         const at = t => (t.attendees || []).map(a => a.name).sort().join(',');
         if (at(o) !== at(n))
-          add('people', escapeHtml(nameOf(n)) + ' attendees <b>' + ((o.attendees || []).length)
-            + ' → ' + ((n.attendees || []).length) + '</b>', id);
+          chg('people', 'attendees <b>' + ((o.attendees || []).length)
+            + ' → ' + ((n.attendees || []).length) + '</b>', nameOf(n), id);
         // money
         [['fixedCost', 'fixed cost'], ['actualCost', 'actual cost']].forEach(([k, lab]) => {
           if ((Number(o[k]) || 0) === (Number(n[k]) || 0)) return;
-          add('money', escapeHtml(nameOf(n)) + ' ' + lab + ' <b>' + fmtMoney(Number(o[k]) || 0) + ' → '
-            + fmtMoney(Number(n[k]) || 0) + '</b>', id);
+          chg('money', lab + ' <b>' + fmtMoney(Number(o[k]) || 0) + ' → '
+            + fmtMoney(Number(n[k]) || 0) + '</b>', nameOf(n), id);
         });
       });
-      oT.forEach((o, id) => { if (!nT.has(id)) add('scope', '<b>removed</b> ' + escapeHtml(nameOf(o)), null); });
+      oT.forEach((o, id) => { if (!nT.has(id)) add('scope', '<b>removed</b> ' + escapeHtml(clip(nameOf(o), 70)),
+        null, 'removed ' + nameOf(o)); });
 
       // roster
       const oR = oldObj.resources || {}, nR = cur.resources || {};
@@ -22150,7 +22229,15 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
           + '</div>';
         return;
       }
-      const MAXR = 8;
+      /* A BIG DIFF IS A SUMMARY, NOT A TRANSCRIPT.
+         One re-run of the test-plan generator rewrites every test case, and this
+         panel reported it as forty-four full-sentence rows, expanded, above every
+         other thing on the tab. The count and the shape are what a person wants
+         at a glance; the rows are what they want after deciding to look. So the
+         summary line carries the per-group counts, a large diff starts closed,
+         and each group shows fewer rows once there are a lot of them. */
+      const BIG = d.total > 12;
+      const MAXR = d.total > 20 ? 4 : 8;
       const body = STU_GROUPS.map(([k, label]) => {
         const rows = d.groups[k];
         if (!rows || !rows.length) return '';
@@ -22158,11 +22245,16 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         return '<div class="stu-g"><p class="stu-gh">' + label + ' · ' + rows.length + '</p><ul class="stu-l">'
           + shown.map(r => '<li class="stu-li">' + (r.id != null
               ? '<button type="button" class="ptr-sc-rbtn no-print" onclick="openEditModal(' + r.id + ', true)" '
-                + 'title="Open it">' + r.txt + '</button>'
-              : '<span>' + r.txt + '</span>') + '</li>').join('')
+                + 'title="' + escapeHtml(r.full || stuPlain(r.txt)) + ' — click to open it">' + r.txt + '</button>'
+              : '<span title="' + escapeHtml(r.full || stuPlain(r.txt)) + '">' + r.txt + '</span>') + '</li>').join('')
           + '</ul>' + (rows.length > MAXR ? '<p class="stu-more">and ' + (rows.length - MAXR) + ' more</p>' : '')
           + '</div>';
       }).join('');
+      // the shape of the change, readable without opening anything
+      const shape = STU_GROUPS.map(([k, label]) => {
+        const rows = d.groups[k];
+        return (rows && rows.length) ? label.toLowerCase() + ' ' + rows.length : '';
+      }).filter(Boolean).join(' · ');
       /* The panel explained itself only when it was EMPTY. With content on
          screen the reader got a count, a list, an unlabelled date box and a
          button called "Copy" — and no statement of what is being compared
@@ -22170,8 +22262,10 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
          list, label the control, and put the verb in the button. */
       const stored = 'Every field the file stores, compared against the copy taken at the start of '
         + escapeHtml(a.date) + '. Each row reads <b>before → after</b>; click one to open that activity.';
-      host.innerHTML = '<details class="stu" open><summary class="stu-sum"><span class="stu-n">' + d.total
-        + '</span> ' + ptrPl(d.total, 'change') + ' <span class="stu-when">' + when + '</span></summary>'
+      host.innerHTML = '<details class="stu"' + (BIG ? '' : ' open') + '><summary class="stu-sum">'
+        + '<span class="stu-n">' + d.total + '</span> ' + ptrPl(d.total, 'change')
+        + ' <span class="stu-when">' + when + (shape ? ' · ' + escapeHtml(shape) : '')
+        + (BIG ? ' — click to list them' : '') + '</span></summary>'
         + '<p class="stu-what">' + stored + '</p>'
         + body
         + '<div class="stu-bar no-print">'
@@ -22191,7 +22285,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         L.push(label.toUpperCase());
         // tags AND entities: "Kick-off &amp; Discovery" pasted into an email is
         // how you can tell a plain-text export was never actually read
-        rows.forEach(r => L.push('  · ' + stuPlain(r.txt)));
+        rows.forEach(r => L.push('  · ' + (r.full || stuPlain(r.txt))));
         L.push('');
       });
       return L.join('\n').trim();

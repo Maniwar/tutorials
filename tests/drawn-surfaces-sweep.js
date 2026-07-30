@@ -375,6 +375,67 @@ const QA = JSON.parse(fs.readFileSync(
         } catch (e) { say('Tab "' + tab + '"', 'threw on switch: ' + e.message); }
       });
 
+      /* ── THE CHANGES PANEL IS A SUMMARY, NOT A TRANSCRIPT ────────────────
+         One re-run of the test-plan generator rewrites every test case, and this
+         panel reported it as forty-four full-sentence rows — 286 characters on
+         the longest, 726 pixels of prose, expanded, above every other thing on
+         the tab. Reported from the live demo as "very busy and unusable", and it
+         was: the diff itself where a summary belonged.
+
+         Three properties hold it: a large diff opens CLOSED with the shape in its
+         summary line, no row runs past one line on screen, and the clipping is a
+         DISPLAY decision that must never reach the tooltip or the copy-out — an
+         ellipsis pasted into a client email is the display fix damaging the
+         export. */
+      (() => {
+        const host = document.getElementById('standupBody');
+        if (!host) { say('Changes panel', 'the panel is not on the page'); return; }
+        const before = JSON.stringify(serialize());
+        dayRing = [{ date: fmtISO(new Date()), json: before }];
+        const tcs = tasks.filter(t => isTestCaseTask(t) && !t.isSummary);
+        if (tcs.length < 5) { out.changesPanel = 'SKIPPED-too-few-test-cases'; return; }
+        const keep = tcs.map(t => ({ id: t.id, name: t.name, o: t.o, m: t.m, p: t.p }));
+        tcs.forEach(t => {
+          t.name = t.name.replace(/—.*/, '— rewritten by the generator with a sentence long enough that a row '
+            + 'carrying it whole would run several times the width of the panel');
+          t.o = +(t.o * 1.4).toFixed(2); t.m = +(t.m * 1.4).toFixed(2); t.p = +(t.p * 1.4).toFixed(2);
+        });
+        recompute(); renderStandup();
+        const d = standupDiff(stuParse(before), serialize());
+        out.changesPanel = d.total;
+        const det = host.querySelector('details');
+        if (!det) say('Changes panel', d.total + ' changes and the panel drew no list at all');
+        else {
+          if (d.total > 12 && det.open)
+            say('Changes panel', d.total + ' changes are expanded by default — the diff opens on top of every '
+              + 'other panel on the tab instead of summarising itself');
+          const sum = (det.querySelector('summary') || {}).textContent || '';
+          if (d.total > 12 && !/scope \d|estimates \d/i.test(sum))
+            say('Changes panel', 'the collapsed summary does not say what KIND of change it is hiding, so the '
+              + 'only way to learn the shape is to open the wall');
+          det.open = true;
+          const rows = [...host.querySelectorAll('.stu-li')];
+          const tall = rows.filter(r => r.getBoundingClientRect().height > 30);
+          out.changesRowsShown = rows.length;
+          if (tall.length)
+            say('Changes panel', tall.length + ' row(s) run to more than one line, e.g. "'
+              + tall[0].textContent.replace(/\s+/g, ' ').trim().slice(0, 70) + '…"');
+          // the clip must not reach what leaves the panel
+          const txt = stuText();
+          if (/\u2026/.test(txt))
+            say('Changes panel', 'the copy-out carries an ellipsis — a clipped name is what someone would paste '
+              + 'into a client email');
+          const btn = host.querySelector('.stu-li button');
+          if (btn && /\u2026/.test(btn.getAttribute('title') || ''))
+            say('Changes panel', 'the tooltip is clipped too, so the full text is nowhere on the page');
+          if (btn && !/\u2026/.test(btn.textContent))
+            say('Changes panel', 'a row carrying a 150-character name is not clipped on screen at all');
+        }
+        keep.forEach(k => { const t = tasks.find(x => x.id === k.id);
+          if (t) { t.name = k.name; t.o = k.o; t.m = k.m; t.p = k.p; } });
+        recompute();
+      })();
+
       return { contradictions: bad, counts: out };
     }, label);
   };

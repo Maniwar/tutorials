@@ -182,6 +182,40 @@ const QA = JSON.parse(fs.readFileSync(
         try { calculate(); } catch (e) {}
       }
 
+      /* ── A BLOCKED TAB MUST SAY IT IS BLOCKED ───────────────────────────
+         recompute() returns false on a dependency loop, so `calculated` stays
+         false, every render on the schedule-dependent tabs is skipped by its own
+         `&& calculated` guard, and the panels keep the first-run markup they were
+         born with. A reader with 41 activities and one circle was told "Nothing
+         to compare yet. Add activities and press Calculate" — the application
+         knowing exactly what was wrong, having a wizard for it, and saying
+         nothing. Reported from the live demo, reproduced here end to end. */
+      out.opened.push('blockedTab');
+      {
+        const keepAll = tasks.map(t => (t.predecessors || []).slice());
+        const lv2 = leafTasks().filter(t => !t.milestone && !t.isSummary);
+        if (lv2.length >= 2) {
+          lv2[0].predecessors = [{ id: lv2[1].id, type: 'FS', lag: 0 }];
+          lv2[1].predecessors = [{ id: lv2[0].id, type: 'FS', lag: 0 }];
+          calculated = false;
+          switchTab('analytics');
+          try { closeDepFixWizard(); } catch (e) {}
+          const pt = (document.getElementById('planTruth') || {}).textContent || '';
+          out.blockedText = pt.replace(/\s+/g, ' ').trim().slice(0, 60);
+          if (/Add activities/i.test(pt))
+            say('blocked tab', 'the plan has ' + tasks.length + ' activities and a dependency loop, and the '
+              + 'panel tells the reader to ADD ACTIVITIES — the one thing that is not the problem');
+          if (!/cannot be computed|circle|loop/i.test(pt))
+            say('blocked tab', 'the schedule cannot be computed and the panel does not say so: "'
+              + pt.replace(/\s+/g, ' ').trim().slice(0, 80) + '"');
+          if (!/depFixWizard|Fix the loop/i.test((document.getElementById('planTruth') || {}).innerHTML || ''))
+            say('blocked tab', 'the panel names the problem and offers no way to fix it, on the one screen '
+              + 'where the fix is one click away');
+          tasks.forEach((t, i) => { t.predecessors = keepAll[i]; });
+          try { calculate(); } catch (e) {}
+        }
+      }
+
       // ── the activity editor, on a real activity
       const t0 = leafTasks().find(t => !t.milestone && !t.isSummary);
       if (t0) { openAndScan('activity editor', () => openEditModal(t0.id, true));
