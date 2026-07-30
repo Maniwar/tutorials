@@ -2901,7 +2901,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0348</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0406</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4055,6 +4055,19 @@
       normalizeRaidLinks();
       collapsedIds = new Set(Array.isArray(data.collapsedIds) ? data.collapsedIds : []);
       nextId = data.nextId || (Math.max(0, ...tasks.map(t => t.id)) + 1);
+      /* HEAL A CORRUPT FILE ON THE WAY IN, before anything reads it.
+         Duplicate activity ids make every id-keyed structure collide, and the
+         first thing that happens downstream is that the schedule solver reports
+         an impossible graph and the cycle finder dies on it. A real plan arrived
+         this way — two pairs of generated test cases sharing ids 28 and 29 — and
+         the whole application went quiet: every schedule tab stuck on its
+         first-run markup, Calculate doing nothing at all.
+
+         Silent, because the person did not cause it and there is nothing for them
+         to decide: renumbering the shadowed copy is the only outcome that leaves
+         a working plan. It is reported in the health check rather than as an
+         alert on load. */
+      repairDuplicateTaskIds({ silent: true });
       calculated = false;
       /* PRIME THE UNDO BASELINE. undoStack only grows when lastSnapshot is
          already non-null, and it is null after boot and after every
@@ -6665,16 +6678,72 @@
       while (q.length) { const u = q.shift(); processed++; (succ[u] || []).forEach(v => { if (--inDeg[v] === 0) q.push(v); }); }
       if (processed === nodes.length) return null;
       const inCycle = new Set(nodes.filter(t => inDeg[t.id] > 0).map(t => t.id));
+      /* THE SORT CAN REPORT A CYCLE THAT DOES NOT EXIST, and then this walk had
+         nothing to walk. Every structure above is keyed by task id, so DUPLICATE
+         ids collide: two activities sharing id 28 get one preds entry, one inDeg
+         and one succ list between them, the sort processes 32 of 34 nodes and
+         concludes the graph has a circle in it. inCycle then comes out EMPTY,
+         `cur` is undefined, and preds[undefined].find() threw — out of here, out
+         of openDepFixWizard, out of recompute, out of ensureCalculated, and out
+         of switchTab. Which is why a real user's file made every schedule tab
+         show the markup it was born with, the estimate bank render nothing, and
+         Calculate do literally nothing: one uncaught TypeError with no error
+         boundary anywhere above it.
+
+         A finder is allowed to return "no cycle found". It is not allowed to
+         take the application down. */
+      if (!inCycle.size) return null;
       let cur = inCycle.values().next().value;
       const seen = new Map(), path = [];
-      while (!seen.has(cur)) {
+      while (cur != null && !seen.has(cur)) {
         seen.set(cur, path.length); path.push(cur);
-        const nxt = preds[cur].find(p => inCycle.has(p.id));
+        const nxt = (preds[cur] || []).find(p => inCycle.has(p.id));
         if (!nxt) break;
         cur = nxt.id;
       }
       if (!seen.has(cur)) return null;
       return path.slice(seen.get(cur)); // loop[i] waits for loop[i+1]; last waits for first
+    }
+    /* DUPLICATE ACTIVITY IDS ARE A CORRUPT FILE, and this one is stored in a
+       browser with no server to validate it. Everything downstream — the
+       schedule, predecessors, the WBS tree, undo, every export — is keyed by id,
+       so two activities sharing one is not a cosmetic problem: lookups resolve to
+       whichever comes first, the second becomes unreachable, and the topological
+       sort miscounts and reports an impossible graph.
+
+       Seen in the wild on a real plan: two pairs of generated test cases sharing
+       ids 28 and 29, almost certainly from a generation run that read a stale
+       nextId. The file loads, looks completely normal, and every schedule surface
+       is dead. */
+    function findDuplicateTaskIds() {
+      const seen = new Set(), dup = new Set();
+      tasks.forEach(t => { if (seen.has(t.id)) dup.add(t.id); else seen.add(t.id); });
+      return [...dup];
+    }
+    /* Renumber the LATER occurrence and leave the first alone, because that is
+       exactly what the application already did by accident: every tasks.find()
+       resolved to the first, so all existing parent and predecessor references
+       already mean the first one. Moving the second to a fresh id therefore
+       changes no relationship that was working — it only gives the shadowed
+       activity an identity of its own. */
+    function repairDuplicateTaskIds(opts) {
+      const dups = findDuplicateTaskIds();
+      if (!dups.length) return 0;
+      const used = new Set(tasks.map(t => t.id));
+      let n = 0;
+      dups.forEach(id => {
+        const all = tasks.filter(t => t.id === id);
+        all.slice(1).forEach(t => {
+          while (used.has(nextId)) nextId++;
+          t.id = nextId++; used.add(t.id); n++;
+        });
+      });
+      // and never let nextId sit behind the plan again — the collision that
+      // created this is a nextId that had fallen below the highest id in use
+      nextId = Math.max(nextId, ...tasks.map(t => t.id)) + 1;
+      if (!(opts && opts.silent)) flashSaved('🛠 Repaired ' + n + ' activity '
+        + (n === 1 ? 'id that was' : 'ids that were') + ' duplicated — they were invisible to the schedule.');
+      return n;
     }
     function findScheduleCycle() {
       const loop = findScheduleCycleIds();
@@ -7180,6 +7249,17 @@
        banner, because the complaint that found this was about a specific panel
        still claiming there was nothing to compare. */
     function scheduleBlockedHtml() {
+      /* Two different faults stop a schedule computing, and telling someone to
+         cut a link that does not exist is worse than saying nothing. Duplicate
+         ids are checked FIRST because they also make the cycle finder report a
+         circle that is not there. */
+      const dup = findDuplicateTaskIds();
+      if (dup.length) return '<p class="ptr-blank"><b>The schedule cannot be computed — '
+        + dup.length + ' activity ' + (dup.length === 1 ? 'id is' : 'ids are') + ' duplicated.</b> '
+        + 'Two activities sharing one id collide in every structure keyed by it, so one of each pair is '
+        + 'invisible to the schedule and the solver cannot order the plan. This is a corrupt file rather than '
+        + 'anything you did. <button class="btn-sm btn-primary" style="margin-top:0.5rem" '
+        + 'onclick="repairDuplicateTaskIds();calculate();">🛠 Repair and recalculate</button></p>';
       const loop = findScheduleCycleIds();
       const names = (loop || []).map(id => { const t = tasks.find(x => x.id === id); return t ? t.name : '#' + id; });
       const who = names.length

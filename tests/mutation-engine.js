@@ -200,6 +200,30 @@ const MUTANTS = [
     find: '      return { on: stripTime(new Date(dayAt(hiD))), days: hiD };',
     with: '      return { on: stripTime(new Date(dayAt(hiD) - 86400000)), days: hiD };' },
 
+  /* ── the corrupt file ──────────────────────────────────────────────────────
+     A real plan with two pairs of test cases sharing activity ids. Everything is
+     keyed by id, so the pairs collided, the topological sort miscounted, the
+     cycle finder started from `undefined` and threw — out of recompute, out of
+     ensureCalculated, out of switchTab. Five tabs dead, the estimate bank blank,
+     Calculate inert. One TypeError, no error boundary anywhere above it, and
+     three sweeps plus forty-five hand-derived cases green the whole time. */
+
+  { what: 'corrupt file: the cycle finder dies on an empty cycle set again',
+    find: ['      if (!inCycle.size) return null;\n      let cur = inCycle.values().next().value;',
+           '      while (cur != null && !seen.has(cur)) {',
+           '        const nxt = (preds[cur] || []).find(p => inCycle.has(p.id));'],
+    with: ['      let cur = inCycle.values().next().value;',
+           '      while (!seen.has(cur)) {',
+           '        const nxt = preds[cur].find(p => inCycle.has(p.id));'] },
+
+  { what: 'corrupt file: duplicate ids are no longer healed on load',
+    find: '      repairDuplicateTaskIds({ silent: true });',
+    with: '      /* mutant: the file loads corrupt */' },
+
+  { what: 'corrupt file: the notice blames a loop for a duplicate id',
+    find: '      const dup = findDuplicateTaskIds();\n      if (dup.length)',
+    with: '      const dup = [];\n      if (dup.length)' },
+
   /* ── the two the user found on the live demo ──────────────────────────────
      Both are about what a panel says when it has nothing to show. One told a
      reader with 41 activities to add activities; the other showed forty-four
@@ -292,7 +316,7 @@ const CHECKS = QUICK ? ['run-test-plan.js']
      'schedule-sweep.js', 'drawn-surfaces-sweep.js', 'pricing-sweep.js',
      'resourcing-sweep.js', 'persistence-sweep.js', 'export-sweep.js', 'undo-sweep.js', 'baseline-sweep.js', 'cross-surface-sweep.js', 'task-editor-sweep.js',
      'client-facing-sweep.js', 'dialog-sweep.js', 'chart-reconciliation-sweep.js',
-     'bank-sweep.js'];
+     'bank-sweep.js', 'corrupt-file-sweep.js'];
 
 /* Which check is EXPECTED to notice. This is a running order, not a shortcut:
    if the named check does not go red the mutant still walks every other one, so
@@ -310,7 +334,8 @@ const LIKELY = {
   'budget bar:': 'chart-reconciliation-sweep.js', 'catch-up:': 'chart-reconciliation-sweep.js',
   'test plan:': 'run-test-plan.js', 'baseline history:': 'baseline-sweep.js',
   'bank:': 'bank-sweep.js', 'readout:': 'contradiction-sweep.js',
-  'blocked tab:': 'dialog-sweep.js', 'changes panel:': 'drawn-surfaces-sweep.js'
+  'blocked tab:': 'dialog-sweep.js', 'changes panel:': 'drawn-surfaces-sweep.js',
+  'corrupt file:': 'corrupt-file-sweep.js'
 };
 const orderFor = m => {
   const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);
