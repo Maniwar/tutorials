@@ -375,6 +375,46 @@ const QA = JSON.parse(fs.readFileSync(
         } catch (e) { say('Tab "' + tab + '"', 'threw on switch: ' + e.message); }
       });
 
+      /* ── THE RED RING MUST SAY WHAT IT MEANS ────────────────────────────
+         It lands on cells that are GREEN for complete, and a red ring on a
+         finished activity reads as "done badly" — reported by someone whose
+         ringed activities had all come in UNDER their estimates, who reasonably
+         took the ring to be about that. It never is. It only ever means the
+         RECORD of what happened is missing or impossible: a date, a booked cost,
+         a RAID entry nobody closed. The legend said "record needs a second look"
+         and left "record" undefined, and the reasons lived one hover at a time in
+         the per-cell tooltips. */
+      (() => {
+        switchTab('analytics'); renderAnalytics();
+        const caps = [...document.querySelectorAll('.ptr-cap')];
+        const cap = caps.length ? caps[caps.length - 1].textContent.replace(/\s+/g, ' ') : '';
+        const key = (document.querySelector('.ptr-strip-wrap .ptr-key') || {}).textContent || '';
+        const ringed = document.querySelectorAll('.ptr-strip .ptr-flag').length;
+        out.ringedCells = ringed;
+        if (!ringed) { out.ringExplained = 'SKIPPED-nothing-flagged'; return; }
+        out.ringExplained = true;
+        // the caption must name WHY, in countable phrases, not just how many
+        if (!/second look/i.test(cap))
+          say('Strip', ringed + ' cells are ringed red and the caption never mentions them');
+        /* A COUNTED reason: a number followed by a repeatable phrase. Matching the
+           phrases alone passed on a build with the roll-up deleted, because the
+           explanatory aside underneath happens to contain the same words —
+           "a missing date, a cost never booked, a risk nobody closed". The
+           roll-up is the thing being tested and only the count distinguishes it
+           from prose about it. */
+        else if (!/\d+\s+(recorded as finished|started before|ticked complete with no|part-done with no|with no three-point|with an open RAID|with a linked risk|with a risk that turned)/i.test(cap))
+          say('Strip', 'the caption counts the ringed cells and names no reason — the only way to learn why '
+            + 'any of them is ringed is to hover each one in turn');
+        // and it must say what the ring is NOT about, because green + red ring
+        // reads as "finished, but over"
+        if (!/never about effort or money|not effort/i.test(cap + ' ' + key))
+          say('Strip', 'nothing says the ring is about the RECORD rather than about effort or budget — a red '
+            + 'ring on a green cell reads as "done badly" to anyone whose ringed activities came in under '
+            + 'their estimates');
+        if (!/record/i.test(key))
+          say('Strip', 'the legend entry for the ring does not say what kind of thing needs a second look');
+      })();
+
       /* ── THE CHANGES PANEL IS A SUMMARY, NOT A TRANSCRIPT ────────────────
          One re-run of the test-plan generator rewrites every test case, and this
          panel reported it as forty-four full-sentence rows — 286 characters on

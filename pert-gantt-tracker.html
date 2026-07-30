@@ -2901,7 +2901,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0406</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.0523</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -5465,6 +5465,19 @@
        activity strip marks them, and the plan-truth drill-in can name them.
        `fix` is what to do, phrased as an instruction, because a finding a user
        cannot act on is just a complaint. */
+    /* One countable phrase per flag code, for the strip caption. Deliberately
+       written to read in a list after a number — "4 recorded as finished before
+       their baseline starts, 2 ticked complete with no dates". */
+    const STRIP_REASON = {
+      'finish-before-baseline': 'recorded as finished before their baseline starts',
+      'start-before-baseline': 'started before their baseline window opens',
+      'done-no-dates': 'ticked complete with no actual dates',
+      'progress-no-cost': 'part-done with no cost booked',
+      'no-estimate': 'with no three-point estimate',
+      'open-issue': 'with an open RAID issue',
+      'raid-unanswered': 'with a linked risk nobody has closed out',
+      'raid-turned': 'with a risk that turned and was never written up'
+    };
     function activityFlags(t) {
       const out = [];
       if (!t || t.isSummary) return out;
@@ -9781,6 +9794,13 @@
         c.flag = activityFlagLevel(t);
         if (c.flag) {
           const fl = activityFlags(t);
+          /* A SHORT, COUNTABLE reason per cell, alongside the full label.
+             The labels carry dates and titles — "recorded as finished 2026-07-24,
+             before its baseline even starts (2026-08-04)" — so they are unique per
+             activity and cannot be counted. The caption needs to say "4 recorded
+             as finished before their baseline starts", which needs a phrase that
+             repeats. */
+          c.reasons = fl.map(f => STRIP_REASON[f.code] || f.code);
           c.ttl += '\n\n⚠ ' + fl.map(f => f.label).join('\n⚠ ');
           const rs = raidForTask(t.id, true);
           c.ttl += rs.length
@@ -10915,7 +10935,8 @@
         + (d.added ? '<span class="ptr-k"><i class="ptr-c-todo ptr-ring"></i>added since baseline</span>' : '')
         + (d.cells.some(c => c.flag)
             ? '<span class="ptr-k" title="The colour says how far along it is. The red ring says the RECORD does not add up — finished before its baseline opened, ticked complete with no dates, progress with no cost. Hover a square for which, click to open it.">'
-              + '<i class="ptr-c-done ptr-flag-high"></i>record needs a second look</span>' : '');
+              + '<i class="ptr-c-done ptr-flag-high"></i>the <b>record</b> needs a second look — dates, '
+              + 'cost or an open RAID entry, not effort</span>' : '');
 
       // Only non-empty buckets are listed. "0 complete, 0 in progress, 0 not
       // started · 7 overdue" is arithmetically fine and reads as broken.
@@ -10942,9 +10963,29 @@
          happens to be built on records nobody can stand behind. */
       if (flagged.length) {
         const hi = flagged.filter(c => c.flag === 'high').length;
+        /* NAME THE REASONS, and say what the ring is NOT about.
+           The ring only ever means the RECORD of what happened is missing or
+           impossible — a date, a cost entry, an unanswered RAID outcome. It says
+           nothing about effort or money. But it lands on cells that are GREEN for
+           complete, and a red ring on a finished activity reads as "done badly":
+           reported by someone whose ringed activities had all come in UNDER their
+           estimates and who reasonably assumed the ring was about that. The
+           legend said "record needs a second look" and left "record" undefined,
+           and the reasons were only in the per-cell tooltips, one hover at a
+           time. Rolled up here, they are one sentence. */
+        const why = {};
+        flagged.forEach(c => (c.reasons || []).forEach(r => { why[r] = (why[r] || 0) + 1; }));
+        const top = Object.keys(why).sort((a, b) => why[b] - why[a]).slice(0, 3)
+          .map(k => '<b>' + why[k] + '</b> ' + escapeHtml(k));
         cap += ' <b class="ptr-attn-n">' + flagged.length + '</b> '
-          + (flagged.length === 1 ? 'needs' : 'need') + ' a second look'
-          + (hi ? ' (' + hi + ' serious)' : '') + ' — ringed red above. Click one to open it.';
+          + (flagged.length === 1 ? 'has' : 'have') + ' a <b>record</b> that needs a second look'
+          + (hi ? ' (' + hi + ' serious)' : '') + ' — ringed red above'
+          + (top.length ? ': ' + top.join(', ') + '.' : '.')
+          + ' Click one to open it.'
+          + ' <span class="ptr-aside">The ring is about the RECORD of what happened — a missing date, a '
+          + 'cost never booked, a risk nobody closed — and never about effort or money. An activity that came '
+          + 'in under its estimate is still ringed if nobody wrote down when it ran, because every variance on '
+          + 'this page is computed from those dates.</span>';
       }
       // Story coverage lives here, not on a bar: it measures how well the scope
       // is WRITTEN DOWN, which is a different question from whether the scope

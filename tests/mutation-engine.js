@@ -200,6 +200,20 @@ const MUTANTS = [
     find: '      return { on: stripTime(new Date(dayAt(hiD))), days: hiD };',
     with: '      return { on: stripTime(new Date(dayAt(hiD) - 86400000)), days: hiD };' },
 
+  /* ── the red ring ─────────────────────────────────────────────────────────
+     It lands on GREEN cells, so a red ring on a finished activity reads as "done
+     badly". It never means that: only that the RECORD of what happened is
+     missing or impossible. Reported by someone whose ringed activities had all
+     come in under their estimates. */
+
+  { what: 'ring: the caption counts the flagged cells and names no reason',
+    find: "          + (top.length ? ': ' + top.join(', ') + '.' : '.')",
+    with: "          + '.'" },
+
+  { what: 'ring: nothing says the ring is about the record, not about effort',
+    find: "              + '<i class=\"ptr-c-done ptr-flag-high\"></i>the <b>record</b> needs a second look — dates, '\n              + 'cost or an open RAID entry, not effort</span>' : '');",
+    with: "              + '<i class=\"ptr-c-done ptr-flag-high\"></i>needs a second look</span>' : '');" },
+
   /* ── the corrupt file ──────────────────────────────────────────────────────
      A real plan with two pairs of test cases sharing activity ids. Everything is
      keyed by id, so the pairs collided, the topological sort miscounted, the
@@ -335,7 +349,7 @@ const LIKELY = {
   'test plan:': 'run-test-plan.js', 'baseline history:': 'baseline-sweep.js',
   'bank:': 'bank-sweep.js', 'readout:': 'contradiction-sweep.js',
   'blocked tab:': 'dialog-sweep.js', 'changes panel:': 'drawn-surfaces-sweep.js',
-  'corrupt file:': 'corrupt-file-sweep.js'
+  'corrupt file:': 'corrupt-file-sweep.js', 'ring:': 'drawn-surfaces-sweep.js'
 };
 const orderFor = m => {
   const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);
