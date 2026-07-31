@@ -375,6 +375,26 @@ const MUTANTS = [
   { what: 'prose: the booked-to-date caption states a figure typed by hand',
     find: "escapeHtml(hasAc ? money(c.ac) + ' booked' : 'nothing booked')",
     with: "escapeHtml(hasAc ? '$27,900 booked' : 'nothing booked')" },
+
+  /* ── one rule, asked in four places ───────────────────────────────────────
+     computeResourceLoad does not count a day whose overlapping work is all
+     finished. The heatmap cell, its tooltip, the day drill-in and the mend cards
+     all restate that judgement, and three of them used to re-derive it naively —
+     so a red cell sat beside a badge reading OK, and the drill-in's jump button
+     pointed at a mend card that is never built for a discounted day and did
+     nothing at all when clicked. */
+
+  { what: 'heatmap: a day is painted as a conflict on raw load, ignoring the finished-work rule',
+    find: '          const isOver = overSet.has(iso);',
+    with: '          const isOver = load > R.capacity + 1e-6;' },
+
+  { what: 'heatmap: the day drill-in re-derives "over" and offers a jump with nowhere to land',
+    find: '        const isOver = (R.overDays || []).indexOf(iso) >= 0;',
+    with: '        const isOver = day.load > R.capacity + 1e-6;' },
+
+  { what: 'heatmap: a 200% peak sits beside a bare green OK with nothing reconciling them',
+    find: '            : R.peak > R.capacity + 1e-6',
+    with: '            : false' },
 ];
 
 const CHECKS = QUICK ? ['run-test-plan.js']
@@ -404,7 +424,7 @@ const LIKELY = {
   'corrupt file:': 'corrupt-file-sweep.js', 'ring:': 'drawn-surfaces-sweep.js',
   'envelope:': 'chart-reconciliation-sweep.js', 'scope:': 'chart-reconciliation-sweep.js',
   'form:': 'drawn-surfaces-sweep.js', 'drill-in:': 'chart-reconciliation-sweep.js',
-  'prose:': 'dynamic-prose-sweep.js'
+  'prose:': 'dynamic-prose-sweep.js', 'heatmap:': 'resourcing-sweep.js'
 };
 const orderFor = m => {
   const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);

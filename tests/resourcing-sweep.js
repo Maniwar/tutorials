@@ -279,10 +279,126 @@ const DATA = FIXTURE();
       return out;
     })();
 
+    /* ── THE HEATMAP MUST USE THE PANEL'S OWN DEFINITION OF "OVER" ───────────
+       computeResourceLoad does not count a day whose overlapping work is all
+       FINISHED — a double-booking already lived through is history, and the rule
+       is pinned in the written plan (N20/N21). The heatmap cell, its tooltip and
+       the day drill-in each re-asked the question with a naive `load > capacity`
+       and therefore disagreed with the row badge beside them: a red cell and a
+       drill-in headed "⚠ over" two inches from a badge reading OK.
+
+       It was not only cosmetic. The drill-in offered "↓ Jump to fix suggestions"
+       pointing at a mend card that is only ever built for people in
+       resourcesOver, so on a settled day getElementById returned null and the
+       button did nothing whatsoever — no scroll, no message, no console error.
+       Reported by a user as "clicking on fix suggestion doesn't work".
+
+       Three properties, all against the DRAWN panel: no cell may be painted as a
+       conflict that overDays does not hold, a jump button may exist only where
+       its target exists, and a day the rule discounts has to SAY that rather
+       than go quiet. */
+    const heatmap = (() => {
+      const out = {};
+      switchTab('resources'); renderResources();
+      const host = document.getElementById('resourcesContainer');
+      const rl3 = computeResourceLoad();
+      const truth = new Set();
+      Object.keys(rl3.perResource).forEach(nm =>
+        (rl3.perResource[nm].overDays || []).forEach(iso => truth.add(nm + '|' + iso)));
+      out.overDayPairs = truth.size;
+
+      const rows = host ? [...host.querySelectorAll('.rl-row')] : [];
+      out.rows = rows.length;
+      if (!rows.length) { say('Heatmap', 'drew no resource rows, so nothing below was tested'); return out; }
+
+      let painted = 0, wrong = 0, firstWrong = null;
+      rows.forEach(row => {
+        const nm = (row.querySelector('.rl-label div') || {}).title || '';
+        [...row.querySelectorAll('.rl-cell')].forEach(c => {
+          const drill = c.dataset.rlDrill;
+          if (!c.classList.contains('over')) return;
+          painted++;
+          const iso = drill ? drill.split('|')[1] : null;
+          if (!iso || !truth.has(nm + '|' + iso)) {
+            wrong++;
+            if (!firstWrong) firstWrong = nm + ' on ' + (iso || '?');
+          }
+        });
+      });
+      out.paintedOver = painted; out.paintedNotCounted = wrong;
+      if (wrong)
+        say('Heatmap', wrong + ' cell(s) are painted as over capacity that the panel does not count as '
+          + 'conflicts (first: ' + firstWrong + ') — the row badge beside them reads OK, and the mend cards '
+          + 'below have nothing for them');
+
+      /* and the drill-in: open a day the rule DISCOUNTS and check what it does.
+         Constructed rather than hoped for — no committed fixture is guaranteed to
+         carry a finished double-booking, and a case that only sometimes runs is a
+         case that eventually never runs. */
+      const settled = (() => {
+        for (const row of rows) {
+          const nm = (row.querySelector('.rl-label div') || {}).title || '';
+          const R4 = rl3.perResource[nm];
+          if (!R4) continue;
+          const iso = Object.keys(R4.days || {}).find(k =>
+            R4.days[k].load > R4.capacity + 1e-6 && (R4.overDays || []).indexOf(k) < 0);
+          if (iso) return { row, nm, iso };
+        }
+        return null;
+      })();
+      out.settledDayFound = !!settled;
+      if (!settled) { out.settledCase = 'SKIPPED-no-finished-double-booking'; return out; }
+      const cell = [...settled.row.querySelectorAll('.rl-cell')]
+        .find(c => (c.dataset.rlDrill || '').split('|')[1] === settled.iso);
+      if (!cell) { say('Heatmap', 'a discounted over-day has no clickable cell to explain itself'); return out; }
+      cell.click();
+      const drillHost = document.getElementById('rlDrill');
+      const txt = drillHost ? drillHost.textContent.replace(/\s+/g, ' ') : '';
+      out.settledDrill = txt.slice(0, 80);
+      const jump = drillHost ? [...drillHost.querySelectorAll('button')]
+        .find(b => /fix suggestions/i.test(b.textContent)) : null;
+      out.settledOffersJump = !!jump;
+      if (jump) {
+        const m = (jump.getAttribute('onclick') || '').match(/(\d+)/);
+        const target = m ? document.getElementById('rlconf-' + m[1]) : null;
+        if (!target)
+          say('Heatmap drill-in', 'a day the panel does not count as a conflict offers "Jump to fix '
+            + 'suggestions", and the card it points at does not exist — the button does nothing at all');
+      }
+      if (/⚠ over/.test(txt))
+        say('Heatmap drill-in', 'heads a discounted day "⚠ over" while the row badge for the same person '
+          + 'reads OK — two readings of one day, three inches apart');
+      if (!/finished/i.test(txt))
+        say('Heatmap drill-in', 'shows a day above capacity, offers nothing to do about it, and never says '
+          + 'why — the reader is left to work out that finished work is not counted');
+      if (drillHost) drillHost.innerHTML = '';
+
+      /* The roster table states a RAW peak beside a rule-aware status badge, so
+         "Peak load 200%" can sit next to a green OK. Both are true; together they
+         read as a contradiction, and it is the same collision one surface over.
+         Where they disagree the badge has to say which rule it applied. */
+      const rosterRows2 = host ? [...host.querySelectorAll('table tbody tr')] : [];
+      let mute = 0;
+      rosterRows2.forEach(tr => {
+        const nm = (tr.querySelector('td') || {}).textContent || '';
+        const R5 = rl3.perResource[nm.replace(/\s*CLIENT\s*$/, '').trim()];
+        if (!R5 || (R5.overDays || []).length) return;
+        if (!(R5.peak > R5.capacity + 1e-6)) return;
+        mute++;
+        const badge = tr.querySelector('.badge-ok');
+        if (badge && /^OK$/.test((badge.textContent || '').trim()))
+          say('Roster', nm.trim() + ' shows a peak of ' + Math.round(R5.peak) + '% against '
+            + R5.capacity + '% capacity and a bare green OK beside it — two readings of the same person '
+            + 'in adjacent cells, with nothing saying the peak is on work that is already finished');
+      });
+      out.rosterPeakAbovePlainOk = mute;
+      return out;
+    })();
+
     hydrate(JSON.parse(JSON.stringify(window.__fixture))); calculate();
 
     return { contradictions: bad, count: n, recount: mine, built,
-             overPeople: rl.resourcesOver, atCapacity, ptoCase, doneRule, levelling,
+             overPeople: rl.resourcesOver, atCapacity, ptoCase, doneRule, levelling, heatmap,
              lintFindings: lint.map(f => String(f.finding).slice(0, 80)) };
   });
 

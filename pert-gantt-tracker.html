@@ -2927,7 +2927,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.31.0216</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.31.0227</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -7572,6 +7572,25 @@
     // means two strictly sequential sub-day tasks (e.g. hours mode) that share a
     // calendar day sum to their true combined intensity instead of double-counting.
     // Over-allocated when the day's total exceeds the resource capacity.
+    /* The heatmap drill-in's jump target. It used to be an inline IIFE that did
+       `if (el) { scroll }` and had no else, so on any plan where the card was
+       missing the button was a no-op: no scroll, no message, nothing in the
+       console. The card is missing exactly when the day is above capacity but
+       its work is all finished, which the drill-in now detects and explains
+       instead of offering this button at all — but a jump that cannot land still
+       has to say so rather than leave someone clicking. */
+    function rlJumpToFix(i) {
+      const el = document.getElementById('rlconf-' + i);
+      if (!el) {
+        flashSaved('No fix suggestions for this day — it is above capacity only because of work that is '
+          + 'already finished, which the panel does not count as a conflict.');
+        return;
+      }
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.style.boxShadow = '0 0 0 3px #fca5a5';
+      setTimeout(() => { el.style.boxShadow = ''; }, 1600);
+    }
+
     function computeResourceLoad() {
       const holidays = getHolidaySet();
       const perResource = {};
@@ -12536,7 +12555,14 @@
           <td>${assigned.length}</td>
           <td>${effort.toFixed(1)}d</td>
           <td>${Math.round(R.peak)}%</td>
-          <td>${over ? `<span class="badge badge-critical">over ×${over}d</span>` : '<span class="badge badge-ok">OK</span>'}</td>
+          ${/* "Peak load 200%" beside a green OK is the same collision the heatmap
+                had: the peak is raw and the badge applies the finished-work rule,
+                both true and reading as a contradiction. The badge says which
+                rule it used when the two disagree. */''}
+          <td>${over ? `<span class="badge badge-critical">over ×${over}d</span>`
+            : R.peak > R.capacity + 1e-6
+              ? `<span class="badge badge-ok" title="The ${Math.round(R.peak)}% peak is on days where every overlapping activity is already finished. A double-booking you have lived through is history rather than an action item, so it is not counted and there is nothing to mend — it would count again the moment one of them went back to unfinished.">OK — peak already worked</span>`
+              : '<span class="badge badge-ok">OK</span>'}</td>
           <td style="white-space:nowrap">
             <button class="btn-sm btn-secondary" data-res-rename="${ri}">Rename</button>
             <button class="btn-sm btn-danger" data-res-remove="${ri}" aria-label="Remove resource">✕</button>
@@ -12579,6 +12605,26 @@
       let rows = '';
       names.forEach((name, ri) => {
         const R = rl.perResource[name];
+        /* THE ONE DEFINITION OF "OVER", shared by the cell colour, the tooltip,
+           the drill-in and the mend cards.
+
+           These four had been asking the question separately, and three of them
+           asked it the naive way: is today's load above capacity. computeResourceLoad
+           deliberately does NOT count a day whose overlapping work is all
+           FINISHED — a double-booking you already lived through is history, not
+           an action item, and the rule is pinned in the test plan. So a person
+           could carry a red cell, a tooltip promising fix suggestions and a
+           drill-in headed "⚠ over" while their own row badge two inches away
+           said OK, because the badge is the only one that used the real rule.
+
+           Worse, the drill-in then offered "↓ Jump to fix suggestions" pointing
+           at a mend card that is only ever built for genuinely over-allocated
+           people. For a settled day that card does not exist, getElementById
+           returned null, and the button did nothing at all — no scroll, no
+           message, no error. Reported as exactly that: the button does not work.
+
+           R.overDays IS the rule. Everything below reads it. */
+        const overSet = new Set(R.overDays || []);
         let cells = '';
         days.forEach((dd, i) => {
           const iso = fmtISO(dd);
@@ -12586,18 +12632,23 @@
           const load = day ? day.load : 0;
           const isPto = R.ptoSet && R.ptoSet.has(iso);
           const ratio = R.capacity > 0 ? load / R.capacity : 0;
+          const isOver = overSet.has(iso);
+          // above capacity on paper, but every activity on it is finished
+          const settled = !isOver && load > (isPto ? 0 : R.capacity) + 1e-6;
           let bg = '#f8fafc';
-          if (isPto) bg = load > 0 ? '#dc2626' : '#e9d5ff';
-          else if (load > 0) bg = ratio <= 1 ? `rgba(37,99,235,${(0.2 + 0.55 * ratio).toFixed(3)})` : '#dc2626';
+          if (isPto) bg = load > 0 ? (isOver ? '#dc2626' : '#e9d5ff') : '#e9d5ff';
+          else if (load > 0) bg = isOver ? '#dc2626'
+            : `rgba(37,99,235,${(0.2 + 0.55 * Math.min(1, ratio)).toFixed(3)})`;
           // hover = the actual collision: every task on this person that day,
           // with units and size — the overlap IS the issue, so show it in place
           const dayTasks = day ? day.tasks.map(id => tasks.find(x => x.id === id)).filter(Boolean) : [];
-          const isOver = load > R.capacity + 1e-6;
           const tip = `${name} — ${dd.toLocaleDateString()}: ${isPto ? 'PTO' + (load > 0 ? ' but ' + Math.round(load) + '% assigned!' : '') : Math.round(load) + '% of ' + R.capacity + '% capacity'}`
             + (dayTasks.length > 1 ? `\n${dayTasks.length} tasks OVERLAP on this day:` : dayTasks.length === 1 ? '\nWorking on:' : '')
             + dayTasks.map(t => `\n• @${t.units || 100}%  ${t.name}  (${t.milestone ? '◆ milestone' : fmtDurText(t.te)})`).join('')
             + (dayTasks.length ? '\n\nClick to drill in — open any of these tasks.' : '')
-            + (isOver ? '\n⚠ Over capacity — the drill-in links to the fix suggestions below.' : '');
+            + (isOver ? '\n⚠ Over capacity — the drill-in links to the fix suggestions below.'
+               : settled ? '\nAbove capacity on paper, but every activity on this day is finished — history, '
+                 + 'not an action item, so it is not counted and there is nothing to mend.' : '');
           cells += `<div class="rl-cell${isOver ? ' over' : ''}" style="left:${i * cellW}px;width:${cellW}px;background:${bg}${dayTasks.length ? ';cursor:pointer' : ''}" title="${escapeHtml(tip)}"${dayTasks.length ? ` data-rl-drill="${ri}|${iso}"` : ''}></div>`;
         });
         const over = R.overDays.length;
@@ -12734,19 +12785,30 @@
         if (!day) return;
         computeWbsCodes();
         const dd = new Date(iso + 'T00:00:00');
-        const isOver = day.load > R.capacity + 1e-6;
+        // the same rule the badge, the cell and the mend cards use — see the
+        // note at the heatmap rows. A day above capacity whose work is all done
+        // is not a conflict, has no mend card, and must not offer a jump to one.
+        const isOver = (R.overDays || []).indexOf(iso) >= 0;
+        const settled = !isOver && day.load > R.capacity + 1e-6;
         const list = day.tasks.map(idq => tasks.find(x => x.id === idq)).filter(Boolean);
         const el = document.getElementById('rlDrill');
         el.innerHTML = `<div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:.6rem .8rem;margin:.4rem 0 .6rem;font-size:.8rem">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
-            <strong>📅 ${escapeHtml(name)} — ${escapeHtml(fmtNice(dd))}: ${Math.round(day.load)}% of ${R.capacity}% capacity${isOver ? ' <span style="color:var(--critical);font-weight:700">⚠ over</span>' : ''}</strong>
+            <strong>📅 ${escapeHtml(name)} — ${escapeHtml(fmtNice(dd))}: ${Math.round(day.load)}% of ${R.capacity}% capacity${isOver ? ' <span style="color:var(--critical);font-weight:700">⚠ over</span>' : settled ? ' <span style="color:var(--muted);font-weight:600">— finished work</span>' : ''}</strong>
             <button class="btn-sm btn-secondary" onclick="document.getElementById('rlDrill').innerHTML=''" aria-label="Close drill-down">✕</button>
           </div>
           ${list.map(t => `<div style="display:flex;gap:.5rem;justify-content:space-between;align-items:center;padding:.2rem 0;border-bottom:1px dashed var(--border)">
             <span style="cursor:pointer;color:var(--primary)" onclick="openEditModal(${t.id}, true)" title="Open this task — re-estimate, change owner or Units %, adjust links (🕸 impact panel inside)">${escapeHtml((t.wbs ? t.wbs + ' ' : '') + t.name)}</span>
             <span class="help-text" style="white-space:nowrap">@${t.units || 100}% · ${t.milestone ? '◆' : fmtDur(t.te)}${t.isCritical ? ' · <span style="color:var(--critical)">critical</span>' : ''}</span>
           </div>`).join('')}
-          ${isOver ? `<div style="margin-top:.4rem"><button class="btn-sm btn-danger" onclick="(function(){var e2=document.getElementById('rlconf-${+riS}');if(e2){e2.scrollIntoView({behavior:'smooth',block:'center'});e2.style.boxShadow='0 0 0 3px #fca5a5';setTimeout(function(){e2.style.boxShadow='';},1600);}})()">↓ Jump to fix suggestions</button></div>` : ''}
+          ${isOver
+            /* The `else` is not silence. A button that quietly does nothing is
+               worse than no button, and the reason there is nothing to jump to
+               is itself the answer to the question the reader is asking. */
+            ? `<div style="margin-top:.4rem"><button class="btn-sm btn-danger" onclick="rlJumpToFix(${+riS})">↓ Jump to fix suggestions</button></div>`
+            : settled
+              ? `<p class="help-text" style="margin:.4rem 0 0">This day is above ${escapeHtml(name)}'s capacity on paper, but every activity on it is already finished. A double-booking you have lived through is history rather than an action item, so it is not counted in the over-allocation total and there are no fix suggestions for it. It would count again the moment one of these activities went back to unfinished.</p>`
+              : ''}
         </div>`;
         el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }));
