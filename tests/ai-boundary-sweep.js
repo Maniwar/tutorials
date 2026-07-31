@@ -27,7 +27,7 @@ const DATA = FIXTURE();
   await page.evaluate(data => { window.__fixture = data; hydrate(data); calculate(); }, DATA);
   await page.waitForTimeout(800);
 
-  const R = await page.evaluate(() => {
+  const R = await page.evaluate(async () => {
     const bad = [];
     const say = (a, b2) => bad.push(a + ' :: ' + b2);
 
@@ -187,9 +187,87 @@ const DATA = FIXTURE();
       say('RAID capture', 'accepted a probability of ' + pr + ' and an impact of ' + im + ' on a 1–5 scale');
     closeRaidForm();
 
+    /* ═══ ADDING CRITERIA MUST NEVER MOVE THE ONES ALREADY THERE ═════════════
+       An AC id is an IDENTITY. Test cases point at it, the traceability matrix
+       is keyed on it, and the SOW quotes it, so a criterion that silently
+       changes number takes all three with it. The +AC path exists precisely
+       because the alternative — the story REWRITE — replaces criteria that may
+       have been argued over with a client and signed.
+
+       The model's reply is the untrusted part. Ids in it are IGNORED and
+       assigned locally, so the case that matters is a response that re-emits an
+       id already in use: accepted as written, two criteria share a number and
+       every test case pointed at it becomes ambiguous. Stubbed rather than
+       called: this is about what protects the plan when the model misbehaves. */
+    const acOut = {};
+    await (async () => {
+      const s = ((reqs && reqs.stories) || []).find(x => (x.ac || []).length >= 2);
+      if (!s) { acOut.skipped = 'no story with criteria in the fixture'; return; }
+      const before = (s.ac || []).map(a => ({ id: a.id, text: a.text, type: a.type }));
+      acOut.before = before.length;
+      const idx = acNextIndex(s);
+      acOut.base = idx.base; acOut.next = idx.next;
+      if (before.some(a => a.id === idx.base + '.' + idx.next))
+        say('Criteria', 'the next id it would assign (' + idx.base + '.' + idx.next
+          + ') is already in use — a new criterion would collide with an existing one');
+
+      const realCall = window.callAnthropic, realFlash = window.flashSaved, realAlert = window.alert;
+      const realRec = window.reconcileTestCases, realSave = window.saveLocal;
+      let flashed = '';
+      window.flashSaved = m => { flashed = String(m); };
+      window.alert = () => {};
+      window.reconcileTestCases = async () => {};
+      window.saveLocal = () => {};
+      // a model that hands back the ids of criteria that already exist, plus an
+      // empty one, plus a type the schema does not have
+      window.callAnthropic = async () => JSON.stringify({ ac: [
+        { id: before[0].id, type: 'error', text: 'Given a stakeholder declines, When the window closes, Then the gap is recorded within 1 business day' },
+        { id: before[1].id, type: 'nonsense', text: 'Given an empty roster, When the pack is generated, Then it states zero interviews and names the reason' },
+        { id: 'AC-999.1', type: 'edge', text: '   ' }
+      ] });
+      document.getElementById('aiKey').value = 'sk-ant-probe';
+      aiAddCriteria(s.id);
+      document.getElementById('acGuidance').value = '';
+      document.getElementById('acCount').value = '2';
+      await runAiAddCriteria();
+      window.callAnthropic = realCall; window.flashSaved = realFlash; window.alert = realAlert;
+      window.reconcileTestCases = realRec; window.saveLocal = realSave;
+
+      const after = (s.ac || []).map(a => ({ id: a.id, text: a.text, type: a.type }));
+      acOut.after = after.length;
+      acOut.flashed = flashed.slice(0, 80);
+      // 1. nothing that existed may have moved or changed
+      before.forEach((b2, i) => {
+        const now = after[i];
+        if (!now || now.id !== b2.id)
+          say('Criteria', 'adding criteria renumbered an existing one (' + b2.id + ' → '
+            + (now ? now.id : 'gone') + ') — every test case and SOW reference pointed at it is now wrong');
+        else if (now.text !== b2.text)
+          say('Criteria', b2.id + ' was rewritten by an operation that only claims to ADD — a criterion '
+            + 'a client may have signed changed without being asked about');
+      });
+      // 2. the model's ids are not trusted
+      const dupes = after.length - new Set(after.map(a => a.id)).size;
+      acOut.duplicateIds = dupes;
+      if (dupes)
+        say('Criteria', dupes + ' criteri' + (dupes === 1 ? 'on shares its id' : 'a share ids') + ' with '
+          + 'another after the add — the reply\'s own ids were used instead of being assigned locally, so a '
+          + 'test case now points at two different criteria');
+      // 3. blank text and an invalid type are not admitted
+      if (after.some(a => !String(a.text || '').trim()))
+        say('Criteria', 'an empty criterion was added — it is unverifiable and will generate a test case');
+      const badType = after.filter(a => !/^(happy|error|edge|perf)$/.test(a.type));
+      if (badType.length)
+        say('Criteria', badType.length + ' criteri' + (badType.length === 1 ? 'on carries a type' : 'a carry types')
+          + ' the schema does not have (' + badType.map(a => a.type).join(', ') + ')');
+      // 4. and it has to say what it did
+      if (!/added|criteri/i.test(flashed))
+        say('Criteria', 'criteria were added and nothing told the user how many or to which story');
+    })();
+
     hydrate(JSON.parse(JSON.stringify(window.__fixture))); calculate();
 
-    return { contradictions: bad, catalogue: catOut, clientSafe: safeOut, readingCases: cases, capture, injection: inj };
+    return { contradictions: bad, catalogue: catOut, clientSafe: safeOut, readingCases: cases, capture, injection: inj, addCriteria: acOut };
   });
 
   // ═══ 5. NOTHING LEFT THE BROWSER ════════════════════════════════════════

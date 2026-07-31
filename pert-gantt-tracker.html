@@ -679,6 +679,19 @@
     .wl { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(600px, 100%), 1fr));
       gap: 0.6rem; margin: 0.4rem 0 0.9rem; }
     .wl-lead { font-size: var(--t-sm); color: var(--text); margin: 0.35rem 0 0.1rem; line-height: 1.6; }
+    .wl-bar { display: flex; flex-wrap: wrap; gap: 0.15rem 0.9rem; align-items: center;
+      margin: 0.35rem 0 0.1rem; font-size: var(--t-xs); color: var(--muted); }
+    .wl-f { display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer; }
+    .wl-f input { margin: 0; }
+    .wl-fn { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--text); }
+    .wl-gh-off { color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+    /* the person's name is the way in to their full breakdown, so it has to look
+       like something you can press without becoming a button in a row of buttons */
+    .wl-nmb { background: none; border: 0; padding: 0; margin: 0; box-shadow: none; cursor: pointer;
+      font: inherit; font-weight: 700; font-size: var(--t-md); color: var(--text);
+      text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; }
+    .wl-nmb:hover { color: var(--primary); text-decoration-color: var(--primary); transform: none;
+      box-shadow: none; }
     .wl-t { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: var(--t-xs); }
     .wl-t th { text-align: left; font-weight: 700; color: var(--muted); text-transform: uppercase;
       letter-spacing: .04em; font-size: 0.68rem; padding: 2px 6px 2px 0; border-bottom: 1px solid var(--border); }
@@ -2530,6 +2543,21 @@
     </div>
 
     <!-- story editor modal -->
+    <!-- One person's whole breakdown. The worklist card is a summary by
+         necessity (seven have to fit on a screen); this is where "show me
+         everything L. Chen has to do" is answered, uncapped and including
+         finished work. -->
+    <div class="modal-overlay" id="wlModal" style="z-index:128">
+      <div class="modal" style="max-width:1040px" role="dialog" aria-modal="true" aria-labelledby="wlModalTitle">
+        <div class="modal-header"><h3 id="wlModalTitle">Worklist</h3>
+          <div style="display:flex;gap:.4rem;align-items:center">
+            <button class="btn-sm btn-secondary" id="wlModalCopy" onclick="wlCopy(null)" title="Copy this person's full worklist as a formatted table">📋 Copy</button>
+            <button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeWlModal()" aria-label="Close dialog">✕</button>
+          </div>
+        </div>
+        <div class="modal-body" id="wlModalBody"></div>
+      </div>
+    </div>
     <div class="modal-overlay" id="storyModal" style="z-index:130">
       <div class="modal" style="max-width:940px" role="dialog" aria-modal="true" aria-labelledby="storyModalTitle">
         <div class="modal-header"><h3 id="storyModalTitle">Edit user story</h3><button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeStoryModal()" aria-label="Close dialog">✕</button></div>
@@ -2579,6 +2607,46 @@
           <span class="kbd-hint" aria-hidden="true"><kbd>⏎</kbd> next field <span class="kbd-sep">·</span> <kbd>⇧</kbd><kbd>⏎</kbd> save <span class="kbd-sep">·</span> <kbd>esc</kbd> close</span>
           <button class="btn-secondary" onclick="closeStoryModal()">Cancel</button>
           <button class="btn-primary" onclick="saveStoryModal()">Save story</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI: write MORE acceptance criteria for one story.
+         Deliberately the same shape as ⑂ AI decompose — blank guidance means
+         "use your judgement", typed guidance means "do exactly this" — because
+         they are the same act at two levels of the plan: splitting work into
+         trackable pieces, and splitting acceptance into testable ones. Learning
+         the pattern once should be enough. -->
+    <div class="modal-overlay" id="acModal" style="z-index:132">
+      <div class="modal" style="max-width:660px" role="dialog" aria-modal="true" aria-labelledby="acTitle">
+        <div class="modal-header"><h3 id="acTitle">✚ AI: more acceptance criteria</h3><button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeAcModal()" aria-label="Close dialog">✕</button></div>
+        <div class="modal-body">
+          <p class="help-text" id="acMeta" style="margin:0 0 0.6rem"></p>
+          <div id="acExisting" class="help-text" style="margin:0 0 0.75rem"></div>
+          <div class="form-group">
+            <label for="acGuidance">What should the new criteria cover?</label><button type="button" class="info-icon" aria-label="About the guidance box" data-help="Leave it blank and the AI reads the story, the activity it traces to and the criteria you already have, then writes the coverage that is missing — usually the error and edge paths, since happy paths get written first and the rest get forgotten. Type into it and it does exactly what you say instead: your words become Given/When/Then criteria with measurable outcomes.">i</button>
+            <textarea id="acGuidance" rows="6" placeholder="Leave blank for automatic — it will find the coverage that is missing.
+
+Or say what you want, in your own words:
+• 'What happens if the client's data steward never shows up'
+• 'Cover the permission cases: agent, manager, admin, and someone with no role at all'
+• 'Add a performance criterion — p95 under 2 seconds at 50 concurrent users'
+• 'Two edge cases about the 24-month cutover boundary'"></textarea>
+            <p class="help-text" style="margin-top:0.4rem">Your existing criteria are kept <b>word for word</b>. New ones are appended and numbered on from the last, so ids already referenced by a test case, the traceability matrix or the SOW do not move.</p>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label for="acCount">How many to add</label>
+            <select id="acCount" style="width:auto">
+              <option value="0">Let the AI decide</option>
+              <option value="1">1</option><option value="2">2</option>
+              <option value="3" selected>3</option><option value="5">5</option><option value="8">8</option>
+            </select>
+          </div>
+          <div id="acError" class="error" style="display:none;margin-top:0.5rem"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="closeAcModal()">Cancel</button>
+          <button class="btn-primary" id="acRunBtn" onclick="runAiAddCriteria()"><span class="ico" aria-hidden="true">✚</span> Write the criteria</button>
         </div>
       </div>
     </div>
@@ -2954,7 +3022,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.31.0245</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.31.0457</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -14007,6 +14075,7 @@
       cont.querySelectorAll('[data-story-edit]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); openStoryModal(b.dataset.storyEdit); }));
       cont.querySelectorAll('[data-story-mk]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); createTaskFromStory(b.dataset.storyMk); }));
       cont.querySelectorAll('[data-story-retc]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); regenStoryTestCases(b.dataset.storyRetc); }));
+      cont.querySelectorAll('[data-story-addac]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); aiAddCriteria(b.dataset.storyAddac); }));
       cont.querySelectorAll('[data-epic-rm]').forEach(b => b.addEventListener('click', e => {
         e.preventDefault(); e.stopPropagation();
         const eid = b.dataset.epicRm;
@@ -14048,7 +14117,7 @@
               <span class="badge ${pct >= 100 ? 'badge-done' : pct > 0 ? 'badge-prog' : 'badge-notstarted'}" title="Status inherited from the primary linked activity${linkTasks.length > 1 ? ' (first of ' + linkTasks.length + ')' : ''} — check work off on the Tasks tab and this follows">${pct >= 100 ? '✓ done' : pct > 0 ? pct + '%' : 'not started'}</span>`
             : `<span class="badge badge-blocked" title="No linked WBS activity — this scope is NOT in the plan or the price. Link it in the editor, or create the missing activity from the story.">unlinked</span>
                <button class="btn-sm btn-secondary" data-story-mk="${escapeHtml(s.id)}" title="Create the missing WBS activity from this story: name from 'I want…', dictionary from the story + happy-path AC, nested under the epic's phase. It then needs an O/M/P estimate.">➕</button>`}
-            <span class="story-actions"><button class="btn-sm btn-secondary" data-story-edit="${escapeHtml(s.id)}" title="Edit this story">✎</button>${(s.ac || []).some(a => testCasesForAC(a.id).length) ? `<button class="btn-sm btn-secondary" data-story-retc="${escapeHtml(s.id)}" title="Regenerate this story's test cases from the CURRENT acceptance criteria (AI). Rewritten IN PLACE — id, schedule position and links survive; % complete resets to 0. Use after editing the story or its criteria.">🧪↻</button>` : ''}</span>
+            <span class="story-actions"><button class="btn-sm btn-secondary" data-story-edit="${escapeHtml(s.id)}" title="Edit this story">✎</button><button class="btn-sm btn-secondary" data-story-addac="${escapeHtml(s.id)}" title="AI: write MORE acceptance criteria for this story — automatically, or tell it exactly what to cover. Existing criteria are kept word for word; the new ones are appended and numbered on from the last.">+AC</button>${(s.ac || []).some(a => testCasesForAC(a.id).length) ? `<button class="btn-sm btn-secondary" data-story-retc="${escapeHtml(s.id)}" title="Regenerate this story's test cases from the CURRENT acceptance criteria (AI). Rewritten IN PLACE — id, schedule position and links survive; % complete resets to 0. Use after editing the story or its criteria.">🧪↻</button>` : ''}</span>
           </span>
         </summary>
         <div style="padding:0 1rem 0.75rem">
@@ -15341,6 +15410,130 @@ Write the test cases for the criteria above, following the contract exactly. Ret
     // includeCore, the story sentence itself) against the CURRENT linked WBS
     // activity, then reconciles the test cases. Used after a story edit and
     // after an activity rename — the two moments criteria go stale.
+    /* ═══ MORE ACCEPTANCE CRITERIA, AUTOMATIC OR TOLD ════════════════════════
+       The story card already had a REWRITE (aiRefreshStory) and a REGENERATE
+       (regenStoryTestCases), and no way to simply ask for more coverage. Those
+       two are not substitutes: a rewrite replaces criteria you may have argued
+       over with a client and signed, which is far too big a hammer for "we
+       forgot the permission cases".
+
+       So: append-only. The criteria you have are sent to the model as text it
+       may not touch, and it returns NEW ones which are numbered on from the
+       highest existing id. That matters beyond tidiness — an AC id is an
+       identity referenced by test cases, the traceability matrix and the SOW,
+       so renumbering is the one thing this must never do.
+
+       Blank guidance and typed guidance are both first-class, deliberately
+       mirroring ⑂ AI decompose: blank means "read the story and find what is
+       missing", typed means "do exactly this". Same act at two levels of the
+       plan, so the pattern is learned once. */
+    function acNextIndex(s) {
+      const base = String(s.id || '').replace(/^US/i, 'AC');
+      let max = 0;
+      (s.ac || []).forEach(a => {
+        const m = String(a.id || '').match(new RegExp('^' + base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\.(\\d+)$'));
+        if (m) max = Math.max(max, +m[1]);
+      });
+      return { base: base, next: max + 1 };
+    }
+    function aiAddCriteria(storyId) {
+      const s = ((reqs && reqs.stories) || []).find(x => x.id === storyId);
+      if (!s) return;
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) {
+        switchTab('tasks');
+        const st = document.getElementById('aiSettings'); if (st) st.style.display = 'block';
+        alert('Add your Anthropic API key first (⚙ API Key in the AI Plan Builder).');
+        return;
+      }
+      aiAddCriteria._id = storyId;
+      const act = s.wbsId != null ? tasks.find(t => t.id === s.wbsId) : null;
+      document.getElementById('acTitle').textContent = '✚ AI: more acceptance criteria — ' + s.id;
+      document.getElementById('acMeta').textContent = 'As a ' + (s.persona || '?') + ', I want to '
+        + (s.want || '?') + (s.soThat ? ', so that ' + s.soThat : '')
+        + (act ? '  ·  traces to ' + (act.wbs ? act.wbs + ' ' : '') + act.name : '');
+      /* Show what it already has, and by TYPE. The gap is nearly always visible
+         from that one line — four happy paths and no error path is the usual
+         shape, and seeing it is what makes the guidance box easy to fill in. */
+      const byType = {};
+      (s.ac || []).forEach(a => { byType[a.type || 'happy'] = (byType[a.type || 'happy'] || 0) + 1; });
+      const lbl = { happy: '✅ happy', error: '⚠️ error', edge: '🧪 edge', perf: '📏 perf' };
+      const have = (s.ac || []).length;
+      document.getElementById('acExisting').innerHTML = have
+        ? '<b>' + have + '</b> criteri' + (have === 1 ? 'on' : 'a') + ' already: '
+          + Object.keys(lbl).map(k => escapeHtml(lbl[k]) + ' <b>' + (byType[k] || 0) + '</b>').join(' · ')
+          + (Object.keys(byType).length === 1
+              ? ' — only one kind of path is covered, which is the usual gap.' : '')
+        : 'This story has <b>no criteria at all</b> yet, so nothing here is at risk of being changed.';
+      document.getElementById('acGuidance').value = '';
+      document.getElementById('acError').style.display = 'none';
+      openOverlay(document.getElementById('acModal'));
+      setTimeout(() => document.getElementById('acGuidance').focus(), 50);
+    }
+    function closeAcModal() { closeOverlay('acModal'); }
+    async function runAiAddCriteria() {
+      const s = ((reqs && reqs.stories) || []).find(x => x.id === aiAddCriteria._id);
+      if (!s) { closeAcModal(); return; }
+      const guidance = document.getElementById('acGuidance').value.trim();
+      const wanted = Number(document.getElementById('acCount').value) || 0;
+      closeAcModal();
+      const act = s.wbsId != null ? tasks.find(t => t.id === s.wbsId) : null;
+      const { base, next } = acNextIndex(s);
+      const oldAc = (s.ac || []).map(a => ({ id: a.id, type: a.type, text: a.text }));
+      const prompt = `You are a senior business analyst ADDING acceptance criteria to one user story of a billable engagement. You are NOT rewriting anything.
+PROJECT: ${projName()}
+${act ? 'THE WBS ACTIVITY it traces to: ' + (act.wbs ? act.wbs + ' ' : '') + act.name + (act.description ? ' | scope: ' + act.description : '') + (act.deliverable ? ' | deliverable: ' + act.deliverable : '') + (act.acceptance ? ' | done-when: ' + act.acceptance : '') : 'No linked WBS activity.'}
+THE STORY: As a ${s.persona || '?'}, I want to ${s.want || '?'}${s.soThat ? ', so that ' + s.soThat : ''}.
+CRITERIA THAT ALREADY EXIST — do not repeat, restate, contradict or renumber any of these:
+${oldAc.length ? oldAc.map(a => `${a.id} (${a.type}): ${a.text}`).join('\n') : '(none yet)'}
+${guidance ? `WHAT THE USER ASKED FOR — this is the instruction; follow it exactly and let it override the default gap-finding below:\n"""${guidance}"""\n`
+  : `NO INSTRUCTION WAS GIVEN, so find the missing coverage yourself: read the story and the criteria above and write the ones that are absent. In practice the happy path is written first and the error paths, edge cases and measured thresholds are the ones forgotten.\n`}
+Write ${wanted ? 'exactly ' + wanted : 'between 2 and 5'} NEW criteria.
+Rules:
+- The persona is WHO ACCEPTS THE VALUE (client-side user/manager/stakeholder) — never the developer or consultant delivering the work.
+- Each criterion is ONE Given [state] When [action] Then [measurable outcome] — FILL EVERY SLOT; a Given-only fragment is not a criterion. "And" clauses are welcome in every section. Time-bound outcomes where timing matters ("within 2 seconds"). Binary pass/fail, observable from outside the system, no implementation detail.
+- A perf criterion needs a NUMBER and the condition it is measured under, or do not write one.
+- BANNED untestable words: fast, quick, responsive, seamless, smooth, intuitive, user-friendly, easy, robust, reliable, scalable, real-time, secure, handle, support, manage — write the number and its measurement condition instead.
+- Each new criterion must be genuinely distinct from every existing one: a different state, action or outcome, not a rephrasing.
+- Number them sequentially from "${base}.${next}" — the existing ids are referenced by test cases and the SOW and must not move.
+Return ONLY JSON (no prose, no fences):
+{"ac":[{"id":"${base}.${next}","type":"happy|error|edge|perf","text":"Given … [And …] When … Then … [And …]"}]}`;
+      const onDelta = streamShow('Writing criteria for ' + s.id);
+      let res;
+      try {
+        const text = await callAnthropic(prompt, { onDelta });
+        streamHide(true);
+        res = parseAIJsonStrict(text, s.id + ' criteria');   // truncated → nothing applied
+      } catch (e) { streamHide(false); alert('Could not write the criteria: ' + (e.message || e)); return; }
+      if (!res || !Array.isArray(res.ac) || !res.ac.length) {
+        alert('The AI returned no criteria — nothing was added and nothing was changed.'); return;
+      }
+      /* Ids are assigned HERE, not trusted from the response. A model that
+         re-emits "AC-2.1" would otherwise collide with a criterion a test case
+         already points at, and the collision is silent. */
+      const existing = new Set((s.ac || []).map(a => String(a.id)));
+      let n = next;
+      const added = res.ac.map(a => {
+        let id;
+        do { id = base + '.' + (n++); } while (existing.has(id));
+        existing.add(id);
+        return { id: id,
+          type: /^(happy|error|edge|perf)$/i.test(String(a.type)) ? String(a.type).toLowerCase() : 'happy',
+          text: String(a.text || '').trim() };
+      }).filter(a => a.text);
+      if (!added.length) { alert('The AI returned criteria with no text — nothing was added.'); return; }
+      s.ac = (s.ac || []).concat(added);
+      saveLocal(); renderReqs();
+      const byT = {};
+      added.forEach(a => { byT[a.type] = (byT[a.type] || 0) + 1; });
+      flashSaved('✚ ' + added.length + ' criteri' + (added.length === 1 ? 'on' : 'a') + ' added to ' + s.id
+        + ' (' + Object.keys(byT).map(k => byT[k] + ' ' + k).join(', ') + ') — '
+        + oldAc.length + ' existing criteri' + (oldAc.length === 1 ? 'on' : 'a') + ' untouched');
+      /* New criteria mean new things to verify. reconcileTestCases sees ids that
+         were not there before and offers the test cases for them; it is also
+         what stops a criterion from silently going unverified. */
+      await reconcileTestCases(s, oldAc);
+    }
+
     async function aiRefreshStory(storyId, opts) {
       opts = opts || {};
       const s = ((reqs && reqs.stories) || []).find(x => x.id === storyId);
@@ -22789,8 +22982,13 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       const today = stripTime(new Date());
       const leaves = leafTasks();
       const P = new Map();
-      const at = n => { if (!P.has(n)) P.set(n, { name: n, now: [], soon: [], blocked: [], done: 0,
-        overdue: 0, effort: 0, blocking: 0, risks: 0 }); return P.get(n); };
+      /* `done` was a COUNT and the finished rows were thrown away, so the panel
+         could tell you somebody had completed nine things and could not tell you
+         which nine. "We don't have a way to see all the work broken down" —
+         exactly right, and half of the reason was here rather than in the view.
+         The rows are kept now; whether they are shown is a filter. */
+      const at = n => { if (!P.has(n)) P.set(n, { name: n, now: [], soon: [], blocked: [], doneRows: [],
+        done: 0, overdue: 0, effort: 0, blocking: 0, risks: 0 }); return P.get(n); };
       leaves.forEach(t => {
         const pct = Number(t.percentComplete) || 0;
         const parts = taskParticipants(t);
@@ -22826,7 +23024,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         blockers.forEach(b => (b.owners.length ? b.owners : [WL_NOBODY]).forEach(n => { at(n).blocking++; }));
         names.forEach(n => {
           const b = at(n);
-          if (done) { b.done++; return; }
+          if (done) { b.done++; b.doneRows.push(row); return; }
           b.effort += (Number(t.te) || 0) * (1 - pct / 100);
           if (overdue) b.overdue++;
           b.risks += rd.length;
@@ -22840,7 +23038,9 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         || ((a.finish ? a.finish.getTime() : 8e15) - (b.finish ? b.finish.getTime() : 8e15))
         || (a.slack - b.slack);
       const out = [...P.values()];
-      out.forEach(p => { p.now.sort(rank); p.blocked.sort(rank); p.soon.sort(rank); });
+      out.forEach(p => { p.now.sort(rank); p.blocked.sort(rank); p.soon.sort(rank);
+        // finished work reads newest-first: what just landed is the useful end
+        p.doneRows.sort((a, b) => ((b.finish ? b.finish.getTime() : 0) - (a.finish ? a.finish.getTime() : 0))); });
       // the person with the most overdue work leads; "Nobody assigned" is a
       // finding rather than a person, so it goes last whatever it holds
       out.sort((a, b) => (a.name === WL_NOBODY) - (b.name === WL_NOBODY)
@@ -22931,11 +23131,48 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       const all = [...cnt.values()].sort((a, b) => b.n - a.n);
       return all.length ? all[0] : null;
     }
-    function worklistHtml() {
+    /* WHAT THE PANEL IS SHOWING YOU, AND WHAT IT IS NOT.
+
+       Three caps and one silent omission meant the worklist could never answer
+       "show me everything": six rows of startable work, five of blocked, later
+       work reduced to a one-line "next up", and finished work discarded at the
+       data layer. Every one of those was defensible on its own and together they
+       made the panel a summary that could not be expanded — "and 6 more" with no
+       way to see the 6.
+
+       The caps are a VIEW setting now, not a fact about the data. The filter is
+       deliberately not persisted: it is a way of looking at the panel for a
+       minute, and a hidden group remembered across a reload is how somebody
+       later swears an activity has vanished from the plan. Every group states
+       its full count in its own heading whether it is open or not, so nothing is
+       ever hidden silently. */
+    let wlView = { now: true, blocked: true, soon: false, done: false, all: false };
+    function wlSetView(k, v) {
+      wlView[k] = !!v;
+      const host = document.getElementById('worklistHost');
+      if (host) host.innerHTML = worklistHtml(true);
+    }
+    function wlViewBar(people) {
+      const n = k => people.reduce((s, p) => s + (k === 'done' ? p.doneRows.length : p[k].length), 0);
+      const box = (k, lbl, cnt) => '<label class="wl-f" title="' + escapeHtml(cnt + ' ' + lbl.toLowerCase()
+        + ' across everyone — hidden groups still state their count on each card') + '">'
+        + '<input type="checkbox"' + (wlView[k] ? ' checked' : '')
+        + ' onchange="wlSetView(' + ekJs2(k) + ', this.checked)"> ' + escapeHtml(lbl)
+        + ' <span class="wl-fn">' + cnt + '</span></label>';
+      return '<div class="wl-bar no-print">'
+        + box('now', 'Can start', n('now')) + box('blocked', 'Blocked', n('blocked'))
+        + box('soon', 'Later', n('soon')) + box('done', 'Finished', n('done'))
+        + '<label class="wl-f" title="Off, each group shows the first few rows and says how many it is '
+        + 'holding back. On, every row is drawn — long on a big plan, which is why it is a choice.">'
+        + '<input type="checkbox"' + (wlView.all ? ' checked' : '')
+        + ' onchange="wlSetView(' + ekJs2('all') + ', this.checked)"> Show every row</label>'
+        + '</div>';
+    }
+    function worklistHtml(inner) {
       const people = worklistData();
       if (!people.length) return '';
       const u = unitLabel();
-      const MAXN = 6, MAXB = 5;
+      const MAXN = wlView.all ? 1e9 : 6, MAXB = wlView.all ? 1e9 : 5;
       const totNow = people.reduce((s, p) => s + p.now.length, 0);
       const totBlk = people.reduce((s, p) => s + p.blocked.length, 0);
       const totLate = people.reduce((s, p) => s + p.overdue, 0);
@@ -22966,35 +23203,99 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         if (p.overdue) bits.push('<b class="wl-late">' + p.overdue + '</b> overdue');
         if (p.blocking) bits.push('<b>' + p.blocking + '</b> holding others up');
         if (p.risks) bits.push('<b>' + p.risks + '</b> open RAID');
+        /* A hidden group still announces itself. "Blocked (11) — hidden" is a
+           filter; a heading that simply is not there is an activity that has
+           disappeared from the plan as far as the reader can tell. */
+        const grp = (key, lbl, rows, showBlock, cap) => {
+          if (!rows.length) return '';
+          if (!wlView[key]) return '<p class="wl-gh wl-gh-off">' + lbl + ' <span class="wl-fn">'
+            + rows.length + '</span> — hidden by the filter above</p>';
+          return '<p class="wl-gh">' + lbl + ' <span class="wl-fn">' + rows.length + '</span></p>'
+            + wlTable(rows, showBlock, cap);
+        };
         return '<div class="wl-p" data-alert="' + alert + '">'
-          + '<div class="wl-h"><span class="wl-nm">' + escapeHtml(p.name) + '</span>'
+          + '<div class="wl-h"><button type="button" class="wl-nm wl-nmb no-print" onclick="wlOpenPerson('
+          + ekJs2(p.name) + ')" title="' + escapeHtml('Open ' + p.name + '’s full breakdown — every '
+          + 'activity they touch, including finished work, with nothing capped')
+          + '">' + escapeHtml(p.name) + '</button>'
           + (role ? '<span class="wl-role">' + escapeHtml(role) + '</span>' : '')
           + '<span class="wl-sp"></span>'
+          + '<button class="btn-sm btn-secondary no-print" onclick="wlOpenPerson(' + ekJs2(p.name) + ')" '
+          + 'title="Every activity for this person, grouped and uncapped">⤢ All work</button>'
           + '<button class="btn-sm btn-secondary no-print" onclick="wlCopy(' + ekJs2(p.name) + ')" '
           + 'title="Copy this person\'s worklist as a formatted table — activity, status, due date, what it is '
           + 'waiting on and any open RAID entry. Pastes into email or a doc with the formatting intact.">📋 Copy</button></div>'
-          + '<p class="wl-li" style="margin:0">' + bits.join(' · ') + ' · <span class="wl-when">'
+          + '<p class="wl-li" style="margin:0">' + bits.join(' · ')
+          + (p.done ? ' · <b>' + p.done + '</b> finished' : '') + ' · <span class="wl-when">'
           + (Math.round(p.effort * 10) / 10) + ' ' + escapeHtml(u) + ' of work left</span></p>'
-          + '<p class="wl-gh">Can start now</p>'
-          + (p.now.length ? wlTable(p.now, false, MAXN)
-            : '<p class="wl-none">' + (p.blocked.length
+          + (p.now.length ? grp('now', 'Can start now', p.now, false, MAXN)
+            : '<p class="wl-gh">Can start now</p><p class="wl-none">' + (p.blocked.length
                 ? 'Everything open for them is waiting on somebody else — see below.'
                 : p.soon.length ? 'Nothing yet — their next activity starts '
                     + escapeHtml(fmtNice(p.soon[0].start)) + '.'
                     : 'Nothing open at all.') + '</p>')
-          + (p.blocked.length ? '<p class="wl-gh">Blocked</p>' + wlTable(p.blocked, true, MAXB) : '')
-          + (p.soon.length && p.now.length ? '<p class="wl-more">Next up: ' + escapeHtml(p.soon[0].name)
-              + ' on ' + escapeHtml(fmtNice(p.soon[0].start)) + '</p>' : '')
+          + grp('blocked', 'Blocked', p.blocked, true, MAXB)
+          + grp('soon', 'Later', p.soon, false, MAXB)
+          + grp('done', 'Finished', p.doneRows, false, MAXB)
           + '</div>';
       }).join('');
+      const body = wlViewBar(people) + head + '<div class="wl">' + cards + '</div>';
+      if (inner) return body;
       return '<h3 style="font-size:0.95rem;margin:0.9rem 0 0.2rem">Worklist — what each person can start now'
         + ' <span class="help-text" style="font-weight:400">(read straight off the dependency network: '
         + 'finish-to-start needs its predecessor finished, start-to-start only needs it started)</span>'
         + ' <button class="btn-sm btn-secondary no-print" onclick="wlCopy(null)" style="margin-left:.4rem" '
         + 'title="Copy the whole worklist — every person, as formatted tables ready to paste into an email or a '
         + 'status doc">📋 Copy all</button></h3>'
-        + head + '<div class="wl">' + cards + '</div>';
+        + '<div id="worklistHost">' + body + '</div>';
     }
+
+    /* ═══ ONE PERSON, ALL OF IT ═══════════════════════════════════════════════
+       The card is a summary and always will be — seven of them have to fit on a
+       screen. This is the other half: click a name and get every activity that
+       person touches, grouped, uncapped, finished work included, with the same
+       columns. "I can't click on L. Chen and see all the work broken down that
+       L. Chen has to do" — reported exactly that way, and it was true.
+
+       Grouped rather than one long list, because the groups are the reason a row
+       is where it is: what they can start, what is waiting on somebody, what is
+       not due yet, what is done. A flat list of forty rows sorted by date hides
+       that distinction and puts the four things you would act on differently
+       side by side. */
+    function wlOpenPerson(name) {
+      const p = worklistData().find(x => x.name === name);
+      const host = document.getElementById('wlModalBody');
+      const ttl = document.getElementById('wlModalTitle');
+      if (!p || !host) return;
+      const u = unitLabel();
+      const role = name === WL_NOBODY ? 'these have no owner at all'
+        : ((resources[name] || {}).role || '');
+      if (ttl) ttl.textContent = name + (role ? ' — ' + role : '');
+      const sec = (lbl, why, rows, showBlock) => rows.length
+        ? '<p class="wl-gh">' + lbl + ' <span class="wl-fn">' + rows.length + '</span></p>'
+          + '<p class="wl-none" style="font-style:normal;margin:0 0 .2rem">' + why + '</p>'
+          + wlTable(rows, showBlock, 1e9)
+        : '';
+      const total = p.now.length + p.blocked.length + p.soon.length + p.doneRows.length;
+      host.innerHTML = '<p class="wl-li" style="margin:0 0 .5rem"><b>' + total + '</b> '
+        + (total === 1 ? 'activity' : 'activities') + ' in total · <b>' + p.now.length + '</b> to pick up · <b>'
+        + p.blocked.length + '</b> blocked · <b>' + p.soon.length + '</b> not due yet · <b>'
+        + p.doneRows.length + '</b> finished'
+        + (p.overdue ? ' · <b class="wl-late">' + p.overdue + '</b> overdue' : '')
+        + (p.blocking ? ' · <b>' + p.blocking + '</b> holding others up' : '')
+        + ' · <span class="wl-when">' + (Math.round(p.effort * 10) / 10) + ' ' + escapeHtml(u)
+        + ' of work left</span></p>'
+        + (total ? '' : '<p class="wl-none">Nothing in the plan touches this person.</p>')
+        + sec('Can start now', 'Nothing is in the way of these.', p.now, false)
+        + sec('Blocked', 'Each of these is waiting on the activity named beside it.', p.blocked, true)
+        + sec('Later', 'Not blocked — simply not due to start yet.', p.soon, false)
+        + sec('Finished', 'Recorded complete. Kept here so the breakdown is the whole picture rather '
+            + 'than only the part still outstanding.', p.doneRows, false);
+      const cp = document.getElementById('wlModalCopy');
+      if (cp) cp.setAttribute('onclick', 'wlCopy(' + ekJs2(name) + ')');
+      openOverlay(document.getElementById('wlModal'));
+    }
+    function closeWlModal() { closeOverlay('wlModal'); }
     // ekJs escapes FOR a single-quoted attribute; this wraps it, so a name with
     // an apostrophe survives the round trip into the handler
     function ekJs2(v) { return "'" + ekJs(v) + "'"; }

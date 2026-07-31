@@ -210,6 +210,106 @@ const { chromium } = requirePlaywright();
     if (out.copyAllPeople < data.length)
       say2('copying the whole worklist covers ' + out.copyAllPeople + ' of ' + data.length + ' people');
 
+    /* ═══ 4. EVERY ROW IS REACHABLE ═══════════════════════════════════════
+       The card is a summary and has to be — seven of them share a screen. What
+       it may not be is a summary with no way out: three caps and one silent
+       omission (finished work discarded at the data layer, not hidden at the
+       view) meant "and 6 more" was the end of the road. Two escapes, both
+       required: a filter that lifts the caps in place, and a per-person drill-in
+       that is uncapped by construction. */
+    const withDone = data.find(x => x.doneRows && x.doneRows.length);
+    out.peopleWithFinishedWork = data.filter(x => (x.doneRows || []).length).length;
+    if (!out.peopleWithFinishedWork)
+      say2('not one person has a finished activity recorded against them, so the plan cannot show '
+        + 'completed work at all — either the fixture has none or the rows are being thrown away');
+
+    // the filter bar has to exist and to state the totals it governs
+    const barTxt = (host.querySelector('.wl-bar') || {}).textContent || '';
+    out.filterBar = barTxt.replace(/\s+/g, ' ').slice(0, 90);
+    ['Can start', 'Blocked', 'Later', 'Finished', 'Show every row'].forEach(k => {
+      if (barTxt.indexOf(k) < 0) say2('the filter bar offers no "' + k + '" control');
+    });
+
+    /* "Show every row" is tested ALONE, against the ONE person whose group is
+       actually over the cap. The first version switched on the hidden groups at
+       the same time and compared totals — which rises either way, so a build
+       that ignores the cap entirely passed. The question is not "are there more
+       rows now", it is "is the capped group finally complete". */
+    const capped = data.slice().sort((a, b) => b.blocked.length - a.blocked.length)[0];
+    out.largestBlockedGroup = capped ? capped.blocked.length : 0;
+    if (!capped || capped.blocked.length <= 5) {
+      out.capCase = 'SKIPPED-no-group-over-the-cap';
+    } else {
+      const drawnFor = who => {
+        const cards = [...document.querySelectorAll('#worklistHost .wl-p')];
+        const card = cards.find(c => (c.querySelector('.wl-nmb') || {}).textContent === who);
+        return card ? card.querySelectorAll('.wl-t tbody tr').length : -1;
+      };
+      const beforeAll = drawnFor(capped.name);
+      wlSetView('all', true);
+      const afterAll = drawnFor(capped.name);
+      wlSetView('all', false);
+      out.cappedDrawnDefault = beforeAll; out.cappedDrawnShowAll = afterAll;
+      if (afterAll < capped.blocked.length)
+        say2('"Show every row" leaves ' + capped.name + ' at ' + afterAll + ' drawn rows with '
+          + capped.blocked.length + ' blocked activities — the cap is not a view setting, so the rows it '
+          + 'holds back cannot be reached from the panel at all');
+      if (afterAll === beforeAll)
+        say2('"Show every row" changed nothing for ' + capped.name + ', who has ' + capped.blocked.length
+          + ' blocked activities against a cap of 5 — the control is decorative');
+    }
+    // and the hidden/finished groups have to be reachable too
+    const rowsNow = () => document.querySelectorAll('#worklistHost .wl-t tbody tr').length;
+    const beforeGrp = rowsNow();
+    wlSetView('done', true); wlSetView('soon', true);
+    out.rowsDefault = beforeGrp; out.rowsWithHiddenGroups = rowsNow();
+    if (out.rowsWithHiddenGroups <= beforeGrp)
+      say2('switching on Later and Finished drew no additional rows — those groups cannot be seen');
+    // and a hidden group must still announce itself rather than vanish
+    wlSetView('blocked', false);
+    const offTxt = (document.getElementById('worklistHost') || {}).textContent || '';
+    out.hiddenGroupAnnounced = /hidden by the filter/.test(offTxt);
+    if (totBlk && !out.hiddenGroupAnnounced)
+      say2('switching a group off removed it without trace — from the reader\'s side those activities '
+        + 'have disappeared from the plan rather than been filtered');
+    wlSetView('blocked', true); wlSetView('done', false); wlSetView('soon', false); wlSetView('all', false);
+
+    /* The drill-in is checked against the person with the MOST work, and among
+       ties one who also has finished activities. Picking the first person with
+       any finished row gave a target whose every group sat under the cap, so a
+       build that capped the drill-in to three rows passed — the view that exists
+       BECAUSE the card caps was itself capped, invisibly. */
+    const target = data.slice().sort((a, b) => {
+      const n = p => p.now.length + p.blocked.length + p.soon.length + p.doneRows.length;
+      return (n(b) - n(a)) || ((b.doneRows.length ? 1 : 0) - (a.doneRows.length ? 1 : 0));
+    })[0] || withDone || data[0];
+    wlOpenPerson(target.name);
+    const modal = document.getElementById('wlModal');
+    const mbody = document.getElementById('wlModalBody');
+    out.drillOpen = !!(modal && modal.classList.contains('open'));
+    if (!out.drillOpen) say2('clicking a person opened nothing — there is no way to see their whole list');
+    else {
+      const mrows = mbody.querySelectorAll('.wl-t tbody tr').length;
+      const expect = target.now.length + target.blocked.length + target.soon.length + target.doneRows.length;
+      out.drillRows = mrows; out.drillExpected = expect;
+      if (mrows !== expect)
+        say2('the drill-in for ' + target.name + ' draws ' + mrows + ' rows against ' + expect
+          + ' activities they touch — the one view that is meant to be complete is not');
+      const mtxt = mbody.textContent.replace(/\s+/g, ' ');
+      if (target.doneRows.length && mtxt.indexOf('Finished') < 0)
+        say2('the drill-in omits ' + target.doneRows.length + ' finished activit'
+          + (target.doneRows.length === 1 ? 'y' : 'ies') + ' — it is a breakdown of the outstanding work, '
+          + 'not of the work');
+      if (mtxt.indexOf('and ' ) >= 0 && / more — open /.test(mtxt))
+        say2('the drill-in caps its own list — it is the view that exists because the card caps its');
+      // and it must be reachable by clicking the NAME, not only by a button
+      const nameBtn = host.querySelector('.wl-nmb');
+      out.nameIsClickable = !!nameBtn;
+      if (!nameBtn) say2('the person\'s name is not clickable, so the drill-in is only reachable if you '
+        + 'notice a separate button');
+      closeWlModal();
+    }
+
     raid.pop();
     return { contradictions: bad2, counts: out };
   });

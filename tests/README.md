@@ -155,6 +155,25 @@ indistinguishable names are compared within one person's table, not across the
 panel — a shared activity legitimately appears on several cards, and the first
 version of that check called three such rows a defect.
 
+Two later additions to it, both about a summary with no way out. The worklist
+card capped three groups and discarded finished work at the DATA layer, so
+"and 6 more" was the end of the road — the caps are a view setting now, and the
+sweep tests "Show every row" alone against the one person whose group is over
+the cap, because the first version switched on the hidden groups at the same
+time and compared totals, which rise either way. The drill-in is checked against
+the person with the MOST work: picking the first person with any finished row
+gave a target whose every group sat under the cap, so a build that capped the
+drill-in to three rows passed — the view that exists BECAUSE the card caps was
+itself capped, invisibly.
+
+`ai-boundary-sweep.js` gained the +AC path for the same reason it holds the RAID
+catalogue: the model's reply is the untrusted part. An AC id is an IDENTITY —
+test cases point at it, the traceability matrix is keyed on it, the SOW quotes it
+— so the case that matters is a reply that re-emits an id already in use. Ids are
+assigned locally and the reply's are ignored; the sweep stubs a model that hands
+back existing ids, an invalid type and an empty criterion, and asserts nothing
+that existed moved, changed, or collided.
+
 ## The written test plan
 
 `node tests/run-test-plan.js` runs 42 cases and writes two documents:

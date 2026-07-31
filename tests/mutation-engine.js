@@ -420,6 +420,32 @@ const MUTANTS = [
   { what: 'worklist: the copied document drops the risks it lists on screen',
     find: "(r.raid || []).forEach(q => L.push('      ' + q.type.toLowerCase() + ': ' + q.title",
     with: "[].forEach(q => L.push('      ' + q.type.toLowerCase() + ': ' + q.title" },
+  /* ── every row reachable, and criteria that only ever ADD ─────────────────
+     Two requests, one shape: a summary with no way out. The worklist card capped
+     three groups and discarded finished work at the data layer, so "and 6 more"
+     was the end of the road; and the story card could rewrite its criteria or
+     regenerate its test cases but never simply add coverage — a rewrite replaces
+     wording a client may have signed. */
+
+  { what: 'worklist: "Show every row" no longer lifts the per-group cap',
+    find: '      const MAXN = wlView.all ? 1e9 : 6, MAXB = wlView.all ? 1e9 : 5;',
+    with: '      const MAXN = 6, MAXB = 5;' },
+
+  { what: 'worklist: the drill-in caps its own list, which is the one thing it exists not to do',
+    find: '          + wlTable(rows, showBlock, 1e9)',
+    with: '          + wlTable(rows, showBlock, 3)' },
+
+  { what: 'worklist: finished activities are discarded instead of kept behind a filter',
+    find: '          if (done) { b.done++; b.doneRows.push(row); return; }',
+    with: '          if (done) { b.done++; return; }' },
+
+  { what: 'criteria: the model\'s own AC ids are trusted, so a new one collides with an existing one',
+    find: "        do { id = base + '.' + (n++); } while (existing.has(id));",
+    with: "        id = String(a.id || (base + '.' + (n++)));" },
+
+  { what: 'criteria: "add" replaces the existing criteria instead of appending to them',
+    find: '      s.ac = (s.ac || []).concat(added);',
+    with: '      s.ac = added;' },
 ];
 
 const CHECKS = QUICK ? ['run-test-plan.js']
@@ -450,7 +476,8 @@ const LIKELY = {
   'envelope:': 'chart-reconciliation-sweep.js', 'scope:': 'chart-reconciliation-sweep.js',
   'form:': 'drawn-surfaces-sweep.js', 'drill-in:': 'chart-reconciliation-sweep.js',
   'prose:': 'dynamic-prose-sweep.js', 'heatmap:': 'resourcing-sweep.js',
-  'navigation:': 'navigation-sweep.js', 'worklist:': 'navigation-sweep.js'
+  'navigation:': 'navigation-sweep.js', 'worklist:': 'navigation-sweep.js',
+  'criteria:': 'ai-boundary-sweep.js'
 };
 const orderFor = m => {
   const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);
