@@ -672,8 +672,35 @@
     /* min() so the track can never be wider than its own container: a plain
        minmax(320px, 1fr) forces a 320px column inside a 307px phone and pushes
        a horizontal scrollbar into the tab */
-    .wl { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+    /* 320px forced every activity name through a 22-character truncation, which
+       on a plan carrying generated test cases turned every row into
+       "TC AC-11.3 — edge: mo…". A card wide enough to hold a name is the whole
+       point of the panel; two per row on a laptop, one on a phone. */
+    .wl { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(600px, 100%), 1fr));
       gap: 0.6rem; margin: 0.4rem 0 0.9rem; }
+    .wl-lead { font-size: var(--t-sm); color: var(--text); margin: 0.35rem 0 0.1rem; line-height: 1.6; }
+    .wl-t { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: var(--t-xs); }
+    .wl-t th { text-align: left; font-weight: 700; color: var(--muted); text-transform: uppercase;
+      letter-spacing: .04em; font-size: 0.68rem; padding: 2px 6px 2px 0; border-bottom: 1px solid var(--border); }
+    .wl-td { padding: 4px 6px 4px 0; border-bottom: 1px solid var(--border); vertical-align: top;
+      line-height: 1.45; }
+    .wl-t tr:last-child .wl-td { border-bottom: 0; }
+    /* widths come from the <col> declarations; overflow is clipped with an
+       ellipsis rather than allowed to widen the table past its card */
+    .wl-td:not(:first-child) .ek { overflow: hidden; }
+    /* .ek is nowrap everywhere else on purpose — an entity mark broken across
+       two lines stops reading as one object. In this table the name IS the
+       column, and a generated test-case title is eighty characters, so here and
+       only here it wraps. Without this the table is wider than its card and the
+       Status and Due columns are pushed off the edge. */
+    .wl-td:first-child .ek { white-space: normal; align-items: flex-start; }
+    .wl-td:first-child .ek-nm { white-space: normal; }
+    .wl-open { text-align: left; }
+    .wl-state { color: var(--muted); }
+    .wl-risk { margin-top: 2px; display: flex; flex-direction: column; gap: 1px; }
+    .wl-risk-i { font-size: 0.68rem; line-height: 1.4; color: var(--muted); }
+    .wl-risk-i[data-k="Issue"] { color: var(--critical); }
+    .wl-risk-i[data-k="Risk"] { color: var(--warn); }
     .wl-p { border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 0.55rem 0.7rem; }
     .wl-p[data-alert="1"] { border-color: #fecaca; background: #fff7f7; }
     .wl-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.5rem; margin-bottom: 0.3rem; }
@@ -2927,7 +2954,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.31.0227</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.31.0245</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4268,7 +4295,47 @@
     }
 
     // ========================= TAB SWITCHING =========================
+    /* ═══ TABS ARE ADDRESSES ═══════════════════════════════════════════════
+       Nine tabs, and the browser's Back button left the application entirely —
+       so drilling from Analytics into an activity, then into Plan vs actual,
+       then wanting to go back one step meant clicking your way there again, and
+       an actual Back press threw the whole session away. Every tab now writes a
+       fragment, which makes each one a real history entry: Back and Forward walk
+       the tabs you visited, the URL says where you are, and #gantt in a bookmark
+       or a pasted link opens on the Gantt.
+
+       pushState rather than assigning location.hash, because assignment fires
+       hashchange and would re-enter switchTab; pushState is silent and back/
+       forward arrive on popstate instead. file:// refuses pushState in some
+       browsers, hence the guarded fallback — the guard flag is what stops the
+       fallback's hashchange from looping. */
+    let _tabNav = false;
+    function tabNames() {
+      return [...document.querySelectorAll('.tab[data-tab]')].map(b => b.dataset.tab);
+    }
+    function tabFromHash() {
+      const h = decodeURIComponent((location.hash || '').replace(/^#/, '')).trim();
+      return h && tabNames().indexOf(h) >= 0 ? h : null;
+    }
+    function applyTabHash() {
+      /* An EMPTY fragment is the first tab, not "leave it wherever it was".
+         The entry the app loads on has no hash, so pressing Back until you reach
+         it used to land on a URL saying nothing with the last tab still showing —
+         one Back press that visibly did nothing, which reads as broken. */
+      const t = tabFromHash() || (!location.hash ? (tabNames()[0] || null) : null);
+      if (!t) return;                              // a fragment we do not own
+      const cur = document.querySelector('.tab.active');
+      if (cur && cur.dataset.tab === t) return;
+      _tabNav = true;
+      try { switchTab(t); } finally { _tabNav = false; }
+    }
+    window.addEventListener('popstate', applyTabHash);
+    window.addEventListener('hashchange', applyTabHash);
     function switchTab(name) {
+      if (!_tabNav && location.hash.replace(/^#/, '') !== name) {
+        try { history.pushState(null, '', '#' + name); }
+        catch (e) { _tabNav = true; location.hash = name; setTimeout(() => { _tabNav = false; }, 0); }
+      }
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
       document.querySelector(`.tab[data-tab="${name}"]`).classList.add('active');
@@ -22723,7 +22790,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       const leaves = leafTasks();
       const P = new Map();
       const at = n => { if (!P.has(n)) P.set(n, { name: n, now: [], soon: [], blocked: [], done: 0,
-        overdue: 0, effort: 0, blocking: 0 }); return P.get(n); };
+        overdue: 0, effort: 0, blocking: 0, risks: 0 }); return P.get(n); };
       leaves.forEach(t => {
         const pct = Number(t.percentComplete) || 0;
         const parts = taskParticipants(t);
@@ -22733,9 +22800,28 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         const fin = isRealDate(t.finishDate) ? stripTime(t.finishDate) : null;
         const st = isRealDate(t.startDate) ? stripTime(t.startDate) : null;
         const overdue = !done && !!fin && fin < today;
+        /* WHAT IS GOING ON WITH IT, not just when it is due. A worklist that
+           states a date and a percentage answers "how late"; the question the
+           person reading it actually has is "what is the state of this and what
+           should worry me". So each row carries the open RAID entries linked to
+           the activity — the risk that has been raised against it, the issue
+           somebody logged — and a one-line reading of its own status. Both are
+           already in the file and neither was ever on this panel. */
+        const rd = (typeof raidForTask === 'function' ? raidForTask(t.id, true) : [])
+          .map(r => ({ id: r.id, type: r.type, title: r.title || '(untitled)',
+                       status: r.status || 'Open', owner: r.owner || '',
+                       score: (Number(r.probability) || 0) * (Number(r.impact) || 0) }))
+          .sort((a, b) => b.score - a.score);
+        const state = done ? 'finished'
+          : overdue ? Math.abs(calDaysBetween(fin, today)) + ' ' + (Math.abs(calDaysBetween(fin, today)) === 1 ? 'day' : 'days') + ' late'
+          : pct > 0 ? 'in flight, ' + Math.round(pct) + '% done'
+          : blockers.length ? 'not started — blocked'
+          : (!st || st <= today) ? 'not started — can start'
+          : 'starts ' + fmtNice(st);
         const row = { id: t.id, name: t.name || '(unnamed)', wbs: t.wbs || '', kind: ekKindOf(t),
           pct: pct, crit: !!t.isCritical, slack: Number(t.slack) || 0, start: st, finish: fin,
-          overdue: overdue, milestone: !!t.milestone, blockers: blockers };
+          overdue: overdue, milestone: !!t.milestone, blockers: blockers,
+          owners: parts.map(x => x.name), raid: rd, state: state };
         // whoever owns a blocker is, by definition, in somebody else's way
         blockers.forEach(b => (b.owners.length ? b.owners : [WL_NOBODY]).forEach(n => { at(n).blocking++; }));
         names.forEach(n => {
@@ -22743,6 +22829,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
           if (done) { b.done++; return; }
           b.effort += (Number(t.te) || 0) * (1 - pct / 100);
           if (overdue) b.overdue++;
+          b.risks += rd.length;
           if (blockers.length) b.blocked.push(row);
           // started, late, undated or due to start by today = pick it up now
           else if (overdue || pct > 0 || !st || st <= today) b.now.push(row);
@@ -22760,35 +22847,115 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         || (b.overdue - a.overdue) || (b.now.length - a.now.length) || a.name.localeCompare(b.name));
       return out;
     }
-    function wlRow(r) {
+    /* ONE ROW OF A WORKLIST TABLE.
+
+       This used to be a chip in a flex list, with the activity name truncated to
+       22–26 characters. On a plan carrying generated test cases every row read
+       "TC AC-11.3 — edge: mo…", which names nothing: the reader cannot tell two
+       rows apart, let alone act on one. And the row said only when the work is
+       due, so a panel titled "what each person can start now" answered neither
+       "what is the state of this" nor "is anything already known to be wrong
+       with it" — both of which are in the file.
+
+       A table, then. Full names that WRAP rather than truncate, the activity's
+       own status in words, what it is waiting on and who owns that, and any open
+       RAID entry raised against it. Everything is still one click from the thing
+       it names. */
+    function wlTableRow(r, showBlock) {
+      const risk = (r.raid || []).length
+        ? '<div class="wl-risk">' + r.raid.slice(0, 2).map(x =>
+            '<span class="wl-risk-i" data-k="' + escapeHtml(x.type) + '" title="'
+              + escapeHtml(x.type + ' · ' + x.status
+              + (x.owner ? ' · ' + x.owner : '') + (x.score ? ' · score ' + x.score : '')
+              + ' — open this activity to follow it') + '">'
+            + escapeHtml(x.type === 'Issue' ? '⛔' : x.type === 'Risk' ? '⚠' : '◇') + ' '
+            + escapeHtml(x.title) + '</span>').join('')
+          + (r.raid.length > 2 ? '<span class="wl-risk-i">+' + (r.raid.length - 2) + ' more</span>' : '')
+          + '</div>' : '';
       const when = r.overdue
-        ? '<span class="wl-late">' + escapeHtml(Math.abs(calDaysBetween(r.finish, stripTime(new Date()))))
-          + 'd late</span>'
-        : r.finish ? '<span class="wl-when">by ' + escapeHtml(fmtNice(r.finish)) + '</span>'
-        : '<span class="wl-when">no date</span>';
-      return '<li class="wl-li"><button type="button" class="ptr-sc-rbtn no-print" onclick="openEditModal('
-        + r.id + ', true)" title="Open it">' + ekTok(r.kind, r.wbs, r.name, { xs: true, max: 26 }) + '</button>'
-        + when + (r.pct > 0 && r.pct < 100 ? '<span class="wl-when">· ' + Math.round(r.pct) + '%</span>' : '')
-        + (r.crit ? '<span class="wl-crit" title="Zero slack — this one moves the finish date">critical</span>' : '')
-        + '</li>';
+        ? '<span class="wl-late">' + escapeHtml(fmtNice(r.finish)) + '</span>'
+        : r.finish ? '<span class="wl-when">' + escapeHtml(fmtNice(r.finish)) + '</span>'
+        : '<span class="wl-when">—</span>';
+      let waiting = '';
+      if (showBlock && (r.blockers || []).length) {
+        const b = r.blockers[0];
+        const who = b.owners.length ? b.owners.join(', ') : 'nobody';
+        waiting = '<td class="wl-td"><button type="button" class="ptr-sc-rbtn no-print" onclick="openEditModal('
+          + b.id + ', true)" title="' + escapeHtml('Open ' + b.name + ' — owned by ' + who) + '">'
+          + ekTok('wp', b.wbs, b.name, { xs: true, max: 24 }) + '</button>'
+          + '<div class="wl-wait">' + escapeHtml(who + (r.blockers.length > 1
+              ? ' · and ' + (r.blockers.length - 1) + ' other' + (r.blockers.length > 2 ? 's' : '') : ''))
+          + '</div></td>';
+      } else if (showBlock) waiting = '<td class="wl-td">—</td>';
+      return '<tr><td class="wl-td"><button type="button" class="ptr-sc-rbtn no-print wl-open" onclick="openEditModal('
+        + r.id + ', true)" title="Open it — re-estimate, change owner, log progress">'
+        + ekTok(r.kind, r.wbs, r.name, { xs: true, max: 140 }) + '</button>'
+        + risk + '</td>'
+        /* "critical" lives in the status column, not trailing the name. Beside an
+           eighty-character title it wrapped onto its own line and read as a row
+           of its own; beside the status it is what it actually is — a fact about
+           this activity's standing. */
+        + '<td class="wl-td wl-state">' + escapeHtml(r.state)
+        + (r.crit ? '<div class="wl-crit" title="Zero slack — this one moves the finish date">critical path</div>' : '')
+        + '</td>'
+        + '<td class="wl-td">' + when + '</td>' + waiting + '</tr>';
     }
-    function wlBlockedRow(r) {
-      const b = r.blockers[0];
-      const who = b.owners.length ? b.owners.join(', ') : 'nobody';
-      return '<li class="wl-li"><button type="button" class="ptr-sc-rbtn no-print" onclick="openEditModal('
-        + r.id + ', true)" title="Open it">' + ekTok(r.kind, r.wbs, r.name, { xs: true, max: 22 }) + '</button>'
-        + '<span class="wl-wait">waiting on</span>'
-        + '<button type="button" class="ptr-sc-rbtn no-print" onclick="openEditModal(' + b.id + ', true)" title="'
-        + escapeHtml('Open ' + b.name + ' — owned by ' + who) + '">'
-        + ekTok('wp', b.wbs, b.name, { xs: true, max: 20 }) + '</button>'
-        + '<span class="wl-wait">' + escapeHtml('(' + who + (r.blockers.length > 1
-            ? ', +' + (r.blockers.length - 1) + ' more' : '') + ')') + '</span></li>';
+    function wlTable(rows, showBlock, cap) {
+      const shown = rows.slice(0, cap);
+      /* table-layout:fixed with declared widths, NOT auto. Under auto the three
+         short columns claim their max-content and the activity name — the only
+         column allowed to wrap — collapses to min-content, which renders an
+         eighty-character test-case title one word per line down a 90px channel.
+         Fixed layout gives the name the remainder by declaration. */
+      const cols = showBlock
+        ? '<col style="width:42%"><col style="width:19%"><col style="width:14%"><col style="width:25%">'
+        : '<col style="width:56%"><col style="width:26%"><col style="width:18%">';
+      return '<div class="table-wrap"><table class="wl-t">' + cols
+        + '<thead><tr><th>Activity</th><th>Status</th>'
+        + '<th>Due</th>' + (showBlock ? '<th>Waiting on</th>' : '') + '</tr></thead><tbody>'
+        + shown.map(r => wlTableRow(r, showBlock)).join('') + '</tbody></table></div>'
+        + (rows.length > cap ? '<p class="wl-more">and ' + (rows.length - cap)
+            + ' more — open the person\'s activities from the list above to see the rest</p>' : '');
+    }
+    /* THE ONE ACTIVITY MOST OF THE WAITING RUNS THROUGH. On the sample plan
+       every person's card said "Everything open for them is waiting on somebody
+       else" — seven identical sentences, and the thing they were all waiting on
+       was never named anywhere. That is the whole finding, and it was the one
+       fact the panel withheld. */
+    function wlChokepoint(people) {
+      const cnt = new Map();
+      people.forEach(p => p.blocked.forEach(r => (r.blockers || []).forEach(b => {
+        if (!cnt.has(b.id)) cnt.set(b.id, { id: b.id, name: b.name, wbs: b.wbs, owners: b.owners, n: 0 });
+        cnt.get(b.id).n++;
+      })));
+      const all = [...cnt.values()].sort((a, b) => b.n - a.n);
+      return all.length ? all[0] : null;
     }
     function worklistHtml() {
       const people = worklistData();
       if (!people.length) return '';
       const u = unitLabel();
-      const MAXN = 6, MAXB = 4;
+      const MAXN = 6, MAXB = 5;
+      const totNow = people.reduce((s, p) => s + p.now.length, 0);
+      const totBlk = people.reduce((s, p) => s + p.blocked.length, 0);
+      const totLate = people.reduce((s, p) => s + p.overdue, 0);
+      const choke = wlChokepoint(people);
+      /* A headline that states the situation instead of leaving it to be
+         inferred from seven cards saying the same thing. */
+      const head = '<p class="wl-lead">'
+        + (totNow ? '<b>' + totNow + '</b> ' + (totNow === 1 ? 'activity is' : 'activities are')
+              + ' ready to be picked up right now'
+          : '<b>Nothing can be started today.</b> Every open activity is waiting on something else')
+        + (totBlk ? ', <b>' + totBlk + '</b> ' + (totBlk === 1 ? 'is' : 'are') + ' blocked' : '')
+        + (totLate ? ', <b class="wl-late">' + totLate + '</b> overdue' : '')
+        + '.'
+        + (choke ? ' The most-waited-on activity is <button type="button" class="ptr-sc-rbtn no-print" '
+            + 'onclick="openEditModal(' + choke.id + ', true)" title="Open it">'
+            + ekTok('wp', choke.wbs, choke.name, { xs: true, max: 60 }) + '</button> — <b>' + choke.n + '</b> '
+            + (choke.n === 1 ? 'activity is' : 'activities are') + ' waiting on it'
+            + (choke.owners && choke.owners.length ? ', owned by ' + escapeHtml(choke.owners.join(', ')) : '')
+            + '.' : '')
+        + '</p>';
       const cards = people.map(p => {
         const alert = p.overdue > 0 ? '1' : '0';
         const role = p.name === WL_NOBODY ? 'these have no owner at all'
@@ -22798,61 +22965,162 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         if (p.blocked.length) bits.push('<b>' + p.blocked.length + '</b> blocked');
         if (p.overdue) bits.push('<b class="wl-late">' + p.overdue + '</b> overdue');
         if (p.blocking) bits.push('<b>' + p.blocking + '</b> holding others up');
+        if (p.risks) bits.push('<b>' + p.risks + '</b> open RAID');
         return '<div class="wl-p" data-alert="' + alert + '">'
           + '<div class="wl-h"><span class="wl-nm">' + escapeHtml(p.name) + '</span>'
           + (role ? '<span class="wl-role">' + escapeHtml(role) + '</span>' : '')
           + '<span class="wl-sp"></span>'
           + '<button class="btn-sm btn-secondary no-print" onclick="wlCopy(' + ekJs2(p.name) + ')" '
-          + 'title="Plain text for this person — ready to paste into a message">📋</button></div>'
+          + 'title="Copy this person\'s worklist as a formatted table — activity, status, due date, what it is '
+          + 'waiting on and any open RAID entry. Pastes into email or a doc with the formatting intact.">📋 Copy</button></div>'
           + '<p class="wl-li" style="margin:0">' + bits.join(' · ') + ' · <span class="wl-when">'
           + (Math.round(p.effort * 10) / 10) + ' ' + escapeHtml(u) + ' of work left</span></p>'
           + '<p class="wl-gh">Can start now</p>'
-          + (p.now.length ? '<ul class="wl-l">' + p.now.slice(0, MAXN).map(wlRow).join('') + '</ul>'
-              + (p.now.length > MAXN ? '<p class="wl-more">and ' + (p.now.length - MAXN) + ' more</p>' : '')
+          + (p.now.length ? wlTable(p.now, false, MAXN)
             : '<p class="wl-none">' + (p.blocked.length
-                ? 'Everything open for them is waiting on somebody else.'
+                ? 'Everything open for them is waiting on somebody else — see below.'
                 : p.soon.length ? 'Nothing yet — their next activity starts '
                     + escapeHtml(fmtNice(p.soon[0].start)) + '.'
                     : 'Nothing open at all.') + '</p>')
-          + (p.blocked.length ? '<p class="wl-gh">Blocked</p><ul class="wl-l">'
-              + p.blocked.slice(0, MAXB).map(wlBlockedRow).join('') + '</ul>'
-              + (p.blocked.length > MAXB ? '<p class="wl-more">and ' + (p.blocked.length - MAXB) + ' more</p>' : '') : '')
+          + (p.blocked.length ? '<p class="wl-gh">Blocked</p>' + wlTable(p.blocked, true, MAXB) : '')
           + (p.soon.length && p.now.length ? '<p class="wl-more">Next up: ' + escapeHtml(p.soon[0].name)
               + ' on ' + escapeHtml(fmtNice(p.soon[0].start)) + '</p>' : '')
           + '</div>';
       }).join('');
       return '<h3 style="font-size:0.95rem;margin:0.9rem 0 0.2rem">Worklist — what each person can start now'
         + ' <span class="help-text" style="font-weight:400">(read straight off the dependency network: '
-        + 'finish-to-start needs its predecessor finished, start-to-start only needs it started)</span></h3>'
-        + '<div class="wl">' + cards + '</div>';
+        + 'finish-to-start needs its predecessor finished, start-to-start only needs it started)</span>'
+        + ' <button class="btn-sm btn-secondary no-print" onclick="wlCopy(null)" style="margin-left:.4rem" '
+        + 'title="Copy the whole worklist — every person, as formatted tables ready to paste into an email or a '
+        + 'status doc">📋 Copy all</button></h3>'
+        + head + '<div class="wl">' + cards + '</div>';
     }
     // ekJs escapes FOR a single-quoted attribute; this wraps it, so a name with
     // an apostrophe survives the round trip into the handler
     function ekJs2(v) { return "'" + ekJs(v) + "'"; }
-    function wlText(name) {
-      const p = worklistData().find(x => x.name === name);
-      if (!p) return '';
-      const line = r => '  · ' + (r.wbs ? r.wbs + ' ' : '') + r.name
-        + (r.overdue ? ' — ' + Math.abs(calDaysBetween(r.finish, stripTime(new Date()))) + ' days late'
-           : r.finish ? ' — by ' + fmtNice(r.finish) : '')
-        + (r.pct > 0 && r.pct < 100 ? ' (' + Math.round(r.pct) + '% done)' : '')
-        + (r.crit ? ' [critical path]' : '');
-      const L = ['WORKLIST — ' + name + ' · ' + (document.getElementById('projectName').value || 'project'),
-        p.now.length + ' to pick up, ' + p.blocked.length + ' blocked, ' + p.overdue + ' overdue', '', 'CAN START NOW'];
-      if (p.now.length) p.now.forEach(r => L.push(line(r)));
-      else L.push('  (nothing)');
-      if (p.blocked.length) {
-        L.push('', 'BLOCKED');
-        p.blocked.forEach(r => L.push(line(r) + ' — waiting on ' + r.blockers[0].name
-          + ' (' + (r.blockers[0].owners.join(', ') || 'nobody') + ')'));
-      }
+    /* WHAT LEAVES THIS PANEL.
+
+       The copy was a flat list of bullets: name, a date, a percentage. Someone
+       receiving it could not tell whether an item had started, what it was
+       waiting on beyond a bare name, who owned that, or that a risk had been
+       raised against it a week ago — so the follow-up conversation started from
+       nothing and every answer had to be asked for again.
+
+       It is now a real document: one table per person with the activity, its
+       status in words, its due date, what it is waiting on WITH the owner of
+       that, and any open RAID entry against it. Written twice, as HTML for the
+       clipboard's text/html flavour and as aligned plain text for its text/plain
+       flavour, so it pastes with structure into email, Word or a doc and still
+       reads correctly in Slack or a terminal. The same two-flavour write the
+       status report and the update-request table already use.
+
+       Passing null copies every person instead of one, because seven visits to
+       seven ✎ buttons is not a workflow. */
+    function wlDocRows(p) {
+      const rows = [];
+      p.now.forEach(r => rows.push({ r: r, group: 'Can start now' }));
+      p.blocked.forEach(r => rows.push({ r: r, group: 'Blocked' }));
+      p.soon.forEach(r => rows.push({ r: r, group: 'Later' }));
+      return rows;
+    }
+    function wlWaitText(r) {
+      if (!(r.blockers || []).length) return '';
+      const b = r.blockers[0];
+      const who = b.owners.length ? b.owners.join(', ') : 'nobody assigned';
+      return (b.wbs ? b.wbs + ' ' : '') + b.name + ' (' + who + ')'
+        + (r.blockers.length > 1 ? ' and ' + (r.blockers.length - 1) + ' other'
+            + (r.blockers.length > 2 ? 's' : '') : '');
+    }
+    function wlRiskText(r) {
+      return (r.raid || []).map(x => x.type + ': ' + x.title
+        + (x.owner ? ' — ' + x.owner : '') + (x.status ? ' (' + x.status + ')' : '')).join('; ');
+    }
+    function wlHtmlDoc(names) {
+      const all = worklistData();
+      const people = names ? all.filter(p => names.indexOf(p.name) >= 0) : all;
+      if (!people.length) return '';
+      const u = unitLabel();
+      const td = 'padding:5px 9px;border:1px solid #cbd5e1;font-size:12.5px;vertical-align:top;';
+      const th = td + 'background:#f1f5f9;font-weight:700;text-align:left;';
+      const h = x => escapeHtml(x == null ? '' : String(x));
+      const body = people.map(p => {
+        const rows = wlDocRows(p);
+        const role = (resources[p.name] || {}).role || '';
+        const anyRisk = rows.some(x => (x.r.raid || []).length);
+        const head = '<h3 style="font-size:14px;margin:16px 0 2px">' + h(p.name)
+          + (role ? ' <span style="font-weight:400;color:#64748b">— ' + h(role) + '</span>' : '') + '</h3>'
+          + '<p style="font-size:12px;color:#475569;margin:0 0 5px">' + p.now.length + ' to pick up · '
+          + p.blocked.length + ' blocked · ' + p.overdue + ' overdue · ' + p.blocking + ' holding others up · '
+          + (Math.round(p.effort * 10) / 10) + ' ' + h(u) + ' of work left</p>';
+        if (!rows.length) return head + '<p style="font-size:12.5px"><em>Nothing open.</em></p>';
+        return head + '<table style="border-collapse:collapse"><tr><th style="' + th + '">When</th>'
+          + '<th style="' + th + '">Activity</th><th style="' + th + '">Status</th>'
+          + '<th style="' + th + '">Due</th><th style="' + th + '">Waiting on</th>'
+          + (anyRisk ? '<th style="' + th + '">Open RAID</th>' : '') + '</tr>'
+          + rows.map(x => {
+              const r = x.r;
+              return '<tr><td style="' + td + '">' + h(x.group) + '</td>'
+                + '<td style="' + td + '">' + (r.wbs ? '<b>' + h(r.wbs) + '</b> ' : '') + h(r.name)
+                + (r.crit ? ' <span style="color:#b45309">[critical path]</span>' : '') + '</td>'
+                + '<td style="' + td + (r.overdue ? 'color:#b91c1c;font-weight:700;' : '') + '">'
+                + h(r.state) + '</td>'
+                + '<td style="' + td + '">' + h(r.finish ? fmtNice(r.finish) : '—') + '</td>'
+                + '<td style="' + td + '">' + (h(wlWaitText(r)) || '—') + '</td>'
+                + (anyRisk ? '<td style="' + td + '">' + (h(wlRiskText(r)) || '—') + '</td>' : '')
+                + '</tr>';
+            }).join('') + '</table>';
+      }).join('');
+      return '<div style="font-family:\'Segoe UI\',system-ui,sans-serif;color:#1e293b;max-width:900px">'
+        + '<h2 style="margin:0 0 2px;font-size:18px">Worklist — ' + h(projName()) + '</h2>'
+        + '<p style="color:#64748b;font-size:12px;margin:0 0 10px">As at ' + h(fmtNice(new Date()))
+        + '. Read off the dependency network: finish-to-start needs its predecessor finished, start-to-start '
+        + 'only needs it started. "Waiting on" names the activity AND who owns it, so a chase has somewhere '
+        + 'to go.</p>' + body + '</div>';
+    }
+    function wlText(names) {
+      const all = worklistData();
+      const people = names ? all.filter(p => names.indexOf(p.name) >= 0) : all;
+      if (!people.length) return '';
+      const u = unitLabel();
+      const L = ['WORKLIST — ' + projName(), 'As at ' + fmtNice(new Date()), ''];
+      people.forEach(p => {
+        const role = (resources[p.name] || {}).role || '';
+        L.push('═══ ' + p.name.toUpperCase() + (role ? '  (' + role + ')' : ''));
+        L.push('    ' + p.now.length + ' to pick up · ' + p.blocked.length + ' blocked · ' + p.overdue
+          + ' overdue · ' + p.blocking + ' holding others up · '
+          + (Math.round(p.effort * 10) / 10) + ' ' + u + ' of work left');
+        const rows = wlDocRows(p);
+        if (!rows.length) { L.push('    (nothing open)', ''); return; }
+        let group = '';
+        rows.forEach(x => {
+          const r = x.r;
+          if (x.group !== group) { group = x.group; L.push('', '  ' + group.toUpperCase()); }
+          L.push('    • ' + (r.wbs ? r.wbs + ' ' : '') + r.name + (r.crit ? '  [critical path]' : ''));
+          L.push('      status: ' + r.state + (r.finish ? '  ·  due ' + fmtNice(r.finish) : ''));
+          const w = wlWaitText(r);
+          if (w) L.push('      waiting on: ' + w);
+          (r.raid || []).forEach(q => L.push('      ' + q.type.toLowerCase() + ': ' + q.title
+            + (q.owner ? ' — ' + q.owner : '') + ' (' + q.status + ')'));
+        });
+        L.push('');
+      });
       return L.join('\n');
     }
     async function wlCopy(name) {
-      const t = wlText(name);
-      if (!t) return;
-      try { await navigator.clipboard.writeText(t); flashSaved('📋 Worklist for ' + name + ' copied'); }
-      catch (e) { download(safeName() + '-worklist.txt', t, 'text/plain'); }
+      const names = name == null ? null : [name];
+      const html = wlHtmlDoc(names), text = wlText(names);
+      if (!text) return;
+      const what = name == null ? 'Whole worklist' : 'Worklist for ' + name;
+      try {
+        await navigator.clipboard.write([new ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([text], { type: 'text/plain' })
+        })]);
+        flashSaved('📋 ' + what + ' copied as a formatted table — paste into email or a doc');
+      } catch (e) {
+        try { await navigator.clipboard.writeText(text); flashSaved('📋 ' + what + ' copied (plain text)'); }
+        catch (e2) { download(safeName() + '-worklist.txt', text, 'text/plain'); }
+      }
     }
 
     // ========================= PLAN HEALTH CHECK =========================
@@ -23733,6 +24001,11 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
       // persist model choice when changed
       const modelSel = document.getElementById('aiModel');
       if (modelSel) modelSel.addEventListener('change', () => { try { localStorage.setItem(AI_MODEL_STORE, modelSel.value); } catch (e) {} });
+      /* Open on the tab in the URL. Last, so the plan is loaded and computed
+         before a schedule-dependent tab is asked to draw itself — a bookmark to
+         #gantt that lands before hydrate paints the empty state and stays there.
+         An unknown or absent fragment leaves the default tab alone. */
+      applyTabHash();
     })();
   </script>
   <div id="helpPop" role="tooltip" tabindex="-1" hidden></div>

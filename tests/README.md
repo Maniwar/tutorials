@@ -126,6 +126,35 @@ money or a real date. It also fails if either plan yields under five claims —
 a run that harvested nothing proves nothing, and would go green forever the day
 a container id changed.
 
+`navigation-sweep.js` checks two things a person other than you depends on.
+
+**The address bar.** Nine tabs and no history: drilling from Analytics into an
+activity and on into Plan vs actual left Back meaning "leave the application",
+so a mis-click cost the session, the URL never said where you were, and a link
+to the Gantt could not be sent. Every tab writes a fragment now, and the sweep
+holds all four directions — forward navigation writes one, Back and Forward walk
+them, the entry with NO fragment is the first tab rather than a press that
+visibly does nothing, and a fragment present at load opens that tab after the
+plan is computed rather than before. Every tab is round-tripped, so one of them
+cannot go quietly unaddressable.
+
+**The worklist.** It answers "what can this person start now", and it answered
+with a truncated name and a date: on a plan of generated test cases every row
+read "TC AC-11.3 - edge: mo...", which identifies nothing. The state of the work
+was absent and so was the open RAID entry raised against it, sitting in the same
+file. The properties are asked rather than the layout: a row names its activity
+fully enough to act on, states what is happening to it, names what it waits on
+WITH the owner of that, and carries any open RAID entry — and the copied
+document holds the same facts in both clipboard flavours.
+
+Two notes on the checks themselves. The RAID case is CONSTRUCTED, because no
+committed fixture happens to carry an open entry against an unfinished leaf: the
+sample's two open entries sit on a completed activity and on a summary, so a
+check that merely looked would pass on a build that never reads RAID at all. And
+indistinguishable names are compared within one person's table, not across the
+panel — a shared activity legitimately appears on several cards, and the first
+version of that check called three such rows a defect.
+
 ## The written test plan
 
 `node tests/run-test-plan.js` runs 42 cases and writes two documents:

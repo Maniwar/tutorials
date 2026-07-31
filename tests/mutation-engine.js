@@ -395,6 +395,31 @@ const MUTANTS = [
   { what: 'heatmap: a 200% peak sits beside a bare green OK with nothing reconciling them',
     find: '            : R.peak > R.capacity + 1e-6',
     with: '            : false' },
+
+  /* ── the address bar, and the panel you hand to a person ──────────────────
+     Both are about somebody else acting on what they see: one is whether a view
+     can be returned to or linked, the other is whether a row says enough to act
+     on and whether the copy of it carries the same facts. */
+
+  { what: 'navigation: a tab no longer writes its own address, so Back leaves the application',
+    find: "      if (!_tabNav && location.hash.replace(/^#/, '') !== name) {",
+    with: '      if (false) {' },
+
+  { what: 'worklist: the row stops carrying the open RAID entry raised against its activity',
+    find: "(typeof raidForTask === 'function' ? raidForTask(t.id, true) : [])",
+    with: '[]' },
+
+  { what: 'worklist: activity names are truncated back to a shared prefix',
+    find: "        + ekTok(r.kind, r.wbs, r.name, { xs: true, max: 140 }) + '</button>'",
+    with: "        + ekTok(r.kind, r.wbs, r.name, { xs: true, max: 22 }) + '</button>'" },
+
+  { what: 'worklist: nothing can start and the thing everyone waits on goes unnamed',
+    find: '      const all = [...cnt.values()].sort((a, b) => b.n - a.n);\n      return all.length ? all[0] : null;',
+    with: '      return null;' },
+
+  { what: 'worklist: the copied document drops the risks it lists on screen',
+    find: "(r.raid || []).forEach(q => L.push('      ' + q.type.toLowerCase() + ': ' + q.title",
+    with: "[].forEach(q => L.push('      ' + q.type.toLowerCase() + ': ' + q.title" },
 ];
 
 const CHECKS = QUICK ? ['run-test-plan.js']
@@ -402,7 +427,7 @@ const CHECKS = QUICK ? ['run-test-plan.js']
      'schedule-sweep.js', 'drawn-surfaces-sweep.js', 'pricing-sweep.js',
      'resourcing-sweep.js', 'persistence-sweep.js', 'export-sweep.js', 'undo-sweep.js', 'baseline-sweep.js', 'cross-surface-sweep.js', 'task-editor-sweep.js',
      'client-facing-sweep.js', 'dialog-sweep.js', 'chart-reconciliation-sweep.js',
-     'bank-sweep.js', 'corrupt-file-sweep.js', 'dynamic-prose-sweep.js'];
+     'bank-sweep.js', 'corrupt-file-sweep.js', 'dynamic-prose-sweep.js', 'navigation-sweep.js'];
 
 /* Which check is EXPECTED to notice. This is a running order, not a shortcut:
    if the named check does not go red the mutant still walks every other one, so
@@ -424,7 +449,8 @@ const LIKELY = {
   'corrupt file:': 'corrupt-file-sweep.js', 'ring:': 'drawn-surfaces-sweep.js',
   'envelope:': 'chart-reconciliation-sweep.js', 'scope:': 'chart-reconciliation-sweep.js',
   'form:': 'drawn-surfaces-sweep.js', 'drill-in:': 'chart-reconciliation-sweep.js',
-  'prose:': 'dynamic-prose-sweep.js', 'heatmap:': 'resourcing-sweep.js'
+  'prose:': 'dynamic-prose-sweep.js', 'heatmap:': 'resourcing-sweep.js',
+  'navigation:': 'navigation-sweep.js', 'worklist:': 'navigation-sweep.js'
 };
 const orderFor = m => {
   const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);
