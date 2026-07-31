@@ -463,6 +463,32 @@ const DATA = FIXTURE();
         say('Effort by person', midFlight.name + ' is part way through their work and the variance is '
           + 'measured against the WHOLE estimate — that reports a saving nobody has made yet, and it '
           + 'turns into an overrun as the remaining work is done');
+      /* ── BY COMPANY IS A PARTITION ─────────────────────────────────────────
+         Rolled up from the same per-person shares, so every activity belongs to
+         exactly one firm here and the column still adds to the project total.
+         Two ways this goes wrong and both are silent: somebody whose company was
+         never set is DROPPED, so the table quietly describes part of the roster
+         as though it were all of it; or the roll-up double-counts and the total
+         stops matching the person table three inches below it. */
+      const orgRows = orgEffortRows(eff);
+      out.effortCompanies = orgRows.length;
+      const orgPlan = orgRows.reduce((s2, r) => s2 + r.planDays, 0);
+      const perPlan = eff.reduce((s2, r) => s2 + r.planDays, 0);
+      if (Math.abs(orgPlan - perPlan) > 0.02)
+        say('Effort by company', 'the company roll-up totals ' + orgPlan.toFixed(2)
+          + ' planned days against ' + perPlan.toFixed(2) + ' in the person table it is rolled up FROM — '
+          + 'one of them is counting somebody twice or not at all');
+      const peopleCovered = orgRows.reduce((s2, r) => s2 + r.people, 0);
+      out.effortPeopleCovered = peopleCovered;
+      if (peopleCovered !== eff.length)
+        say('Effort by company', peopleCovered + ' of ' + eff.length + ' people appear in the company '
+          + 'breakdown — anyone whose company is unset must land in a bucket that says so, not vanish');
+      // the unset bucket must be labelled, never blank
+      const unset = orgRows.find(r => r.unset);
+      if (unset && !/no company/i.test(unset.name))
+        say('Effort by company', 'people with no company are grouped under "' + unset.name
+          + '", which reads as a real firm');
+
       // and it has to be drawn, not merely computed
       const effTxt = host ? host.textContent.replace(/\s+/g, ' ') : '';
       out.effortTableDrawn = /Effort & variance by person|Effort &amp; variance by person/.test(effTxt);

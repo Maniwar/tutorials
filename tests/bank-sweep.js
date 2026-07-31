@@ -265,6 +265,52 @@ const { chromium } = requirePlaywright();
       say('the in-house side of three shared activities plus three of its own shows n='
         + (usJ ? usJ.n : 0) + ' rather than 6 — shared work is evidence about BOTH firms, not one');
 
+    /* ── 7. THE ID IS WHAT JOINS A COMPANY ACROSS PROJECTS ───────────────────
+       The whole point of recording a company is comparing the same firm over
+       several engagements, and a free-text name cannot do it: "Northwind
+       Integration" retyped as "Northwind Integration Ltd" on the fourth project
+       silently starts a fourth history with n=1, right when the first three had
+       become worth something. So the calibration groups on the ID and labels
+       with the CURRENT name — which also means renaming a company reaches
+       records archived years ago.
+
+       Asked as the thing that would actually happen: file rows under one
+       spelling, rename the company, and require the bucket to survive intact
+       under the new name. */
+    ran('7·companyIdSurvivesARename');
+    const rec = orgRegister('Northwind Integration');
+    out.orgRegistered = rec && rec.id;
+    if (!rec) say('registering a company returns nothing, so there is no id to record on an archived row');
+    else {
+      const withId = (i, ratio) => Object.assign(mk('C', i, ratio),
+        { org: 'Northwind Integration', orgs: ['Northwind Integration'],
+          orgId: rec.id, orgIds: [rec.id], owner: 'M. Webb' });
+      saveBank([withId(1, 1.4), withId(2, 1.5), withId(3, 1.6), withId(4, 1.45)]);
+      const before = bankCalibration();
+      const bBucket = (before.byOrg || []).find(x => x.k === 'Northwind Integration');
+      out.orgBucketBeforeRename = bBucket ? bBucket.n : 0;
+      if (!bBucket) say('rows carrying a company id produce no company bucket at all');
+
+      orgRename(rec.id, 'Northwind Integration Ltd');
+      const after = bankCalibration();
+      const aBucket = (after.byOrg || []).find(x => x.k === 'Northwind Integration Ltd');
+      out.orgBucketAfterRename = aBucket ? aBucket.n : 0;
+      if (!aBucket)
+        say('renaming a company loses its history — the four archived activities no longer appear under '
+          + 'the new name, which is exactly the join the id exists to provide');
+      else if (bBucket && aBucket.n !== bBucket.n)
+        say('the renamed company carries ' + aBucket.n + ' records where it had ' + bBucket.n);
+      else if (bBucket && aBucket.median !== bBucket.median)
+        say('the renamed company reports a median of ' + aBucket.median + '× where it was '
+          + bBucket.median + '× — the rename changed the arithmetic, not just the label');
+      if ((after.byOrg || []).some(x => x.k === 'Northwind Integration'))
+        say('after the rename the company appears under BOTH names, so its history is split in two');
+      orgRename(rec.id, 'Northwind Integration');
+      // an id must never be user-facing in the calibration labels
+      if ((after.byOrg || []).some(x => x.k === rec.id))
+        say('the company bucket is labelled with its internal id (' + rec.id + ') rather than its name');
+    }
+
     saveBank([]);
     return { contradictions: bad, counts: out };
   });

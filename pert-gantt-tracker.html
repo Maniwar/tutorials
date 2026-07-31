@@ -711,6 +711,7 @@
     .wl-open { text-align: left; }
     .wl-state { color: var(--muted); }
     .wl-eff { font-variant-numeric: tabular-nums; }
+    .wl-tot { font-weight: 700; border-top: 2px solid var(--border); }
     .wl-var { font-size: 0.68rem; line-height: 1.4; margin-top: 1px; }
     .wl-var-over { color: var(--critical); }
     .wl-var-under { color: var(--success); }
@@ -3027,7 +3028,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.31.0533</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.31.0607</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -5147,8 +5148,12 @@ Or say what you want, in your own words:
     /* One spelling per company, or the bank splits the same partner into two
        buckets and neither has enough rows to say anything. The list is every
        company already on this plan or in the people library. */
+    /* Every company the registry knows, plus any legacy free-text spelling still
+       sitting on a roster or in the people library — so upgrading does not make
+       an existing entry vanish from the picker before it has been adopted. */
     function orgNames() {
       const set = new Set();
+      (typeof loadOrgLib === 'function' ? loadOrgLib() : []).forEach(o => { if (o && o.name) set.add(String(o.name).trim()); });
       Object.keys(resources || {}).forEach(n => { const v = String((resources[n] || {}).org || '').trim(); if (v) set.add(v); });
       (typeof loadResLib === 'function' ? loadResLib() : []).forEach(x => {
         const v = String((x || {}).org || '').trim(); if (v) set.add(v); });
@@ -5159,7 +5164,61 @@ Or say what you want, in your own words:
       if (!dl) return;
       dl.innerHTML = orgNames().map(n => '<option value="' + escapeHtml(n) + '"></option>').join('');
     }
-    function orgOf(name) { return String(((resources || {})[String(name || '').trim()] || {}).org || '').trim(); }
+    // the ID is the identity; the name is a lookup. A resource carrying only the
+    // old free-text field still answers, so nothing has to be migrated to work.
+    function orgIdOf(name) {
+      const r = (resources || {})[String(name || '').trim()] || {};
+      if (r.orgId) return r.orgId;
+      const byName = r.org ? orgByName(r.org) : null;
+      return byName ? byName.id : '';
+    }
+    function orgOf(name) {
+      const r = (resources || {})[String(name || '').trim()] || {};
+      if (r.orgId) { const o = orgFind(r.orgId); if (o) return o.name; }
+      return String(r.org || '').trim();
+    }
+    /* Set from the picker. Both fields are written: the id is what joins a firm's
+       history together across projects, the name is what a file exported today
+       still reads as if the registry is not beside it. */
+    function setResourceOrg(person, idOrName) {
+      const n = String(person || '').trim();
+      if (!n) return;
+      if (!resources[n]) resources[n] = { capacity: 100 };
+      const raw = String(idOrName || '').trim();
+      if (!raw) { resources[n].orgId = ''; resources[n].org = ''; }
+      else {
+        const rec = orgFind(raw) || orgRegister(raw);
+        resources[n].orgId = rec ? rec.id : '';
+        resources[n].org = rec ? rec.name : raw;
+      }
+      saveLocal();
+      renderResources();
+    }
+    function orgPickerHtml(person, ri) {
+      const cur = orgIdOf(person);
+      const lib = loadOrgLib();
+      const legacy = (!cur && String((resources[person] || {}).org || '').trim()) || '';
+      return '<select class="mini-inp rl-org" data-ri="' + ri + '" style="width:150px" title="'
+        + escapeHtml('The company this person works for, chosen from your saved list so the same firm is one '
+          + 'entity across every project rather than three spellings. It is recorded by id on every archived '
+          + 'activity, which is what lets the estimate bank say how a given partner has historically run '
+          + 'against estimate.') + '">'
+        + '<option value=""' + (cur || legacy ? '' : ' selected') + '>— none —</option>'
+        + lib.map(o => '<option value="' + escapeHtml(o.id) + '"' + (o.id === cur ? ' selected' : '') + '>'
+            + escapeHtml(o.name) + '</option>').join('')
+        + (legacy ? '<option value="' + escapeHtml(legacy) + '" selected>' + escapeHtml(legacy)
+            + ' (not saved yet)</option>' : '')
+        + '<option value="__new">+ Add a company…</option></select>';
+    }
+    function orgPicked(person, val) {
+      if (val !== '__new') { setResourceOrg(person, val); return; }
+      const nm = prompt('Company name — the firm this person works for.\n\nIt is saved once and shared by every '
+        + 'project, so the estimate bank can compare the same partner across engagements.', '');
+      if (nm == null || !String(nm).trim()) { renderResources(); return; }
+      const rec = orgRegister(nm);
+      setResourceOrg(person, rec ? rec.id : '');
+      flashSaved('🏢 ' + (rec ? rec.name : nm) + ' saved — it is now on the list for every project.');
+    }
     function populateOwnerList() {
       const dl = document.getElementById('ownerList');
       if (!dl) return;
@@ -12695,7 +12754,7 @@ Or say what you want, in your own words:
             <option value="internal" ${!isClient ? 'selected' : ''}>Internal</option>
             <option value="client" ${isClient ? 'selected' : ''}>Client</option></select></td>
           <td><input class="mini-inp rl-role" data-ri="${ri}" type="text" value="${escapeHtml((resources[name] || {}).role || '')}" placeholder="e.g. Platform Developer" title="What they do on this engagement — the AI captures it from your notes ('Marcus Webb — CRM Platform Developer'); applying a rate card also fills it. Shows on owner hovers so a roster of names still tells you who does what." style="width:150px" /></td>
-          <td><input class="mini-inp rl-org" data-ri="${ri}" list="orgList" type="text" value="${escapeHtml((resources[name] || {}).org || '')}" placeholder="${isClientResource(name) ? 'e.g. the client' : 'e.g. Us, or a partner firm'}" title="Who they work FOR. Recorded on every activity archived to the estimate bank, so a future estimate can be calibrated against how that firm's work has actually run — the question that matters when the same integration partner keeps appearing on your engagements and a person's name does not repeat." style="width:140px" /></td>
+          <td>${orgPickerHtml(name, ri)}</td>
           <td><input class="mini-inp rl-cap" data-ri="${ri}" type="number" min="1" step="10" value="${R.capacity}" title="Capacity % — 100 = 1 full-time person, 300 = a 3-person team" /></td>
           <td>${isClient ? '<span class="help-text">n/a</span>' : `<input class="mini-inp rl-rate" data-ri="${ri}" type="number" min="0" step="${resRateUnit(name) === 'hour' ? 5 : 50}" value="${rawRate(name)}" title="COST rate at 100%, in the unit on the right (feeds the budget layer — hourly × 8 = the daily figure the math uses)" />`}</td>
           <td>${isClient ? '<span class="help-text">n/a</span>' : `<input class="mini-inp rl-bill" data-ri="${ri}" type="number" min="0" step="${resRateUnit(name) === 'hour' ? 5 : 50}" value="${rawBillRate(name)}" title="BILL rate, in the unit on the right (client-facing — feeds pricing & SOW)" />`}</td>
@@ -12987,13 +13046,8 @@ Or say what you want, in your own words:
           saveLocal(); renderTaskTable();
         });
       });
-      cont.querySelectorAll('input.rl-org').forEach(inp => {
-        inp.addEventListener('change', () => {
-          const n = names[Number(inp.dataset.ri)];
-          if (!resources[n]) resources[n] = { capacity: 100 };
-          resources[n].org = inp.value.trim();
-          saveLocal(); populateOrgList(); renderResources();
-        });
+      cont.querySelectorAll('select.rl-org').forEach(sel => {
+        sel.addEventListener('change', () => orgPicked(names[Number(sel.dataset.ri)], sel.value));
       });
       cont.querySelectorAll('input.rl-rate').forEach(inp => {
         inp.addEventListener('change', () => setRate(names[Number(inp.dataset.ri)], inp.value));
@@ -17922,6 +17976,88 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
        usually charge, the project is what you agreed this time. */
     const RES_LIB_STORE = 'pertGantt.resourceLibrary';
     let resLibCache = null;
+    /* ═══ COMPANIES ARE ENTITIES, NOT SPELLINGS ══════════════════════════════
+       The company started as free text on the roster, which is fine for one
+       plan and useless for the thing it exists to do. "Northwind Integration",
+       "Northwind Integration Ltd" and "northwind" are the same firm and three
+       different buckets, and the bank's whole point is comparing that firm
+       ACROSS projects — so a typo on the fourth engagement quietly starts a
+       fourth history with n=1.
+
+       So a registry, keyed by id, living outside every project exactly like the
+       people library and the estimate bank: same store shape, same IndexedDB
+       write with a localStorage fallback, same "a real write always wins" rule
+       on warm-up. A resource holds `orgId`; the NAME is looked up. Renaming a
+       company in one place therefore renames it everywhere, including on records
+       archived years ago, which free text could never do.
+
+       Old data keeps working. A resource with a legacy `.org` string and no
+       `orgId` still reports that string, and archived rows carry BOTH the id and
+       the name as it stood — the id so the history joins up, the name so a bank
+       export is readable without the registry beside it. */
+    const ORG_LIB_STORE = 'pertGantt.organisations';
+    let orgLibCache = null, orgLibDirty = false;
+    function loadOrgLib() {
+      if (orgLibCache) return orgLibCache;
+      try { const v = JSON.parse(localStorage.getItem(ORG_LIB_STORE) || '[]'); if (Array.isArray(v)) return (orgLibCache = v); }
+      catch (e) {}
+      return (orgLibCache = []);
+    }
+    function saveOrgLib(rows) {
+      orgLibCache = rows; orgLibDirty = true;
+      const json = JSON.stringify(rows);
+      idbSet(ORG_LIB_STORE, json).catch(() => {
+        try { localStorage.setItem(ORG_LIB_STORE, json); }
+        catch (e) { flashSaved('⚠ Could not save the company list — this browser has IndexedDB blocked and the fallback is full.'); }
+      });
+      return true;
+    }
+    async function orgLibInit() {
+      try {
+        const v = await idbGet(ORG_LIB_STORE);
+        if (orgLibDirty) return;
+        if (v != null) { const p = JSON.parse(v); if (Array.isArray(p)) orgLibCache = p; }
+        else {
+          const old = localStorage.getItem(ORG_LIB_STORE);
+          if (old) { const p = JSON.parse(old); if (Array.isArray(p) && p.length) {
+            orgLibCache = p; await idbSet(ORG_LIB_STORE, old); localStorage.removeItem(ORG_LIB_STORE); } }
+        }
+      } catch (e) {}
+      try { if (document.getElementById('resourcesContainer') && calculated) renderResources(); } catch (e) {}
+    }
+    function orgSlug(n) {
+      return String(n || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 28) || 'org';
+    }
+    function orgFind(id) { return loadOrgLib().find(o => o.id === id) || null; }
+    function orgByName(n) {
+      const k = String(n || '').trim().toLowerCase();
+      return k ? (loadOrgLib().find(o => String(o.name || '').trim().toLowerCase() === k) || null) : null;
+    }
+    /* Registering by NAME is idempotent on purpose: the roster's own text, an
+       imported people-library row and a re-typed spelling all land on the same
+       record rather than minting a second id for a firm that already exists. */
+    function orgRegister(name) {
+      const nm = String(name || '').trim();
+      if (!nm) return null;
+      const hit = orgByName(nm);
+      if (hit) return hit;
+      const lib = loadOrgLib().slice();
+      let id = orgSlug(nm), n = 2;
+      while (lib.some(o => o.id === id)) id = orgSlug(nm) + '-' + (n++);
+      const rec = { id: id, name: nm, at: fmtISO(new Date()) };
+      lib.push(rec); saveOrgLib(lib);
+      return rec;
+    }
+    function orgRename(id, name) {
+      const nm = String(name || '').trim();
+      if (!nm) return false;
+      const lib = loadOrgLib().slice();
+      const i = lib.findIndex(o => o.id === id);
+      if (i < 0) return false;
+      lib[i] = Object.assign({}, lib[i], { name: nm });
+      saveOrgLib(lib);
+      return true;
+    }
     function loadResLib() {
       if (resLibCache) return resLibCache;
       try { const v = JSON.parse(localStorage.getItem(RES_LIB_STORE) || '[]'); if (Array.isArray(v)) return (resLibCache = v); }
@@ -17955,7 +18091,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     function resLibRowOf(name) {
       const r = resources[name] || {};
       return { name: name, kind: isClientResource(name) ? 'client' : 'internal',
-               role: String(r.role || ''), org: String(r.org || ''), capacity: getCapacity(name),
+               role: String(r.role || ''), org: orgOf(name), orgId: orgIdOf(name), capacity: getCapacity(name),
                rate: rawRate(name), billRate: rawBillRate(name), rateUnit: resRateUnit(name),
                at: fmtISO(new Date()) };
     }
@@ -18000,7 +18136,8 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       if (!lib) return;
       if (resources[lib.name]) { flashSaved(lib.name + ' is already on this roster.'); return; }
       resources[lib.name] = { capacity: Number(lib.capacity) || 100, rate: Number(lib.rate) || 0,
-        billRate: Number(lib.billRate) || 0, role: String(lib.role || ''), org: String(lib.org || ''),
+        billRate: Number(lib.billRate) || 0, role: String(lib.role || ''),
+        org: String(lib.org || ''), orgId: String(lib.orgId || '') || ((lib.org ? (orgRegister(lib.org) || {}).id : '') || ''),
         kind: lib.kind === 'client' ? 'client' : 'internal',
         rateUnit: lib.rateUnit === 'hour' ? 'hour' : 'day' };
       saveLocal();
@@ -18233,10 +18370,18 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
              is common and attributing it to one of them would be a lie. `people`
              carries the participants with their allocation, so a future reader
              can tell one person at 100% from four at 25%. */
-          org: orgOf(t.owner),
+          org: orgOf(t.owner), orgId: orgIdOf(t.owner),
           orgs: [...new Set(taskParticipants(t).map(pr => orgOf(pr.name)).filter(Boolean))],
+          /* BOTH the id and the name. The id is the join — it is what lets the
+             same partner's records from four engagements land in one bucket even
+             after somebody retypes the name — and the name is the snapshot, so a
+             bank CSV opened next year still reads without the registry beside it.
+             Storing only the name loses the join to a typo; storing only the id
+             makes an export meaningless on its own. */
+          orgIds: [...new Set(taskParticipants(t).map(pr => orgIdOf(pr.name)).filter(Boolean))],
           people: taskParticipants(t).map(pr => ({ n: pr.name, u: Number(pr.units) || 0,
-            org: orgOf(pr.name), role: ((resources[pr.name] || {}).role || '') })),
+            org: orgOf(pr.name), orgId: orgIdOf(pr.name),
+            role: ((resources[pr.name] || {}).role || '') })),
           o: t.o, m: t.m, p: t.p, te: +est.toFixed(3),
           actual: +act.toFixed(3),
           ratio: est > 0 ? +(act / est).toFixed(3) : null,
@@ -18378,8 +18523,18 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
            often as you work with it, so a five-row bar means a partner you have
            used on two engagements still says nothing. Three is thin and the
            prompt is told to treat thin buckets as directional. */
-        byOrg: group(r => (r.orgs && r.orgs.length) ? r.orgs : (r.org || ''),
-          { minN: ORG_MIN_N, multi: true }).slice(0, 10),
+        /* Grouped on the ID where a row has one, so four engagements' worth of the
+           same partner join up even if the name was retyped between them; the
+           LABEL is that company's name as it stands today, which is also how a
+           rename reaches records archived years ago. Rows filed before the
+           registry existed carry only a name and group on that — they are their
+           own bucket until somebody sets the company on that roster again, which
+           is honest: the tool cannot know two old strings meant one firm. */
+        byOrg: group(r => {
+          const ids = (r.orgIds && r.orgIds.length) ? r.orgIds : (r.orgId ? [r.orgId] : []);
+          if (ids.length) return ids.map(id => (orgFind(id) || {}).name || id);
+          return (r.orgs && r.orgs.length) ? r.orgs : (r.org || '');
+        }, { minN: ORG_MIN_N, multi: true }).slice(0, 10),
         byPerson: group(r => r.owner, { minN: ORG_MIN_N }).slice(0, 10),
         orgsSeen: [...new Set(rows.reduce((a, r) => a.concat(r.orgs || (r.org ? [r.org] : [])), []))].length,
         projects: [...new Set(rows.map(r => r.proj))].length
@@ -18402,8 +18557,8 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
     function bankExportCSV() {
       const rows = loadBank();
       if (!rows.length) { alert('The estimate bank is empty — archive a project with logged actuals first: header Export \u25be \u25b8 \ud83d\uddc4 Archive to estimation history.'); return; }
-      const head = ['Project', 'Archived', 'WBS', 'Activity', 'Kind', 'Audience', 'Work type', 'Tag source', 'Owner', 'Role', 'Company', 'All companies', 'Unit', 'Est O', 'Est M', 'Est P', 'Est TE', 'Actual effort', 'Ratio', 'Basis', 'Planned cost', 'Actual cost'];
-      const body = rows.map(r => [r.proj, r.at, r.wbs, r.name, r.kind, r.audience || '', taxLabel(r.tax) || '', r.taxSrc || '', r.owner, r.role, r.org || '', (r.orgs || []).join('; '), r.unit,
+      const head = ['Project', 'Archived', 'WBS', 'Activity', 'Kind', 'Audience', 'Work type', 'Tag source', 'Owner', 'Role', 'Company', 'Company id', 'All companies', 'Unit', 'Est O', 'Est M', 'Est P', 'Est TE', 'Actual effort', 'Ratio', 'Basis', 'Planned cost', 'Actual cost'];
+      const body = rows.map(r => [r.proj, r.at, r.wbs, r.name, r.kind, r.audience || '', taxLabel(r.tax) || '', r.taxSrc || '', r.owner, r.role, r.org || '', r.orgId || '', (r.orgs || []).join('; '), r.unit,
         r.o, r.m, r.p, r.te, r.actual, r.ratio == null ? '' : r.ratio, r.basis, r.costEst, r.costActual]);
       download('estimate-bank.csv', [head].concat(body).map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
     }
@@ -23186,6 +23341,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
           const share = (Number(pr.units) || 0) / 100;
           if (share <= 0) return;
           const R = at(pr.name);
+          R.org = orgOf(pr.name); R.orgId = orgIdOf(pr.name);
           R.tasks++;
           R.planDays += unitToWorkingDays(Number(t.te) || 0) * share;
           R.refDays += unitToWorkingDays(hb && t.baseTe != null ? Number(t.baseTe) : (Number(t.te) || 0)) * share;
@@ -23206,6 +23362,39 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       });
       out.sort((a, b) => (Math.abs(b.varDays || 0) - Math.abs(a.varDays || 0)) || a.name.localeCompare(b.name));
       return out;
+    }
+    /* BY COMPANY, rolled up from the person rows.
+
+       This is a PARTITION and the estimate bank's company calibration is not,
+       and the difference is worth stating because a reader seeing both could
+       reasonably think they disagree. Here every person's share belongs to
+       exactly one firm, so the column still adds to the project total: the
+       question is "how much of this engagement's effort sits with each company".
+       In the bank an activity worked by two firms counts as evidence for both,
+       because the question there is "how does this firm's work run against
+       estimate" and a shared activity is evidence about each of them.
+
+       Anyone whose company has not been set lands in one honest bucket rather
+       than being dropped — a company breakdown that silently omits half the
+       roster is worse than no breakdown at all. */
+    function orgEffortRows(people) {
+      const g = new Map();
+      (people || []).forEach(r => {
+        const key = r.orgId || r.org || '';
+        const label = r.org || '(no company set)';
+        if (!g.has(key)) g.set(key, { name: label, planDays: 0, refDays: 0, actDays: 0, earnedDays: 0,
+          tasks: 0, measured: 0, open: 0, people: 0, unset: !r.org });
+        const G = g.get(key);
+        G.planDays += r.planDays; G.refDays += r.refDays; G.actDays += r.actDays;
+        G.earnedDays += r.earnedDays; G.tasks += r.tasks; G.measured += r.measured;
+        G.open += r.open; G.people++;
+      });
+      return [...g.values()].map(G => {
+        G.varDays = G.measured ? G.actDays - G.earnedDays : null;
+        G.ratio = (G.measured && G.earnedDays > 0) ? G.actDays / G.earnedDays : null;
+        return G;
+      }).sort((a, b) => (a.unset - b.unset)
+        || (Math.abs(b.varDays || 0) - Math.abs(a.varDays || 0)) || b.planDays - a.planDays);
     }
     function resourceEffortHtml() {
       const rows = resourceEffortData();
@@ -23236,7 +23425,34 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
             + '<div class="wl-wait">on ' + r.measured + ' of ' + r.tasks + '</div>' : '—') + '</td>'
         + varCell(r) + '</tr>').join('');
       const totVar = tot.measured ? tot.act - tot.earned : null;
-      return '<h3 style="font-size:0.95rem;margin:1.1rem 0 0.2rem">Effort &amp; variance by person'
+      /* The company table sits ABOVE the person table when there is more than one
+         company to compare — that is the level a delivery lead acts at, and it
+         is drawn first for the same reason the plan-truth bars come before the
+         drill-in. With one company (or none set) it is a single row restating
+         the total, so it is suppressed rather than shown as decoration. */
+      const orgRows = orgEffortRows(rows);
+      const orgTable = orgRows.length > 1 ? (() => {
+        const oBody = orgRows.map(r => '<tr><td class="wl-td" style="font-weight:600'
+          + (r.unset ? ';color:var(--muted)' : '') + '">' + escapeHtml(r.name)
+          + '<div class="wl-wait">' + r.people + ' ' + (r.people === 1 ? 'person' : 'people') + ' · '
+          + r.tasks + ' activit' + (r.tasks === 1 ? 'y' : 'ies') + '</div></td>'
+          + '<td class="wl-td">' + escapeHtml(d(r.planDays)) + '</td>'
+          + (hb ? '<td class="wl-td">' + escapeHtml(d(r.refDays)) + '</td>' : '')
+          + '<td class="wl-td">' + escapeHtml(d(r.earnedDays)) + '</td>'
+          + '<td class="wl-td">' + (r.measured ? escapeHtml(d(r.actDays)) : '—') + '</td>'
+          + varCell(r) + '</tr>').join('');
+        return '<h3 style="font-size:0.95rem;margin:1.1rem 0 0.2rem">Effort &amp; variance by company'
+          + ' <span class="help-text" style="font-weight:400">(which firm\'s work is running to estimate)</span></h3>'
+          + '<p class="help-text" style="margin:0 0 0.4rem">Rolled up from the same per-person shares below, '
+          + 'so every activity belongs to exactly one company here and the column still adds to the project '
+          + 'total. The estimate bank asks a different question — there an activity worked by two firms is '
+          + 'evidence about <b>both</b>, so its counts deliberately overlap.</p>'
+          + '<div class="table-wrap"><table class="wl-t" style="font-size:var(--t-sm)">'
+          + '<thead><tr><th>Company</th><th>Planned</th>' + (hb ? '<th>Baselined</th>' : '')
+          + '<th>Earned</th><th>Logged</th><th>Variance</th></tr></thead><tbody>' + oBody
+          + '</tbody></table></div>';
+      })() : '';
+      return orgTable + '<h3 style="font-size:0.95rem;margin:1.1rem 0 0.2rem">Effort &amp; variance by person'
         + ' <span class="help-text" style="font-weight:400">(is the estimate holding, and for whom)</span></h3>'
         + '<p class="help-text" style="margin:0 0 0.4rem">Every figure is that person\'s SHARE — the '
         + 'activity\'s effort weighted by their allocation %, so an activity two people split at 50% each '
@@ -23359,11 +23575,30 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       const cols = showBlock
         ? '<col style="width:36%"><col style="width:16%"><col style="width:12%"><col style="width:14%"><col style="width:22%">'
         : '<col style="width:48%"><col style="width:22%"><col style="width:14%"><col style="width:16%">';
+      /* A TOTAL, because the reason to put effort on the rows is to add them up.
+         It totals the WHOLE group, not the rows drawn — a capped table whose
+         footer sums five of eleven rows is a number nobody can use and nobody
+         can tell is partial, so the caption says how many are shown when they
+         differ rather than quietly totalling a sample. */
+      const totDays = rows.reduce((a, r) => a + (r.estDays || 0), 0);
+      const varRows = rows.filter(r => r.varDays != null);
+      const totVar = varRows.length ? varRows.reduce((a, r) => a + r.varDays, 0) : null;
+      const foot = '<tfoot><tr><td class="wl-td wl-tot">Total — ' + rows.length + ' '
+        + (rows.length === 1 ? 'activity' : 'activities')
+        + (shown.length < rows.length ? ' (' + shown.length + ' shown)' : '') + '</td>'
+        + '<td class="wl-td"></td><td class="wl-td"></td>'
+        + '<td class="wl-td wl-tot wl-eff">' + (totDays > 0 ? fmtDur(workingDaysToUnit(totDays)) : '—')
+        + (totVar != null && Math.abs(totVar) >= 0.05
+            ? '<div class="wl-var ' + (totVar > 0 ? 'wl-var-over' : 'wl-var-under') + '" title="'
+              + escapeHtml('Across the ' + varRows.length + ' of these with effort logged')
+              + '">' + (totVar > 0 ? '+' : '−')
+              + escapeHtml(fmtDurCell(Math.abs(workingDaysToUnit(totVar)))) + '</div>' : '')
+        + '</td>' + (showBlock ? '<td class="wl-td"></td>' : '') + '</tr></tfoot>';
       return '<div class="table-wrap"><table class="wl-t">' + cols
         + '<thead><tr><th>Activity</th><th>Status</th>'
         + '<th>Due</th><th title="This person’s share of the activity’s expected effort — the activity’s TE weighted by their allocation %, the same figure the roster\'s Planned effort column uses. Underneath, logged effort against the baselined estimate where there is one.">Effort</th>'
         + (showBlock ? '<th>Waiting on</th>' : '') + '</tr></thead><tbody>'
-        + shown.map(r => wlTableRow(r, showBlock)).join('') + '</tbody></table></div>'
+        + shown.map(r => wlTableRow(r, showBlock)).join('') + '</tbody>' + foot + '</table></div>'
         + (rows.length > cap ? '<p class="wl-more">and ' + (rows.length - cap)
             + ' more — open the person\'s activities from the list above to see the rest</p>' : '');
     }
@@ -24239,6 +24474,7 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
     // migrate a pre-existing localStorage bank on the way
     bankInit();
     resLibInit();          // the people library warms the same way the bank does
+    orgLibInit();          // …and so does the company registry the bank groups by
 
     // Enter walks the editor's fields, Shift+Enter saves — see modalKeyFlow.
     (() => {

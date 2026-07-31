@@ -217,6 +217,35 @@ const { chromium } = requirePlaywright();
     // drawn, and carried into the copy, or the two say different things
     if (!/EFFORT/i.test((host.querySelector('.wl-t thead') || {}).textContent || ''))
       say2('effort is computed on every row and the table has no column for it');
+
+    /* THE TOTAL IS OF THE GROUP, NOT OF THE ROWS DRAWN. The reason to put effort
+       on the rows is to add them up, and a capped table whose footer sums five
+       of eleven is a number nobody can use and nobody can tell is partial. Tested
+       against the person whose group is actually over the cap, because on anyone
+       else the two sums coincide and the check proves nothing. */
+    const capped2 = data.slice().sort((a, b) => b.blocked.length - a.blocked.length)[0];
+    out.footerCase = (capped2 && capped2.blocked.length > 5) ? capped2.name : 'SKIPPED-no-capped-group';
+    if (capped2 && capped2.blocked.length > 5) {
+      const card = [...document.querySelectorAll('#worklistHost .wl-p')]
+        .find(c => (c.querySelector('.wl-nmb') || {}).textContent === capped2.name);
+      const foot = card ? card.querySelector('.wl-t tfoot') : null;
+      out.footerDrawn = !!foot;
+      if (!foot) say2('the effort column has no total at all — the point of putting a size on every row '
+        + 'is that they add up to a week');
+      else {
+        const want = capped2.blocked.reduce((a, r) => a + (r.estDays || 0), 0);
+        const txt = foot.textContent.replace(/\s+/g, ' ');
+        const wantTxt = fmtDurCell(workingDaysToUnit(want));
+        out.footerSays = txt.slice(0, 60); out.footerWant = wantTxt;
+        if (txt.indexOf(wantTxt) < 0)
+          say2('the total under ' + capped2.name + '\'s blocked table does not state ' + wantTxt
+            + ', the effort of all ' + capped2.blocked.length + ' of them — a footer that sums only the '
+            + 'rows on screen is a partial number presented as a total');
+        if (txt.indexOf(String(capped2.blocked.length)) < 0)
+          say2('the total does not say how many activities it covers, so a capped table cannot be told '
+            + 'from a complete one');
+      }
+    }
     /* BOTH flavours, separately. The first version accepted the figure in
        either one, so deleting the Effort column from the rich-text table passed
        on the strength of the plain-text copy still having it — and rich text is

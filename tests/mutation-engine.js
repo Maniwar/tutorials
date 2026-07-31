@@ -485,12 +485,34 @@ const MUTANTS = [
     with: '          people: taskParticipants(t).map(pr => ({ n: pr.name, u: 0,' },
 
   { what: 'bank: joint work is credited to one firm instead of every firm on it',
-    find: '          { minN: ORG_MIN_N, multi: true }).slice(0, 10),',
-    with: '          { minN: ORG_MIN_N }).slice(0, 10),' },
+    find: '        }, { minN: ORG_MIN_N, multi: true }).slice(0, 10),',
+    with: '        }, { minN: ORG_MIN_N }).slice(0, 10),' },
 
   { what: 'bank: the company calibration is computed and never reaches the prompt',
     find: "By the COMPANY that did the work — ${c.byOrg.map(line).join(' | ')}.",
     with: 'By the COMPANY that did the work — (omitted).' },
+  /* ── a company is an entity, not a spelling ───────────────────────────────
+     The bank exists to compare the same firm ACROSS engagements, and free text
+     cannot do it: "Northwind Integration" retyped as "Northwind Integration Ltd"
+     on the fourth project silently starts a fourth history with n=1, exactly when
+     the first three had become worth something. */
+
+  { what: 'bank: company history is grouped on the NAME, so a rename splits it in two',
+    find: `        byOrg: group(r => {
+          const ids = (r.orgIds && r.orgIds.length) ? r.orgIds : (r.orgId ? [r.orgId] : []);
+          if (ids.length) return ids.map(id => (orgFind(id) || {}).name || id);
+          return (r.orgs && r.orgs.length) ? r.orgs : (r.org || '');
+        }, { minN: ORG_MIN_N, multi: true }).slice(0, 10),`,
+    with: `        byOrg: group(r => (r.orgs && r.orgs.length) ? r.orgs : (r.org || ''),
+          { minN: ORG_MIN_N, multi: true }).slice(0, 10),` },
+
+  { what: 'effort: people with no company set are dropped from the company breakdown',
+    find: '        if (!g.has(key)) g.set(key, { name: label, planDays: 0',
+    with: '        if (!r.org) return;\n        if (!g.has(key)) g.set(key, { name: label, planDays: 0' },
+
+  { what: 'effort: the worklist total sums only the rows on screen, not the whole group',
+    find: '      const totDays = rows.reduce((a, r) => a + (r.estDays || 0), 0);',
+    with: '      const totDays = shown.reduce((a, r) => a + (r.estDays || 0), 0);' },
 ];
 
 const CHECKS = QUICK ? ['run-test-plan.js']
