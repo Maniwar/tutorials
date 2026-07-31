@@ -99,7 +99,7 @@ rm -f /tmp/ptr-m.$$
 # save/load field coverage, the margin, an export total, undo, the baseline roll,
 # the commitment log, the estimate bank's calibration, a wizard button that acts
 # on the wrong object, a caption that states a figure typed by hand — and confirm
-# something goes red. Eighty-three of them, about eight and a half minutes: too much for every
+# something goes red. Eighty-five of them, about nine minutes: too much for every
 # commit, worth it before anything the user sees. FULL=1 git commit.
 #
 # It fails on a SKIPPED mutant as well as a survivor, and the two mean different

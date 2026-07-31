@@ -498,13 +498,11 @@ const MUTANTS = [
      the first three had become worth something. */
 
   { what: 'bank: company history is grouped on the NAME, so a rename splits it in two',
-    find: `        byOrg: group(r => {
-          const ids = (r.orgIds && r.orgIds.length) ? r.orgIds : (r.orgId ? [r.orgId] : []);
-          if (ids.length) return ids.map(id => (orgFind(id) || {}).name || id);
-          return (r.orgs && r.orgs.length) ? r.orgs : (r.org || '');
-        }, { minN: ORG_MIN_N, multi: true }).slice(0, 10),`,
-    with: `        byOrg: group(r => (r.orgs && r.orgs.length) ? r.orgs : (r.org || ''),
-          { minN: ORG_MIN_N, multi: true }).slice(0, 10),` },
+    find: `          if (ids.length) return ids.map((id, i) => (orgFind(id) || {}).name
+            || (r.orgs || [])[i] || r.org || id);
+          return (r.orgs && r.orgs.length) ? r.orgs : (r.org || '');`,
+    with: `          return (r.orgs && r.orgs.length) ? r.orgs : (r.org || '');
+          /* mutant: the id is ignored, so the NAME is the grouping key */` },
 
   { what: 'effort: people with no company set are dropped from the company breakdown',
     find: '        if (!g.has(key)) g.set(key, { name: label, planDays: 0',
@@ -513,6 +511,30 @@ const MUTANTS = [
   { what: 'effort: the worklist total sums only the rows on screen, not the whole group',
     find: '      const totDays = rows.reduce((a, r) => a + (r.estDays || 0), 0);',
     with: '      const totDays = shown.reduce((a, r) => a + (r.estDays || 0), 0);' },
+  /* ── the handoff ──────────────────────────────────────────────────────────
+     The company registry lives outside every project, so a bank export, a people
+     library and a project file all carry company IDS referencing it. On the
+     machine that wrote them every id resolves; on a colleague's it does not, and
+     that shipped broken in two visible ways — the bank's company card printing a
+     raw slug as a firm's name, and a roster picker reading "— none —" for a
+     person whose employer the file states plainly.
+
+     Note a mutant that is NOT here: removing the `orgs` block from the bank
+     export. Every row also carries the company's NAME beside its id, and the
+     importer adopts from the rows when the block is absent — an older export has
+     no block at all and must still work. The removal is therefore equivalent:
+     nothing observable changes, and listing it would report a permanent false
+     hole. Verified by exporting, deleting the block by hand, and importing into
+     an empty registry on both builds: identical. */
+
+  { what: 'handoff: an adopted company is given a fresh local id, splitting one firm in two',
+    find: '      const rec = { id: key, name: nm || key, at: fmtISO(new Date()), adopted: true };',
+    with: "      const rec = { id: orgSlug(nm || key) + '-local', name: nm || key, at: fmtISO(new Date()), adopted: true };" },
+
+  { what: 'handoff: a company the registry has not adopted is labelled with its internal id',
+    find: `          if (ids.length) return ids.map((id, i) => (orgFind(id) || {}).name
+            || (r.orgs || [])[i] || r.org || id);`,
+    with: '          if (ids.length) return ids.map(id => (orgFind(id) || {}).name || id);' },
 ];
 
 const CHECKS = QUICK ? ['run-test-plan.js']
@@ -537,14 +559,14 @@ const LIKELY = {
   'margin': 'pricing-sweep.js', 'wizard:': 'dialog-sweep.js',
   'budget bar:': 'chart-reconciliation-sweep.js', 'catch-up:': 'chart-reconciliation-sweep.js',
   'test plan:': 'run-test-plan.js', 'baseline history:': 'baseline-sweep.js',
-  'bank:': 'bank-sweep.js', 'readout:': 'contradiction-sweep.js',
+  'bank:': 'bank-sweep.js', 'handoff:': 'bank-sweep.js', 'readout:': 'contradiction-sweep.js',
   'blocked tab:': 'dialog-sweep.js', 'changes panel:': 'drawn-surfaces-sweep.js',
   'corrupt file:': 'corrupt-file-sweep.js', 'ring:': 'drawn-surfaces-sweep.js',
   'envelope:': 'chart-reconciliation-sweep.js', 'scope:': 'chart-reconciliation-sweep.js',
   'form:': 'drawn-surfaces-sweep.js', 'drill-in:': 'chart-reconciliation-sweep.js',
   'prose:': 'dynamic-prose-sweep.js', 'heatmap:': 'resourcing-sweep.js',
   'navigation:': 'navigation-sweep.js', 'worklist:': 'navigation-sweep.js',
-  'criteria:': 'ai-boundary-sweep.js', 'effort:': 'resourcing-sweep.js', 'bank:': 'bank-sweep.js'
+  'criteria:': 'ai-boundary-sweep.js', 'effort:': 'resourcing-sweep.js', 'bank:': 'bank-sweep.js', 'handoff:': 'bank-sweep.js'
 };
 const orderFor = m => {
   const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);

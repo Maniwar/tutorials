@@ -311,6 +311,87 @@ const { chromium } = requirePlaywright();
         say('the company bucket is labelled with its internal id (' + rec.id + ') rather than its name');
     }
 
+    /* ── 8. THE HANDOFF: EVERYTHING A COLLEAGUE NEEDS TRAVELS WITH THE FILE ───
+       The registry lives outside every project, so a bank export, a people
+       library and a project file all carry company IDS referencing it. On the
+       machine that wrote them every id resolves; on anybody else's it does not,
+       and this was broken in exactly two visible ways when the registry shipped:
+       the bank's company card printed the raw slug "northwind-integration" as
+       though it were a firm's name, and a roster picker showed "— none —" for a
+       person whose employer the file states plainly.
+
+       Both are the internal key leaking through a boundary it was supposed to
+       stay behind. The fix is that companies ride ALONG — and the property to
+       hold is not "the export has an orgs block" but "a receiver who has never
+       heard of this company ends up able to name it", which is what a simulated
+       fresh machine tests. */
+    ran('8·companiesTravelWithTheFile');
+    (() => {
+      const rec2 = orgRegister('Meridian Data Services');
+      const rows2 = [1.3, 1.35, 1.25].map((r, i) => Object.assign(mk('D', 40 + i, r),
+        { org: 'Meridian Data Services', orgs: ['Meridian Data Services'],
+          orgId: rec2.id, orgIds: [rec2.id], owner: 'K. Osei',
+          people: [{ n: 'K. Osei', u: 100, org: 'Meridian Data Services', orgId: rec2.id }] }));
+      saveBank(rows2);
+
+      // what leaves this machine
+      let payload = null;
+      const realDownload = window.download;
+      window.download = (name, body) => { if (/estimate-bank\.json$/.test(name)) payload = body; };
+      bankExportJSON();
+      window.download = realDownload;
+      out.exportCarriedOrgs = payload ? ((JSON.parse(payload).orgs || []).length) : -1;
+      if (!payload) { say('exporting the bank produced no file'); return; }
+
+      // and now a machine that has never heard of this company
+      const keepLib = loadOrgLib().slice();
+      saveOrgLib([]);
+      const d2 = JSON.parse(payload);
+      orgAdoptAll((d2.orgs || []).concat((d2.rows || []).map(r => ({ id: r.orgId, name: r.org }))));
+      saveBank(d2.rows || []);
+      const cal2 = bankCalibration();
+      const labels = (cal2 && cal2.byOrg || []).map(x => x.k);
+      out.labelsOnAFreshMachine = labels;
+      if (!labels.length)
+        say('a colleague importing this bank sees no company breakdown at all');
+      labels.forEach(k => {
+        if (k === rec2.id || /^[a-z0-9]+(-[a-z0-9]+)+$/.test(k))
+          say('a colleague importing this bank sees the internal id "' + k + '" printed as a company name — '
+            + 'the key was meant to stay behind the boundary the file crosses');
+      });
+      if (labels.indexOf('Meridian Data Services') < 0)
+        say('the company\'s real name does not survive the handoff: a colleague sees "'
+          + labels.join(', ') + '"');
+      /* and the id has to be preserved, not re-minted — a fresh local id would
+         give one firm two identities the moment the next file arrived, which is
+         the whole failure the id exists to prevent. */
+      const adopted = loadOrgLib().find(o => o.name === 'Meridian Data Services');
+      out.idSurvivedHandoff = adopted && adopted.id === rec2.id;
+      if (!adopted) say('the company was not adopted at all, so the next file from the same colleague '
+        + 'starts its history over');
+      else if (adopted.id !== rec2.id)
+        say('the adopted company was given a NEW id (' + adopted.id + ' rather than ' + rec2.id
+          + '), so the same firm now has two identities and its history will split on the next import');
+      /* AND THE CASE WHERE ADOPTION DID NOT HAPPEN. Above, the receiver adopts
+         and the registry then resolves every id, so the label path that falls
+         back is never exercised — a build that labels with the raw id passes.
+         It bites for real when adoption is skipped or its store write fails: an
+         id in the bank that the registry does not hold. The row still carries
+         the company's NAME, so there is never a reason to print the key. */
+      saveOrgLib([]);
+      saveBank([1.3, 1.35, 1.25].map((r, i) => Object.assign(mk('E', 60 + i, r),
+        { org: 'Halden Consulting', orgs: ['Halden Consulting'],
+          orgId: 'halden-consulting', orgIds: ['halden-consulting'], owner: 'R. Vidal' })));
+      const orphan = (bankCalibration().byOrg || []).map(x => x.k);
+      out.labelsWithNoRegistry = orphan;
+      if (orphan.some(k => /^[a-z0-9]+(-[a-z0-9]+)+$/.test(k)))
+        say('with the company absent from the registry the bank labels its bucket "' + orphan.join(', ')
+          + '" — the internal id, when the row itself carries the name');
+      if (orphan.indexOf('Halden Consulting') < 0)
+        say('a company the registry has not adopted loses its name entirely, showing "' + orphan.join(', ') + '"');
+      saveOrgLib(keepLib);
+    })();
+
     saveBank([]);
     return { contradictions: bad, counts: out };
   });

@@ -3028,7 +3028,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.31.0607</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.31.1444</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4136,6 +4136,12 @@ Or say what you want, in your own words:
         missAck: !!t.missAck
       }));
       resources = (data.resources && typeof data.resources === 'object') ? data.resources : {};
+      /* A colleague's plan names companies by id. Adopt any this machine has
+         never seen, keeping their id, or the roster shows "— none —" for a
+         person whose employer the file states plainly — reproduced in a second
+         browser profile. Harmless on your own files: every id is already known. */
+      try { orgAdoptAll(Object.keys(resources).map(n => ({ id: (resources[n] || {}).orgId,
+        name: (resources[n] || {}).org }))); } catch (e) {}
       if (data.reserves && typeof data.reserves === 'object') {
         reserves = {
           contingency: Object.assign({ value: 0, unit: 'percent' }, data.reserves.contingency || {}),
@@ -5197,13 +5203,18 @@ Or say what you want, in your own words:
     function orgPickerHtml(person, ri) {
       const cur = orgIdOf(person);
       const lib = loadOrgLib();
-      const legacy = (!cur && String((resources[person] || {}).org || '').trim()) || '';
+      /* `cur` can name a company the registry does not hold — an imported file
+         whose adoption has not run, or a store that failed to write. Showing
+         "— none —" there says the plan has no company when the plan says it
+         does, so the roster's own name is offered as the selected option. */
+      const stored = String((resources[person] || {}).org || '').trim();
+      const legacy = ((!cur || !orgFind(cur)) && stored) || '';
       return '<select class="mini-inp rl-org" data-ri="' + ri + '" style="width:150px" title="'
         + escapeHtml('The company this person works for, chosen from your saved list so the same firm is one '
           + 'entity across every project rather than three spellings. It is recorded by id on every archived '
           + 'activity, which is what lets the estimate bank say how a given partner has historically run '
           + 'against estimate.') + '">'
-        + '<option value=""' + (cur || legacy ? '' : ' selected') + '>— none —</option>'
+        + '<option value=""' + ((cur && orgFind(cur)) || legacy ? '' : ' selected') + '>— none —</option>'
         + lib.map(o => '<option value="' + escapeHtml(o.id) + '"' + (o.id === cur ? ' selected' : '') + '>'
             + escapeHtml(o.name) + '</option>').join('')
         + (legacy ? '<option value="' + escapeHtml(legacy) + '" selected>' + escapeHtml(legacy)
@@ -18048,6 +18059,47 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       lib.push(rec); saveOrgLib(lib);
       return rec;
     }
+    /* ADOPT A COMPANY THAT ARRIVED FROM SOMEBODY ELSE.
+
+       The registry lives outside every project, and a project file, a bank
+       export and a people-library export all carry company ids REFERENCING it.
+       Open a colleague's file on a machine whose registry has never heard of
+       Northwind and the id resolves to nothing: the roster picker showed
+       "— none —" for a person whose company the file plainly states, and the
+       bank's company card printed the raw slug "northwind-integration" as though
+       that were a firm's name. Both reproduced in a second browser profile
+       before this existed.
+
+       So an unknown id is ADOPTED rather than ignored, and adopted UNDER ITS OWN
+       ID — minting a fresh local id would give the same firm two identities the
+       moment the next file arrived, which is the exact failure the id was
+       introduced to prevent. A name we already hold under a different id keeps
+       ours and answers to both, because two people who typed the same company on
+       different machines mean one company. */
+    function orgAdopt(id, name) {
+      const nm = String(name || '').trim();
+      const key = String(id || '').trim();
+      if (!key) return nm ? orgRegister(nm) : null;
+      const known = orgFind(key);
+      if (known) return known;
+      const sameName = nm ? orgByName(nm) : null;
+      if (sameName) return sameName;
+      const lib = loadOrgLib().slice();
+      const rec = { id: key, name: nm || key, at: fmtISO(new Date()), adopted: true };
+      lib.push(rec); saveOrgLib(lib);
+      return rec;
+    }
+    // every {id, name} pair an incoming payload references, adopted in one pass
+    function orgAdoptAll(pairs) {
+      let n = 0;
+      (pairs || []).forEach(pr => {
+        if (!pr) return;
+        const id = String(pr.id || '').trim();
+        if (!id || orgFind(id)) return;
+        if (orgAdopt(id, pr.name)) n++;
+      });
+      return n;
+    }
     function orgRename(id, name) {
       const nm = String(name || '').trim();
       if (!nm) return false;
@@ -18184,7 +18236,11 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     function resLibExport() {
       const rows = loadResLib();
       if (!rows.length) { alert('The people library is empty — press “Save this roster to the library” first.'); return; }
-      download('people-library.json', JSON.stringify({ version: 1, exportedAt: fmtISO(new Date()), rows }, null, 2), 'application/json');
+      // same reason as the bank: the rows reference companies by id
+      const orgs = [...new Set(rows.map(r => r.orgId).filter(Boolean))]
+        .map(id => orgFind(id) || { id: id, name: id });
+      download('people-library.json', JSON.stringify({ version: 1, exportedAt: fmtISO(new Date()),
+        orgs: orgs, rows: rows }, null, 2), 'application/json');
     }
     function resLibImport(ev) {
       const f = ev.target.files && ev.target.files[0]; if (!f) return;
@@ -18194,6 +18250,8 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           const d = JSON.parse(rd.result);
           const incoming = Array.isArray(d) ? d : (d.rows || []);
           if (!incoming.length) throw new Error('no people in that file');
+          orgAdoptAll((Array.isArray(d.orgs) ? d.orgs : [])
+            .concat(incoming.map(r => ({ id: r.orgId, name: r.org }))));
           const mg = resLibMerge(loadResLib(), incoming);
           saveResLib(mg.rows); renderResLib();
           flashSaved('👥 Library: ' + mg.added + ' new, ' + mg.updated + ' updated (' + mg.rows.length + ' total).');
@@ -18532,7 +18590,12 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
            is honest: the tool cannot know two old strings meant one firm. */
         byOrg: group(r => {
           const ids = (r.orgIds && r.orgIds.length) ? r.orgIds : (r.orgId ? [r.orgId] : []);
-          if (ids.length) return ids.map(id => (orgFind(id) || {}).name || id);
+          /* Fall back to the NAME the row itself carries, never to the id. A
+             registry that has not heard of this company yet is normal on an
+             imported file, and printing "northwind-integration" as a firm name
+             is the internal key leaking onto the screen. */
+          if (ids.length) return ids.map((id, i) => (orgFind(id) || {}).name
+            || (r.orgs || [])[i] || r.org || id);
           return (r.orgs && r.orgs.length) ? r.orgs : (r.org || '');
         }, { minN: ORG_MIN_N, multi: true }).slice(0, 10),
         byPerson: group(r => r.owner, { minN: ORG_MIN_N }).slice(0, 10),
@@ -18565,7 +18628,15 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
     function bankExportJSON() {
       const rows = loadBank();
       if (!rows.length) { alert('The estimate bank is empty — archive a project with logged actuals first.'); return; }
-      download('estimate-bank.json', JSON.stringify({ version: 1, exportedAt: fmtISO(new Date()), rows }, null, 2), 'application/json');
+      /* The companies the rows REFER to travel with them. Without this the file
+         is a set of ids pointing at a registry the receiver does not have, and
+         the bank's company card renders internal slugs as firm names. */
+      const ids = new Set();
+      rows.forEach(r => { if (r.orgId) ids.add(r.orgId); (r.orgIds || []).forEach(x => ids.add(x));
+        (r.people || []).forEach(pp => { if (pp && pp.orgId) ids.add(pp.orgId); }); });
+      const orgs = [...ids].map(id => orgFind(id) || { id: id, name: id }).filter(Boolean);
+      download('estimate-bank.json', JSON.stringify({ version: 1, exportedAt: fmtISO(new Date()),
+        orgs: orgs, rows: rows }, null, 2), 'application/json');
     }
     function bankImportJSON(ev) {
       const f = ev.target.files && ev.target.files[0]; if (!f) return;
@@ -18575,6 +18646,17 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
           const d = JSON.parse(rd.result);
           const incoming = Array.isArray(d) ? d : (d.rows || []);
           if (!incoming.length) throw new Error('no rows in that file');
+          /* Companies first, so the rows land on a registry that can name them.
+             A file from an older build has no `orgs` block; its rows carry the
+             company NAME as well as the id, so the names in the rows themselves
+             are enough to adopt from. */
+          const fromRows = [];
+          incoming.forEach(r => {
+            if (r.orgId) fromRows.push({ id: r.orgId, name: r.org });
+            (r.orgIds || []).forEach((x, i) => fromRows.push({ id: x, name: (r.orgs || [])[i] }));
+            (r.people || []).forEach(pp => { if (pp && pp.orgId) fromRows.push({ id: pp.orgId, name: pp.org }); });
+          });
+          const newOrgs = orgAdoptAll((Array.isArray(d.orgs) ? d.orgs : []).concat(fromRows));
           const mg = bankMerge(loadBank(), incoming);
           saveBank(mg.rows);
           updateBankBadge();
@@ -18582,7 +18664,10 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
           flashSaved('📚 Estimate bank: ' + mg.added + ' new record(s) imported'
             + (mg.updated ? ', ' + mg.updated + ' refreshed with a later archive' : '')
             + (mg.healed ? ', ' + mg.healed + ' duplicate row(s) already in your bank merged away' : '')
-            + ' (' + mg.rows.length + ' total). Future estimates calibrate against them.');
+            + ' (' + mg.rows.length + ' total)'
+            + (newOrgs ? ', and ' + newOrgs + ' compan' + (newOrgs === 1 ? 'y' : 'ies') + ' added to your list'
+                + ' so their history joins up with yours' : '')
+            + '. Future estimates calibrate against them.');
         } catch (e) { alert('Could not read that estimate bank: ' + e.message); }
         ev.target.value = '';
       };
