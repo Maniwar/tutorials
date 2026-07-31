@@ -155,6 +155,116 @@ const { chromium } = requirePlaywright();
         say('the prompt block quotes the span-derived 9× ratio, teaching the estimator from a calendar gap');
     }
 
+    /* ── 6. WHO DID IT, AND WHO THEY WORK FOR ────────────────────────────────
+       The bank could calibrate by activity kind, work type and role, and could
+       not answer the question that comes up every time the same subcontractor
+       appears on another engagement: does THAT firm's work run over. A role
+       cannot answer it — two firms both field "integration developers" — and a
+       person's name usually cannot either, because individuals rarely repeat
+       across clients while the partner does.
+
+       Three properties. The company reaches the archived row at all. Joint work
+       counts in BOTH firms' evidence rather than being attributed to one. And
+       what the calibration knows reaches the PROMPT, because a signal computed
+       and never sent calibrates nothing. */
+    /* First the END TO END path, because everything after it is synthetic. The
+       rows below are hand-built, so a build that never records a company when it
+       ARCHIVES a real plan passes every one of them — the calibration would be
+       correct about data that never arrives. Set a company on the roster, ask
+       the archiver for its rows, and require the field to be there. */
+    ran('6a·companyReachesTheArchive');
+    const owned = leafTasks().find(t => !t.isSummary && !t.milestone && taskParticipants(t).length
+      && actualEffortDays(t) != null);
+    if (!owned) out.archiveOrgCase = 'SKIPPED-no-activity-with-an-actual';
+    else {
+      const who = taskParticipants(owned)[0].name;
+      const keepOrg = (resources[who] || {}).org;
+      if (!resources[who]) resources[who] = { capacity: 100 };
+      resources[who].org = 'Northwind Integration';
+      const built = bankRowsFromPlan().filter(r => (r.people || []).some(x => x.n === who));
+      out.archivedRowsForPerson = built.length;
+      if (!built.length)
+        say('the archiver produces no row naming the person who did the work, so nothing downstream can '
+          + 'group by who or by their company');
+      else {
+        const one = built[0];
+        /* Both fields, separately. `org` is the owner's company and is what the
+           row shows; `orgs` is EVERY company that touched the activity and is
+           what the multi-bucket calibration groups on. They are not spare copies
+           of each other — accepting either would mean losing the set that makes
+           joint work count for both firms goes unnoticed, and that is precisely
+           the case company calibration exists for. */
+        if (!one.org)
+          say('the archived row carries no owning company, so its own line in the bank cannot say who did it');
+        else if (one.org !== 'Northwind Integration')
+          say('the archived owning company is "' + one.org + '" where the roster says Northwind Integration');
+        const everyOrg = [...new Set(taskParticipants(owned).map(pr => (resources[pr.name] || {}).org)
+          .filter(Boolean))];
+        out.archivedOrgs = (one.orgs || []).length;
+        everyOrg.forEach(o2 => {
+          if ((one.orgs || []).indexOf(o2) < 0)
+            say('"' + o2 + '" worked on this activity and is missing from the archived company set — work '
+              + 'shared between two firms has to be evidence about both, and this row will only ever teach '
+              + 'the calibration about one of them');
+        });
+        const me = (one.people || []).find(x => x.n === who);
+        if (!me) say('the archived row lists participants and the person who owns the activity is not among them');
+        else if (!(me.u > 0))
+          say('the archived participant carries no allocation, so one person at 100% and four at 25% are '
+            + 'recorded identically and the effort behind the ratio cannot be read');
+      }
+      if (keepOrg === undefined) delete resources[who].org; else resources[who].org = keepOrg;
+    }
+
+    ran('6b·companyCalibration');
+    const withOrg = (proj, i, ratio, org, orgs, owner) => Object.assign(
+      mk(proj, i, ratio), { org: org, orgs: orgs || (org ? [org] : []), owner: owner || ('P' + i) });
+    saveBank([
+      withOrg('A', 1, 1.4, 'Northwind Integration'), withOrg('A', 2, 1.5, 'Northwind Integration'),
+      withOrg('A', 3, 1.6, 'Northwind Integration'), withOrg('A', 4, 1.45, 'Northwind Integration'),
+      withOrg('A', 5, 1.0, 'Us'), withOrg('A', 6, 1.0, 'Us'),
+      withOrg('A', 7, 1.05, 'Us'), withOrg('A', 8, 0.95, 'Us')
+    ]);
+    const cOrg = bankCalibration();
+    out.byOrg = cOrg && (cOrg.byOrg || []).map(x => x.k + ':' + x.median + '(n=' + x.n + ')');
+    if (!cOrg || !(cOrg.byOrg || []).length)
+      say('eight archived activities across two companies produce no calibration by company — the one '
+        + 'signal that carries from engagement to engagement when the individual names do not');
+    else {
+      const nw = cOrg.byOrg.find(x => /Northwind/.test(x.k));
+      const us = cOrg.byOrg.find(x => x.k === 'Us');
+      if (!nw || !us) say('the by-company split lost one of the two companies in the bank');
+      else if (!(nw.median > us.median))
+        say('the partner running 40–60% over shows a median of ' + nw.median + '× against ' + us.median
+          + '× for work done in-house — the split is not reading the ratios it is grouping');
+      const pb2 = bankPromptBlock();
+      out.promptNamesCompany = /Northwind/.test(pb2);
+      if (!out.promptNamesCompany)
+        say('the calibration knows a company has run consistently over and the prompt block never says '
+          + 'so, so every future estimate is written without it');
+    }
+    /* joint work is evidence about EVERY firm on it. Attributing an activity two
+       firms shared to whichever name happens to be in `owner` throws away half
+       the record and biases both buckets. */
+    saveBank([
+      withOrg('B', 1, 2.0, '', ['Northwind Integration', 'Us'], 'shared1'),
+      withOrg('B', 2, 2.0, '', ['Northwind Integration', 'Us'], 'shared2'),
+      withOrg('B', 3, 2.0, '', ['Northwind Integration', 'Us'], 'shared3'),
+      withOrg('B', 4, 1.0, 'Us'), withOrg('B', 5, 1.0, 'Us'), withOrg('B', 6, 1.0, 'Us')
+    ]);
+    const cJoint = bankCalibration();
+    out.jointOrgs = cJoint && (cJoint.byOrg || []).map(x => x.k + ':n=' + x.n);
+    const nwJ = cJoint && (cJoint.byOrg || []).find(x => /Northwind/.test(x.k));
+    const usJ = cJoint && (cJoint.byOrg || []).find(x => x.k === 'Us');
+    if (!nwJ)
+      say('three activities worked jointly by two firms are credited to neither — a row with no single '
+        + 'owning company drops out of the company calibration entirely');
+    else if (nwJ.n !== 3)
+      say('the partner on three shared activities is credited with ' + nwJ.n + ' of them');
+    if (!usJ || usJ.n !== 6)
+      say('the in-house side of three shared activities plus three of its own shows n='
+        + (usJ ? usJ.n : 0) + ' rather than 6 — shared work is evidence about BOTH firms, not one');
+
     saveBank([]);
     return { contradictions: bad, counts: out };
   });

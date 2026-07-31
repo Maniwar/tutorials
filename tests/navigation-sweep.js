@@ -193,6 +193,43 @@ const { chromium } = requirePlaywright();
     });
     if (html2.indexOf('<table') < 0)
       say2('the rich-text copy is not a table, so it pastes into email as a run of lines');
+
+    /* EFFORT IS ON THE ROW, and it is that PERSON'S share. A worklist that states
+       a date and not a size asks somebody to plan their week from half the
+       information — "pick these four up" says nothing about whether that is a
+       morning or a fortnight. And the share matters: an activity two people
+       split shows its whole effort on both their lists unless it is weighted,
+       so anybody adding their own column up gets a number the plan disagrees with. */
+    const anyEff = p.now.concat(p.blocked, p.soon, p.doneRows).filter(r => r.estDays > 0);
+    out.rowsWithEffort = anyEff.length;
+    if (!anyEff.length) say2('not one row carries an effort figure, so the panel says when work is due '
+      + 'and never how big it is');
+    const partTime = data.reduce((acc, q) => acc.concat(q.now, q.blocked, q.soon, q.doneRows), [])
+      .find(r => r.units && r.units !== 100 && r.estDays > 0);
+    out.partTimeRow = partTime ? partTime.units + '%' : 'SKIPPED-nobody-part-time';
+    if (partTime) {
+      const whole = unitToWorkingDays(partTime.te);
+      if (Math.abs(partTime.estDays - whole) < 1e-6)
+        say2('a row for somebody allocated at ' + partTime.units + '% shows the activity\'s WHOLE effort '
+          + '(' + whole.toFixed(2) + ' days) as theirs — every shared activity is counted twice and the '
+          + 'person\'s own total disagrees with the roster');
+    }
+    // drawn, and carried into the copy, or the two say different things
+    if (!/EFFORT/i.test((host.querySelector('.wl-t thead') || {}).textContent || ''))
+      say2('effort is computed on every row and the table has no column for it');
+    /* BOTH flavours, separately. The first version accepted the figure in
+       either one, so deleting the Effort column from the rich-text table passed
+       on the strength of the plain-text copy still having it — and rich text is
+       the flavour that actually lands when somebody pastes into email. */
+    const effRow = anyEff.find(r => r.estDays > 0);
+    if (effRow) {
+      const want = wlEffText(effRow).split(' (')[0];
+      [['rich text', html2], ['plain text', text2]].forEach(([lbl, doc]) => {
+        if (doc.indexOf(want) < 0)
+          say2('the ' + lbl + ' copy carries no effort figure ("' + want + '" is on screen and not in it) — '
+            + 'the person being sent the list cannot size their own week from it');
+      });
+    }
     // a blocked row's copy must name the blocker AND its owner, or a chase has nowhere to go
     const blk = p.blocked[0];
     if (blk) {

@@ -392,6 +392,82 @@ const DATA = FIXTURE();
             + 'in adjacent cells, with nothing saying the peak is on work that is already finished');
       });
       out.rosterPeakAbovePlainOk = mute;
+
+      /* ── EFFORT AND VARIANCE PER PERSON MUST ADD UP TO THE PLAN ────────────
+         A new per-person effort table is a new place for the plan's effort to be
+         restated, and the failure that matters is not a wrong row — it is a
+         column that does not sum to what every other surface says. Two identities:
+
+           each person's Planned equals the roster's own Planned effort column,
+           computed here independently (TE in working days × their allocation),
+           and the two must not drift apart;
+
+           the SHARE weighting is real. An activity two people split at 50% each
+           contributes half its effort to each. Drop the weighting and the column
+           double-counts every shared activity, which on a plan with joint work
+           silently inflates the project's effort — the exact class of defect the
+           resource unit trap already taught this file. */
+      const eff = resourceEffortData();
+      out.effortPeople = eff.length;
+      const wd = t => unitToWorkingDays(Number(t.te) || 0);
+      const indep = {};
+      let sharedSeen = 0;
+      tasks.filter(t => !t.isSummary && !t.milestone).forEach(t => {
+        const parts = taskParticipants(t);
+        if (parts.length > 1) sharedSeen++;
+        parts.forEach(pr => {
+          const u2 = (Number(pr.units) || 0) / 100;
+          if (u2 <= 0) return;
+          indep[pr.name] = (indep[pr.name] || 0) + wd(t) * u2;
+        });
+      });
+      out.sharedActivities = sharedSeen;
+      eff.forEach(r => {
+        const want = indep[r.name] || 0;
+        if (Math.abs(r.planDays - want) > 0.01)
+          say('Effort by person', r.name + ' is shown ' + r.planDays.toFixed(2) + ' planned days against '
+            + want.toFixed(2) + ' recomputed from their allocation — the table and the roster disagree '
+            + 'about the same person on the same plan');
+      });
+      const totShown = eff.reduce((s2, r) => s2 + r.planDays, 0);
+      const totIndep = Object.keys(indep).reduce((s2, k) => s2 + indep[k], 0);
+      out.effortPlannedTotal = +totShown.toFixed(2);
+      if (Math.abs(totShown - totIndep) > 0.02)
+        say('Effort by person', 'the column totals ' + totShown.toFixed(2) + ' planned days against '
+          + totIndep.toFixed(2) + ' across the plan');
+      /* the weighting has to be OBSERVABLE, or the identity above is satisfied by
+         two functions making the same mistake. Sum the UNWEIGHTED effort and
+         require it to differ — if it does not, this fixture has no shared or
+         part-time work and the check proves nothing about weighting. */
+      const unweighted = tasks.filter(t => !t.isSummary && !t.milestone)
+        .reduce((s2, t) => s2 + wd(t) * taskParticipants(t).length, 0);
+      out.unweightedTotal = +unweighted.toFixed(2);
+      if (Math.abs(unweighted - totIndep) < 0.02)
+        out.weightingCase = 'SKIPPED-no-shared-or-part-time-work';
+      else if (Math.abs(totShown - unweighted) < 0.02)
+        say('Effort by person', 'the column adds to the UNWEIGHTED total (' + unweighted.toFixed(2)
+          + '), so an activity two people share is counted whole against each of them and the plan\'s '
+          + 'effort is inflated by every piece of joint work');
+      // variance is logged − earned, never logged − the whole estimate
+      eff.filter(r => r.varDays != null).forEach(r => {
+        const naive = r.actDays - r.refDays;
+        if (Math.abs(r.varDays - naive) > 0.01 && Math.abs(r.varDays - (r.actDays - r.earnedDays)) > 0.01)
+          say('Effort by person', r.name + '\'s variance is neither logged−earned nor logged−estimate; '
+            + 'it is ' + r.varDays.toFixed(2) + ' with ' + r.actDays.toFixed(2) + ' logged, '
+            + r.earnedDays.toFixed(2) + ' earned and ' + r.refDays.toFixed(2) + ' estimated');
+      });
+      const midFlight = eff.find(r => r.varDays != null && r.earnedDays > 0.01
+        && Math.abs(r.earnedDays - r.refDays) > 0.5);
+      out.partWayCase = midFlight ? midFlight.name : 'SKIPPED-nobody-part-way';
+      if (midFlight && Math.abs(midFlight.varDays - (midFlight.actDays - midFlight.refDays)) < 0.01)
+        say('Effort by person', midFlight.name + ' is part way through their work and the variance is '
+          + 'measured against the WHOLE estimate — that reports a saving nobody has made yet, and it '
+          + 'turns into an overrun as the remaining work is done');
+      // and it has to be drawn, not merely computed
+      const effTxt = host ? host.textContent.replace(/\s+/g, ' ') : '';
+      out.effortTableDrawn = /Effort & variance by person|Effort &amp; variance by person/.test(effTxt);
+      if (!out.effortTableDrawn)
+        say('Effort by person', 'the breakdown is computed and never drawn on the tab it belongs to');
       return out;
     })();
 

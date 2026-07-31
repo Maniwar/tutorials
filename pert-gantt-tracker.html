@@ -710,6 +710,11 @@
     .wl-td:first-child .ek-nm { white-space: normal; }
     .wl-open { text-align: left; }
     .wl-state { color: var(--muted); }
+    .wl-eff { font-variant-numeric: tabular-nums; }
+    .wl-var { font-size: 0.68rem; line-height: 1.4; margin-top: 1px; }
+    .wl-var-over { color: var(--critical); }
+    .wl-var-under { color: var(--success); }
+    .wl-var-on { color: var(--muted); }
     .wl-risk { margin-top: 2px; display: flex; flex-direction: column; gap: 1px; }
     .wl-risk-i { font-size: 0.68rem; line-height: 1.4; color: var(--muted); }
     .wl-risk-i[data-k="Issue"] { color: var(--critical); }
@@ -3022,7 +3027,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.31.0457</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.31.0533</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3062,6 +3067,9 @@ Or say what you want, in your own words:
             <span class="fg-head"><label for="mOwner">Owner / resource</label></span>
             <input id="mOwner" type="text" placeholder="e.g. A. Rivera" autocomplete="off" oninput="updateOwnerRoleHint();refreshAutoActualCost()" onchange="updateOwnerRoleHint();refreshAutoActualCost()" />
             <datalist id="ownerList"></datalist>
+            <!-- companies already used on this plan or in the people library, so the
+                 same partner is spelled one way and its bank rows group together -->
+            <datalist id="orgList"></datalist>
             <div id="mOwnerRole" style="margin-top:2px"></div>
           </div>
           <div class="form-group">
@@ -5136,6 +5144,22 @@ Or say what you want, in your own words:
       document.getElementById('estFields').style.display = ms ? 'none' : 'grid';
       refreshProgressPanel();
     }
+    /* One spelling per company, or the bank splits the same partner into two
+       buckets and neither has enough rows to say anything. The list is every
+       company already on this plan or in the people library. */
+    function orgNames() {
+      const set = new Set();
+      Object.keys(resources || {}).forEach(n => { const v = String((resources[n] || {}).org || '').trim(); if (v) set.add(v); });
+      (typeof loadResLib === 'function' ? loadResLib() : []).forEach(x => {
+        const v = String((x || {}).org || '').trim(); if (v) set.add(v); });
+      return [...set].sort((a, b) => a.localeCompare(b));
+    }
+    function populateOrgList() {
+      const dl = document.getElementById('orgList');
+      if (!dl) return;
+      dl.innerHTML = orgNames().map(n => '<option value="' + escapeHtml(n) + '"></option>').join('');
+    }
+    function orgOf(name) { return String(((resources || {})[String(name || '').trim()] || {}).org || '').trim(); }
     function populateOwnerList() {
       const dl = document.getElementById('ownerList');
       if (!dl) return;
@@ -12671,6 +12695,7 @@ Or say what you want, in your own words:
             <option value="internal" ${!isClient ? 'selected' : ''}>Internal</option>
             <option value="client" ${isClient ? 'selected' : ''}>Client</option></select></td>
           <td><input class="mini-inp rl-role" data-ri="${ri}" type="text" value="${escapeHtml((resources[name] || {}).role || '')}" placeholder="e.g. Platform Developer" title="What they do on this engagement — the AI captures it from your notes ('Marcus Webb — CRM Platform Developer'); applying a rate card also fills it. Shows on owner hovers so a roster of names still tells you who does what." style="width:150px" /></td>
+          <td><input class="mini-inp rl-org" data-ri="${ri}" list="orgList" type="text" value="${escapeHtml((resources[name] || {}).org || '')}" placeholder="${isClientResource(name) ? 'e.g. the client' : 'e.g. Us, or a partner firm'}" title="Who they work FOR. Recorded on every activity archived to the estimate bank, so a future estimate can be calibrated against how that firm's work has actually run — the question that matters when the same integration partner keeps appearing on your engagements and a person's name does not repeat." style="width:140px" /></td>
           <td><input class="mini-inp rl-cap" data-ri="${ri}" type="number" min="1" step="10" value="${R.capacity}" title="Capacity % — 100 = 1 full-time person, 300 = a 3-person team" /></td>
           <td>${isClient ? '<span class="help-text">n/a</span>' : `<input class="mini-inp rl-rate" data-ri="${ri}" type="number" min="0" step="${resRateUnit(name) === 'hour' ? 5 : 50}" value="${rawRate(name)}" title="COST rate at 100%, in the unit on the right (feeds the budget layer — hourly × 8 = the daily figure the math uses)" />`}</td>
           <td>${isClient ? '<span class="help-text">n/a</span>' : `<input class="mini-inp rl-bill" data-ri="${ri}" type="number" min="0" step="${resRateUnit(name) === 'hour' ? 5 : 50}" value="${rawBillRate(name)}" title="BILL rate, in the unit on the right (client-facing — feeds pricing & SOW)" />`}</td>
@@ -12717,7 +12742,7 @@ Or say what you want, in your own words:
           <button class="btn-sm btn-primary no-print" onclick="addResourcePrompt()"><span class="ico" aria-hidden="true">➕</span> Add resource</button></span>
         </div>
         <div class="table-wrap" style="margin-bottom:1rem"><table class="roster-table">
-          <thead><tr><th title="Person, role or team">Resource</th><th title="Internal = yours (costed & billed). Client = their people: tracked for workload/PTO but never costed or billed">Type</th><th title="Job on the engagement — filled by the AI from your notes, editable, also set when a rate card is applied">Role</th><th title="100 = one full-time person; 300 = a 3-person team; 50 = someone available half-time">Capacity %</th><th title="What they cost YOU — in the unit chosen in the next column; drives the cost & EVM layer">Cost rate</th><th title="What you charge the client — drives pricing, margin and the SOW">Bill rate</th><th title="Rates entered per day or per hour (1 day = 8 h — hourly people convert automatically everywhere)">Unit</th><th title="Vacation / unavailable dates. Scheduled work on these days is flagged as a conflict">PTO / unavailable</th><th title="Tasks they participate in (incl. as attendee)">Tasks</th><th title="Total planned working days × their allocation">Planned effort</th><th title="Busiest single day as % of capacity">Peak load</th><th title="OK = within capacity every day; over ×N = N conflict days to resolve">Status</th><th></th></tr></thead>
+          <thead><tr><th title="Person, role or team">Resource</th><th title="Internal = yours (costed & billed). Client = their people: tracked for workload/PTO but never costed or billed">Type</th><th title="Job on the engagement — filled by the AI from your notes, editable, also set when a rate card is applied">Role</th><th title="The company they work for. &quot;Us&quot; for your own people, the client&#39;s name for theirs, and the actual firm for a subcontractor or integration partner. It is recorded on every archived activity, so the estimate bank can tell you how a given partner&#39;s work has historically run against estimate — a question a role or a person&#39;s name cannot answer.">Company</th><th title="100 = one full-time person; 300 = a 3-person team; 50 = someone available half-time">Capacity %</th><th title="What they cost YOU — in the unit chosen in the next column; drives the cost & EVM layer">Cost rate</th><th title="What you charge the client — drives pricing, margin and the SOW">Bill rate</th><th title="Rates entered per day or per hour (1 day = 8 h — hourly people convert automatically everywhere)">Unit</th><th title="Vacation / unavailable dates. Scheduled work on these days is flagged as a conflict">PTO / unavailable</th><th title="Tasks they participate in (incl. as attendee)">Tasks</th><th title="Total planned working days × their allocation">Planned effort</th><th title="Busiest single day as % of capacity">Peak load</th><th title="OK = within capacity every day; over ×N = N conflict days to resolve">Status</th><th></th></tr></thead>
           <tbody>${rosterRows}</tbody>
         </table></div>`;
       const holidays = getHolidaySet();
@@ -12878,6 +12903,7 @@ Or say what you want, in your own words:
         ${roster}
         <div id="resLibPanel"></div>
         ${worklistHtml()}
+        ${resourceEffortHtml()}
         <h3 style="font-size:0.95rem;margin-bottom:0.4rem">Daily workload heatmap <span class="help-text" style="font-weight:400">(click any loaded day to drill into its tasks)</span></h3>
         <div id="rlDrill"></div>
         <div class="rl-wrap">
@@ -12948,6 +12974,7 @@ Or say what you want, in your own words:
         el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }));
 
+      populateOrgList();   // the Company boxes are type-aheads over what already exists
       // bind inputs/buttons by index (safe against names with quotes)
       cont.querySelectorAll('input.rl-cap').forEach(inp => {
         inp.addEventListener('change', () => setCapacity(names[Number(inp.dataset.ri)], inp.value));
@@ -12958,6 +12985,14 @@ Or say what you want, in your own words:
           if (!resources[n]) resources[n] = { capacity: 100 };
           resources[n].role = inp.value.trim();
           saveLocal(); renderTaskTable();
+        });
+      });
+      cont.querySelectorAll('input.rl-org').forEach(inp => {
+        inp.addEventListener('change', () => {
+          const n = names[Number(inp.dataset.ri)];
+          if (!resources[n]) resources[n] = { capacity: 100 };
+          resources[n].org = inp.value.trim();
+          saveLocal(); populateOrgList(); renderResources();
         });
       });
       cont.querySelectorAll('input.rl-rate').forEach(inp => {
@@ -14207,6 +14242,7 @@ Or say what you want, in your own words:
     // it. 2 is enough to STOP HIDING a bucket in the UI; it is nowhere near
     // enough to put a multiplier in front of the model. Hence two gates.
     const TAX_MIN_N = 5;
+    const ORG_MIN_N = 3;
     function taxCoerce(v) {
       const s = String(v == null ? '' : v).trim().toLowerCase();
       return TAX_IDS.indexOf(s) >= 0 ? s : null;
@@ -17919,7 +17955,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     function resLibRowOf(name) {
       const r = resources[name] || {};
       return { name: name, kind: isClientResource(name) ? 'client' : 'internal',
-               role: String(r.role || ''), capacity: getCapacity(name),
+               role: String(r.role || ''), org: String(r.org || ''), capacity: getCapacity(name),
                rate: rawRate(name), billRate: rawBillRate(name), rateUnit: resRateUnit(name),
                at: fmtISO(new Date()) };
     }
@@ -17964,7 +18000,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       if (!lib) return;
       if (resources[lib.name]) { flashSaved(lib.name + ' is already on this roster.'); return; }
       resources[lib.name] = { capacity: Number(lib.capacity) || 100, rate: Number(lib.rate) || 0,
-        billRate: Number(lib.billRate) || 0, role: String(lib.role || ''),
+        billRate: Number(lib.billRate) || 0, role: String(lib.role || ''), org: String(lib.org || ''),
         kind: lib.kind === 'client' ? 'client' : 'internal',
         rateUnit: lib.rateUnit === 'hour' ? 'hour' : 'day' };
       saveLocal();
@@ -18183,6 +18219,24 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           tax: tx.id, taxSrc: tx.src,
           audience: activityAudience(t),
           owner: t.owner || '', role: ((resources[(t.owner || '').trim()] || {}).role || ''),
+          /* WHO ACTUALLY DID IT, and who they work for.
+             The bank could calibrate by activity kind, work type and role, and
+             the one thing it could not answer is the question that comes up
+             every time the same subcontractor appears on another engagement:
+             does THAT firm's work run over. A role does not answer it (two
+             firms both field "integration developers") and a person's name
+             usually cannot either — individual names rarely repeat across
+             clients, but the partner does.
+
+             `org` is the owner's company; `orgs` is every company that touched
+             the activity, because joint work between your people and a partner
+             is common and attributing it to one of them would be a lie. `people`
+             carries the participants with their allocation, so a future reader
+             can tell one person at 100% from four at 25%. */
+          org: orgOf(t.owner),
+          orgs: [...new Set(taskParticipants(t).map(pr => orgOf(pr.name)).filter(Boolean))],
+          people: taskParticipants(t).map(pr => ({ n: pr.name, u: Number(pr.units) || 0,
+            org: orgOf(pr.name), role: ((resources[pr.name] || {}).role || '') })),
           o: t.o, m: t.m, p: t.p, te: +est.toFixed(3),
           actual: +act.toFixed(3),
           ratio: est > 0 ? +(act / est).toFixed(3) : null,
@@ -18285,10 +18339,19 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
          function used to carry — the upper-middle value standing in for a median
          — mattered little at n≈46 and matters enormously once buckets fall to
          n=5, which is exactly where slicing puts them. */
+      /* opts.multi lets ONE row count in several buckets. Work shared between
+         your people and a partner is evidence about both of them, and crediting
+         it to whichever name happens to sit in `owner` throws away half the
+         record and biases the other half. The n values then overlap, which the
+         prompt says out loud rather than letting a reader add them up. */
       const group = (keyFn, opts) => {
         opts = opts || {};
         const src = opts.rows || rows, minN = opts.minN || 2, g = {};
-        src.forEach(r => { const k = keyFn(r); if (!k) return; (g[k] = g[k] || []).push(r.ratio); });
+        src.forEach(r => {
+          const k = keyFn(r);
+          const keys = opts.multi ? [].concat(k || []) : [k];
+          keys.forEach(kk => { if (!kk) return; (g[kk] = g[kk] || []).push(r.ratio); });
+        });
         return Object.entries(g).filter(([, v]) => v.length >= minN).map(([k, v]) => {
           const sorted = v.slice().sort((a, b) => a - b);
           return { k, n: v.length, median: +medianOf(sorted).toFixed(2), min: +sorted[0].toFixed(2), max: +sorted[sorted.length - 1].toFixed(2) };
@@ -18306,6 +18369,19 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         byAud: group(r => r.audience, { minN: TAX_MIN_N }),
         taxUserPct: wpRows.length ? Math.round(100 * wpUser / wpRows.length) : 0,
         byRole: group(r => r.role || r.owner).slice(0, 8),
+        /* Company first, then person. An activity worked by two firms is counted
+           in BOTH — it is evidence about each of them and attributing it to one
+           would be a guess. That makes the n columns overlap, which is honest and
+           is why the prompt says so rather than letting a reader add them up. */
+        /* ORG_MIN_N is three, not the five the work-type buckets use. A work type
+           is one of five fixed tags and fills up fast; a company appears only as
+           often as you work with it, so a five-row bar means a partner you have
+           used on two engagements still says nothing. Three is thin and the
+           prompt is told to treat thin buckets as directional. */
+        byOrg: group(r => (r.orgs && r.orgs.length) ? r.orgs : (r.org || ''),
+          { minN: ORG_MIN_N, multi: true }).slice(0, 10),
+        byPerson: group(r => r.owner, { minN: ORG_MIN_N }).slice(0, 10),
+        orgsSeen: [...new Set(rows.reduce((a, r) => a.concat(r.orgs || (r.org ? [r.org] : [])), []))].length,
         projects: [...new Set(rows.map(r => r.proj))].length
       };
     }
@@ -18318,14 +18394,16 @@ Overall median ratio: ${c.overall}×.
 By activity kind — ${c.byKind.map(line).join(' | ') || 'not enough data'}.${c.byTax.length ? `
 By work type — ${c.byTax.map(line).join(' | ')}. Work type is a five-way tag on each activity (data & migration / integration & interfaces / test & QA / manage & govern / delivery), measured on work packages only — test cases are the separate "test-case" line above. ${c.taxUserPct}% of these rows were tagged by hand and the rest were read from the activity name, so treat any bucket under n=10 as directional.` : ''}${c.byAud.length ? `
 By client-facing vs internal — ${c.byAud.map(line).join(' | ')}. NOTE: this split is derived from the activity NAME by a keyword rule, not set by a person — use it as a weak signal only.` : ''}
-By role — ${c.byRole.map(line).join(' | ') || 'not enough data'}.
+By role — ${c.byRole.map(line).join(' | ') || 'not enough data'}.${c.byOrg.length ? `
+By the COMPANY that did the work — ${c.byOrg.map(line).join(' | ')}. This is the strongest signal here when it exists: a subcontractor or integration partner reappears across engagements even when the individual names do not, and a firm that has run 40% over on three projects will do it again. An activity worked jointly by two firms counts in both lines, so these n values overlap and must not be added up.` : ''}${c.byPerson.length ? `
+By the individual who owned it — ${c.byPerson.map(line).join(' | ')}. Use this only for a name that appears on the CURRENT plan; a stranger's historical ratio says nothing about this work.` : ''}
 Apply these as a calibration factor on comparable work: if a bucket runs consistently over, raise the estimate for matching activities rather than repeating the optimistic figure. When two of these lines disagree, PREFER THE ONE WITH THE LARGEST n — a thin bucket is a hint, not a multiplier. State the adjustment in the basis when you use it.\n`;
     }
     function bankExportCSV() {
       const rows = loadBank();
       if (!rows.length) { alert('The estimate bank is empty — archive a project with logged actuals first: header Export \u25be \u25b8 \ud83d\uddc4 Archive to estimation history.'); return; }
-      const head = ['Project', 'Archived', 'WBS', 'Activity', 'Kind', 'Audience', 'Work type', 'Tag source', 'Owner', 'Role', 'Unit', 'Est O', 'Est M', 'Est P', 'Est TE', 'Actual effort', 'Ratio', 'Basis', 'Planned cost', 'Actual cost'];
-      const body = rows.map(r => [r.proj, r.at, r.wbs, r.name, r.kind, r.audience || '', taxLabel(r.tax) || '', r.taxSrc || '', r.owner, r.role, r.unit,
+      const head = ['Project', 'Archived', 'WBS', 'Activity', 'Kind', 'Audience', 'Work type', 'Tag source', 'Owner', 'Role', 'Company', 'All companies', 'Unit', 'Est O', 'Est M', 'Est P', 'Est TE', 'Actual effort', 'Ratio', 'Basis', 'Planned cost', 'Actual cost'];
+      const body = rows.map(r => [r.proj, r.at, r.wbs, r.name, r.kind, r.audience || '', taxLabel(r.tax) || '', r.taxSrc || '', r.owner, r.role, r.org || '', (r.orgs || []).join('; '), r.unit,
         r.o, r.m, r.p, r.te, r.actual, r.ratio == null ? '' : r.ratio, r.basis, r.costEst, r.costActual]);
       download('estimate-bank.csv', [head].concat(body).map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
     }
@@ -18607,10 +18685,22 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
         return { k: k, n: v.length, median: +mid.toFixed(2), min: +v[0].toFixed(2), max: +v[v.length - 1].toFixed(2) };
       }).sort((a, b) => b.n - a.n);
 
+      /* COMPANY is the dimension that survives the engagement. Work type and
+         role describe the work; a subcontractor or integration partner is a
+         choice you make again, and their history is the one thing that predicts
+         the next quote. Shown beside the others rather than instead of them —
+         when the two disagree the n column is the tie-breaker, which is what the
+         thin-bucket fade is for. */
+      const orgNote = 'A company appears only as often as you work with it, so this bucket fills far more '
+        + 'slowly than work type — three records is the minimum shown and is thin. Work shared between two '
+        + 'firms counts for both, so these counts overlap and do not sum to the record total.';
       const cards = '<div class="bk-grid">'
+        + tbl('By company', c ? c.byOrg : [], orgNote)
         + tbl('By activity kind', c ? c.byKind : [])
         + tbl('By work type', c ? c.byTaxUi : [], 'Buckets under five records are faded — a thin bucket is a hint, not a multiplier.')
         + tbl('By role or owner', c ? c.byRole : [])
+        + tbl('By individual', c ? c.byPerson : [], 'Useful only for a name on the plan you are estimating '
+            + 'now — a stranger\'s historical ratio says nothing about this work.')
         + tbl('By project', projRows)
         + '</div>';
 
@@ -18619,7 +18709,8 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
       let rows = logged.slice();
       if (bankSel.bucket != null) rows = rows.filter(r => bankBucketOf(r.ratio) === bankSel.bucket);
       if (q) rows = rows.filter(r => ((r.proj || '') + ' ' + (r.name || '') + ' ' + (r.owner || '') + ' '
-        + (r.wbs || '')).toLowerCase().indexOf(q) >= 0);
+        + (r.wbs || '') + ' ' + (r.org || '') + ' ' + ((r.orgs || []).join(' ')))
+        .toLowerCase().indexOf(q) >= 0);
       rows.sort((a, b) => Math.abs(b.ratio - 1) - Math.abs(a.ratio - 1));
       const shown = rows.slice(0, 20);
       const known = projIndex();
@@ -18630,14 +18721,17 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
           ? '<button type="button" class="ptr-sc-rbtn no-print" onclick="bankOpenProject(' + ekJs2(r.pid)
             + ')" title="Open that project">' + escapeHtml(r.proj || '') + '</button>'
           : escapeHtml(r.proj || '');
+        const orgTxt = (r.orgs && r.orgs.length) ? r.orgs.join(' + ') : (r.org || '');
         return '<tr><td>' + proj + '</td><td>' + escapeHtml((r.wbs ? r.wbs + ' ' : '') + (r.name || ''))
           + '</td><td>' + escapeHtml(taxLabel(r.tax) || r.kind || '') + '</td>'
+          + '<td>' + (orgTxt ? escapeHtml(orgTxt) : '<span class="bk-n">—</span>')
+          + (r.owner ? '<div class="bk-n">' + escapeHtml(r.owner) + '</div>' : '') + '</td>'
           + '<td style="white-space:nowrap">' + r.te + ' → ' + r.actual + ' ' + escapeHtml(r.unit || '')
           + '</td><td style="font-weight:700;color:' + col + '">' + r.ratio + '×</td>'
           + '<td class="bk-n">' + escapeHtml(r.at || '') + '</td></tr>';
       }).join('');
       const bar = '<div class="bk-bar no-print">'
-        + '<input class="bk-q" type="text" placeholder="Filter by project, activity or owner…" value="'
+        + '<input class="bk-q" type="text" placeholder="Filter by project, activity, owner or company…" value="'
         + escapeHtml(bankSel.q) + '" oninput="bankSetQ(this.value)">'
         + (bankSel.bucket != null ? '<button class="btn-sm btn-secondary" onclick="bankSetBucket('
             + bankSel.bucket + ')">✕ ' + escapeHtml(BANK_BUCKETS[bankSel.bucket].k) + ' only</button>' : '')
@@ -18646,6 +18740,7 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
         + ' · furthest from estimate first</span></div>';
       const table = rows.length
         ? '<div class="table-wrap"><table><thead><tr><th>Project</th><th>Activity</th><th>Work type</th>'
+          + '<th title="The company that did the work, and who owned it. Recorded when the project was archived — rows filed before this existed show a dash.">Company</th>'
           + '<th>Est → actual</th><th>Ratio</th><th>Filed</th></tr></thead><tbody>' + body + '</tbody></table></div>'
         : '<p class="bk-note">No record matches that filter.</p>';
 
@@ -23019,19 +23114,35 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         const row = { id: t.id, name: t.name || '(unnamed)', wbs: t.wbs || '', kind: ekKindOf(t),
           pct: pct, crit: !!t.isCritical, slack: Number(t.slack) || 0, start: st, finish: fin,
           overdue: overdue, milestone: !!t.milestone, blockers: blockers,
-          owners: parts.map(x => x.name), raid: rd, state: state };
+          owners: parts.map(x => x.name), raid: rd, state: state,
+          te: Number(t.te) || 0, baseTe: (t.baseTe == null ? null : Number(t.baseTe)),
+          actDays: actualEffortDays(t) };
         // whoever owns a blocker is, by definition, in somebody else's way
         blockers.forEach(b => (b.owners.length ? b.owners : [WL_NOBODY]).forEach(n => { at(n).blocking++; }));
+        /* EFFORT IS PER PERSON, so the row cannot be shared between them. Two
+           people on one activity at 50% each are carrying half of it each, and
+           an activity that says "5.2 days" on both their lists has quietly
+           doubled the plan's effort for anyone adding the column up. The share
+           is the same units-weighting the roster's Planned effort column and
+           computedActualCost already use — one definition, three surfaces. */
         names.forEach(n => {
           const b = at(n);
-          if (done) { b.done++; b.doneRows.push(row); return; }
-          b.effort += (Number(t.te) || 0) * (1 - pct / 100);
+          const pr = parts.find(x => x.name === n);
+          const share = pr ? (Number(pr.units) || 0) / 100 : 1;
+          const r2 = Object.assign({}, row, {
+            units: pr ? (Number(pr.units) || 0) : 100,
+            estDays: unitToWorkingDays(row.te) * share,
+            refDays: unitToWorkingDays(row.baseTe != null ? row.baseTe : row.te) * share,
+            actEffDays: row.actDays == null ? null : row.actDays * share });
+          r2.varDays = (r2.actEffDays == null || !(r2.refDays > 0)) ? null : r2.actEffDays - r2.refDays;
+          if (done) { b.done++; b.doneRows.push(r2); return; }
+          b.effort += workingDaysToUnit(r2.estDays) * (1 - pct / 100);
           if (overdue) b.overdue++;
           b.risks += rd.length;
-          if (blockers.length) b.blocked.push(row);
+          if (blockers.length) b.blocked.push(r2);
           // started, late, undated or due to start by today = pick it up now
-          else if (overdue || pct > 0 || !st || st <= today) b.now.push(row);
-          else b.soon.push(row);
+          else if (overdue || pct > 0 || !st || st <= today) b.now.push(r2);
+          else b.soon.push(r2);
         });
       });
       const rank = (a, b) => (b.overdue - a.overdue) || (b.crit - a.crit)
@@ -23047,6 +23158,115 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         || (b.overdue - a.overdue) || (b.now.length - a.now.length) || a.name.localeCompare(b.name));
       return out;
     }
+    /* ═══ EFFORT AND VARIANCE, PER PERSON ═══════════════════════════════════
+       The Resources tab could say what everyone COSTS and what everyone is
+       BOOKED to do, and never what the estimates for their work are actually
+       doing. Effort variance existed on exactly two surfaces: the project-level
+       roll-up card on Plan vs actual (one number for everybody) and the estimate
+       bank (one number per activity, after the fact). Neither answers the
+       question a delivery lead has every week — whose estimates are holding.
+
+       Every figure here is units-weighted by the person's allocation, which is
+       what makes the column sum to the project roll-up: an activity two people
+       share at 50% contributes half its effort to each, not all of it to both.
+       The reference is the BASELINED effort where a baseline exists, because
+       that is what a variance is measured against everywhere else in this file.
+       One definition, and the checks hold this table to the roster's Planned
+       effort column and to the project total. */
+    function resourceEffortData() {
+      const hb = hasBaseline();
+      const rows = new Map();
+      const at = n => { if (!rows.has(n)) rows.set(n, { name: n, planDays: 0, refDays: 0, actDays: 0,
+        earnedDays: 0, tasks: 0, measured: 0, open: 0 }); return rows.get(n); };
+      leafTasks().forEach(t => {
+        if (t.isSummary || t.milestone) return;
+        const pct = Math.min(100, Math.max(0, Number(t.percentComplete) || 0));
+        const act = actualEffortDays(t);
+        taskParticipants(t).forEach(pr => {
+          const share = (Number(pr.units) || 0) / 100;
+          if (share <= 0) return;
+          const R = at(pr.name);
+          R.tasks++;
+          R.planDays += unitToWorkingDays(Number(t.te) || 0) * share;
+          R.refDays += unitToWorkingDays(hb && t.baseTe != null ? Number(t.baseTe) : (Number(t.te) || 0)) * share;
+          // earned = the share of the reference estimate the completed fraction
+          // has bought. Comparing logged effort to the WHOLE estimate on work
+          // that is 30% done reports a saving that has not happened yet.
+          R.earnedDays += unitToWorkingDays(hb && t.baseTe != null ? Number(t.baseTe) : (Number(t.te) || 0))
+            * share * (pct / 100);
+          if (pct < 100) R.open++;
+          if (act != null) { R.actDays += act * share; R.measured++; }
+        });
+      });
+      const out = [...rows.values()].map(R => {
+        // variance against what the finished fraction was worth, not the whole
+        R.varDays = R.measured ? R.actDays - R.earnedDays : null;
+        R.ratio = (R.measured && R.earnedDays > 0) ? R.actDays / R.earnedDays : null;
+        return R;
+      });
+      out.sort((a, b) => (Math.abs(b.varDays || 0) - Math.abs(a.varDays || 0)) || a.name.localeCompare(b.name));
+      return out;
+    }
+    function resourceEffortHtml() {
+      const rows = resourceEffortData();
+      if (!rows.length) return '';
+      const u = unitLabel();
+      const hb = hasBaseline();
+      const tot = rows.reduce((s, r) => ({ plan: s.plan + r.planDays, ref: s.ref + r.refDays,
+        act: s.act + r.actDays, earned: s.earned + r.earnedDays, measured: s.measured + r.measured }),
+        { plan: 0, ref: 0, act: 0, earned: 0, measured: 0 });
+      const d = wd => fmtDurCell(workingDaysToUnit(wd));
+      const varCell = r => {
+        if (r.varDays == null) return '<td class="wl-td" style="color:var(--muted)">no effort logged</td>';
+        if (Math.abs(r.varDays) < 0.05) return '<td class="wl-td">on estimate</td>';
+        const over = r.varDays > 0;
+        const pct = r.ratio != null ? Math.round((r.ratio - 1) * 100) : null;
+        return '<td class="wl-td ' + (over ? 'wl-var-over' : 'wl-var-under') + '" style="font-weight:700">'
+          + (over ? '+' : '−') + escapeHtml(d(Math.abs(r.varDays)))
+          + (pct != null ? ' <span style="font-weight:400">(' + (over ? '+' : '') + pct + '%)</span>' : '')
+          + '</td>';
+      };
+      const body = rows.map(r => '<tr><td class="wl-td" style="font-weight:600">' + escapeHtml(r.name)
+        + '<div class="wl-wait">' + r.tasks + ' activit' + (r.tasks === 1 ? 'y' : 'ies') + ' · '
+        + r.open + ' still open</div></td>'
+        + '<td class="wl-td">' + escapeHtml(d(r.planDays)) + '</td>'
+        + (hb ? '<td class="wl-td">' + escapeHtml(d(r.refDays)) + '</td>' : '')
+        + '<td class="wl-td">' + escapeHtml(d(r.earnedDays)) + '</td>'
+        + '<td class="wl-td">' + (r.measured ? escapeHtml(d(r.actDays))
+            + '<div class="wl-wait">on ' + r.measured + ' of ' + r.tasks + '</div>' : '—') + '</td>'
+        + varCell(r) + '</tr>').join('');
+      const totVar = tot.measured ? tot.act - tot.earned : null;
+      return '<h3 style="font-size:0.95rem;margin:1.1rem 0 0.2rem">Effort &amp; variance by person'
+        + ' <span class="help-text" style="font-weight:400">(is the estimate holding, and for whom)</span></h3>'
+        + '<p class="help-text" style="margin:0 0 0.4rem">Every figure is that person\'s SHARE — the '
+        + 'activity\'s effort weighted by their allocation %, so an activity two people split at 50% each '
+        + 'counts half to each rather than whole to both, and the column adds to the project total. '
+        + '<b>Earned</b> is what the completed fraction of their work was estimated to take; comparing '
+        + 'logged effort to the whole estimate on work that is a third done reports a saving nobody has '
+        + 'made yet. Variance is <b>logged − earned</b>'
+        + (hb ? ', measured against the <b>baselined</b> estimate.' : ', measured against the current estimate '
+            + '(no baseline has been set, so there is nothing older to compare with).') + '</p>'
+        + '<div class="table-wrap"><table class="wl-t" style="font-size:var(--t-sm)">'
+        + '<thead><tr><th>Person</th><th title="Their share of current expected effort">Planned</th>'
+        + (hb ? '<th title="Their share of the effort frozen at the baseline">Baselined</th>' : '')
+        + '<th title="What the finished fraction of their work was estimated to take">Earned</th>'
+        + '<th title="Logged effort where it has been recorded; the elapsed span between actual dates otherwise">Logged</th>'
+        + '<th title="Logged minus earned — positive means the work is taking longer than it was estimated to">Variance</th>'
+        + '</tr></thead><tbody>' + body
+        + '<tr style="font-weight:700"><td class="wl-td">All ' + rows.length + '</td>'
+        + '<td class="wl-td">' + escapeHtml(d(tot.plan)) + '</td>'
+        + (hb ? '<td class="wl-td">' + escapeHtml(d(tot.ref)) + '</td>' : '')
+        + '<td class="wl-td">' + escapeHtml(d(tot.earned)) + '</td>'
+        + '<td class="wl-td">' + (tot.measured ? escapeHtml(d(tot.act)) : '—') + '</td>'
+        + '<td class="wl-td' + (totVar == null ? '' : (totVar > 0 ? ' wl-var-over' : ' wl-var-under')) + '">'
+        + (totVar == null ? '—' : (totVar > 0 ? '+' : '−') + escapeHtml(d(Math.abs(totVar)))) + '</td>'
+        + '</tr></tbody></table></div>'
+        + '<p class="help-text" style="margin:0.3rem 0 0">Effort is in ' + escapeHtml(u)
+        + '. Where nobody has logged real effort the elapsed span between an activity\'s actual start and '
+        + 'finish is used instead — that counts calendar presence rather than work, so it reads high on '
+        + 'anything worked on part-time.</p>';
+    }
+
     /* ONE ROW OF A WORKLIST TABLE.
 
        This used to be a chip in a flex list, with the activity name truncated to
@@ -23098,7 +23318,36 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         + '<td class="wl-td wl-state">' + escapeHtml(r.state)
         + (r.crit ? '<div class="wl-crit" title="Zero slack — this one moves the finish date">critical path</div>' : '')
         + '</td>'
-        + '<td class="wl-td">' + when + '</td>' + waiting + '</tr>';
+        + '<td class="wl-td">' + when + '</td>' + wlEffCell(r) + waiting + '</tr>';
+    }
+    /* ESTIMATE AND WHAT IT ACTUALLY TOOK, side by side.
+       A worklist that states a date and not a size is asking someone to plan
+       their week from half the information — "pick these four up" says nothing
+       about whether that is a morning or a fortnight. And once effort is on
+       screen, the variance against it is free: it is the same subtraction the
+       Plan vs actual roll-up and the estimate bank already make, and the number
+       that says whether the estimate is holding.
+
+       Reference is the BASELINED effort where one exists, current TE otherwise —
+       the same rule activityFlags uses, so the ring on the strip and this column
+       cannot disagree about which estimate is being missed. */
+    function wlEffCell(r) {
+      const est = workingDaysToUnit(r.estDays || 0);
+      const main = est > 0 ? fmtDur(est) : '—';
+      let v = '';
+      if (r.varDays != null && Math.abs(r.varDays) >= 0.05) {
+        const over = r.varDays > 0;
+        const amt = fmtDurCell(Math.abs(workingDaysToUnit(r.varDays)));
+        const pct = r.refDays > 0 ? Math.round(Math.abs(r.varDays) / r.refDays * 100) : null;
+        v = '<div class="wl-var ' + (over ? 'wl-var-over' : 'wl-var-under') + '" title="'
+          + escapeHtml('Logged ' + fmtDurCell(workingDaysToUnit(r.actEffDays)) + ' against '
+            + fmtDurCell(workingDaysToUnit(r.refDays)) + (r.baseTe != null ? ' baselined' : ' estimated')
+            + (r.units !== 100 ? ' (this person’s ' + r.units + '% share)' : '')) + '">'
+          + (over ? '+' : '−') + escapeHtml(amt) + (pct != null ? ' (' + pct + '%)' : '') + '</div>';
+      } else if (r.actEffDays != null && r.estDays > 0) {
+        v = '<div class="wl-var wl-var-on" title="Logged effort matches the estimate">on estimate</div>';
+      }
+      return '<td class="wl-td wl-eff">' + main + v + '</td>';
     }
     function wlTable(rows, showBlock, cap) {
       const shown = rows.slice(0, cap);
@@ -23108,11 +23357,12 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
          eighty-character test-case title one word per line down a 90px channel.
          Fixed layout gives the name the remainder by declaration. */
       const cols = showBlock
-        ? '<col style="width:42%"><col style="width:19%"><col style="width:14%"><col style="width:25%">'
-        : '<col style="width:56%"><col style="width:26%"><col style="width:18%">';
+        ? '<col style="width:36%"><col style="width:16%"><col style="width:12%"><col style="width:14%"><col style="width:22%">'
+        : '<col style="width:48%"><col style="width:22%"><col style="width:14%"><col style="width:16%">';
       return '<div class="table-wrap"><table class="wl-t">' + cols
         + '<thead><tr><th>Activity</th><th>Status</th>'
-        + '<th>Due</th>' + (showBlock ? '<th>Waiting on</th>' : '') + '</tr></thead><tbody>'
+        + '<th>Due</th><th title="This person’s share of the activity’s expected effort — the activity’s TE weighted by their allocation %, the same figure the roster\'s Planned effort column uses. Underneath, logged effort against the baselined estimate where there is one.">Effort</th>'
+        + (showBlock ? '<th>Waiting on</th>' : '') + '</tr></thead><tbody>'
         + shown.map(r => wlTableRow(r, showBlock)).join('') + '</tbody></table></div>'
         + (rows.length > cap ? '<p class="wl-more">and ' + (rows.length - cap)
             + ' more — open the person\'s activities from the list above to see the rest</p>' : '');
@@ -23336,6 +23586,15 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       return (r.raid || []).map(x => x.type + ': ' + x.title
         + (x.owner ? ' — ' + x.owner : '') + (x.status ? ' (' + x.status + ')' : '')).join('; ');
     }
+    // the same two figures the Effort column draws, so what is copied and what is
+    // on screen cannot say different things about the size of the same job
+    function wlEffText(r) {
+      const est = r.estDays > 0 ? fmtDurCell(workingDaysToUnit(r.estDays)) : '—';
+      if (r.varDays == null || Math.abs(r.varDays) < 0.05) return est;
+      return est + ' (' + (r.varDays > 0 ? '+' : '−')
+        + fmtDurCell(Math.abs(workingDaysToUnit(r.varDays))) + ' vs estimate, '
+        + fmtDurCell(workingDaysToUnit(r.actEffDays)) + ' logged)';
+    }
     function wlHtmlDoc(names) {
       const all = worklistData();
       const people = names ? all.filter(p => names.indexOf(p.name) >= 0) : all;
@@ -23356,7 +23615,8 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         if (!rows.length) return head + '<p style="font-size:12.5px"><em>Nothing open.</em></p>';
         return head + '<table style="border-collapse:collapse"><tr><th style="' + th + '">When</th>'
           + '<th style="' + th + '">Activity</th><th style="' + th + '">Status</th>'
-          + '<th style="' + th + '">Due</th><th style="' + th + '">Waiting on</th>'
+          + '<th style="' + th + '">Due</th><th style="' + th + '">Effort</th>'
+          + '<th style="' + th + '">Waiting on</th>'
           + (anyRisk ? '<th style="' + th + '">Open RAID</th>' : '') + '</tr>'
           + rows.map(x => {
               const r = x.r;
@@ -23366,6 +23626,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
                 + '<td style="' + td + (r.overdue ? 'color:#b91c1c;font-weight:700;' : '') + '">'
                 + h(r.state) + '</td>'
                 + '<td style="' + td + '">' + h(r.finish ? fmtNice(r.finish) : '—') + '</td>'
+                + '<td style="' + td + '">' + h(wlEffText(r)) + '</td>'
                 + '<td style="' + td + '">' + (h(wlWaitText(r)) || '—') + '</td>'
                 + (anyRisk ? '<td style="' + td + '">' + (h(wlRiskText(r)) || '—') + '</td>' : '')
                 + '</tr>';
@@ -23397,7 +23658,8 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
           const r = x.r;
           if (x.group !== group) { group = x.group; L.push('', '  ' + group.toUpperCase()); }
           L.push('    • ' + (r.wbs ? r.wbs + ' ' : '') + r.name + (r.crit ? '  [critical path]' : ''));
-          L.push('      status: ' + r.state + (r.finish ? '  ·  due ' + fmtNice(r.finish) : ''));
+          L.push('      status: ' + r.state + (r.finish ? '  ·  due ' + fmtNice(r.finish) : '')
+            + '  ·  effort ' + wlEffText(r));
           const w = wlWaitText(r);
           if (w) L.push('      waiting on: ' + w);
           (r.raid || []).forEach(q => L.push('      ' + q.type.toLowerCase() + ': ' + q.title

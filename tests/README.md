@@ -174,6 +174,25 @@ assigned locally and the reply's are ignored; the sweep stubs a model that hands
 back existing ids, an invalid type and an empty criterion, and asserts nothing
 that existed moved, changed, or collided.
 
+`bank-sweep.js` gained the dimension that survives the engagement. The bank
+could calibrate by activity kind, work type and role, and could not answer the
+question that recurs every time the same subcontractor turns up on another
+engagement: does THAT firm's work run over. A role cannot answer it (two firms
+both field "integration developers") and an individual's name usually cannot
+either, because people rarely repeat across clients while the partner does.
+
+Three properties, and the first one matters most: the company has to reach the
+ARCHIVED row. Everything else in this file builds its rows by hand, so a build
+that never records a company when it archives a real plan would pass every
+synthetic case while the calibration sat correct about data that never arrives.
+The check sets a company on the roster, asks the archiver for its rows, and
+requires the field. Then: work shared between two firms counts for BOTH — `org`
+is the owner's company and `orgs` is every company that touched the activity,
+and the two are asserted separately because accepting either would let the set
+that makes joint work count twice go missing unnoticed. And what the calibration
+learns has to reach the PROMPT, since a signal computed and never sent
+calibrates nothing.
+
 ## The written test plan
 
 `node tests/run-test-plan.js` runs 42 cases and writes two documents:

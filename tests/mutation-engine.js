@@ -436,7 +436,7 @@ const MUTANTS = [
     with: '          + wlTable(rows, showBlock, 3)' },
 
   { what: 'worklist: finished activities are discarded instead of kept behind a filter',
-    find: '          if (done) { b.done++; b.doneRows.push(row); return; }',
+    find: '          if (done) { b.done++; b.doneRows.push(r2); return; }',
     with: '          if (done) { b.done++; return; }' },
 
   { what: 'criteria: the model\'s own AC ids are trusted, so a new one collides with an existing one',
@@ -446,6 +446,51 @@ const MUTANTS = [
   { what: 'criteria: "add" replaces the existing criteria instead of appending to them',
     find: '      s.ac = (s.ac || []).concat(added);',
     with: '      s.ac = added;' },
+  /* ── effort, and whose it is ──────────────────────────────────────────────
+     A worklist that states a date and not a size asks somebody to plan their
+     week from half the information. Once effort is on the row the variance is
+     free — but both are per PERSON: an activity two people split at 50% each
+     contributes half to each, and dropping that weighting silently inflates the
+     plan's effort by every piece of joint work. */
+
+  { what: 'effort: a worklist row shows the whole activity as one person\'s, ignoring their allocation',
+    find: '            estDays: unitToWorkingDays(row.te) * share,',
+    with: '            estDays: unitToWorkingDays(row.te),' },
+
+  { what: 'effort: the per-person breakdown drops the allocation weighting and double-counts shared work',
+    find: '          R.planDays += unitToWorkingDays(Number(t.te) || 0) * share;',
+    with: '          R.planDays += unitToWorkingDays(Number(t.te) || 0);' },
+
+  { what: 'effort: variance is measured against the whole estimate, not the fraction actually earned',
+    find: '        R.varDays = R.measured ? R.actDays - R.earnedDays : null;',
+    with: '        R.varDays = R.measured ? R.actDays - R.refDays : null;' },
+
+  { what: 'effort: the rich-text copy drops the column the screen shows',
+    find: '                + \'<td style="\' + td + \'">\' + h(wlEffText(r)) + \'</td>\'',
+    with: '                + \'<td style="\' + td + \'">—</td>\'' },
+  /* ── who did it, and who they work for ────────────────────────────────────
+     The bank could calibrate by activity kind, work type and role, and could not
+     answer the question that recurs every time the same subcontractor turns up on
+     another engagement: does THAT firm's work run over. A role cannot answer it —
+     two firms both field "integration developers" — and an individual's name
+     usually cannot either, because people rarely repeat across clients while the
+     partner does. */
+
+  { what: 'bank: the archived row loses the set of companies that touched the activity',
+    find: '          orgs: [...new Set(taskParticipants(t).map(pr => orgOf(pr.name)).filter(Boolean))],',
+    with: '          orgs: [],' },
+
+  { what: 'bank: archived participants carry no allocation, so one person at 100% reads like four at 25%',
+    find: '          people: taskParticipants(t).map(pr => ({ n: pr.name, u: Number(pr.units) || 0,',
+    with: '          people: taskParticipants(t).map(pr => ({ n: pr.name, u: 0,' },
+
+  { what: 'bank: joint work is credited to one firm instead of every firm on it',
+    find: '          { minN: ORG_MIN_N, multi: true }).slice(0, 10),',
+    with: '          { minN: ORG_MIN_N }).slice(0, 10),' },
+
+  { what: 'bank: the company calibration is computed and never reaches the prompt',
+    find: "By the COMPANY that did the work — ${c.byOrg.map(line).join(' | ')}.",
+    with: 'By the COMPANY that did the work — (omitted).' },
 ];
 
 const CHECKS = QUICK ? ['run-test-plan.js']
@@ -477,7 +522,7 @@ const LIKELY = {
   'form:': 'drawn-surfaces-sweep.js', 'drill-in:': 'chart-reconciliation-sweep.js',
   'prose:': 'dynamic-prose-sweep.js', 'heatmap:': 'resourcing-sweep.js',
   'navigation:': 'navigation-sweep.js', 'worklist:': 'navigation-sweep.js',
-  'criteria:': 'ai-boundary-sweep.js'
+  'criteria:': 'ai-boundary-sweep.js', 'effort:': 'resourcing-sweep.js', 'bank:': 'bank-sweep.js'
 };
 const orderFor = m => {
   const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);
