@@ -2763,18 +2763,27 @@
                 <option>Risk</option><option>Assumption</option><option>Issue</option><option>Decision</option><option>Exclusion</option></select></div>
               <div><label for="rTitle">Title *</label><input id="rTitle" type="text" placeholder="e.g. Client sandbox access may be delayed" /></div>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1.4fr;gap:0.75rem;margin-bottom:0.25rem">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1.5fr 1fr 1fr;gap:0.75rem;margin-bottom:0.25rem">
               <div><label for="rProb">Probability (1–5)</label><input id="rProb" type="number" min="1" max="5" value="3" oninput="raidScoreSync()" /></div>
               <div><label for="rImpact">Impact (1–5)</label><input id="rImpact" type="number" min="1" max="5" value="3" oninput="raidScoreSync()" /></div>
-              <div><label for="rOwner">Owner</label><input id="rOwner" type="text" list="ownerList" placeholder="start typing a name…" autocomplete="off" /></div>
-              <div><label for="rStatus">Status</label><select id="rStatus"></select></div>
               <!-- The score was a LITERAL "${'' /* prob x impact, shown in the
                    table */}" printed at the user: a JS comment written inside
                    static HTML, where there is no template literal to evaluate it.
                    It reached a form people type client-facing risks into. It now
-                   shows the number it always meant to. -->
-              <div><label for="rScore" style="visibility:hidden">.</label>
+                   shows the number it always meant to.
+
+                   Two further things were wrong with it as a piece of screen.
+                   Its label was `visibility:hidden`, so a badge reading "9 ·
+                   worth a mitigation" sat there with no name on it and nothing
+                   saying 9 was a score at all — reported exactly that way. And
+                   it sat to the RIGHT of Owner and Status, two columns away from
+                   the only two fields that produce it, so nothing connected the
+                   two 3s to the 9. It is now labelled, it shows its own
+                   arithmetic, and it stands next to its inputs. -->
+              <div><label for="rScore">Score (probability × impact)</label>
                 <div id="rScore" class="raid-score">—</div></div>
+              <div><label for="rOwner">Owner</label><input id="rOwner" type="text" list="ownerList" placeholder="start typing a name…" autocomplete="off" /></div>
+              <div><label for="rStatus">Status</label><select id="rStatus"></select></div>
             </div>
             <p class="help-text" id="rScaleHint" style="margin:0 0 0.75rem">Probability and impact are a 1–5
               judgement, and their product is the score the log sorts by — <b>1</b> remote / negligible,
@@ -2918,7 +2927,7 @@
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.30.1839</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.31.0216</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -21657,10 +21666,30 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         })(),
         milestones: tasks.filter(t => t.milestone).map(t => ({ name: t.name, date: fmtNice(t.finishDate) })),
         team: Object.keys(resources).filter(n => !isClientResource(n)).map(n => ({ name: n, role: (resources[n] && resources[n].role) ? n + ' — ' + resources[n].role : n, capacity: getCapacity(n), billRate: getBillRate(n), billText: rawBillRate(n) ? fmtMoney(rawBillRate(n)) + rateUnitSuffix(n) : '' })).filter(r => tasks.some(t => taskParticipants(t).some(pr => pr.name === r.name))),
-        clientTeam: Object.keys(resources).filter(isClientResource).map(n => ({
-          role: (resources[n] && resources[n].role) ? n + ' — ' + resources[n].role : n,
-          duties: tasks.filter(t => !t.isSummary && taskParticipants(t).some(pr => pr.name === n)).map(t => t.name)
-        })).filter(c => c.duties.length),
+        /* What the client is on the hook for, ROLLED UP to the work rather than
+           listed case by case. A UAT coordinator assigned to twenty generated
+           test cases produced twenty full test-case specifications semicolon-
+           joined into one table cell — several hundred words of "→ record counts
+           reconcile within 0.1%" in a contract, where the obligation being
+           described is "run UAT". The individual cases are already in §2 and in
+           the appendix; here they belong to their parent activity, counted.
+           Anything past eight rows is summarised rather than printed, because a
+           responsibilities table nobody finishes reading is not a commitment
+           anybody made. */
+        clientTeam: Object.keys(resources).filter(isClientResource).map(n => {
+          const mine = tasks.filter(t => !t.isSummary && taskParticipants(t).some(pr => pr.name === n));
+          const byWork = new Map();
+          mine.forEach(t => {
+            const holder = isTestCaseTask(t) ? (tasks.find(x => x.id === t.parentId) || t) : t;
+            const k = holder.id;
+            if (!byWork.has(k)) byWork.set(k, { name: holder.name, cases: 0 });
+            if (isTestCaseTask(t)) byWork.get(k).cases++;
+          });
+          const all = [...byWork.values()].map(d =>
+            d.cases ? d.name + ' (' + d.cases + ' test case' + (d.cases === 1 ? '' : 's') + ')' : d.name);
+          return { role: (resources[n] && resources[n].role) ? n + ' — ' + resources[n].role : n,
+                   duties: all.slice(0, 8), more: Math.max(0, all.length - 8) };
+        }).filter(c => c.duties.length),
         assumptions: raid.filter(r => r.type === 'Assumption' && r.status !== 'Closed').map(r => ({ text: r.title, impact: r.mitigation || '', ref: 'RAID' })),
         exclusions: raid.filter(r => r.type === 'Exclusion').map(r => r.title),
         risks: raid.filter(r => r.type === 'Risk' && r.status !== 'Closed').sort((a, b) => b.probability * b.impact - a.probability * a.impact).slice(0, 6).map(r => r.title),
@@ -21707,7 +21736,7 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         ${d.clientTeam && d.clientTeam.length ? `<h3 style="font-size:14px;margin:10px 0 4px">Client team &amp; responsibilities</h3>
         <p style="font-size:12.5px;color:#475569">The client will make the following resources available; timely participation is a dependency of the schedule and pricing above.</p>
         <table style="border-collapse:collapse"><tr><th style="${th}">Client resource</th><th style="${th}">Participates in</th></tr>
-        ${d.clientTeam.map(c => `<tr><td style="${td}">${h(c.role)}</td><td style="${td}">${c.duties.map(h).join('; ')}</td></tr>`).join('')}</table>` : ''}
+        ${d.clientTeam.map(c => `<tr><td style="${td}">${h(c.role)}</td><td style="${td}"><ul style="margin:0;padding-left:16px">${c.duties.map(x => `<li style="margin:0 0 2px">${h(x)}</li>`).join('')}</ul>${c.more ? `<p style="margin:3px 0 0;font-size:11.5px;color:#64748b">and ${c.more} further activit${c.more === 1 ? 'y' : 'ies'} — see §2.</p>` : ''}</td></tr>`).join('')}</table>` : ''}
         ${d.nfrs && d.nfrs.length ? `<h2 style="font-size:16px;margin:16px 0 6px">6. Non-Functional Requirements</h2>
         <p style="font-size:12.5px;color:#475569">Quality attributes the delivered solution must meet in addition to the functional acceptance criteria — each traces to the stories listed.</p>
         <table style="border-collapse:collapse;width:100%"><tr><th style="${th}">Requirement</th><th style="${th};width:140px">Applies to</th></tr>
