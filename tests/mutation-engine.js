@@ -546,8 +546,8 @@ const MUTANTS = [
     with: '      ptrScClearNow();' },
 
   { what: 'drill-in: "ahead of its dates" no longer names the two dates that moved the money',
-    find: "            + (timing > 0 ? 'ahead of its dates' : 'behind its dates') + when);",
-    with: "            + (timing > 0 ? 'ahead of its dates' : 'behind its dates'));" },
+    find: "            + (timing > 0 ? 'ahead of its dates' : 'behind its dates') + when",
+    with: "            + (timing > 0 ? 'ahead of its dates' : 'behind its dates') + ''" },
 
   { what: 'backup: the whole-workspace file leaves the estimate bank behind',
     find: '        projects: projects, bank: bank, people: people, orgs: orgs',
@@ -567,6 +567,24 @@ const MUTANTS = [
   { what: 'accrual: typed-in cost is counted as derived, so the panel describes the wrong model',
     find: '        if (t.autoActualCost === false) { out.typedN++; out.typed += v; }',
     with: '        if (false) { out.typedN++; out.typed += v; }' },
+  /* ── cash timing ──────────────────────────────────────────────────────────
+     Terms convert the accrual into when money is expected to move. Three ways
+     the second line is worse than not drawing it: the same total must eventually
+     arrive (a shift is not a discount), it must never arrive EARLIER than the
+     work that caused it, and with no terms set there must be no second line at
+     all — drawing one implies a distinction nobody made. */
+
+  { what: 'cash: the shift loses money on the way, so a delay reads as a discount',
+    find: "      if (T.kind === 'net') return [{ s: s + T.days * DAY, f: f + T.days * DAY, c: c }];",
+    with: "      if (T.kind === 'net') return [{ s: s + T.days * DAY, f: f + T.days * DAY, c: c * 0.9 }];" },
+
+  { what: 'cash: terms move money EARLIER, so the plan pays before the work happens',
+    find: "      if (T.kind === 'net') return [{ s: s + T.days * DAY, f: f + T.days * DAY, c: c }];",
+    with: "      if (T.kind === 'net') return [{ s: s - T.days * DAY, f: f - T.days * DAY, c: c }];" },
+
+  { what: 'cash: a second curve is drawn on a plan with no payment terms at all',
+    find: '      const anyTerms = cashAnyTerms();',
+    with: '      const anyTerms = true;' },
 ];
 
 const CHECKS = QUICK ? ['run-test-plan.js']
@@ -592,7 +610,7 @@ const LIKELY = {
   'budget bar:': 'chart-reconciliation-sweep.js', 'catch-up:': 'chart-reconciliation-sweep.js',
   'test plan:': 'run-test-plan.js', 'baseline history:': 'baseline-sweep.js',
   'bank:': 'bank-sweep.js', 'handoff:': 'bank-sweep.js', 'curve:': 'navigation-sweep.js',
-  'drill-in:': 'chart-reconciliation-sweep.js', 'backup:': 'persistence-sweep.js', 'accrual:': 'chart-reconciliation-sweep.js', 'readout:': 'contradiction-sweep.js',
+  'drill-in:': 'chart-reconciliation-sweep.js', 'backup:': 'persistence-sweep.js', 'accrual:': 'chart-reconciliation-sweep.js', 'cash:': 'chart-reconciliation-sweep.js', 'readout:': 'contradiction-sweep.js',
   'blocked tab:': 'dialog-sweep.js', 'changes panel:': 'drawn-surfaces-sweep.js',
   'corrupt file:': 'corrupt-file-sweep.js', 'ring:': 'drawn-surfaces-sweep.js',
   'envelope:': 'chart-reconciliation-sweep.js', 'scope:': 'chart-reconciliation-sweep.js',
@@ -600,7 +618,7 @@ const LIKELY = {
   'prose:': 'dynamic-prose-sweep.js', 'heatmap:': 'resourcing-sweep.js',
   'navigation:': 'navigation-sweep.js', 'worklist:': 'navigation-sweep.js',
   'criteria:': 'ai-boundary-sweep.js', 'effort:': 'resourcing-sweep.js', 'bank:': 'bank-sweep.js', 'handoff:': 'bank-sweep.js', 'curve:': 'navigation-sweep.js',
-  'drill-in:': 'chart-reconciliation-sweep.js', 'backup:': 'persistence-sweep.js', 'accrual:': 'chart-reconciliation-sweep.js'
+  'drill-in:': 'chart-reconciliation-sweep.js', 'backup:': 'persistence-sweep.js', 'accrual:': 'chart-reconciliation-sweep.js', 'cash:': 'chart-reconciliation-sweep.js'
 };
 const orderFor = m => {
   const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);

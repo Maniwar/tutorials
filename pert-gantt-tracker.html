@@ -711,6 +711,12 @@
     .wl-open { text-align: left; }
     .wl-state { color: var(--muted); }
     .wl-eff { font-variant-numeric: tabular-nums; }
+    /* the cash lines are DASHED, because a projection must never be drawn with
+       the same authority as a measurement */
+    .ptr-sc-plan-cash { fill: none; stroke: var(--warn); stroke-width: 1.6; stroke-dasharray: 5 3; opacity: .85; }
+    .ptr-sc-book-cash { fill: none; stroke: #b45309; stroke-width: 1.6; stroke-dasharray: 3 3; opacity: .9; }
+    .ptr-sc-sw4 { display: inline-block; width: 14px; height: 0; border-top: 2px dashed var(--warn);
+      vertical-align: middle; margin-right: 4px; }
     .ptr-drv-when { color: var(--muted); font-weight: 400; }
     /* a held reading has to LOOK held, or a chart that stopped tracking reads as broken */
     .ptr-sc-pin { outline: 2px solid var(--primary); outline-offset: 1px; }
@@ -3031,7 +3037,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.01.2306</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.01.2331</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3269,6 +3275,12 @@ Or say what you want, in your own words:
     let sowDraft = '';            // last generated SOW HTML
     let statusNarrative = null;   // {date, text} AI exec summary for the status report
     let pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 }; // bill-side settings
+    /* Project-wide payment terms for anybody with no company set — your own
+       staff, in practice, which is why the sensible default is monthly. `none`
+       until somebody chooses, so an existing plan's figures do not move on
+       upgrade: cash basis is opt-in and until it is opted into, the two curves
+       are identical and the panel says so. */
+    let cashTerms = { kind: 'none', days: 0 };
     let healthFindings = null;    // last health-check results
     let clientSafeReports = false;// hide financials/internal notes in copied reports
     let sowBaseline = null;       // snapshot taken when the SOW is generated (for change orders)
@@ -3568,7 +3580,7 @@ Or say what you want, in your own words:
         tasks = []; nextId = 1; resources = {}; raid = []; nextRaidId = 1; statusHistory = [];
         sowDraft = ''; statusNarrative = null; projectBudget = 0;
         reserves = { contingency: { value: 0, unit: 'percent' }, management: { value: 0, unit: 'percent' } };
-        pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 };
+        pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 }; cashTerms = { kind: 'none', days: 0 };
         baselineDate = ''; baselineLog = []; collapsedIds = new Set(); levelMode = 'none';
         reqs = null; sowBaseline = null; coDraft = ''; coLog = [];
         document.getElementById('projectName').value = 'New Engagement';
@@ -4067,7 +4079,7 @@ Or say what you want, in your own words:
         weekendDays: [...weekendDays].sort().join(','),
         nextId,
         resources, reserves, baselineDate, baselineLog, levelMode, projectBudget,
-        raid, nextRaidId, statusHistory, sowDraft, statusNarrative, pricing, reqsBaseline,
+        raid, nextRaidId, statusHistory, sowDraft, statusNarrative, pricing, cashTerms, reqsBaseline,
         clientSafeReports, sowBaseline, reqs, sowUserEdited, coLog,
         collapsedIds: [...collapsedIds],
         tasks: tasks.map(t => ({
@@ -4179,6 +4191,7 @@ Or say what you want, in your own words:
       sowDraft = typeof data.sowDraft === 'string' ? data.sowDraft : '';
       statusNarrative = (data.statusNarrative && data.statusNarrative.text) ? data.statusNarrative : null;
       pricing = Object.assign({ model: 'fixed', basis: 'p80', contractPrice: 0 }, data.pricing || {});
+      cashTerms = cashTermsNorm(data.cashTerms);
       clientSafeReports = !!data.clientSafeReports;
       sowBaseline = (data.sowBaseline && Array.isArray(data.sowBaseline.tasks)) ? data.sowBaseline : null;
       sowUserEdited = !!data.sowUserEdited;
@@ -8659,9 +8672,93 @@ Or say what you want, in your own words:
     // different bases. Everything left in `offCash` genuinely has no usable
     // date: PV can reach BAC exactly, which is what makes SV and SPI mean what
     // they claim at completion.
-    function pvSpread(usingBaseline, leaves) {
+    /* ═══ CASH TIMING ════════════════════════════════════════════════════════
+       Every money figure on this page is an ACCRUAL: cost lands when the work
+       happens, because it is derived from logged effort. That answers "are we on
+       budget". It does not answer "when do we need the money", and the two are
+       different questions — an activity that finished nineteen days early booked
+       its cost nineteen days early, and if that firm invoices net 45 nothing has
+       left the bank yet.
+
+       Terms convert one into the other. They are a PROPERTY OF THE FIRM, not of
+       the task: your own payroll goes out at month end, a subcontractor invoices
+       net 45, and which applies to an activity follows from who did it. So the
+       company registry holds them and the project holds a default for everyone
+       with no company set.
+
+       This is a MODEL, not a record. It says when money is expected to move
+       given the terms, and it cannot know that an invoice was disputed or paid
+       late. Every surface that draws it says so, because a projection presented
+       as a ledger is worse than no projection.
+
+       Deliberately NOT covered, and the panels say so rather than implying
+       otherwise: revenue in (when the client pays you) is a different curve and
+       a separate piece of work, and EVM stays on accrual because CPI, SPI and
+       EAC are defined on it — mixing bases produces confident nonsense. */
+    const CASH_KINDS = ['none', 'net', 'monthly'];
+    function cashTermsNorm(x) {
+      const k = x && CASH_KINDS.indexOf(x.kind) >= 0 ? x.kind : 'none';
+      const d = Math.max(0, Math.min(365, Math.round(Number(x && x.days) || 0)));
+      return { kind: k, days: k === 'none' ? 0 : d };
+    }
+    function cashTermsLabel(x) {
+      const t = cashTermsNorm(x);
+      if (t.kind === 'none') return 'as the work happens';
+      if (t.kind === 'net') return 'net ' + t.days + ' days';
+      return 'monthly in arrears' + (t.days ? ', net ' + t.days : '');
+    }
+    function projectCashTerms() { return cashTermsNorm(cashTerms); }
+    /* WHOSE terms. An activity can have several people from several firms; the
+       OWNER's company decides, because that is who the plan holds responsible
+       for it and splitting one activity's money across two payment schedules
+       would be a precision the rest of this file cannot support. Stated on the
+       panel rather than left to be discovered. */
+    function cashTermsFor(t) {
+      const id = orgIdOf((t && t.owner) || '');
+      const org = id ? orgFind(id) : null;
+      if (org && org.terms && cashTermsNorm(org.terms).kind !== 'none') return cashTermsNorm(org.terms);
+      return projectCashTerms();
+    }
+    function cashAnyTerms() {
+      if (projectCashTerms().kind !== 'none') return true;
+      return loadOrgLib().some(o => cashTermsNorm(o.terms).kind !== 'none');
+    }
+    // last calendar day of the month containing ms
+    function cashMonthEnd(ms) {
+      const d = new Date(ms);
+      return stripTime(new Date(d.getFullYear(), d.getMonth() + 1, 0)).getTime();
+    }
+    /* One accrual segment becomes one or more CASH segments.
+         none    — unchanged.
+         net N   — the same shape, N calendar days later.
+         monthly — everything accrued within a month is invoiced at that month's
+                   end and paid N days after, so the span collapses into one step
+                   per month it touches. A segment crossing three months becomes
+                   three steps, which is what actually happens.
+       Calendar days, not working days: contracts say "net 30" and mean thirty
+       days, and a payment run does not care that a Saturday is not a work day. */
+    function cashPhaseSeg(s, f, c, terms) {
+      const T = cashTermsNorm(terms);
+      const DAY = 86400000;
+      if (T.kind === 'none') return [{ s: s, f: f, c: c }];
+      if (T.kind === 'net') return [{ s: s + T.days * DAY, f: f + T.days * DAY, c: c }];
+      const span = Math.max(DAY, f - s);
+      const out = [];
+      let cur = s;
+      while (cur < f) {
+        const me = cashMonthEnd(cur);
+        const chunkEnd = Math.min(f, me + DAY);
+        const share = c * ((chunkEnd - cur) / span);
+        const pay = me + T.days * DAY;
+        if (share > 0) out.push({ s: pay, f: pay + DAY, c: share });
+        cur = chunkEnd;
+      }
+      return out.length ? out : [{ s: f, f: f + DAY, c: c }];
+    }
+    function pvSpread(usingBaseline, leaves, opts) {
       const ub = usingBaseline === undefined ? hasBaseline() : !!usingBaseline;
-      const out = { segs: [], phased: 0, msN: 0, msCash: 0, offN: 0, offCash: 0 };
+      const cash = !!(opts && opts.cash);
+      const out = { segs: [], phased: 0, msN: 0, msCash: 0, offN: 0, offCash: 0, cash: cash };
       (leaves || leafTasks()).forEach(t => {
         const c1 = plannedCostOf(t, ub);
         /* BASELINE DATES, FALLING BACK TO LIVE ONES — the same rule plannedCostOf
@@ -8701,7 +8798,9 @@ Or say what you want, in your own words:
           if (!d) { if (c1 > 0) { out.offN++; out.offCash += c1; } return; }
           const ms = stripTime(d).getTime();
           if (!Number.isFinite(ms)) { if (c1 > 0) { out.offN++; out.offCash += c1; } return; }
-          if (c1 > 0) { out.msCash += c1; out.segs.push({ s: ms, f: ms + 86400000, c: c1 }); out.phased += c1; }
+          if (c1 > 0) { out.msCash += c1; out.phased += c1;
+            cashPhaseSeg(ms, ms + 86400000, c1, cash ? cashTermsFor(t) : null)
+              .forEach(g => out.segs.push(g)); }
           return;
         }
         if (!s1 || !f1) { if (c1 > 0) { out.offN++; out.offCash += c1; } return; }
@@ -8714,7 +8813,7 @@ Or say what you want, in your own words:
           if (c1 > 0) { out.offN++; out.offCash += c1; }
           return;
         }
-        out.segs.push({ s: s, f: f, c: c1 });
+        cashPhaseSeg(s, f, c1, cash ? cashTermsFor(t) : null).forEach(g => out.segs.push(g));
         out.phased += c1;
       });
       return out;
@@ -8748,7 +8847,8 @@ Or say what you want, in your own words:
     //
     // Every placed segment is built to be fully accrued at the END of today, so
     // accrualAt(segs, endOfToday) === placed by construction, not by correction.
-    function acSpread(leaves, todayMs, costOf) {
+    function acSpread(leaves, todayMs, costOf, opts) {
+      const cash = !!(opts && opts.cash);
       const endToday = todayMs + 86400000;
       const out = { segs: [], placed: 0, total: 0, span: 0, open: 0, point: 0,
         undatedN: 0, undatedCash: 0, newN: 0, newCash: 0, unloggedN: 0, firstMs: Infinity };
@@ -8784,8 +8884,15 @@ Or say what you want, in your own words:
         else if (f != null) { out.point++; g = { s: f, f: f + 86400000, c: c }; }
         else { out.undatedN++; out.undatedCash += c; }
         if (g) {
-          out.segs.push(g); out.placed += c;
-          if (g.s < out.firstMs) out.firstMs = g.s;
+          /* On CASH basis the same money is placed where the terms say it moves,
+             not where the work landed. The accrual placement above is still what
+             is being shifted — a projection built on top of a reconstruction, so
+             the panel states both layers of guess rather than only the second. */
+          cashPhaseSeg(g.s, g.f, g.c, cash ? cashTermsFor(t) : null).forEach(x => {
+            out.segs.push(x);
+            if (x.s < out.firstMs) out.firstMs = x.s;
+          });
+          out.placed += c;
         }
       });
       return out;
@@ -9661,6 +9768,13 @@ Or say what you want, in your own words:
       const envelope = baseCostAll > 0 ? baseCostAll : planCostAll;
       const sp = pvSpread(hb, leaves);                  // the frozen plan, as datable segments
       const acs = acSpread(leaves, today.getTime(), actOf);
+      /* The same two spreads on a CASH basis — the identical money, placed where
+         the payment terms say it moves. Built only when terms exist: with none
+         set the two bases are the same curve, and drawing one on top of the
+         other would be decoration that implies a distinction nobody made. */
+      const anyTerms = cashAnyTerms();
+      const spCash = anyTerms ? pvSpread(hb, leaves, { cash: true }) : null;
+      const acsCash = anyTerms ? acSpread(leaves, today.getTime(), actOf, { cash: true }) : null;
       const pvNow = accrualAt(sp.segs, today.getTime());   // === the planned-value card
       const evNow = earnedValue();                         // === the earned-value card
 
@@ -10211,7 +10325,7 @@ Or say what you want, in your own words:
       // after this call. ptrCurveHtml() only formats already-derived scalars.
       const curve = ptrCurveData(sp, acs, {
         today: today, hb: hb, baseCosted: baseCostAll > 0, env: envelope,
-        pvNow: pvNow, evNow: evNow
+        pvNow: pvNow, evNow: evNow, spCash: spCash, acsCash: acsCash
       });
       /* The same two spreads, one activity at a time, so the crosshair can name
          WHO is behind the gap at any date rather than only reporting its size.
@@ -10948,6 +11062,44 @@ Or say what you want, in your own words:
         c.bookPath = d;
       }
 
+      /* ---- the cash overlay: the same money, where the terms put it.
+         Drawn with the SAME fx/fy, so the vertical distance between the two
+         lines at any date is money accrued and not yet gone — which is the whole
+         reason to draw both. Money whose payment date falls past the right edge
+         still counts in the figures below; the line simply runs off, and the
+         caption says so rather than letting a short line imply a small number. */
+      if (ctx.spCash && ctx.acsCash) {
+        c.cashOn = true;
+        const PC = [];
+        let lx = -9;
+        for (let i = 0; i < stamps.length; i++) {
+          const X = fx(stamps[i]);
+          if (i && i < stamps.length - 1 && X - lx < 0.12) continue;
+          lx = X;
+          PC.push((X * 10).toFixed(2) + ',' + fy(accrualAt(ctx.spCash.segs, stamps[i])).toFixed(2));
+        }
+        c.planCashPath = 'M' + PC.join('L');
+        c.pvCash = accrualAt(ctx.spCash.segs, now);
+        c.acCash = accrualAt(ctx.acsCash.segs, endToday);
+        // accrued but not yet out of the door: the working-capital number
+        c.wcap = acs.placed - c.acCash;
+        if (acs.placed > 0 && endToday > x0) {
+          const eg = [];
+          for (let m = x0 + stepD * 86400000; m < Math.min(endToday, x1); m += stepD * 86400000) eg.push(m);
+          eg.push(Math.min(endToday, x1));
+          let dc = 'M' + (fx(x0) * 10).toFixed(2) + ',' + fy(accrualAt(ctx.acsCash.segs, x0)).toFixed(2);
+          eg.forEach(m => { dc += 'H' + (fx(m) * 10).toFixed(2)
+            + 'V' + fy(accrualAt(ctx.acsCash.segs, m)).toFixed(2); });
+          c.bookCashPath = dc;
+        }
+        c.termsSummary = (function () {
+          const seen = new Map();
+          leafTasks().filter(t => !t.isSummary).forEach(t => { const T = cashTermsFor(t);
+            const k = cashTermsLabel(T); seen.set(k, (seen.get(k) || 0) + 1); });
+          return [...seen.entries()].sort((a, b) => b[1] - a[1])
+            .map(x => x[0] + ' (' + x[1] + ')').join(' · ');
+        })();
+      }
       c.pv = ctx.pvNow; c.ac = acs.total; c.placed = acs.placed; c.unplaced = acs.total - acs.placed;
       c.phased = sp.phased; c.env = ctx.env; c.top = top;
       c.yPv = fy(ctx.pvNow); c.yAc = fy(acs.total); c.yZero = fy(0);
@@ -11022,6 +11174,8 @@ Or say what you want, in your own words:
         + '<path class="ptr-sc-area" d="' + c.areaPath + '"/>'
         + '<path class="ptr-sc-plan" vector-effect="non-scaling-stroke" d="' + c.planPath + '"/>'
         + (c.bookPath ? '<path class="ptr-sc-book" vector-effect="non-scaling-stroke" d="' + c.bookPath + '"/>' : '')
+        + (c.planCashPath ? '<path class="ptr-sc-plan-cash" vector-effect="non-scaling-stroke" d="' + c.planCashPath + '"/>' : '')
+        + (c.bookCashPath ? '<path class="ptr-sc-book-cash" vector-effect="non-scaling-stroke" d="' + c.bookCashPath + '"/>' : '')
         + '</svg>';
 
       const gLo = Math.min(c.yPv, c.yAc), gHi = Math.max(c.yPv, c.yAc);
@@ -11064,6 +11218,27 @@ Or say what you want, in your own words:
         todayMs: c.todayMs, endToday: c.todayMs + 86400000,
         unplaced: c.unplaced, safe: !!d.safe, on: false, lastMs: null };
 
+      /* THE REASON TO DRAW TWO LINES. The vertical distance between them at
+         today is money accrued and not yet out of the door — working capital you
+         are carrying. Neither line says that on its own, and the whole feature
+         exists for that one number, so it is stated rather than left to be
+         measured off a chart by eye. */
+      /* Against the DATED total, and say so. The header states the whole booked
+         figure; only the part carrying a date can be shifted onto a payment
+         schedule at all, so quoting the dated subtotal without naming it reads
+         as the panel contradicting its own headline three lines above. */
+      const cashLine = c.cashOn ? '<p class="ptr-cap" style="margin:.35rem 0 0">'
+        + '<b>Cash basis:</b> of the ' + escapeHtml(money(c.placed)) + ' of booked cost that carries a date'
+        + (c.unplaced > 0.5 ? ' (the other ' + escapeHtml(money(c.unplaced)) + ' of the '
+            + escapeHtml(money(c.ac)) + ' booked has none, so it cannot be placed on <em>either</em> basis)' : '')
+        + ', <b>' + escapeHtml(money(Math.max(0, c.acCash))) + '</b> is expected to have actually left by today '
+        + 'on your payment terms — so you are carrying <b>' + escapeHtml(money(Math.max(0, c.wcap)))
+        + '</b> of work done and not yet paid for'
+        + (c.termsSummary ? '. Terms in use: ' + escapeHtml(c.termsSummary) : '')
+        + '. This is a <b>projection from the terms</b>, not a payment record — it cannot know an invoice was '
+        + 'disputed or settled late, and money whose payment date falls past the right-hand edge is counted in '
+        + 'these figures with its line running off the chart. Earned value, CPI and the margin are untouched '
+        + 'and stay on accrual, which is how they are defined.</p>' : '';
       const ax = '<div class="ptr-sc-ax"><span>' + escapeHtml(fmtNice(c.dFrom)) + '</span>'
         + '<span>' + c.nBuckets + ' × ' + (c.stepD === 1 ? '1 day' : c.stepD + ' days') + '</span>'
         + '<span>' + escapeHtml(fmtNice(c.dTo)) + '</span></div>';
@@ -11076,6 +11251,8 @@ Or say what you want, in your own words:
             + '<span><i class="ptr-sc-sw3"></i>booked at today — <b>measured</b></span>'
           : '<span>no cost booked, so there is nothing to draw against it'
             + ptrCta({ label: 'Log actuals', act: "switchTab('baseline')" }, true) + '</span>')
+        + (c.cashOn ? '<span><i class="ptr-sc-sw4"></i>the same money on a <b>cash</b> basis — '
+            + '<b>projected from your payment terms</b></span>' : '')
         + '</div>';
 
       // The finding in one sentence, in the register of .ptr-cap.
@@ -11142,7 +11319,7 @@ Or say what you want, in your own words:
       return '<div class="ptr-sc' + (c.live ? ' ptr-sc-live' : '') + '">'
         + '<div class="ptr-sc-head">' + title + pair + badge + sub + '</div>'
         + flag + plot + ax + read + key
-        + '<p class="ptr-cap">' + cap + '</p>'
+        + '<p class="ptr-cap">' + cap + '</p>' + cashLine
         + '<p class="ptr-sc-fine">' + fine + '</p></div>';
     }
 
@@ -13111,6 +13288,7 @@ Or say what you want, in your own words:
         <div id="resLibPanel"></div>
         ${worklistHtml()}
         ${resourceEffortHtml()}
+        ${cashTermsPanelHtml()}
         <h3 style="font-size:0.95rem;margin-bottom:0.4rem">Daily workload heatmap <span class="help-text" style="font-weight:400">(click any loaded day to drill into its tasks)</span></h3>
         <div id="rlDrill"></div>
         <div class="rl-wrap">
@@ -18036,7 +18214,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       });
       statusHistory = []; sowDraft = ''; statusNarrative = null; healthFindings = null; coLog = []; sowBaseline = null; coDraft = '';
       reqsBaseline = null;
-      pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 };
+      pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 }; cashTerms = { kind: 'none', days: 0 };
       reserves = { contingency: { value: 10, unit: 'percent' }, management: { value: 5, unit: 'percent' } };
       baselineDate = ''; baselineLog = []; collapsedIds = new Set(); levelMode = 'none'; projectBudget = 0; calculated = false;
       document.getElementById('projectName').value = 'Sample Client Engagement – CRM Rollout';
@@ -23686,6 +23864,69 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         return G;
       }).sort((a, b) => (a.unset - b.unset)
         || (Math.abs(b.varDays || 0) - Math.abs(a.varDays || 0)) || b.planDays - a.planDays);
+    }
+    /* ═══ WHERE TERMS ARE SET ════════════════════════════════════════════════
+       On the Resources tab, under the companies whose effort is already broken
+       down there — because terms belong to a firm and this is the only screen
+       that already lists firms. One row per company plus one for everybody with
+       no company set, which is the project default and in practice your own
+       payroll. */
+    function cashTermsPickerHtml(cur, onchange) {
+      const T = cashTermsNorm(cur);
+      const opt = (k, d, lbl) => '<option value="' + k + ':' + d + '"'
+        + (T.kind === k && (k === 'none' || T.days === d) ? ' selected' : '') + '>' + escapeHtml(lbl) + '</option>';
+      return '<select class="mini-inp" style="width:auto" onchange="' + onchange + '">'
+        + opt('none', 0, 'as the work happens')
+        + opt('net', 7, 'net 7 days') + opt('net', 14, 'net 14 days')
+        + opt('net', 30, 'net 30 days') + opt('net', 45, 'net 45 days') + opt('net', 60, 'net 60 days')
+        + opt('monthly', 0, 'monthly in arrears')
+        + opt('monthly', 15, 'monthly in arrears, net 15')
+        + opt('monthly', 30, 'monthly in arrears, net 30')
+        + '</select>';
+    }
+    function setProjectCashTerms(v) {
+      const p2 = String(v || 'none:0').split(':');
+      cashTerms = cashTermsNorm({ kind: p2[0], days: +p2[1] });
+      saveLocal(); renderResources();
+      if (calculated) renderAnalytics();
+    }
+    function setOrgCashTerms(id, v) {
+      const lib = loadOrgLib().slice();
+      const i = lib.findIndex(o => o.id === id);
+      if (i < 0) return;
+      const p2 = String(v || 'none:0').split(':');
+      lib[i] = Object.assign({}, lib[i], { terms: cashTermsNorm({ kind: p2[0], days: +p2[1] }) });
+      saveOrgLib(lib);
+      renderResources();
+      if (calculated) renderAnalytics();
+    }
+    function cashTermsPanelHtml() {
+      const used = new Set();
+      leafTasks().forEach(t => { if (!t.isSummary) { const id = orgIdOf(t.owner || ''); if (id) used.add(id); } });
+      const orgs = loadOrgLib().filter(o => used.has(o.id));
+      const anyUnset = leafTasks().some(t => !t.isSummary && !orgIdOf(t.owner || ''));
+      if (!orgs.length && !anyUnset) return '';
+      const rows = orgs.map(o => '<tr><td class="wl-td" style="font-weight:600">' + escapeHtml(o.name) + '</td>'
+        + '<td class="wl-td">' + cashTermsPickerHtml(o.terms,
+            'setOrgCashTerms(' + ekJs2(o.id) + ', this.value)') + '</td>'
+        + '<td class="wl-td wl-wait">applies to every activity owned by one of their people, on every project</td></tr>').join('')
+        + (anyUnset ? '<tr><td class="wl-td" style="font-weight:600;color:var(--muted)">Everyone else</td>'
+            + '<td class="wl-td">' + cashTermsPickerHtml(cashTerms, 'setProjectCashTerms(this.value)') + '</td>'
+            + '<td class="wl-td wl-wait">this project only — in practice your own people, so usually payroll</td></tr>' : '');
+      return '<h3 style="font-size:0.95rem;margin:1.1rem 0 0.2rem">Payment terms'
+        + ' <span class="help-text" style="font-weight:400">(when the money actually leaves)</span></h3>'
+        + '<p class="help-text" style="margin:0 0 0.4rem">Every money figure in this tool is an <b>accrual</b>: '
+        + 'cost lands when the work happens, because it is derived from logged effort. Terms convert that into '
+        + 'when the money is expected to <b>move</b>, and the spend curve can then draw both — the gap between '
+        + 'them is your working capital. This is a <b>projection from the terms</b>, not a payment record: it '
+        + 'cannot know an invoice was disputed or paid late. It changes nothing about earned value, CPI or '
+        + 'margin, which stay on accrual because that is how they are defined.</p>'
+        + '<div class="table-wrap"><table class="wl-t" style="font-size:var(--t-sm)">'
+        + '<thead><tr><th>Who</th><th>Terms</th><th>Scope</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        + '<p class="help-text" style="margin:0.3rem 0 0">An activity follows the terms of <b>its owner\'s</b> '
+        + 'company. Where several firms work one activity the owner decides, because splitting one activity\'s '
+        + 'money across two payment schedules is a precision the rest of this file cannot support. Terms are in '
+        + 'calendar days — a payment run does not care that Saturday is not a working day.</p>';
     }
     function resourceEffortHtml() {
       const rows = resourceEffortData();

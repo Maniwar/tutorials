@@ -318,6 +318,71 @@ const FIELD = JSON.parse(fs.readFileSync(
         + 'skip caveats');
   }
 
+  /* 1e4. THE CASH CURVE IS THE SAME MONEY, LATER — AND IT MUST SAY SO.
+     Terms convert the accrual into when money is expected to move. Three things
+     have to hold or the second line is worse than not drawing it: the same total
+     eventually arrives (a shift is not a discount), it never arrives EARLIER
+     than the accrual, and the panel states it is a projection. Plus the one that
+     matters most — with no terms set there must be no second line at all, since
+     drawing one implies a distinction nobody made. */
+  {
+    /* CONSTRUCT the terms. No committed fixture sets any, so cash and accrual
+       return identical segments and every identity below holds trivially — a
+       build that lost money in the shift, or paid before the work, passed. Found
+       by planting both and watching this stay green. */
+    const hbC = hasBaseline(), lvC = leafTasks();
+    const keepTerms = cashTerms;
+    cashTerms = { kind: 'net', days: 45 };
+    const acc = pvSpread(hbC, lvC), csh = pvSpread(hbC, lvC, { cash: true });
+    note.cashTermsSet = cashAnyTerms();
+    const far = 8.64e15;
+    // the constructed terms must actually MOVE something, or the rest is vacuous
+    /* Sample the PLAN'S OWN SPAN, not a window around today. The first version
+       swept ±120 days of today and reported "the terms move nothing" on the QA
+       fixture — whose whole plan sits months in the past, so both curves are
+       already at their totals everywhere it looked. The check was measuring the
+       wrong stretch of time, not a defect. */
+    const allS = acc.segs.concat(csh.segs);
+    const lo = Math.min.apply(null, allS.map(g => g.s));
+    const hi = Math.max.apply(null, allS.map(g => g.f));
+    let moved = 0;
+    for (let i = 0; i <= 40; i++) {
+      const at = lo + (hi - lo) * (i / 40);
+      if (Math.abs(accrualAt(acc.segs, at) - accrualAt(csh.segs, at)) > 1) moved++;
+    }
+    note.cashShiftSamples = moved;
+    if (!moved)
+      say('Cash curve', 'net-45 terms move the curve at none of the sampled dates, so nothing below is '
+        + 'testing the shift at all');
+    if (Math.abs(accrualAt(acc.segs, far) - accrualAt(csh.segs, far)) > 1)
+      say('Cash curve', 'the cash basis totals ' + Math.round(accrualAt(csh.segs, far)) + ' against '
+        + Math.round(accrualAt(acc.segs, far)) + ' on accrual — moving money in time must not change how '
+        + 'much of it there is');
+    // never earlier: paying before the work is not something terms can produce
+    let earlier = 0;
+    for (let i = 0; i <= 40; i++) {
+      const at = lo + (hi - lo) * (i / 40);
+      if (accrualAt(csh.segs, at) > accrualAt(acc.segs, at) + 1) earlier++;
+    }
+    note.cashEarlierSamples = earlier;
+    if (earlier)
+      say('Cash curve', 'the cash basis is AHEAD of the accrual at ' + earlier + ' sampled date(s) — terms '
+        + 'delay money, they cannot make it leave before the work that caused it');
+    if (!cashTermsNorm(keepTerms).kind !== 'none' && !loadOrgLib().some(o => cashTermsNorm(o.terms).kind !== 'none')
+        && bud && D.curve && D.curve.cashOn)
+      say('Cash curve', 'no payment terms are set anywhere and a second curve is drawn anyway — it implies '
+        + 'a distinction nobody made and cannot differ from the line it sits on');
+    cashTerms = keepTerms;
+    if (cashAnyTerms() && D.curve && D.curve.state === 'ok') {
+      if (!D.curve.cashOn)
+        say('Cash curve', 'payment terms are set and the curve draws only the accrual, so the terms change '
+          + 'nothing a reader can see');
+      else if (!(D.curve.wcap >= -1))
+        say('Cash curve', 'the working-capital figure is negative (' + Math.round(D.curve.wcap)
+          + '), which would mean paying for work before doing it');
+    }
+  }
+
   /* 1f. A CAPPED LIST MUST OWN UP TO BEING A SAMPLE.
      The drill-in slices to the worst five and threw the pre-cut count away, so a
      row saying "22 activities moved" sat above a disclosure badge reading 5 and a
