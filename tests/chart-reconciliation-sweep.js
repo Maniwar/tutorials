@@ -275,6 +275,49 @@ const FIELD = JSON.parse(fs.readFileSync(
     });
   }
 
+  /* 1e3. "BOOKED" IS AN ACCRUAL, AND THE PANEL HAS TO SAY SO WHERE IT CLAIMS IT.
+     actualCostOf DERIVES cost from work recorded — day rate × logged effort plus
+     fixed cost prorated by percent complete — unless somebody typed over it. So
+     an activity finishing nineteen days early books its cost nineteen days
+     early, whether or not an invoice exists. That is the right default for
+     judging delivery and it is still an assumption, and "you are spending ahead
+     of the plan" read as money out of the door is a different conclusion from
+     the one the data supports. Reported as "it assumes payout was early as
+     well."
+
+     Two properties. The split between derived and typed money must be REAL —
+     computed from the plan, not asserted — and where any of it is derived the
+     bar that draws the conclusion has to carry the caveat. A plan where every
+     figure was typed by hand IS a cash record, so the caveat must not appear
+     there: a warning that fires when it does not apply teaches people to skip
+     warnings. */
+  {
+    const cb = costBasisSplit(leafTasks());
+    const wantDerived = leafTasks().filter(t => !t.isSummary && t.autoActualCost !== false
+      && Math.abs(actualCostOf(t)) > 0.5).length;
+    const wantTyped = leafTasks().filter(t => !t.isSummary && t.autoActualCost === false
+      && Math.abs(actualCostOf(t)) > 0.5).length;
+    note.costBasis = { derived: cb.derivedN, typed: cb.typedN };
+    if (cb.derivedN !== wantDerived || cb.typedN !== wantTyped)
+      say('Cost basis', 'the split says ' + cb.derivedN + ' derived / ' + cb.typedN + ' typed against '
+        + wantDerived + ' / ' + wantTyped + ' recomputed — the panel is about to describe the wrong model');
+    const acAll = leafTasks().reduce((s2, t) => s2 + actualCostOf(t), 0);
+    if (Math.abs(cb.total - acAll) > 1)
+      say('Cost basis', 'the two halves add to ' + Math.round(cb.total) + ' against a booked total of '
+        + Math.round(acAll) + ', so one of them is dropping money');
+    const nt = String(bud.note || '');
+    const says = /accrued|cash gone early/i.test(nt);
+    note.noteStatesAccrual = says;
+    if (cb.anyDerived && bud.state !== 'flat' && !says)
+      say('Cost basis', 'money is booked by ACCRUAL from logged effort and the budget note never says so — '
+        + '"spending ahead of the plan" reads as cash out of the door when nothing here knows whether an '
+        + 'invoice exists');
+    if (cb.allTyped && says)
+      say('Cost basis', 'every booked figure on this plan was typed by hand, so it IS a cash record, and the '
+        + 'note still warns about accrual — a caveat that fires when it does not apply teaches people to '
+        + 'skip caveats');
+  }
+
   /* 1f. A CAPPED LIST MUST OWN UP TO BEING A SAMPLE.
      The drill-in slices to the worst five and threw the pre-cut count away, so a
      row saying "22 activities moved" sat above a disclosure badge reading 5 and a

@@ -552,6 +552,21 @@ const MUTANTS = [
   { what: 'backup: the whole-workspace file leaves the estimate bank behind',
     find: '        projects: projects, bank: bank, people: people, orgs: orgs',
     with: '        projects: projects, people: people, orgs: orgs' },
+  /* ── is "booked" a fact or an accrual? ────────────────────────────────────
+     actualCostOf DERIVES cost from work recorded — day rate × logged effort plus
+     fixed cost prorated by percent complete — unless somebody typed over it. So
+     an activity finishing nineteen days early books its cost nineteen days early
+     whether or not an invoice exists. Right default for judging delivery, still
+     an assumption, and "you are spending ahead of the plan" read as money out of
+     the door is a different conclusion from the one the data supports. */
+
+  { what: 'accrual: the bar draws the timing conclusion and drops the caveat that booked money is accrued',
+    find: '          const cb0 = costBasisSplit(leaves);\n          if (cb0.anyDerived)',
+    with: '          const cb0 = costBasisSplit(leaves);\n          if (false)' },
+
+  { what: 'accrual: typed-in cost is counted as derived, so the panel describes the wrong model',
+    find: '        if (t.autoActualCost === false) { out.typedN++; out.typed += v; }',
+    with: '        if (false) { out.typedN++; out.typed += v; }' },
 ];
 
 const CHECKS = QUICK ? ['run-test-plan.js']
@@ -577,7 +592,7 @@ const LIKELY = {
   'budget bar:': 'chart-reconciliation-sweep.js', 'catch-up:': 'chart-reconciliation-sweep.js',
   'test plan:': 'run-test-plan.js', 'baseline history:': 'baseline-sweep.js',
   'bank:': 'bank-sweep.js', 'handoff:': 'bank-sweep.js', 'curve:': 'navigation-sweep.js',
-  'drill-in:': 'chart-reconciliation-sweep.js', 'backup:': 'persistence-sweep.js', 'readout:': 'contradiction-sweep.js',
+  'drill-in:': 'chart-reconciliation-sweep.js', 'backup:': 'persistence-sweep.js', 'accrual:': 'chart-reconciliation-sweep.js', 'readout:': 'contradiction-sweep.js',
   'blocked tab:': 'dialog-sweep.js', 'changes panel:': 'drawn-surfaces-sweep.js',
   'corrupt file:': 'corrupt-file-sweep.js', 'ring:': 'drawn-surfaces-sweep.js',
   'envelope:': 'chart-reconciliation-sweep.js', 'scope:': 'chart-reconciliation-sweep.js',
@@ -585,7 +600,7 @@ const LIKELY = {
   'prose:': 'dynamic-prose-sweep.js', 'heatmap:': 'resourcing-sweep.js',
   'navigation:': 'navigation-sweep.js', 'worklist:': 'navigation-sweep.js',
   'criteria:': 'ai-boundary-sweep.js', 'effort:': 'resourcing-sweep.js', 'bank:': 'bank-sweep.js', 'handoff:': 'bank-sweep.js', 'curve:': 'navigation-sweep.js',
-  'drill-in:': 'chart-reconciliation-sweep.js', 'backup:': 'persistence-sweep.js'
+  'drill-in:': 'chart-reconciliation-sweep.js', 'backup:': 'persistence-sweep.js', 'accrual:': 'chart-reconciliation-sweep.js'
 };
 const orderFor = m => {
   const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);

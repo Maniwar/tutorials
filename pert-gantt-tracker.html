@@ -3031,7 +3031,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.01.2245</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.01.2306</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -8427,6 +8427,39 @@ Or say what you want, in your own words:
       const done = Math.min(100, Math.max(0, Number(t && t.percentComplete) || 0)) / 100;
       return (Number(t && t.fixedCost) || 0) * done;
     }
+    /* ═══ IS "BOOKED" A FACT OR AN ACCRUAL? ═════════════════════════════════
+       Every figure on the budget bar rests on this and the panel never said it
+       out loud where the claim is made. `actualCostOf` DERIVES cost from work
+       recorded — day rate × logged effort, plus fixed cost prorated by percent
+       complete — unless somebody typed the number over it. So the model is an
+       accrual of work performed, not a record of cash leaving: an activity that
+       finished nineteen days early books its cost nineteen days early, whether
+       or not anything has been invoiced, approved or paid.
+
+       That is a defensible default and the right one for judging delivery, but
+       it is an assumption, and reading "+$16,207 ahead of the spend curve" as
+       money out of the door when nobody has raised an invoice is a genuinely
+       different conclusion. Reported exactly that way: "it assumes payout was
+       early as well."
+
+       The split is computable, so the panel can stop assuming the reader knows:
+       how much of the booked total is derived from effort and how much was
+       asserted by hand. A plan where every figure is typed is a cash record and
+       the caveat does not apply to it at all. */
+    function costBasisSplit(leaves) {
+      const out = { derivedN: 0, typedN: 0, derived: 0, typed: 0 };
+      (leaves || leafTasks()).forEach(t => {
+        if (t.isSummary) return;
+        const v = actualCostOf(t);
+        if (!(Math.abs(v) > 0.5)) return;
+        if (t.autoActualCost === false) { out.typedN++; out.typed += v; }
+        else { out.derivedN++; out.derived += v; }
+      });
+      out.total = out.derived + out.typed;
+      out.allTyped = out.derivedN === 0 && out.typedN > 0;
+      out.anyDerived = out.derivedN > 0;
+      return out;
+    }
     function actualCostOf(t) {
       if (!t) return 0;
       if (t.isSummary) return leafDescendants(t.id).reduce((s, x) => s + actualCostOf(x), 0);
@@ -9940,6 +9973,21 @@ Or say what you want, in your own words:
           bud.note += ' Here it is above the curve but <b>not</b> above the value of the work done, so you are '
             + 'spending ahead of the plan because you are working ahead of it'
             + (schTxt && sch.pct < 0 ? ' — the forecast is ' + schTxt + '. ' : '. ') + 'Timing, not overspend.';
+          /* And say what "spending" means HERE, next to the claim, rather than
+             in the smallest text at the bottom of the page. Working ahead only
+             puts money out of the door early if the money follows the work. */
+          const cb0 = costBasisSplit(leaves);
+          if (cb0.anyDerived)
+            bud.note += ' <b>Read that as work done early, not cash gone early:</b> '
+              + (cb0.typedN
+                  ? money(Math.round(cb0.derived)) + ' of the ' + money(Math.round(cb0.total))
+                    + ' booked is <em>accrued</em> — derived from logged effort × day rates as the work was '
+                    + 'recorded — and ' + money(Math.round(cb0.typed)) + ' was typed in by hand'
+                  : 'the whole booked total is <em>accrued</em> — derived from logged effort × day rates as '
+                    + 'the work was recorded')
+              + '. Nothing here knows when an invoice was raised or a supplier paid, so an activity that '
+              + 'finished early books its cost early. Where a figure genuinely left on a different day, the '
+              + '<b>✎ override</b> in the activity editor records the amount you mean instead.';
           /* "It closes on its own" is only credible with a DATE on it. The plan is
              a closed curve of frozen per-activity costs and dates, so the day it
              reaches the amount already booked is not a forecast — it is a lookup,
@@ -10380,8 +10428,16 @@ Or say what you want, in your own words:
               + escapeHtml((t.actualFinish ? 'finished ' : 'forecast ') + fmtNice(af)
                 + ' — no baseline date to compare it with') + ')</span>';
           }
+          /* The row now names both dates, so it can also say what moved the
+             money — and, where the cost is derived rather than typed, that the
+             money moved because the WORK did. On a derived figure "booked" is
+             an accrual, so finishing 19 days early books the cost 19 days
+             early; nothing here knows when an invoice was raised. */
+          const accrued = t.autoActualCost !== false && (actOf.get(t.id) || 0) > 0.5;
           if (Math.abs(timing) > tol) bits.push('<b>' + money(Math.abs(Math.round(timing))) + '</b> '
-            + (timing > 0 ? 'ahead of its dates' : 'behind its dates') + when);
+            + (timing > 0 ? 'ahead of its dates' : 'behind its dates') + when
+            + (accrued && when ? ' <span class="ptr-drv-when">— its cost is accrued with the work, so it '
+                + 'moved with those dates rather than when any money changed hands</span>' : ''));
           if (Math.abs(over) > tol) bits.push('<span class="ptr-drv-o-' + (over > 0 ? 'bad' : 'good')
             + '"><b>' + money(Math.abs(Math.round(over))) + '</b> '
             + (over > 0 ? 'over its own budget' : 'under its own budget') + '</span>');
