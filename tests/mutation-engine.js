@@ -535,6 +535,23 @@ const MUTANTS = [
     find: `          if (ids.length) return ids.map((id, i) => (orgFind(id) || {}).name
             || (r.orgs || [])[i] || r.org || id);`,
     with: '          if (ids.length) return ids.map(id => (orgFind(id) || {}).name || id);' },
+  /* ── three things a person could not do ───────────────────────────────────
+     Reported from use, not from reading the code: a readout whose buttons vanish
+     as you reach for them, a timing figure that states a consequence and hides
+     its cause, and a backup that leaves behind three of the four stores that make
+     up a workspace. */
+
+  { what: 'curve: the reading clears the instant the pointer leaves, so its buttons cannot be reached',
+    find: '      ptrScGraceT = setTimeout(ptrScClearNow, 420);',
+    with: '      ptrScClearNow();' },
+
+  { what: 'drill-in: "ahead of its dates" no longer names the two dates that moved the money',
+    find: "            + (timing > 0 ? 'ahead of its dates' : 'behind its dates') + when);",
+    with: "            + (timing > 0 ? 'ahead of its dates' : 'behind its dates'));" },
+
+  { what: 'backup: the whole-workspace file leaves the estimate bank behind',
+    find: '        projects: projects, bank: bank, people: people, orgs: orgs',
+    with: '        projects: projects, people: people, orgs: orgs' },
 ];
 
 const CHECKS = QUICK ? ['run-test-plan.js']
@@ -559,14 +576,16 @@ const LIKELY = {
   'margin': 'pricing-sweep.js', 'wizard:': 'dialog-sweep.js',
   'budget bar:': 'chart-reconciliation-sweep.js', 'catch-up:': 'chart-reconciliation-sweep.js',
   'test plan:': 'run-test-plan.js', 'baseline history:': 'baseline-sweep.js',
-  'bank:': 'bank-sweep.js', 'handoff:': 'bank-sweep.js', 'readout:': 'contradiction-sweep.js',
+  'bank:': 'bank-sweep.js', 'handoff:': 'bank-sweep.js', 'curve:': 'navigation-sweep.js',
+  'drill-in:': 'chart-reconciliation-sweep.js', 'backup:': 'persistence-sweep.js', 'readout:': 'contradiction-sweep.js',
   'blocked tab:': 'dialog-sweep.js', 'changes panel:': 'drawn-surfaces-sweep.js',
   'corrupt file:': 'corrupt-file-sweep.js', 'ring:': 'drawn-surfaces-sweep.js',
   'envelope:': 'chart-reconciliation-sweep.js', 'scope:': 'chart-reconciliation-sweep.js',
   'form:': 'drawn-surfaces-sweep.js', 'drill-in:': 'chart-reconciliation-sweep.js',
   'prose:': 'dynamic-prose-sweep.js', 'heatmap:': 'resourcing-sweep.js',
   'navigation:': 'navigation-sweep.js', 'worklist:': 'navigation-sweep.js',
-  'criteria:': 'ai-boundary-sweep.js', 'effort:': 'resourcing-sweep.js', 'bank:': 'bank-sweep.js', 'handoff:': 'bank-sweep.js'
+  'criteria:': 'ai-boundary-sweep.js', 'effort:': 'resourcing-sweep.js', 'bank:': 'bank-sweep.js', 'handoff:': 'bank-sweep.js', 'curve:': 'navigation-sweep.js',
+  'drill-in:': 'chart-reconciliation-sweep.js', 'backup:': 'persistence-sweep.js'
 };
 const orderFor = m => {
   const hit = Object.keys(LIKELY).find(k => m.what.indexOf(k) === 0 || m.what.indexOf(k) >= 0);

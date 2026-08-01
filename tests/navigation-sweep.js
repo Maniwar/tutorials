@@ -96,6 +96,66 @@ const { chromium } = requirePlaywright();
     say('Navigation', mism.length + ' tab(s) do not write their own name into the address: '
       + mism.map(x => x.tab + '→"' + x.hash + '"').join(', '));
 
+  /* ═══ 1b. A READING YOU CAN REACH ═══════════════════════════════════════
+     The spend curve's readout names the activities behind the day you point at,
+     each as a button that opens it. The buttons sit BELOW the chart, so moving
+     the pointer down towards them left the svg, mouseleave fired, and the
+     readout reset to its idle text before the pointer arrived — the thing you
+     were reaching for vanished as you reached for it. "I can never actually
+     click on the things that pop up under it because it disappears right away."
+
+     Not testable from inside the page: it is a property of pointer travel, so
+     the mouse is actually moved. Two gestures, because the fix has two halves —
+     the obvious one (walk down into the readout) must keep working, and the
+     deliberate one (click to hold) must survive leaving the chart entirely. */
+  await page.evaluate(() => { switchTab('analytics'); renderAnalytics(); });
+  await page.waitForTimeout(500);
+  const curve = await page.evaluate(() => {
+    const r = document.getElementById('ptrScRead'); if (!r) return null;
+    const sv = r.parentElement.querySelector('svg'); if (!sv) return null;
+    const bb = sv.getBoundingClientRect();
+    return { x: bb.x, y: bb.y + window.scrollY, width: bb.width, height: bb.height };
+  });
+  if (!curve) { note.curveReadout = 'SKIPPED-no-spend-curve'; }
+  else {
+    await page.evaluate(y => window.scrollTo(0, Math.max(0, y - 200)), curve.y);
+    const sy = await page.evaluate(() => window.scrollY);
+    const cx = curve.x + curve.width * 0.45, cy = curve.y - sy + curve.height * 0.5;
+    const btns = () => page.evaluate(() =>
+      document.getElementById('ptrScRead').querySelectorAll('button').length);
+    await page.mouse.move(cx, cy); await page.waitForTimeout(200);
+    const onChart = await btns();
+    note.curveButtonsOnHover = onChart;
+    if (!onChart)
+      say('Spend curve', 'hovering the chart names no activities at all, so nothing below is tested');
+    else {
+      // walk down into the readout, the way somebody reaching for a button does
+      await page.mouse.move(cx, curve.y - sy + curve.height + 40, { steps: 12 });
+      await page.waitForTimeout(250);
+      const reached = await btns();
+      note.curveButtonsAfterReaching = reached;
+      if (!reached)
+        say('Spend curve', 'the reading is gone by the time the pointer reaches the buttons it drew — '
+          + 'they cannot be clicked at all, which is the whole point of naming them');
+      // and a held reading must survive leaving the chart entirely
+      await page.mouse.move(cx, cy); await page.waitForTimeout(120);
+      await page.mouse.click(cx, cy); await page.waitForTimeout(150);
+      await page.mouse.move(cx, curve.y - sy + curve.height + 300, { steps: 10 });
+      await page.waitForTimeout(700);
+      const held = await page.evaluate(() => ({
+        n: document.getElementById('ptrScRead').querySelectorAll('button').length,
+        pinned: document.getElementById('ptrScRead').classList.contains('ptr-sc-pin') }));
+      note.curveHeldAfterLeaving = held;
+      if (!held.n)
+        say('Spend curve', 'clicking the chart does not hold the reading — it still clears the moment '
+          + 'the pointer leaves, so reaching the buttons is a race');
+      if (!held.pinned)
+        say('Spend curve', 'a held reading looks identical to a live one, so a chart that has stopped '
+          + 'tracking reads as broken');
+      await page.keyboard.press('Escape');
+    }
+  }
+
   // ═══ 2. THE WORKLIST SAYS ENOUGH TO ACT ON ═══════════════════════════════
   const W = await page.evaluate(() => {
     const bad2 = [], out = {};

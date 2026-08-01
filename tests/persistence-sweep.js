@@ -129,8 +129,72 @@ const DERIVED = ['te', 'variance', 'es', 'ef', 'ls', 'lf', 'slack', 'isCritical'
 
   const qa = await sweep('QA reference', QA);
   const crm = await sweep('Real export', CRM);
-  const R = { contradictions: [].concat(qa.contradictions, crm.contradictions),
-              qaCounts: qa.counts, crmCounts: crm.counts,
+  /* ═══ ONE BACKUP HAS TO MEAN EVERYTHING ═══════════════════════════════════
+     A workspace is four stores and three of them live OUTSIDE any project on
+     purpose, because they outlive it: the estimate bank, the people library and
+     the company registry. "Back up all projects" carried only the projects, so
+     restoring on another browser gave a library whose calibration was empty,
+     whose roster had to be retyped and whose companies resolved to nothing —
+     most of what makes the tool worth using on the second engagement, silently
+     absent from the thing called a backup.
+
+     Asked as a round trip rather than by inspecting the file: fill all four
+     stores, export, wipe, import, and require every one of them back. */
+  const RT = await page.evaluate(async () => {
+    const bad2 = [], out = {};
+    const say2 = x => bad2.push('Backup :: ' + x);
+    const org = orgRegister('Northwind Integration');
+    saveResLib([{ name: 'M. Webb', kind: 'internal', role: 'Developer',
+      org: 'Northwind Integration', orgId: org.id, capacity: 100, rate: 1100, billRate: 1750, rateUnit: 'day' }]);
+    saveBank([1.4, 1.5, 1.6].map((r, i) => ({ proj: 'Past', at: '2026-01-01', pid: 'pPast',
+      wbs: '1.' + i, name: 'A' + i, kind: 'work-package', tax: 'delivery', owner: 'M. Webb',
+      org: 'Northwind Integration', orgId: org.id, orgs: ['Northwind Integration'], orgIds: [org.id],
+      unit: 'days', o: 1, m: 2, p: 4, te: 2, actual: 2 * r, ratio: r, basis: 'logged',
+      costEst: 2000, costActual: 2000 * r })));
+    out.before = { bank: loadBank().length, people: loadResLib().length, orgs: loadOrgLib().length };
+
+    let payload = null;
+    const realDownload = window.download;
+    window.download = (n, body) => { payload = body; };
+    await exportAllProjects();
+    window.download = realDownload;
+    if (!payload) { say2('the backup produced no file'); return { contradictions: bad2, counts: out }; }
+    const d = JSON.parse(payload);
+    out.sections = ['projects', 'bank', 'people', 'orgs'].filter(k => Array.isArray(d[k]));
+    ['bank', 'people', 'orgs'].forEach(k => {
+      if (!Array.isArray(d[k]) || !d[k].length)
+        say2('the backup carries no ' + k + ' — it is called a backup and leaves behind a store that '
+          + 'outlives every project in it');
+    });
+
+    saveBank([]); saveResLib([]); saveOrgLib([]);      // a machine with nothing on it
+    const realConfirm = window.confirm, realFlash = window.flashSaved;
+    window.confirm = () => true; window.flashSaved = () => {};
+    await importLibraryBundle(d);
+    out.after = { bank: loadBank().length, people: loadResLib().length, orgs: loadOrgLib().length };
+    ['bank', 'people', 'orgs'].forEach(k => {
+      if ((out.after[k] || 0) < (out.before[k] || 0))
+        say2('restoring gave back ' + out.after[k] + ' of ' + out.before[k] + ' ' + k + ' record(s)');
+    });
+    const back = loadOrgLib().find(o => o.name === 'Northwind Integration');
+    out.orgIdRestored = !!(back && back.id === org.id);
+    if (back && back.id !== org.id)
+      say2('the company came back under a new id, so its archived history no longer joins up');
+    // the same file twice must not duplicate a register
+    await importLibraryBundle(d);
+    window.confirm = realConfirm; window.flashSaved = realFlash;
+    out.afterTwice = { bank: loadBank().length, people: loadResLib().length, orgs: loadOrgLib().length };
+    ['bank', 'people', 'orgs'].forEach(k => {
+      if ((out.afterTwice[k] || 0) > (out.after[k] || 0))
+        say2('importing the same backup twice duplicated ' + k + ' (' + out.after[k] + ' → '
+          + out.afterTwice[k] + ') — every copy pulls the medians it sits in');
+    });
+    saveBank([]); saveResLib([]); saveOrgLib([]);
+    return { contradictions: bad2, counts: out };
+  });
+
+  const R = { contradictions: [].concat(qa.contradictions, crm.contradictions, RT.contradictions || []),
+              qaCounts: qa.counts, crmCounts: crm.counts, backupRoundTrip: RT.counts,
               pageErrors: errs.slice(0, 8) };
   console.log(JSON.stringify(R, null, 1));
   await b.close();

@@ -249,6 +249,32 @@ const FIELD = JSON.parse(fs.readFileSync(
     }
   }
 
+  /* 1e2. "AHEAD OF ITS DATES" HAS TO NAME THE DATES.
+     The row stated a consequence and withheld its cause: "$8,233 ahead of its
+     dates" with nothing saying the work finished on 24 July against a baseline
+     of 12 August, which is the entire reason the money sits ahead of the curve.
+     Reported as "it doesn't say in the activity what the target date of finish
+     should have been". A timing figure without its two dates is a number the
+     reader has to take on trust. */
+  {
+    const timed = (bud.drivers || []).filter(r => /(ahead|behind) of its dates/.test(r.sub || ''));
+    note.timingRows = timed.length;
+    const withDates = timed.filter(r => /against a (baseline|plan) of/.test(r.sub || ''));
+    note.timingRowsNamingDates = withDates.length;
+    timed.forEach(r => {
+      const t = tasks.find(x => x.id === r.id);
+      const hasRef = t && (t.baseFinish || isRealDate(t.finishDate));
+      const hasAct = t && (t.actualFinish || isRealDate(t.finishDate));
+      if (!hasRef || !hasAct) return;               // nothing to compare; the row says so
+      if (!/against a (baseline|plan) of/.test(r.sub || ''))
+        say('Budget drill-in', '"' + String(r.sub).replace(/<[^>]+>/g, '').slice(0, 60)
+          + '" states money moved by timing and never names the two dates that moved it — the reader is '
+          + 'told the consequence and has to take the cause on trust');
+      else if (!/(early|late|on the day)/.test(r.sub || ''))
+        say('Budget drill-in', 'the row names both dates and never says which way or by how much');
+    });
+  }
+
   /* 1f. A CAPPED LIST MUST OWN UP TO BEING A SAMPLE.
      The drill-in slices to the worst five and threw the pre-cut count away, so a
      row saying "22 activities moved" sat above a disclosure badge reading 5 and a

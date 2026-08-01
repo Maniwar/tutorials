@@ -711,6 +711,9 @@
     .wl-open { text-align: left; }
     .wl-state { color: var(--muted); }
     .wl-eff { font-variant-numeric: tabular-nums; }
+    .ptr-drv-when { color: var(--muted); font-weight: 400; }
+    /* a held reading has to LOOK held, or a chart that stopped tracking reads as broken */
+    .ptr-sc-pin { outline: 2px solid var(--primary); outline-offset: 1px; }
     .wl-tot { font-weight: 700; border-top: 2px solid var(--border); }
     .wl-var { font-size: 0.68rem; line-height: 1.4; margin-top: 1px; }
     .wl-var-over { color: var(--critical); }
@@ -2240,7 +2243,7 @@
           <button onclick="exportResourcesCSV()"><span class="ico" aria-hidden="true"></span> Download resources &amp; PTO (.csv)</button>
           <button onclick="exportJSON()"><span class="ico" aria-hidden="true"></span> Download backup (.json)</button>
           <button onclick="exportEditableWorkbook()" title="Four editable CSVs — activities & estimates, user stories & acceptance criteria, test cases & results, RAID log. Send them to the client, take the edited files back with IMPORT: rows are matched by their ID column (leave the ID blank on new rows). Changed criteria offer test-case regeneration; failed test results open RAID issues."><span class="ico" aria-hidden="true">✏️</span> Editable workbook (4 CSVs)</button>
-          <button onclick="exportAllProjects()" title="One file with EVERY project in this browser — use it to move your whole library to another browser or to the GitHub Pages site (browser storage is per-site, so projects don't follow the app there by themselves). Restore with IMPORT on the other side."><span class="ico" aria-hidden="true">📦</span> Back up all projects (.json)</button>
+          <button onclick="exportAllProjects()" title="One file with EVERYTHING in this browser: every project, the estimate bank, the people library and the company list — use it to move your whole library to another browser or to the GitHub Pages site (browser storage is per-site, so projects don't follow the app there by themselves). Restore with IMPORT on the other side."><span class="ico" aria-hidden="true">📦</span> Back up EVERYTHING (.json)</button>
           <div class="grp">Visuals</div>
           <button onclick="downloadChartSVG('gantt')"><span class="ico" aria-hidden="true"></span> Download Gantt (.svg)</button>
           <button onclick="downloadChartSVG('pert')"><span class="ico" aria-hidden="true"></span> Download PERT (.svg)</button>
@@ -3028,7 +3031,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.07.31.1444</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.01.2245</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -10350,8 +10353,35 @@ Or say what you want, in your own words:
           const bits = [];
           // TIMING IS NEVER COLOURED. It is the half that costs nothing, and the
           // whole point of splitting the number was to stop it reading as a fault.
+          /* SAY WHICH DATES. "$8,233 ahead of its dates" states a consequence and
+             withholds its cause: the reader cannot see that the work finished on
+             24 July against a baseline of 12 August, which is the entire reason
+             the money is ahead of the curve. Reported exactly that way — the card
+             says "actual finish" and never says what the finish was meant to be.
+
+             The baseline finish is the one the curve was drawn from, so it is the
+             one to name here; without a baseline the current planned finish is
+             what the comparison is against and is named instead. */
+          const bf = t.baseFinish ? stripTime(new Date(t.baseFinish)) : null;
+          const af = t.actualFinish ? stripTime(new Date(t.actualFinish + 'T00:00:00'))
+            : (isRealDate(t.finishDate) ? stripTime(t.finishDate) : null);
+          const ref = bf || (isRealDate(t.finishDate) ? stripTime(t.finishDate) : null);
+          let when = '';
+          if (af && ref) {
+            const dd = calDaysBetween(ref, af);
+            when = ' <span class="ptr-drv-when">('
+              + escapeHtml((t.actualFinish ? 'finished ' : 'forecast ') + fmtNice(af)
+                + ' against ' + (bf ? 'a baseline of ' : 'a plan of ') + fmtNice(ref)
+                + (dd === 0 ? ' — on the day'
+                   : ' — ' + Math.abs(dd) + ' calendar ' + ptrPl(Math.abs(dd), 'day')
+                     + (dd < 0 ? ' early' : ' late'))) + ')</span>';
+          } else if (af && !ref) {
+            when = ' <span class="ptr-drv-when">('
+              + escapeHtml((t.actualFinish ? 'finished ' : 'forecast ') + fmtNice(af)
+                + ' — no baseline date to compare it with') + ')</span>';
+          }
           if (Math.abs(timing) > tol) bits.push('<b>' + money(Math.abs(Math.round(timing))) + '</b> '
-            + (timing > 0 ? 'ahead of its dates' : 'behind its dates'));
+            + (timing > 0 ? 'ahead of its dates' : 'behind its dates') + when);
           if (Math.abs(over) > tol) bits.push('<span class="ptr-drv-o-' + (over > 0 ? 'bad' : 'good')
             + '"><b>' + money(Math.abs(Math.round(over))) + '</b> '
             + (over > 0 ? 'over its own budget' : 'under its own budget') + '</span>');
@@ -10967,10 +10997,12 @@ Or say what you want, in your own words:
         + '<i class="ptr-sc-hm ptr-sc-hac" id="ptrScHac" style="display:none"></i>';
       const plot = '<div class="ptr-sc-plot" id="ptrScPlot" role="group" tabindex="0" aria-label="'
         + escapeHtml(aria) + '" onmousemove="ptrCurveHover(event,this)" onmouseleave="ptrCurveHoverOff()"'
+        + ' onclick="ptrScPin(event,this)" style="cursor:crosshair"'
         + ' ontouchstart="ptrCurveHover(event,this)" ontouchmove="ptrCurveHover(event,this)"'
         + ' onfocus="ptrCurveHover(null,this)" onblur="ptrCurveHoverOff()"'
         + ' onkeydown="ptrCurveKey(event,this)">' + svg + marks + hov + '</div>';
-      const read = '<div class="ptr-sc-read" id="ptrScRead" aria-live="polite">' + ptrScIdle() + '</div>';
+      const read = '<div class="ptr-sc-read" id="ptrScRead" aria-live="polite"'
+        + ' onmouseenter="ptrScReadEnter()" onmouseleave="ptrScReadLeave()">' + ptrScIdle() + '</div>';
       ptrScState = { x0: c.x0, x1: c.x1, xw: c.xw, spanDays: c.spanDays, top: c.top,
         segs: c.segs, asegs: c.asegs, parts: c.parts || [],
         todayMs: c.todayMs, endToday: c.todayMs + 86400000,
@@ -11083,6 +11115,8 @@ Or say what you want, in your own words:
     function ptrScIdle() {
       return 'Hover or tap anywhere on the plot to read that date: what the plan said should have been spent by '
         + 'then, what was actually booked against it, and which activities the difference is coming from. '
+        + '<b>Click to hold the reading</b> so you can press the activity buttons it names — click again or '
+        + 'press Escape to release it. '
         + '<span class="ptr-sc-rd">Once the plot has focus, ← → move a day, PgUp/PgDn a week, Home/End the ends, '
         + 't back to today.</span>';
     }
@@ -11090,6 +11124,10 @@ Or say what you want, in your own words:
     function ptrCurveHover(ev, el) {
       const st = ptrScState;
       if (!st || !el) return;
+      ptrScCancelClear();
+      // a pinned reading is the user's choice; passing the pointer over the chart
+      // again must not silently move it somewhere else
+      if (ptrScPinned && ev && ev.type === 'mousemove') return;
       let ms = st.todayMs;
       if (ev) {
         const box = el.getBoundingClientRect();
@@ -11123,18 +11161,61 @@ Or say what you want, in your own words:
       else if (k === 'Home') ms = st.x0;
       else if (k === 'End') ms = st.x1;
       else if (k === 't' || k === 'T') ms = st.todayMs;
-      else if (k === 'Escape') { ptrCurveHoverOff(); return; }
+      else if (k === 'Escape') { ptrScPinned = false; ptrScClearNow(); return; }
       else return;
       ev.preventDefault();
       ptrScPaint(Math.max(st.x0, Math.min(st.x1, ms)));
     }
+    /* ═══ A READING YOU CAN REACH ════════════════════════════════════════════
+       The readout under this chart names the activities behind the day you are
+       pointing at, each as a button that opens it. It was unreachable. The
+       buttons live BELOW the svg, so moving the pointer down towards them left
+       the svg, mouseleave fired, and the readout reset to its idle text before
+       the pointer arrived — the thing you were reaching for vanished as you
+       reached for it, every time. Reported exactly that way.
+
+       Two fixes, because they answer different halves.
+
+       A GRACE PERIOD makes the obvious gesture work: leaving the chart does not
+       clear the reading immediately, so a pointer travelling down into the
+       readout keeps it. Entering the readout cancels the clear outright, and
+       leaving the readout starts it again.
+
+       PINNING makes it reliable. Click (or tap) the chart and the reading is
+       held until you click again, press Escape, or move off both. A grace period
+       alone is a race the user has to win; a pin is a decision they made. The
+       readout says which state it is in, because a chart that silently stops
+       tracking is its own confusion. */
+    let ptrScGraceT = null, ptrScPinned = false;
+    function ptrScCancelClear() { if (ptrScGraceT) { clearTimeout(ptrScGraceT); ptrScGraceT = null; } }
     function ptrCurveHoverOff() {
+      ptrScCancelClear();
+      if (ptrScPinned) return;                       // a pinned reading stays put
+      // 420ms: long enough to cross the gap to the buttons, short enough that a
+      // reading left behind never reads as the live one.
+      ptrScGraceT = setTimeout(ptrScClearNow, 420);
+    }
+    function ptrScClearNow() {
+      ptrScCancelClear();
+      ptrScPinned = false;
       ['ptrScCross', 'ptrScHpv', 'ptrScHac'].forEach(id => {
         const e = document.getElementById(id); if (e) e.style.display = 'none';
       });
       const r = document.getElementById('ptrScRead');
-      if (r) r.innerHTML = ptrScIdle();
+      if (r) { r.innerHTML = ptrScIdle(); r.classList.remove('ptr-sc-pin'); }
       if (ptrScState) { ptrScState.on = false; ptrScState.lastMs = null; }
+    }
+    // the readout itself holds the reading while the pointer is inside it
+    function ptrScReadEnter() { ptrScCancelClear(); }
+    function ptrScReadLeave() { ptrCurveHoverOff(); }
+    function ptrScPin(ev, el) {
+      if (ptrScPinned) { ptrScPinned = false; ptrScClearNow(); return; }
+      if (ev) ptrCurveHover(ev, el);                 // pin exactly where they clicked
+      if (!ptrScState || !ptrScState.on) return;     // nothing read yet, nothing to pin
+      ptrScPinned = true;
+      ptrScCancelClear();
+      const r = document.getElementById('ptrScRead');
+      if (r) r.classList.add('ptr-sc-pin');
     }
 
     function ptrScPaint(ms) {
@@ -16667,14 +16748,79 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           projects.push({ name: (idx[id] && idx[id].name) || data.projectName || 'Untitled', updatedAt: (idx[id] && idx[id].updatedAt) || null, data });
         } catch (e) {}
       }
-      if (!projects.length) { alert('No saved projects found in this browser.'); return; }
-      download('engagement-planner-library.json', JSON.stringify({ format: 'engagement-planner-library', version: 1, exportedAt: new Date().toISOString(), projects }), 'application/json');
-      flashSaved('📦 ' + projects.length + ' project(s) exported — on the other site/browser, use IMPORT with this file to restore them all');
+      /* EVERYTHING, not just the projects. Four stores make up a workspace and
+         three of them live OUTSIDE any project on purpose, because they outlive
+         it: the estimate bank, the people library and the company registry. A
+         backup carrying only the projects restores a library whose calibration
+         is empty, whose roster has to be retyped and whose companies resolve to
+         nothing — which is most of what makes the tool worth using on the second
+         engagement. Each had its own export button and nobody should have to
+         press four of them and keep the files together.
+
+         An empty store is still written, so restoring is never ambiguous about
+         whether a section was absent or simply empty. */
+      const bank = loadBank(), people = loadResLib(), orgs = loadOrgLib();
+      if (!projects.length && !bank.length && !people.length)
+        { alert('Nothing to back up in this browser yet.'); return; }
+      download('engagement-planner-workspace.json', JSON.stringify({
+        format: 'engagement-planner-library', version: 2,
+        exportedAt: new Date().toISOString(),
+        projects: projects, bank: bank, people: people, orgs: orgs
+      }), 'application/json');
+      flashSaved('📦 Workspace exported — ' + projects.length + ' project(s), ' + bank.length
+        + ' bank record(s), ' + people.length + ' ' + ptrPl(people.length, 'person', 'people') + ' and '
+        + orgs.length + ' ' + ptrPl(orgs.length, 'company', 'companies')
+        + '. IMPORT it on the other browser to restore all of it.');
     }
     async function importLibraryBundle(bundle) {
       const list = (bundle.projects || []).filter(p => p && p.data && Array.isArray(p.data.tasks));
-      if (!list.length) { alert('This library file contains no restorable projects.'); return; }
-      if (!confirm('Restore ' + list.length + ' project(s) from this library backup?\n\n' + list.slice(0, 10).map(p => '• ' + (p.name || p.data.projectName || 'Untitled')).join('\n') + (list.length > 10 ? '\n…' : '') + '\n\nThey are ADDED as new projects — nothing already here is touched. A project whose name already exists comes in as “… (imported)”.')) return;
+      const inBank = Array.isArray(bundle.bank) ? bundle.bank : [];
+      const inPeople = Array.isArray(bundle.people) ? bundle.people : [];
+      const inOrgs = Array.isArray(bundle.orgs) ? bundle.orgs : [];
+      if (!list.length && !inBank.length && !inPeople.length)
+        { alert('This backup contains nothing restorable.'); return; }
+      /* The three cross-project stores MERGE and the projects are ADDED, and the
+         difference is deliberate. A project is a document: two of them with the
+         same name are two engagements, so a second copy arrives beside the first.
+         The bank, the roster and the companies are registers of one shared truth,
+         where a second copy of a record is a duplicate that pulls every median it
+         sits in — so they merge on their own keys and nothing already here is
+         overwritten by an older filing. Exactly the rule each store's own import
+         button already follows; this only stops you pressing four of them. */
+      const parts = [];
+      if (list.length) parts.push(list.length + ' project(s)');
+      if (inBank.length) parts.push(inBank.length + ' estimate-bank record(s)');
+      if (inPeople.length) parts.push(inPeople.length + ' ' + ptrPl(inPeople.length, 'person', 'people'));
+      if (inOrgs.length) parts.push(inOrgs.length + ' ' + ptrPl(inOrgs.length, 'company', 'companies'));
+      if (!confirm('Restore this workspace backup?\n\n' + parts.map(x => '• ' + x).join('\n')
+        + (list.length ? '\n\nProjects:\n' + list.slice(0, 8).map(p => '   ' + (p.name || p.data.projectName || 'Untitled')).join('\n')
+            + (list.length > 8 ? '\n   …' : '') : '')
+        + '\n\nProjects are ADDED as new ones — nothing already here is touched, and a name that already '
+        + 'exists comes in as “… (imported)”.\nThe estimate bank, people library and company list MERGE '
+        + 'into yours: duplicates are skipped and nothing you have is overwritten by an older filing.')) return;
+      /* Companies before everything else — the bank rows and the people both
+         reference them by id, and a row landing before its company is a row the
+         panels can only label with a key. */
+      const adoptedOrgs = orgAdoptAll(inOrgs.concat(
+        inBank.map(r => ({ id: r.orgId, name: r.org })),
+        inPeople.map(r => ({ id: r.orgId, name: r.org }))));
+      let bankAdded = 0, peopleAdded = 0;
+      if (inBank.length) {
+        const mg = bankMerge(loadBank(), inBank);
+        saveBank(mg.rows); bankAdded = mg.added;
+        try { updateBankBadge(); renderBank(); } catch (e) {}
+      }
+      if (inPeople.length) {
+        const mg2 = resLibMerge(loadResLib(), inPeople);
+        saveResLib(mg2.rows); peopleAdded = mg2.added;
+        try { renderResLib(); } catch (e) {}
+      }
+      if (!list.length) {
+        flashSaved('📦 Restored — ' + bankAdded + ' bank record(s), ' + peopleAdded + ' new '
+          + ptrPl(peopleAdded, 'person', 'people') + ', ' + adoptedOrgs + ' new '
+          + ptrPl(adoptedOrgs, 'company', 'companies') + '. No projects were in this file.');
+        return;
+      }
       if (tasks.length) { saveLocal(); await persistNow(); }
       const taken = new Set(Object.values(projIndex()).map(x => String((x && x.name) || '').toLowerCase()));
       let n = 0;
@@ -16688,7 +16834,11 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         n++;
       }
       renderProjectMenu();
-      flashSaved('📦 ' + n + ' project(s) restored — open them from 📁 Projects');
+      flashSaved('📦 ' + n + ' project(s) restored — open them from 📁 Projects'
+        + (bankAdded || peopleAdded || adoptedOrgs
+            ? ' · also merged in ' + bankAdded + ' bank record(s), ' + peopleAdded + ' new '
+              + ptrPl(peopleAdded, 'person', 'people') + ' and ' + adoptedOrgs + ' new '
+              + ptrPl(adoptedOrgs, 'company', 'companies') : ''));
     }
     function importJSON(ev) {
       const file = ev.target.files[0]; if (!file) return;
