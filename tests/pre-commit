@@ -72,16 +72,6 @@ else
 fi
 rm -f /tmp/ptr-plan.$$
 
-for t in tests/golden-reference.js tests/*sweep*.js; do
-  n=$(basename "$t" .js)
-  if node "$t" > /tmp/ptr-t.$$ 2>&1; then
-    echo "  ✓ $n"
-  else
-    echo "  ✗ $n"; sed -n '1,30p' /tmp/ptr-t.$$ | sed 's/^/      /'; fail=1
-  fi
-  rm -f /tmp/ptr-t.$$
-done
-
 # Before asking whether the product is right, ask whether the checks can still
 # say no. Two ways they have died here: no exit code (seven sweeps once printed
 # findings and exited 0, so every one arrived as a tick), and a call in a
@@ -95,6 +85,16 @@ else
   sed -n '1,40p' /tmp/ptr-hm.$$ | sed 's/^/      /'; fail=1
 fi
 rm -f /tmp/ptr-hm.$$
+
+for t in tests/golden-reference.js tests/*sweep*.js; do
+  n=$(basename "$t" .js)
+  if node "$t" > /tmp/ptr-t.$$ 2>&1; then
+    echo "  ✓ $n"
+  else
+    echo "  ✗ $n"; sed -n '1,30p' /tmp/ptr-t.$$ | sed 's/^/      /'; fail=1
+  fi
+  rm -f /tmp/ptr-t.$$
+done
 
 # A check is only worth its runtime if it can still fail. Plant defects and
 # confirm the suite names them, so a check that quietly went vacuous is caught
