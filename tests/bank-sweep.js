@@ -44,6 +44,18 @@ const { chromium } = requirePlaywright();
     const bad = [], out = { ran: [] };
     const say = x => bad.push('Bank :: ' + x);
     const ran = k => out.ran.push(k);
+    /* ═══ NOTHING TO TEST IS NOT A PASS ══════════════════════════════════════
+       The bank learns from ARCHIVED activities, so a plan with no leaves has
+       nothing to archive and every calibration assertion below holds trivially.
+       Sixteen of the twenty-one sweeps say so when their input cannot reach
+       what they assert; this one used to go quietly green. vacuity-check
+       confirms the file READS the plan — it cannot confirm that what it read
+       was enough to test with, and that is the half a guard has to carry. */
+    if (!leafTasks().filter(t => !t.isSummary).length) {
+      say('the plan holds no activities, so there is nothing to archive and every calibration check below '
+        + 'passes on an empty set — this run tested nothing');
+      return { contradictions: bad, counts: out };
+    }
     const mk = (proj, i, ratio, basis) => ({ proj: proj, when: '2026-01-01', name: 'A' + i,
       tax: 'delivery', te: 2, actual: 2 * ratio, ratio: ratio, basis: basis || 'logged',
       unit: 'days', pid: 'p' + proj });

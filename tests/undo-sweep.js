@@ -39,6 +39,15 @@ const QA = JSON.parse(fs.readFileSync(
       const say = (w, x) => bad.push(lbl + ' · ' + w + ' :: ' + x);
       const out = { ran: [], depth: 0 };
       const ran = k => out.ran.push(k);
+      /* ═══ NOTHING TO TEST IS NOT A PASS ════════════════════════════════════
+         Undo is tested by MAKING an edit and taking it back. With no activity
+         to edit there is nothing to put on the stack, so the history assertions
+         below compare an empty stack to an empty stack and agree. */
+      if (!tasks.filter(t => !t.isSummary).length) {
+        say('History', 'the plan holds no activities, so nothing can be edited and the undo stack below is '
+          + 'compared empty against empty — this run tested nothing');
+        return { contradictions: bad, counts: out };
+      }
       /* serialize() writes DERIVED values too — a summary's percentComplete is
          rolled up from its children, and saveLocal() runs before refreshAll(),
          so the bytes on disk carry the rollup as it stood BEFORE the edit.

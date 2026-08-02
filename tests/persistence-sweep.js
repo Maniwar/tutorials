@@ -47,6 +47,17 @@ const DERIVED = ['te', 'variance', 'es', 'ef', 'ls', 'lf', 'slack', 'isCritical'
       const bad = [];
       const say = (w, x) => bad.push(lbl + ' · ' + w + ' :: ' + x);
       const out = { tasks: 0, fieldsChecked: 0, resources: 0, raid: 0 };
+      /* ═══ NOTHING TO TEST IS NOT A PASS ════════════════════════════════════
+         A round trip over ZERO tasks is a perfect round trip. Every field
+         comparison below iterates the task list, so an empty plan satisfies all
+         of them by having nothing to disagree about — which is precisely the
+         shape of a save/load defect that drops everything. */
+      if (!tasks.filter(t => !t.isSummary).length) {
+        say('Round trip', 'the plan holds no activities, so every field comparison below iterates an empty '
+          + 'list and passes without comparing anything — a save that dropped the entire plan would look '
+          + 'exactly like this');
+        return { contradictions: bad, counts: out };
+      }
       const eq = (a, c) => JSON.stringify(a === undefined ? null : a)
                         === JSON.stringify(c === undefined ? null : c);
 

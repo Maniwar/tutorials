@@ -372,6 +372,21 @@ Current run: 24 checks, 65 bodies, 340 calls resolved.
 Probes live in `tests/probes/` and are out of scope by design — they observe and
 never fail, which is stated in their own README.
 
+## Nothing to test is not a pass
+
+Every sweep now states it when its input cannot reach what it asserts. Sixteen
+did already, written wherever somebody remembered; `bank`, `persistence`,
+`task-editor` and `undo` did not, and went quietly green on a plan holding no
+work at all — the one state where each of their assertions is trivially
+satisfied. A round trip over zero tasks is a perfect round trip. An undo stack
+compared empty against empty agrees. The editor cases all return early having
+never opened the editor once.
+
+This is the half `vacuity-check` cannot carry. It proves a file READS the plan;
+it cannot prove that what it read was enough to test with. The two are different
+questions and both have to be answered — mechanically for the first, in the
+check's own words for the second.
+
 ## The written test plan
 
 `node tests/run-test-plan.js` runs 42 cases and writes two documents:

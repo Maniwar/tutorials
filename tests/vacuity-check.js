@@ -152,7 +152,13 @@ function normalise(s) {
        sweeps for behaving correctly. Recorded as a note, because seeing which
        checks say so out loud — and which merely go quiet — is the useful half. */
     if (empty.code !== 0) {
-      const first = (empty.out.match(/"[A-Z][^"]{20,150}"/) || [''])[0].slice(0, 140);
+      /* Prefix, not a whole quoted string. The pattern required a CLOSING quote
+         within 150 characters, so the longest messages — which are the ones
+         that explain most — matched nothing and were reported as "(no message
+         captured)". Silence for the most informative case is exactly backwards,
+         and it is the same anchoring mistake in miniature: matched on the shape
+         of the surrounding syntax instead of on the text wanted. */
+      const first = (empty.out.match(/"[A-Z][^"]{20,}/) || [''])[0].slice(0, 150);
       notes.push(s + ' says so out loud on an empty plan: ' + (first || '(no message captured)'));
     } else {
       notes.push(s + ' passes quietly on an empty plan — it changed what it printed, so it IS reading the '

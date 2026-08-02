@@ -37,6 +37,15 @@ const QA = JSON.parse(fs.readFileSync(
     return page.evaluate(lbl => {
       const bad = [];
       const say = (where, what) => bad.push(lbl + ' · ' + where + ' :: ' + what);
+      /* ═══ NOTHING TO TEST IS NOT A PASS ════════════════════════════════════
+         Every case here opens the editor on a REAL activity and reads its live
+         preview back. With no activity to open, each one returns early and the
+         file reports success having never opened the editor once. */
+      if (!leafTasks().filter(t => !t.isSummary && !t.milestone).length) {
+        bad.push(lbl + ' · Editor :: the plan holds no work package to open, so no case below opened the '
+          + 'editor at all — this run exercised nothing');
+        return { contradictions: bad, counts: { ran: [] } };
+      }
       const set = (id, v) => { const e = document.getElementById(id); e.value = v;
         e.dispatchEvent(new Event('input', {bubbles:true}));
         e.dispatchEvent(new Event('change', {bubbles:true})); };
