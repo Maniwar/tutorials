@@ -148,6 +148,85 @@ const DATA = FIXTURE();
       });
     }
 
+    /* ═══ 4b. WHAT WAS CHARGED, AND WHAT CAME BACK ═════════════════════════
+       The money-in record reached one panel and nothing that leaves the tool.
+       A status report could say "on plan" beside forty thousand of finished
+       work nobody had invoiced, and the artefact you take to a credit-control
+       conversation could not be produced at all.
+       Constructed, because no committed fixture carries an invoice figure —
+       without that this whole block would confirm an empty book, which is the
+       shape a receivables report fails in anyway. */
+    (() => {
+      const done = leafTasks().filter(t => !t.isSummary && (t.percentComplete || 0) >= 100 && taskBilledValue(t) > 0);
+      if (!done.length) { say('Receivables', 'no finished billable activity on this plan, so nothing below is tested'); return; }
+      const t0 = done[0];
+      const keep = { i: t0.invoiced, id: t0.invoicedDate, p: t0.paid, pd: t0.paidDate };
+      t0.invoiced = 5000; t0.invoicedDate = '2026-06-01'; t0.paid = 2000; t0.paidDate = '2026-07-15';
+      const csv = grab(() => exportReceivablesCSV());
+      if (typeof csv !== 'string' || /^THREW/.test(csv)) { say('Receivables', 'the export threw: ' + csv); }
+      else {
+        const lines = csv.split('\n').filter(Boolean);
+        const head = lines[0] || '';
+        ['Invoiced', 'Received', 'Outstanding', 'Days outstanding', 'State'].forEach(h => {
+          if (head.indexOf(h) < 0) say('Receivables', 'the export has no "' + h + '" column');
+        });
+        /* EVERY ACTIVITY, including the ones nobody has recorded anything
+           against. A receivables report that silently drops the unrecorded
+           lines shows a healthy book by omission, which is exactly how a
+           hand-maintained one goes wrong. */
+        const leafN = leafTasks().filter(x => !x.isSummary).length;
+        const dataN = lines.filter(l => !/^WBS,|^TOTAL|never invoiced \(/.test(l)).length;
+        if (dataN < leafN)
+          say('Receivables', 'the export carries ' + dataN + ' rows for ' + leafN + ' activities — the ones '
+            + 'nobody has invoiced are missing, so the file shows a healthy book by leaving out the gap');
+        const row = lines.find(l => l.indexOf('5000') >= 0) || '';
+        if (row.indexOf('3000') < 0)
+          say('Receivables', 'invoiced 5000 and received 2000 does not report 3000 outstanding: ' + row.slice(0, 90));
+        if (!/62|6[0-9]/.test(row.split(',')[11] || ''))
+          say('Receivables', 'the days-outstanding column is empty or wrong on a row invoiced in June: '
+            + row.slice(0, 100));
+        /* the unbilled total must NOT be folded into outstanding: money you
+           have not asked for is not money owed to you */
+        const outT = lines.find(l => /^TOTAL outstanding/.test(l)) || '';
+        const unb = lines.find(l => /never invoiced \(not yet owed\)/.test(l)) || '';
+        if (!outT) say('Receivables', 'no outstanding total');
+        if (!unb) say('Receivables', 'the finished-but-unbilled total is missing, or is not labelled as not '
+          + 'yet owed — folding it into outstanding would overstate the book by every activity nobody billed');
+        /* THE VALUE, not just the row. Asserting the two lines EXIST passes on a
+           build that adds unbilled work into the outstanding figure — the label
+           is still there and the number is wrong, which is the shape of the
+           defect rather than its absence. */
+        const recNow = revenueRecord(leafTasks());
+        const outV = +((outT.match(/(\d+)(?!.*\d)/) || [])[1] || -1);
+        if (outT && Math.abs(outV - recNow.billedUnpaid) > 1)
+          say('Receivables', 'the outstanding total reads ' + outV + ' against ' + Math.round(recNow.billedUnpaid)
+            + ' actually invoiced-and-unreceived — money you have not asked for is not money owed to you, and '
+            + 'adding it overstates the book by every activity nobody billed');
+      }
+      // the status report says it, and client-safe withholds it
+      clientSafeReports = false;
+      const rep2 = strip(buildStatusReportHtml());
+      if (!/money in/i.test(rep2))
+        say('Status report', 'never mentions what has been invoiced or received, so it can report "on plan" '
+          + 'beside a pile of finished work nobody has charged for');
+      clientSafeReports = true;
+      const safe2 = strip(buildStatusReportHtml());
+      if (/money in/i.test(safe2))
+        say('Client-safe status report', 'prints the money-in line — what you have not billed THEM for is the '
+          + 'last figure to put in front of them');
+      clientSafeReports = false;
+      // and the health check raises it
+      const lint2 = lintPlan();
+      /* matched on what the finding SAYS, not on its area label. Testing
+         /unbilled/i against the area passed a build that renamed it to
+         "_UnbilledDelivery" — still matching, no longer a real category, and
+         invisible wherever findings are grouped. The claim is what matters. */
+      if (!lint2.some(f => /no invoice figure|never been invoiced|not been invoiced/i.test(f.finding || '')))
+        say('Health check', 'finished work with no invoice figure is not a finding, so it is only visible to '
+          + 'somebody who opens Analytics and scrolls');
+      t0.invoiced = keep.i; t0.invoicedDate = keep.id; t0.paid = keep.p; t0.paidDate = keep.pd;
+    })();
+
     // ═══ 5. THE AI READING NARRATES THE SAME PANEL ══════════════════════════
     try {
       const reading = strip(ptReadingHtml('base'));

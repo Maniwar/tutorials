@@ -644,6 +644,42 @@ const MUTANTS = [
      recorded, and it was inventing the dates every other figure is measured
      from. */
 
+  /* ── money in, on the way out ─────────────────────────────────────────────
+     The record reached one panel and nothing that leaves the tool. */
+
+  { what: 'client: a lint finding carries money into the request body in screen-share mode',
+    find: "        const redact = v => safe ? String(v).replace(/[$£€]\\s?[\\d][\\d,]*(\\.\\d+)?/g, '(withheld)') : v;",
+    with: '        const redact = v => v;' },
+
+  { what: 'client: the receivables export drops every activity nobody has invoiced',
+    find: '      const rows = receivablesRows();\n      const out = [',
+    with: '      const rows = receivablesRows().filter(r => r.invoiced != null);\n      const out = [' },
+
+  { what: 'client: unbilled work is folded into the outstanding total, overstating the book',
+    find: "      out.push(['TOTAL outstanding', '', '', '', '', '', '', '', '', '', rec.billedUnpaid.toFixed(0)]);",
+    with: "      out.push(['TOTAL outstanding', '', '', '', '', '', '', '', '', '', (rec.billedUnpaid + rec.doneUnbilled).toFixed(0)]);\n      out.push(['x']);" },
+
+  { what: 'client: the receivables export loses how long a receipt has been outstanding',
+    find: "          if (!isNaN(d0.getTime())) daysOut = Math.max(0, calDaysBetween(stripTime(d0), stripTime(new Date())));",
+    with: '          daysOut = \'\';' },
+
+  { what: 'client: the status report never says what has been invoiced',
+    find: '        ${baseLine}${costLine}${moneyInLine}${overLine}',
+    with: '        ${baseLine}${costLine}${overLine}' },
+
+  { what: 'client: client-safe mode prints what the client has not been billed for',
+    find: "      const moneyInLine = (clientSafeReports || !recIn || (!recIn.doneUnbilledN && !(recIn.billedUnpaid > 0)))",
+    with: "      const moneyInLine = (false || !recIn || (!recIn.doneUnbilledN && !(recIn.billedUnpaid > 0)))" },
+
+  /* SUPPRESSES the finding rather than renaming its label. The first version
+     changed area to '_UnbilledDelivery' and survived — correctly: the check
+     matches on what the finding SAYS, so renaming a label is a no-op against
+     that property, and a mutant that changes nothing observable reports a hole
+     that is not there. */
+  { what: 'client: unbilled delivery is not a health finding',
+    find: '        if (rec.doneUnbilledN) {',
+    with: '        if (false) {' },
+
   { what: 'check-off: the started rule pre-empts the finished one, so nothing is back-dated',
     find: "      if (pct > 0 && prevPct <= 0 && !t.actualStart && !completing) { t.actualStart = today; t.autoActualStart = true; }",
     with: "      if (pct > 0 && prevPct <= 0 && !t.actualStart) { t.actualStart = today; t.autoActualStart = true; }" },

@@ -3202,7 +3202,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.1909</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.1950</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -9063,7 +9063,7 @@ Or say what you want, in your own words:
           ? '<span class="badge badge-done" title="Internal: effort × rates flows into cost, price, margin and the SOW.">💰 billed</span>'
           : '<span class="badge badge-critical" title="Internal person with NO rates — their effort silently prices at $0, understating cost and the SOW. Set rates in the roster above or apply a rate card.">⚠ internal, no rate → $0</span>';
       return `<h3 style="font-size:0.95rem;margin:1.25rem 0 0.25rem">💰 Billing &amp; cost breakdown <span class="help-text" style="font-weight:400">(what is billed right now, what is not, and why)</span>
-        <button class="btn-sm btn-secondary no-print" style="margin-left:8px" onclick="exportBillingCSV()" title="One row per person: kind, rates, effort, cost and billed totals — for finance review or the SOW appendix">⬇ Billing (.csv)</button></h3>
+        <button class="btn-sm btn-secondary no-print" style="margin-left:8px" onclick="exportBillingCSV()" title="One row per person: kind, rates, effort, cost and billed totals — for finance review or the SOW appendix">⬇ Billing (.csv)</button><button class="btn-sm btn-secondary no-print" style="margin-left:6px" onclick="exportReceivablesCSV()" title="One row per activity: what was invoiced, what came back, what is outstanding and for how long — the file you take to a credit-control conversation">⬇ Receivables (.csv)</button></h3>
         <div class="table-wrap"><table>
           <thead><tr><th>Person / role</th><th>Status</th><th title="Σ expected effort across their tasks: TE × units% (attendee shares included)">Effort (days)</th><th title="Tasks they participate in (test cases counted separately)">Tasks</th><th title="Internal cost/day × effort — your delivery cost">Cost $</th><th title="Bill rate/day × effort — what the client is charged; margin = bill − cost">Billed $</th></tr></thead>
           <tbody>
@@ -9103,6 +9103,69 @@ Or say what you want, in your own words:
       rows.push(['TOTAL', '', '', '', '', d.totDays.toFixed(2), '', '', d.totCost.toFixed(0), d.totBill.toFixed(0)]);
       download(safeName() + '-billing.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
     }
+    /* ═══ RECEIVABLES — WHAT WAS CHARGED, AND WHAT CAME BACK ═════════════════
+       The money-in record existed on the activity and reached exactly one panel.
+       Everything that LEAVES the tool still described what should have been
+       charged rather than what was, so the one artefact a person takes to a
+       credit-control conversation could not be produced from it at all.
+
+       Its own export rather than columns bolted onto the billing CSV, because
+       that file is one row per PERSON and this is one row per ACTIVITY. Two
+       shapes in one CSV is a file that opens badly in every spreadsheet and
+       reads as neither.
+
+       Every row is emitted, including the ones nobody has recorded anything
+       against — a receivables report that silently drops the unrecorded lines
+       shows a healthy book by omission, which is the failure mode of every
+       hand-maintained one. Blank means nobody has said; 0 means charged
+       nothing, and the two are different columns' worth of meaning kept in one
+       by writing NOTHING for the first and 0 for the second. */
+    function receivablesRows() {
+      computeWbsCodes();
+      return leafTasks().filter(t => !t.isSummary).map(t => {
+        const inv = taskInvoiced(t), pd = taskPaid(t);
+        const worth = taskBilledValue(t);
+        const done = (Number(t.percentComplete) || 0) >= 100;
+        const outstanding = (inv != null && inv > 0) ? inv - (pd || 0) : 0;
+        /* days outstanding runs from the INVOICE date, not from the finish:
+           the clock a client's terms actually run against starts when you ask */
+        let daysOut = '';
+        if (inv != null && inv > 0 && outstanding > 0.005 && t.invoicedDate) {
+          const d0 = new Date(t.invoicedDate + 'T00:00:00');
+          if (!isNaN(d0.getTime())) daysOut = Math.max(0, calDaysBetween(stripTime(d0), stripTime(new Date())));
+        }
+        const state = inv == null && pd == null
+          ? (done && worth > 0 ? 'finished, never invoiced' : 'not recorded')
+          : (inv != null && outstanding <= 0.005 ? 'settled'
+            : pd == null ? 'invoiced, nothing received' : 'part paid');
+        return { t: t, wbs: t.wbs || '', name: t.name || '', owner: t.owner || '',
+          org: orgOf(t.owner) || '', pct: Number(t.percentComplete) || 0, worth: worth,
+          invoiced: inv, invoicedDate: t.invoicedDate || '', paid: pd, paidDate: t.paidDate || '',
+          outstanding: outstanding, daysOutstanding: daysOut, state: state };
+      });
+    }
+    function exportReceivablesCSV() {
+      if (!ensureCalc()) return;
+      const rows = receivablesRows();
+      const out = [['WBS', 'Activity', 'Owner', 'Company', '% complete', 'Billable value $',
+        'Invoiced $', 'Invoice date', 'Received $', 'Received on', 'Outstanding $',
+        'Days outstanding', 'State']];
+      rows.forEach(r => out.push([r.wbs, r.name, r.owner, r.org, r.pct, r.worth.toFixed(0),
+        r.invoiced == null ? '' : r.invoiced.toFixed(0), r.invoicedDate,
+        r.paid == null ? '' : r.paid.toFixed(0), r.paidDate,
+        r.outstanding > 0.005 ? r.outstanding.toFixed(0) : '', r.daysOutstanding, r.state]));
+      const rec = revenueRecord(leafTasks());
+      out.push([]);
+      out.push(['TOTAL invoiced', '', '', '', '', '', rec.billed.toFixed(0)]);
+      out.push(['TOTAL received', '', '', '', '', '', '', '', rec.paid.toFixed(0)]);
+      out.push(['TOTAL outstanding', '', '', '', '', '', '', '', '', '', rec.billedUnpaid.toFixed(0)]);
+      /* the unbilled total is NOT part of the outstanding total and is labelled
+         so: money you have not asked for is not money owed to you, and adding
+         them would overstate the book by every activity nobody has invoiced */
+      out.push(['Finished work never invoiced (not yet owed)', '', '', '', '', rec.doneUnbilled.toFixed(0)]);
+      download(safeName() + '-receivables.csv', out.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
+    }
+
     /* ═══ ONE COST BASIS FOR EVERY VARIANCE ════════════════════════════════
        Earned value used to be priced from the LIVE taskCost() while planned
        value and BAC were priced from the FROZEN baseCost. Every EVM number is
@@ -17974,6 +18037,22 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         : '';
       const costLine = clientSafeReports ? '' : (cost > 0 || projectBudget > 0)
         ? `<p style="margin:6px 0;font-size:13px"><b>Cost:</b> planned ${fmtMoney(cost)}${projectBudget ? ` vs budget ${fmtMoney(projectBudget)} (${cost > projectBudget ? '<span style="color:#b91c1c">+' + fmtMoney(cost - projectBudget) + ' over</span>' : fmtMoney(projectBudget - cost) + ' headroom'})` : ''} • <b>${fmtMoney(repAC)} booked to date</b> • earned value to date ${fmtMoney(repEV)}${cvTxt}</p>` : '';
+      /* MONEY IN, in the document that gets forwarded. The report described what
+         had been spent and earned and never whether any of it had been charged
+         for — so a status report could say "on plan" beside forty thousand
+         pounds of finished work nobody had invoiced. Withheld in client-safe
+         like every other money line: what you have not billed THEM for is the
+         last figure to put in front of them. */
+      const recIn = (() => { try { return revenueRecord(leafTasks()); } catch (e) { return null; } })();
+      const moneyInLine = (clientSafeReports || !recIn || (!recIn.doneUnbilledN && !(recIn.billedUnpaid > 0)))
+        ? ''
+        : `<p style="margin:6px 0;font-size:13px"><b>Money in:</b> `
+          + (recIn.doneUnbilledN
+              ? `<span style="color:#b45309">${fmtMoney(recIn.doneUnbilled)} of finished work has not been invoiced</span> (${recIn.doneUnbilledN} ${recIn.doneUnbilledN === 1 ? 'activity' : 'activities'})`
+              : '')
+          + (recIn.doneUnbilledN && recIn.billedUnpaid > 0 ? ' • ' : '')
+          + (recIn.billedUnpaid > 0 ? `${fmtMoney(recIn.billedUnpaid)} invoiced and not yet received` : '')
+          + `.</p>`;
       const overLine = clientSafeReports ? '' : rl.overResourceDays
         ? `<p style="margin:6px 0;font-size:13px;color:#b91c1c"><b>⚠ Resourcing:</b> ${rl.overResourceDays} over-allocated resource-day(s) — ${rl.resourcesOver.map(escapeHtml).join(', ')}. Mitigation in progress (level, add capacity, or extend).</p>` : '';
       /* Both ends of this comparison are a max over the whole plan, so it only
@@ -18008,7 +18087,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         <p style="margin:2px 0 10px;color:#64748b;font-size:12px">Generated ${new Date().toLocaleDateString()} • PERT 3-point estimates • ${mcResult ? mcResult.iters.toLocaleString() + ' Monte-Carlo simulations' : 'deterministic CPM'}${clientSafeReports ? ' • client version' : ''}</p>
         ${narrBlock}
         <p style="margin:6px 0;font-size:13px"><b>Overall:</b> ${prog.toFixed(0)}% complete • forecast finish <b>${fmtNice(finish)}</b>${mcResult ? ` • P80 ${fmtNice(durationToDate(mcResult.p80))} • P90 ${fmtNice(durationToDate(mcResult.p90))}` : ''}${rv.contingencyUnits > 0 ? ` • committed (with contingency) ${fmtNice(rv.committedDate)}` : ''}</p>
-        ${baseLine}${costLine}${overLine}
+        ${baseLine}${costLine}${moneyInLine}${overLine}
         <p style="margin:6px 0;font-size:13px"><b>Critical path:</b> ${escapeHtml(critNames) || '—'}</p>
         ${msRows ? `<h3 style="margin:14px 0 4px;font-size:14px">Milestones</h3><table style="border-collapse:collapse"><tr><th style="${th}">Milestone</th><th style="${th}">Date</th><th style="${th}">Status</th></tr>${msRows}</table>` : ''}
         ${riskBlock}
@@ -19889,6 +19968,20 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
              is common and attributing it to one of them would be a lie. `people`
              carries the participants with their allocation, so a future reader
              can tell one person at 100% from four at 25%. */
+          /* WHAT IT WAS CHARGED AND WHAT CAME BACK, archived with the row.
+             The bank already learns how long a firm's work takes; it could not
+             learn whether that firm's client PAYS, because nothing about the
+             money-in record survived the engagement. Nulls are preserved as
+             nulls — an archived zero would tell a future reader the work was
+             billed for nothing rather than that nobody recorded it. */
+          invoiced: taskInvoiced(t), paid: taskPaid(t),
+          invoicedDate: t.invoicedDate || '', paidDate: t.paidDate || '',
+          daysToPay: (function () {
+            if (!t.invoicedDate || !t.paidDate) return null;
+            const a = new Date(t.invoicedDate + 'T00:00:00'), b2 = new Date(t.paidDate + 'T00:00:00');
+            if (isNaN(a.getTime()) || isNaN(b2.getTime())) return null;
+            return calDaysBetween(stripTime(a), stripTime(b2));
+          })(),
           org: orgOf(t.owner), orgId: orgIdOf(t.owner),
           orgs: [...new Set(taskParticipants(t).map(pr => orgOf(pr.name)).filter(Boolean))],
           /* BOTH the id and the name. The id is the join — it is what lets the
@@ -21245,7 +21338,17 @@ Rules:
         const rank = { high: 0, medium: 1, low: 2, info: 3 };
         lf.sort((a, b) => rank[a.severity] - rank[b.severity]);
         line(`\nLINT  ${num(lf.length)} findings — top 6:`);
-        lf.slice(0, 6).forEach(x => { const f = plain(x.finding); line(`  ${x.severity.padEnd(6)} ${x.area}  ${num(f.length > 220 ? f.slice(0, 219) + '…' : f)}`); });
+        /* REDACTED HERE, not in the findings themselves. Lint text is free
+           prose written by whoever added the check, and the unbilled-delivery
+           finding was the first to carry a money figure — which walked straight
+           through screen-share mode into the request body, because this line
+           emits findings verbatim and every other guard in this function is
+           applied to a NUMBER it formats itself.
+           Putting the responsibility on each finding's author is how the next
+           one leaks too. The boundary is here: whatever the text says, no
+           amount leaves the browser in client-safe mode. */
+        const redact = v => safe ? String(v).replace(/[$£€]\s?[\d][\d,]*(\.\d+)?/g, '(withheld)') : v;
+        lf.slice(0, 6).forEach(x => { const f = redact(plain(x.finding)); line(`  ${x.severity.padEnd(6)} ${x.area}  ${num(f.length > 220 ? f.slice(0, 219) + '…' : f)}`); });
       }
 
       const st = (reqs && reqs.stories) || [];
@@ -25953,6 +26056,41 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
             finding: n + ' activit' + (n === 1 ? 'y' : 'ies') + ' — ' + names + (n > 4 ? `; and ${n - 4} more` : ''),
             recommendation: g.fix });
         });
+      })();
+      /* WORK FINISHED AND NEVER CHARGED FOR is a health finding, not only a
+         panel. The health check is the surface people run before a steering
+         call, and unbilled delivery is the one number on this plan that is
+         money sitting on a table. Its severity follows the SIZE relative to
+         what the engagement is worth — a thousand unbilled on a hundred-
+         thousand engagement is housekeeping, a third of the fee is not. */
+      (() => {
+        let rec = null;
+        try { rec = revenueRecord(leaves); } catch (e) { return; }
+        if (!rec) return;
+        const fee = (() => { try { return revenueAtCompletion(); } catch (e) { return 0; } })();
+        if (rec.doneUnbilledN) {
+          const share = fee > 0 ? rec.doneUnbilled / fee : 0;
+          findings.push({
+            severity: share >= 0.25 ? 'high' : share >= 0.08 ? 'medium' : 'low',
+            area: 'Unbilled delivery',
+            finding: fmtMoney(rec.doneUnbilled) + ' of finished work carries no invoice figure across '
+              + rec.doneUnbilledN + ' activit' + (rec.doneUnbilledN === 1 ? 'y' : 'ies')
+              + (fee > 0 ? ' — ' + Math.round(share * 100) + '% of the fee' : '')
+              + (rec.anyRecord ? '' : '; nothing on this plan carries one, so this may be unrecorded rather '
+                + 'than unbilled — the tool cannot tell those apart'),
+            recommendation: rec.anyRecord
+              ? 'Record what was invoiced against each finished activity (Invoiced $ in the editor), or raise '
+                + 'the invoices. Receivables (.csv) on the Resources tab is the working list.'
+              : 'If you bill outside this tool that is fine — but nothing here can then tell finished-and-billed '
+                + 'from finished-and-forgotten. Recording even the totals makes the gap visible.'
+          });
+        }
+        if (rec.billedUnpaid > 0) {
+          findings.push({ severity: 'medium', area: 'Outstanding receipts',
+            finding: fmtMoney(rec.billedUnpaid) + ' invoiced and not received across ' + rec.billedUnpaidN
+              + ' activit' + (rec.billedUnpaidN === 1 ? 'y' : 'ies'),
+            recommendation: 'Receivables (.csv) lists each one with the days it has been outstanding.' });
+        }
       })();
       leaves.forEach(t => {
         if (!(t.p > 0)) findings.push({ severity: 'high', area: 'Missing estimate', finding: `"${t.name}" is a work package with NO O/M/P estimate — it is invisible to the schedule, the critical path and the price`, recommendation: 'Open it (✎) and enter a 3-point estimate — or make it a milestone if it is genuinely a zero-duration checkpoint.' });
