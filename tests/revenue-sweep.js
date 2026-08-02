@@ -245,6 +245,33 @@ const { chromium } = requirePlaywright();
           + 'sitting beside an accrual with nothing distinguishing them is how the two get averaged in '
           + 'somebody\'s head');
       if (/NaN|Infinity|undefined|\$-/.test(txt)) say('the panel prints a broken figure: ' + txt.slice(0, 60));
+      /* THE CHART HAS TO AGREE WITH THE SENTENCE UNDER IT. Two statements of
+         the same funding gap on one panel, and the drawn one is read first —
+         so if they disagree it is the prose that gets doubted. */
+      const svg = mi.querySelector('.mi-svg');
+      out.chartDrawn = !!svg;
+      if (!svg) say('the funding gap is stated in words and never drawn — "44,300 negative at its deepest, '
+        + 'positive from October" is three facts a reader has to assemble into a curve in their head');
+      else {
+        const aria = svg.getAttribute('aria-label') || '';
+        if (!/lowest|positive/i.test(aria))
+          say('the chart carries no text alternative, so the one figure on this panel that is only drawn is '
+            + 'unavailable to anyone not looking at it');
+        const low = (mi.querySelector('.mi-lbl-low') || {}).textContent || '';
+        const said = (txt.match(/\$[\d,]+ negative/) || [''])[0].replace(' negative', '');
+        if (low && said && low.replace(/[^\d]/g, '') !== said.replace(/[^\d]/g, ''))
+          say('the chart labels the trough "' + low + '" and the sentence under it says ' + said);
+        // both regions must be drawable, or the diverging form is decoration
+        if (!svg.querySelector('.mi-area-dn') || !svg.querySelector('.mi-area-up'))
+          say('the chart draws only one side of the zero line, so "above the line is their money, below it is '
+            + 'yours" is not actually shown');
+        if (!svg.querySelector('.mi-zero')) say('the chart has no zero line, which is the only thing that '
+          + 'makes the two fills mean anything');
+        /* NOT stretched. preserveAspectRatio="none" scales the TEXT with the
+           box and smears every label — it shipped that way for one build. */
+        if ((svg.getAttribute('preserveAspectRatio') || '') === 'none')
+          say('the chart is scaled non-uniformly, which stretches its labels into illegibility');
+      }
       // the rows have to identify the work
       const li = [...mi.querySelectorAll('.ptr-mi-list li')];
       out.rowsListed = li.length;

@@ -639,6 +639,18 @@ const MUTANTS = [
      disagrees with its own number is worse than no bar: it is read first and
      believed, and the number underneath is what gets doubted. */
 
+  { what: 'revenue: the funding gap is stated in words and never drawn',
+    find: "            bits.push(ptrCashSvg(pos)\n              + '<p class=\"ptr-mi-line\">Billed '",
+    with: "            bits.push('' \n              + '<p class=\"ptr-mi-line\">Billed '" },
+
+  { what: 'revenue: the cash chart is scaled non-uniformly and smears its labels',
+    find: "      return '<svg class=\"mi-svg\" viewBox=\"0 0 ' + W + ' ' + H + '\" role=\"img\" '",
+    with: "      return '<svg class=\"mi-svg\" preserveAspectRatio=\"none\" viewBox=\"0 0 ' + W + ' ' + H + '\" role=\"img\" '" },
+
+  { what: 'revenue: the cash chart draws one side of the zero line only',
+    find: "        + '<path d=\"' + areaTo() + '\" class=\"mi-area mi-area-dn\" clip-path=\"url(#' + uid + 'b)\"/>'",
+    with: "        + ''" },
+
   { what: 'chart: over-plan rows draw no overrun, so over and under look the same',
     find: "          + (over > 0 ? '<i class=\"pv-over' + (clipped ? ' pv-over-clip' : '') + '\" style=\"width:' + over + 'px\"></i>' : '')",
     with: "          + ''" },

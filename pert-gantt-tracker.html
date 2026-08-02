@@ -561,8 +561,27 @@
       text-transform: uppercase; color: var(--primary-700); }
     .ptr-mi-line { margin: 0 0 0.45rem; }
     .ptr-mi-quiet { color: var(--muted); }
-    .ptr-mi-list { margin: 0 0 0.5rem; padding-left: 1.1rem; }
-    .ptr-mi-list li { margin: 0.1rem 0; }
+    .ptr-mi-list { margin: 0 0 0.55rem; padding: 0; list-style: none; }
+    .ptr-mi-list li { display: flex; align-items: center; gap: 0.5rem; margin: 0.18rem 0; }
+    .mi-b { flex: 0 0 auto; width: 120px; height: 9px; border-radius: 0 4px 4px 0;
+      background: var(--primary-100); }
+    .mi-b i { display: block; height: 9px; border-radius: 0 4px 4px 0; background: var(--primary); }
+    .mi-b-v { flex: 0 0 auto; min-width: 4.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .mi-b-n { flex: 1 1 auto; min-width: 0; }
+    .mi-svg { display: block; width: 100%; height: auto; max-height: 150px; margin: 0.2rem 0 0.5rem; }
+    .mi-area { stroke: none; }
+    .mi-area-up { fill: var(--success); opacity: 0.13; }
+    .mi-area-dn { fill: var(--critical); opacity: 0.13; }
+    .mi-zero { stroke: var(--slack); stroke-width: 1; }
+    .mi-line { fill: none; stroke: var(--primary); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+    .mi-dot { stroke: var(--primary-50); stroke-width: 2; }
+    .mi-dot-low { fill: var(--critical); }
+    .mi-dot-up { fill: var(--success); }
+    .mi-lbl { font-size: 13px; font-weight: 700; }
+    .mi-ax { font-size: 11px; fill: var(--muted); }
+    .mi-today { stroke: var(--slack); stroke-width: 1; stroke-dasharray: 3 3; }
+    .mi-lbl-low { fill: var(--critical); }
+    .mi-lbl-up { fill: var(--success); }
     .ptr-mi-more { color: var(--muted); list-style: none; margin-left: -0.6rem; }
     .ptr-mi-foot { margin: 0.35rem 0 0; font-size: var(--t-xs); color: var(--muted); }
 
@@ -3183,7 +3202,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.1852</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.1859</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -11809,6 +11828,78 @@ Or say what you want, in your own words:
        two lines and a crosshair, and a four-line chart where two are money out
        and two are money in is a chart nobody reads correctly — the numbers that
        matter here are scalars and a short list. */
+    /* THE FUNDING GAP IS A SHAPE, and a sentence cannot show it. "$44,300
+       negative at its deepest around Aug 22, cash-positive from Oct 5" is
+       three facts a reader has to hold at once and assemble into a curve in
+       their head. The curve is the answer: how deep, for how long, and whether
+       it climbs back once or dips again.
+
+       Drawn as a value crossing a baseline rather than as a meter, because that
+       is what it is — above the line is the client's money carrying the work,
+       below it is yours. Two fills from the same zero line, the line itself on
+       top, and exactly two direct labels: the trough and the crossing. Every
+       other point is in the tooltip, because a number on every point is chaos
+       and goes unread. */
+    function ptrCashSvg(pos) {
+      const pts = (pos && pos.points) || [];
+      if (pts.length < 2) return '';
+      /* A FIXED ASPECT, SCALED UNIFORMLY. The first version stretched the
+         viewBox to the panel width with preserveAspectRatio="none", which
+         scales the TEXT too — the labels came out horizontally smeared and
+         barely legible. Non-uniform scaling is fine for a bare sparkline and
+         wrong the moment a chart carries a word. So the box is wide enough that
+         uniform scaling gives a sensible height at panel width, and the labels
+         stay the shape they were drawn. */
+      const W = 900, H = 104, PT = 14, PB = 24, PL = 6, PR = 6;
+      const xs = pts.map(p => p.ms), ys = pts.map(p => p.net);
+      const x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
+      const lo = Math.min(0, Math.min.apply(null, ys)), hi = Math.max(0, Math.max.apply(null, ys));
+      const span = (hi - lo) || 1;
+      const X = ms => PL + (W - PL - PR) * ((ms - x0) / ((x1 - x0) || 1));
+      const Y = v => PT + (H - PT - PB) * (1 - (v - lo) / span);
+      const zeroY = Y(0);
+      const line = pts.map((p, i) => (i ? 'L' : 'M') + X(p.ms).toFixed(1) + ' ' + Y(p.net).toFixed(1)).join(' ');
+      // two fills, both closed to the zero line, so the sign is a region not a colour swap
+      const areaTo = (clipTop) => line + ' L' + X(x1).toFixed(1) + ' ' + zeroY.toFixed(1)
+        + ' L' + X(x0).toFixed(1) + ' ' + zeroY.toFixed(1) + ' Z';
+      const uid = 'cs' + Math.abs(Math.round(x0 / 1000)).toString(36);
+      const trough = pos.troughAt != null ? { ms: pos.troughAt, v: pos.troughMoney } : null;
+      const cross = pos.positiveFrom != null ? { ms: pos.positiveFrom, v: 0 } : null;
+      const dot = (p, cls) => '<circle cx="' + X(p.ms).toFixed(1) + '" cy="' + Y(p.v).toFixed(1)
+        + '" r="4" class="' + cls + '"/>';
+      // labels are placed away from the edge they would overflow
+      const lbl = (p, txt, cls, below) => {
+        const x = X(p.ms), anchor = x > W * 0.7 ? 'end' : (x < W * 0.18 ? 'start' : 'middle');
+        return '<text x="' + x.toFixed(1) + '" y="' + (Y(p.v) + (below ? 15 : -8)).toFixed(1)
+          + '" text-anchor="' + anchor + '" class="' + cls + '">' + escapeHtml(txt) + '</text>';
+      };
+      return '<svg class="mi-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" '
+        + 'aria-label="Net cash position across the plan: lowest ' + escapeHtml(fmtMoney(pos.troughMoney))
+        + (pos.positiveFrom ? ', positive from ' + escapeHtml(fmtNice(new Date(pos.positiveFrom))) : '') + '">'
+        + '<defs><clipPath id="' + uid + 'a"><rect x="0" y="0" width="' + W + '" height="' + zeroY.toFixed(1) + '"/></clipPath>'
+        + '<clipPath id="' + uid + 'b"><rect x="0" y="' + zeroY.toFixed(1) + '" width="' + W + '" height="' + (H - zeroY).toFixed(1) + '"/></clipPath></defs>'
+        + '<path d="' + areaTo() + '" class="mi-area mi-area-up" clip-path="url(#' + uid + 'a)"/>'
+        + '<path d="' + areaTo() + '" class="mi-area mi-area-dn" clip-path="url(#' + uid + 'b)"/>'
+        + '<line x1="0" y1="' + zeroY.toFixed(1) + '" x2="' + W + '" y2="' + zeroY.toFixed(1) + '" class="mi-zero"/>'
+        + '<path d="' + line + '" class="mi-line"/>'
+        + (trough ? dot(trough, 'mi-dot mi-dot-low') + lbl(trough, fmtMoney(Math.abs(trough.v)) + ' out of pocket', 'mi-lbl mi-lbl-low', true) : '')
+        + (cross ? dot(cross, 'mi-dot mi-dot-up') + lbl(cross, 'even ' + fmtNice(new Date(cross.ms)), 'mi-lbl mi-lbl-up') : '')
+        /* the two ends of the span, and today. Without them the curve floats:
+           the two direct labels say WHAT happens and nothing says WHEN the
+           middle is. Ticks rather than a full axis — the shape is the point and
+           a ruler under it would be more ink than the data. */
+        + '<text x="' + PL + '" y="' + (H - 4) + '" class="mi-ax">' + escapeHtml(fmtNice(new Date(x0))) + '</text>'
+        + '<text x="' + (W - PR) + '" y="' + (H - 4) + '" text-anchor="end" class="mi-ax">'
+        + escapeHtml(fmtNice(new Date(x1))) + '</text>'
+        + (function () {
+            const t = stripTime(new Date()).getTime();
+            if (t <= x0 || t >= x1) return '';
+            const x = X(t).toFixed(1);
+            return '<line x1="' + x + '" y1="' + PT + '" x2="' + x + '" y2="' + (H - PB) + '" class="mi-today"/>'
+              + '<text x="' + x + '" y="' + (PT - 4) + '" text-anchor="middle" class="mi-ax">today</text>';
+          })()
+        + '</svg>';
+    }
     function ptrMoneyInHtml(d) {
       let rec, terms, fee;
       try {
@@ -11819,7 +11910,8 @@ Or say what you want, in your own words:
       const bits = [];
 
       if (rec.doneUnbilledN) {
-        const top = rec.rows.filter(r => r.state === 'never invoiced').slice(0, 3);
+        const top = rec.rows.filter(r => r.state === 'never invoiced').slice(0, 5);
+        const topMax = top.reduce((m, r) => Math.max(m, r.worth), 0);
         bits.push('<p class="ptr-mi-line"><b>' + fmtMoney(rec.doneUnbilled) + ' of finished work has never '
           + 'been invoiced</b> — ' + rec.doneUnbilledN + ' ' + ptrPl(rec.doneUnbilledN, 'activity', 'activities')
           + ' recorded as 100% complete with nothing entered against <b>Invoiced $</b>. '
@@ -11834,12 +11926,20 @@ Or say what you want, in your own words:
              a row identifying nothing. Same mistake the worklist made when it
              truncated names to 22 characters: a list of money against
              unidentifiable work is not actionable. */
+          /* RANKED BARS, not bullets. These are magnitudes on one scale, and the
+             job is "which of these is the big one" — which a bar answers before
+             the eye reaches the number. One hue: they are the same kind of
+             thing, so a second colour would assert a difference that is not
+             there. Scaled to the largest, which is named beside it. */
           + '<ul class="ptr-mi-list">' + top.map(r => {
               const t = tasks.find(x => x.id === r.id);
-              const mark = t ? ekTask(t, { name: true, max: 44, xs: true,
+              const mark = t ? ekTask(t, { name: true, max: 40, xs: true,
                 onclick: 'openEditModal(' + r.id + ', true)', tip: 'Open it and record the invoice' })
                 : escapeHtml(r.name);
-              return '<li>' + mark + ' — <b>' + fmtMoney(r.worth) + '</b></li>';
+              const w = topMax > 0 ? Math.max(3, Math.round(120 * (r.worth / topMax))) : 0;
+              return '<li><span class="mi-b"><i style="width:' + w + 'px"></i></span>'
+                + '<span class="mi-b-v">' + fmtMoney(r.worth) + '</span>'
+                + '<span class="mi-b-n">' + mark + '</span></li>';
             }).join('')
           + (rec.doneUnbilledN > top.length ? '<li class="ptr-mi-more">and ' + (rec.doneUnbilledN - top.length)
               + ' more</li>' : '') + '</ul>');
@@ -11866,7 +11966,8 @@ Or say what you want, in your own words:
             const to = Math.max.apply(null, all.map(g => g.f));
             const pos = cashPositionData(inn.segs, outSp.segs, from, to);
             const trough = pos.troughMoney;
-            bits.push('<p class="ptr-mi-line">Billed ' + escapeHtml(revTermsLabel(terms)) + '. '
+            bits.push(ptrCashSvg(pos)
+              + '<p class="ptr-mi-line">Billed ' + escapeHtml(revTermsLabel(terms)) + '. '
               + (trough < -0.5
                   ? 'The position goes <b>' + fmtMoney(Math.abs(trough)) + ' negative</b> at its deepest, around <b>'
                     + fmtNice(new Date(pos.troughAt)) + '</b> — that is the money your firm carries before the '
