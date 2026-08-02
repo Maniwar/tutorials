@@ -358,10 +358,78 @@ const QA = JSON.parse(fs.readFileSync(
             if (Number.isFinite(ft) && Number.isFinite(fo) && Math.abs((ft + fo) - bar) > 1.5)
               say('Reconciliation', 'the total row prints ' + ft + ' timing and ' + fo
                 + ' overrun against a bar of ' + bar);
+
+            /* ── AND THE SOURCE COLUMNS, WHICH THIS USED TO SKIP ───────────
+               Everything above tests the DERIVED columns — timing, overrun,
+               contributes — and all three footed correctly on a table that was
+               missing $9,700. The reason is that the rows were dropped by
+               CONTRIBUTION: an activity booked at exactly what was due by today
+               contributes nothing, so removing it changed no derived total and
+               changed both source totals. Booked showed rows summing to $25,200
+               under a printed total of $34,900. Due by today showed $7,279 under
+               $14,779.
+
+               So the derived half of the table was checkable and the half a
+               reader actually starts from was not, and the check was green
+               throughout. Same question, asked of every money column the table
+               prints: does the tfoot equal the tbody. The Done column is a
+               percentage and its total is deliberately an em dash, so it is
+               named and skipped rather than silently missed.
+
+               Tolerance scales with the row count because each cell is rounded
+               to whole dollars before it is printed — the accumulated rounding
+               is real and is not a defect. */
+            [['budget', 'Budget'], ['due by today', 'Due by today'], ['booked', 'Booked']]
+              .forEach(([key, label]) => {
+                const i = ix(key);
+                if (i < 0) { say('Reconciliation', 'the "' + label + '" column has gone from the table, '
+                  + 'so the footing check that reads it is testing nothing'); return; }
+                let colSum = 0, ok = true;
+                body.forEach(tr => {
+                  const c = [...tr.children]; if (c.length <= i) { ok = false; return; }
+                  const v = cash(c[i]);
+                  if (!Number.isFinite(v)) { ok = false; return; }
+                  colSum += v;
+                });
+                const tot = foot.length > i ? cash(foot[i]) : NaN;
+                if (!ok || !Number.isFinite(tot)) return;
+                if (Math.abs(colSum - tot) > Math.max(2, body.length * 0.5 + 1))
+                  say('Reconciliation', 'the "' + label + '" column adds to ' + Math.round(colSum)
+                    + ' across ' + body.length + ' printed rows and its own total says ' + Math.round(tot)
+                    + ' — ' + Math.round(Math.abs(tot - colSum)) + ' of it belongs to activities the table '
+                    + 'does not show, in a table whose only purpose is being added up by hand');
+              });
           }
           out.reconRows = body.length;
         }
       }
+
+      /* ═══ 4d. NO CONTROL STUTTERS ITS OWN PUNCTUATION ═══════════════════
+         The RAID watch chip drew a "?" glyph in front of a label that is itself
+         a question, so it read "? Did it hold?" — two question marks, one of
+         them an icon pretending to be punctuation. Nothing was broken, no
+         figure was wrong, and it is the kind of thing a reader sees instantly
+         and a value-comparing check never sees at all.
+
+         Page-wide over every button rather than aimed at that chip, because the
+         defect is a composition mistake — a glyph chosen without looking at the
+         text it would sit beside — and that can be made again anywhere the same
+         pattern is used. Two question marks in one control label is never
+         intentional. */
+      ['analytics', 'baseline', 'raid', 'tasks', 'req', 'resources'].forEach(tab => {
+        try { switchTab(tab); } catch (e) { return; }
+        const root = document.getElementById('view-' + tab);
+        if (!root) return;
+        [...root.querySelectorAll('button')].forEach(bn => {
+          const txt = (bn.textContent || '').trim();
+          if (!txt) return;
+          const qs = (txt.match(/\?/g) || []).length;
+          if (qs > 1)
+            say('Tab "' + tab + '"', 'a control reads "' + txt.slice(0, 60)
+              + '" — ' + qs + ' question marks in one label, which is a glyph duplicating the '
+              + 'punctuation of the words beside it');
+        });
+      });
 
       // ═══ 5. NOTHING ANYWHERE PRINTS A BROKEN FIGURE ══════════════════════
       ['gantt', 'pert', 'tasks', 'req', 'analytics', 'resources', 'raid', 'baseline'].forEach(tab => {

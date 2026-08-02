@@ -196,6 +196,56 @@ const MUTANTS = [
     find: '            const lo = counter ? Math.min(a, b2) : Math.max(Math.min(a, b2), loN);',
     with: '            const lo = Math.min(a, b2);' },
 
+  /* ── THE RECONCILIATION'S SOURCE COLUMNS ────────────────────────────────
+     Three ways the table stops adding up, all of which leave the DERIVED
+     columns footing perfectly — which is why the version that shipped with two
+     of them was green on every check in this repo. An activity contributing
+     zero, or a milestone, takes its booked and due figures out of the visible
+     rows and leaves both in the totals; the bar stays right and the audit trail
+     under it stops being one. The last mutant is the trap the first version of
+     the CHECK fell into: let the residual absorb the difference and the columns
+     add up again under a label that says the money cannot be opened. */
+
+  { what: 'drill-in: an activity running exactly to plan is dropped from the reconciliation',
+    find: '            if (!(booked > 0.5 || due > 0.5)) return null;',
+    with: '            if (!(booked > 0.5 || due > 0.5) || Math.abs(gap(t)) < 0.5) return null;' },
+
+  { what: 'drill-in: milestones carry booked cost and are excluded from the reconciliation',
+    find: '          const rows = leaves.map(t => {\n            const booked = actOf.get(t.id) || 0, due = planToDate(t);',
+    with: '          const rows = leaves.filter(t => !t.milestone).map(t => {\n            const booked = actOf.get(t.id) || 0, due = planToDate(t);' },
+
+  /* Two more were written for this and then DELETED rather than kept green,
+     because neither could change what the page does. Zeroing the residual
+     line's due/booked cells is a no-op once the table stops dropping rows — the
+     residual is always zero — and routing an unknown tone through `m[tone] ||
+     default` behaves identically while every tone is in the map. A mutant that
+     cannot alter behaviour is caught by nothing and proves nothing, and keeping
+     it would have inflated the count with two guaranteed survivors or, worse,
+     two that "passed" because the build and the mutant were the same program. */
+
+  /* ── ONE AMBER OVER TWO OPPOSITE FINDINGS ───────────────────────────────
+     Being ahead of the spend curve because the work is ahead costs nothing.
+     Finished work costing more than it was budgeted is a real overrun. They
+     shared a colour, which put the alarm on the benign case — and the benign
+     case is the common one, so the alarm was mostly wrong and stopped being
+     read. Two mutants: collapse the tones back into one, and let the new tone
+     fall through a default that paints it green. */
+
+  { what: 'budget bar: ahead-of-curve and genuinely overrun wear the same warning colour',
+    find: "        tone: (overCurve && overValue) ? 'bad' : overValue ? 'chg' : overCurve ? 'early' : 'good'",
+    with: "        tone: (overCurve && overValue) ? 'bad' : (overCurve || overValue) ? 'chg' : 'good'" },
+
+  { what: 'budget bar: the new tone is wired to the reassuring colour instead of its own',
+    find: "      badge: { bad: 'badge-blocked', chg: 'badge-warn', early: 'badge-info', good: 'badge-ok' },",
+    with: "      badge: { bad: 'badge-blocked', chg: 'badge-warn', early: 'badge-ok', good: 'badge-ok' }," },
+
+  /* A glyph that duplicates the punctuation of the words beside it. Nothing is
+     miscomputed, so every value-comparing check in the repo is blind to it, and
+     a reader sees it instantly. */
+  { what: 'form: the watch chip prefixes a question mark to a label that is already a question',
+    find: "        + escapeHtml(tip) + '\"><span aria-hidden=\"true\">👁</span>'",
+    with: "        + escapeHtml(tip) + '\"><span aria-hidden=\"true\">' + (asks ? '?' : '👁') + '</span>'" },
+
   { what: 'catch-up: the crossing date is floored to the midnight before it',
     find: '      return { on: stripTime(new Date(dayAt(hiD))), days: hiD };',
     with: '      return { on: stripTime(new Date(dayAt(hiD) - 86400000)), days: hiD };' },
@@ -903,7 +953,7 @@ const MUTANTS = [
      hole. The card's colour is the reachable half of the same card. */
 
   { what: 'card: the Budget card paints the project red while the verdict does not',
-    find: "      const budTone = bvCard.tone === 'bad' ? 1 : bvCard.tone === 'chg' ? 0 : -1;",
+    find: "      const budTone = bvCard.tone === 'bad' ? 1 : bvCard.tone === 'good' ? -1 : 0;",
     with: '      const budTone = 1;' },
 
   { what: 'network: an SS link is scheduled as though it were FS',

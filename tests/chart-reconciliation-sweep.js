@@ -475,11 +475,237 @@ const FIELD = JSON.parse(fs.readFileSync(
     }, label);
   };
 
+  /* ═══ CONSTRUCTED: THE CASES NO FIXTURE HAPPENS TO CONTAIN ═══════════════
+     Two conditions below cannot be reached by loading a plan and hoping. Both
+     were live defects, both were invisible to every fixture in this repo, and
+     the first version of the check for one of them was green against a build
+     with the bug deliberately put back — because the shape it needed was not
+     there to find. That is the fixture-cannot-reach-the-branch failure this
+     directory has a whole probe for, so these are BUILT and the construction is
+     asserted before anything is concluded from it. */
+  const constructed = await (async () => {
+    const bad = [], note = {};
+    const say = (w, x) => bad.push('Constructed · ' + w + ' :: ' + x);
+
+    /* ── 1. AN ACTIVITY BOOKED AT EXACTLY WHAT WAS DUE ──────────────────────
+       It contributes nothing to the bar. It used to be dropped from the
+       reconciliation for that, while its booked figure and its due figure
+       stayed in the column totals — so the two columns a reader starts from did
+       not add up, by the amount of the largest activity on the plan. The
+       derived columns all footed correctly throughout, which is why every
+       existing check passed. */
+    await page.evaluate(d => { hydrate(d); calculate(); }, CRM);
+    await page.waitForTimeout(400);
+    const built = await page.evaluate(() => {
+      const today = stripTime(new Date()).getTime();
+      const cand = leafTasks()
+        .map(t => ({ t: t, due: accrualAt(pvSpread(hasBaseline(), [t]).segs, today) }))
+        .filter(x => x.due > 500).sort((a, b) => b.due - a.due)[0];
+      if (!cand) return null;
+      cand.t.autoActualCost = false;
+      cand.t.actualCost = cand.due;          // booked exactly what was due → contributes 0
+      /* AND a milestone carrying real money, because the other half of the same
+         defect was that milestones were filtered out of the table entirely. No
+         fixture in this repo has a milestone with cost booked against it, so
+         without this the mutant that restores that filter SURVIVES the whole
+         suite — which it did, on the first attempt at this check. */
+      const ms = leafTasks().filter(t => t.milestone)[0];
+      if (ms) { ms.autoActualCost = false; ms.actualCost = 1300; ms.percentComplete = 100; }
+      calculate();
+      const gapNow = actualCostOf(cand.t)
+        - accrualAt(pvSpread(hasBaseline(), [cand.t]).segs, today);
+      return { name: cand.t.name, due: Math.round(cand.due), gap: Math.round(gapNow * 100) / 100,
+               milestone: ms ? ms.name : null, milestoneBooked: ms ? actualCostOf(ms) : 0 };
+    });
+    if (!built) {
+      say('setup', 'no activity on this plan has more than $500 due by today, so the zero-contribution '
+        + 'case could not be built and nothing below was tested');
+    } else if (Math.abs(built.gap) >= 0.5) {
+      say('setup', 'meant to book "' + built.name + '" at exactly its ' + built.due
+        + ' due by today, and its contribution came out at ' + built.gap
+        + ' — the case this check exists for was never created');
+    } else if (!(built.milestoneBooked > 0.5)) {
+      say('setup', 'no milestone on this plan carries booked cost, so the half of this check about '
+        + 'milestones being filtered out of the table tested nothing');
+    } else {
+      note.zeroContributor = built.name;
+      note.zeroContributorDue = built.due;
+      note.costedMilestone = built.milestone;
+      await page.evaluate(() => { switchTab('analytics'); renderAnalytics(); });
+      await page.waitForTimeout(400);
+      /* COVERAGE, then footing — and the ACTIVITY rows only.
+         The first version of this check summed every printed row against the
+         total and went green on a build with the bug put back, because the
+         residual line absorbed the missing $7,500 into "booked cost with no
+         activity behind it" and the columns added up again. That is the exact
+         trap already documented forty lines above in this file, walked into by
+         the person who wrote the warning. A total that foots because the gap
+         was renamed is not a total that foots.
+
+         So the residual is EXCLUDED from the row sum and separately required to
+         be empty of money. It has to be: every dollar in the booked total comes
+         from a leaf, so there is no such thing as booked cost with no activity
+         behind it once the table stops dropping activities — the line is now a
+         tripwire rather than a bucket. And coverage is asserted by ID, which no
+         amount of arithmetic downstream can satisfy: every activity with money
+         on either side must appear as its own openable row. */
+      const foot = await page.evaluate(() => {
+        const t = document.querySelector('.ptr-rc-t');
+        if (!t) return { drawn: false };
+        const cash = c => { const v = (c.textContent || '').replace(/[\s,]/g, '');
+          if (/^—?$/.test(v)) return 0;
+          const n = parseFloat(v.replace(/[^0-9.]/g, ''));
+          return Number.isFinite(n) ? (/[−-]/.test(v) ? -n : n) : NaN; };
+        const heads = [...t.querySelectorAll('thead th')].map(h => (h.textContent || '').toLowerCase());
+        const all = [...t.querySelectorAll('tbody tr')];
+        const acts = all.filter(tr => tr.querySelector('.ptr-rc-open'));
+        const resid = all.filter(tr => !tr.querySelector('.ptr-rc-open'));
+        const ft = [...t.querySelectorAll('tfoot tr td')];
+        const ix = key => heads.findIndex(h => h.indexOf(key) >= 0);
+        const col = (rows, key) => {
+          const i = ix(key);
+          if (i < 0 || ft.length <= i) return null;
+          let s = 0;
+          for (const tr of rows) { const c = [...tr.children];
+            if (c.length <= i) return null; const v = cash(c[i]);
+            if (!Number.isFinite(v)) return null; s += v; }
+          return { rows: s, total: cash(ft[i]) };
+        };
+        const drawnIds = new Set(acts.map(tr => {
+          const m = (tr.querySelector('.ptr-rc-open').getAttribute('onclick') || '').match(/openEditModal\((\d+)/);
+          return m ? Number(m[1]) : -1;
+        }));
+        const today = stripTime(new Date()).getTime();
+        const missing = leafTasks().filter(t2 => {
+          if (drawnIds.has(t2.id)) return false;
+          const booked = actualCostOf(t2) || 0;
+          const due = accrualAt(pvSpread(hasBaseline(), [t2]).segs, today);
+          return booked > 0.5 || due > 0.5;
+        }).map(t2 => t2.name);
+        return { drawn: true, actRows: acts.length, residRows: resid.length, missing: missing,
+                 booked: col(acts, 'booked'), due: col(acts, 'due by today'), budget: col(acts, 'budget'),
+                 residBooked: resid.length ? col(resid, 'booked') : null,
+                 residDue: resid.length ? col(resid, 'due by today') : null };
+      });
+      if (!foot.drawn) say('table', 'the reconciliation did not draw at all, so its columns were not read');
+      else {
+        note.builtRows = foot.actRows;
+        note.builtResidualRows = foot.residRows;
+        if (foot.missing.length)
+          say('table', foot.missing.length + ' activit(ies) carry booked cost or plan-to-date and have no '
+            + 'row in the table, e.g. "' + foot.missing[0] + '" — their money is still in the totals');
+        if (foot.residBooked && Math.abs(foot.residBooked.rows) > 1)
+          say('table', 'the "no activity behind it" line carries ' + Math.round(foot.residBooked.rows)
+            + ' of booked cost. Every dollar of that total comes from an activity, so this is a row the '
+            + 'table dropped wearing a label that says it could not be opened');
+        if (foot.residDue && Math.abs(foot.residDue.rows) > 1)
+          say('table', 'the "no activity behind it" line carries ' + Math.round(foot.residDue.rows)
+            + ' of plan-to-date, which no project-level figure can produce');
+        const tol = Math.max(2, foot.actRows * 0.5 + 1);
+        [['booked', 'Booked'], ['due', 'Due by today'], ['budget', 'Budget']].forEach(([k, lbl]) => {
+          const c = foot[k];
+          if (!c || !Number.isFinite(c.total)) { say('table', 'the "' + lbl + '" column could not be read, '
+            + 'so its footing was not checked'); return; }
+          if (Math.abs(c.rows - c.total) > tol)
+            say('table', 'with one activity booked at exactly what was due, the "' + lbl
+              + '" column adds to ' + Math.round(c.rows) + ' across the activity rows it prints and its '
+              + 'own total says ' + Math.round(c.total) + ' — the row that contributes nothing was dropped '
+              + 'and its money was not');
+        });
+      }
+    }
+
+    /* ── 2. AHEAD OF THE CURVE AND OVER THE VALUE ARE NOT THE SAME FINDING ──
+       Spending ahead of the spend line because the WORK is ahead costs nothing
+       and closes itself. Finished work costing more than it was budgeted is a
+       real overrun that happens to be hidden by a curve the plan set high. They
+       used to wear one amber, which put the alarm colour on the benign case —
+       and the benign case is the common one, so the alarm was mostly wrong.
+
+       The property is that the two do not render identically. Asserted that way
+       round on purpose: naming the exact class the benign case should carry
+       would pass a rename and fail a redesign, which is the wrong sensitivity
+       in both directions. The one class named is the WARNING one, because "the
+       benign case must not wear the warning" is the actual requirement. */
+    const tones = {};
+    for (const mode of ['early', 'over', 'clear']) {
+      await page.evaluate(d => { hydrate(d); calculate(); }, CRM);
+      await page.waitForTimeout(300);
+      tones[mode] = await page.evaluate(m => {
+        const hb = hasBaseline(), today = stripTime(new Date()).getTime();
+        const pv = accrualAt(pvSpread(hb, leafTasks()).segs, today);
+        // an overrun the curve still covers needs the work BEHIND the baseline
+        if (m === 'over') leafTasks().forEach(t => { t.percentComplete = Math.min(t.percentComplete || 0, 20); });
+        calculate();
+        const evOf = t => plannedCostOf(t, hb) * ((t.percentComplete || 0) / 100);
+        const ev = leafTasks().reduce((s, t) => s + evOf(t), 0);
+        const want = m === 'early' ? ev
+          : m === 'over' ? (ev + pv) / 2
+          : Math.min(ev, pv) * 0.5;   // 'clear': under the curve and under the value, nothing to report
+        leafTasks().forEach(t => { t.autoActualCost = false;
+          t.actualCost = ev > 0 ? want * (evOf(t) / ev) : 0; });
+        calculate();
+        switchTab('analytics'); renderAnalytics();
+        const ac = leafTasks().reduce((s, t) => s + actualCostOf(t), 0);
+        const badge = document.querySelector('.ptr-row[data-dim="budget"] .badge');
+        return { pv: Math.round(pv), ev: Math.round(ev), ac: Math.round(ac),
+                 overCurve: ac - pv > 1, overValue: ac - ev > 1,
+                 cls: badge ? badge.className : null,
+                 txt: badge ? (badge.textContent || '').trim() : null };
+      }, mode);
+      await page.waitForTimeout(200);
+    }
+    note.toneEarly = tones.early; note.toneOver = tones.over; note.toneClear = tones.clear;
+    // the construction, verified before any conclusion is drawn from it
+    if (!(tones.early.overCurve && !tones.early.overValue))
+      say('tone setup', 'the "ahead of the curve, nothing overrun" case did not build — booked '
+        + tones.early.ac + ' against ' + tones.early.pv + ' due and ' + tones.early.ev
+        + ' earned, so nothing below was tested');
+    else if (!(tones.over.overValue && !tones.over.overCurve))
+      say('tone setup', 'the "overrun the curve still covers" case did not build — booked '
+        + tones.over.ac + ' against ' + tones.over.pv + ' due and ' + tones.over.ev + ' earned');
+    else if (tones.clear.overCurve || tones.clear.overValue)
+      say('tone setup', 'the "nothing to report" case did not build — booked ' + tones.clear.ac
+        + ' against ' + tones.clear.pv + ' due and ' + tones.clear.ev + ' earned');
+    else if (!tones.early.cls || !tones.over.cls || !tones.clear.cls)
+      say('tone', 'the Budget row drew no badge in one of the three cases, so the colours were not compared');
+    else {
+      /* THREE findings, so THREE treatments. Pairwise distinctness is the
+         property and it is asserted without naming a single class, because both
+         collapses are real regressions and they fail in opposite directions:
+         merging `early` into the warning puts the alarm on the benign case,
+         and merging it into the all-clear says nothing is happening when
+         $15,638 of spend is sitting ahead of the line with an explanation the
+         reader needs. The one class named anywhere below is the warning, for
+         the one requirement that genuinely is about a specific colour. */
+      const same = (a, b) => tones[a].cls === tones[b].cls;
+      if (same('early', 'over'))
+        say('tone', 'being ahead of the spend curve with nothing overrun and having genuinely overrun a '
+          + 'budget both render as "' + tones.early.cls + '" — one treatment over two findings that point '
+          + 'opposite ways, and the harmless one is the common one');
+      if (same('early', 'clear'))
+        say('tone', 'being ahead of the spend curve by ' + (tones.early.ac - tones.early.pv)
+          + ' and having nothing to report at all both render as "' + tones.early.cls
+          + '" — a measured gap the reader has to understand is being drawn as an all-clear');
+      if (same('over', 'clear'))
+        say('tone', 'a real overrun and a clean project both render as "' + tones.over.cls + '"');
+      if (/badge-warn/.test(tones.early.cls))
+        say('tone', 'spending ahead of the curve with the finished work to show for it wears the warning '
+          + 'badge (' + tones.early.cls + ') — the row says in words that nothing is wrong');
+      if (!/badge-warn/.test(tones.over.cls))
+        say('tone', 'finished work costing more than it was budgeted does NOT wear the warning badge ('
+          + tones.over.cls + ') — the one case the amber exists for');
+    }
+    return { contradictions: bad, counts: note };
+  })();
+
   const qa = await sweep('QA reference', QA);
   const crm = await sweep('Real export', CRM);
   const fld = await sweep('Field export', FIELD);
-  const R = { contradictions: [].concat(qa.contradictions, crm.contradictions, fld.contradictions),
+  const R = { contradictions: [].concat(qa.contradictions, crm.contradictions, fld.contradictions,
+                                        constructed.contradictions),
               qaCounts: qa.counts, crmCounts: crm.counts, fieldCounts: fld.counts,
+              constructed: constructed.counts,
               pageErrors: errs.slice(0, 8) };
   console.log(JSON.stringify(R, null, 1));
   await b.close();

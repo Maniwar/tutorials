@@ -669,6 +669,12 @@
     .ptr-good { background: var(--success); }
     .ptr-bad { background: var(--critical); }
     .ptr-chg { background: var(--warn); }
+    /* "ahead of the line because the work is ahead" is information, not a
+       warning, so it is drawn in the informational blue rather than the amber it
+       used to share with a genuine overrun. Deliberately not grey either: the
+       gap is real and measured, and greying it would say "ignore this" where the
+       row means "this is fine and here is the date it closes". */
+    .ptr-early { background: var(--primary-300); }
     /* A bar whose length is a SUM is drawn as its parts. The timing part is
        deliberately NOT a status colour: money that moved in time costs nothing
        and closes on its own, so it reads as texture rather than as a verdict,
@@ -695,10 +701,12 @@
     /* a dot ON the line still needs to be able to say "and that is not good
        news": the committed end date can hold while everything under it moves */
     .ptr-dot-chg { background: var(--warn); box-shadow: 0 0 0 3px var(--card), 0 0 0 4.5px var(--warn); }
+    .ptr-dot-early { background: var(--primary-300); box-shadow: 0 0 0 3px var(--card), 0 0 0 4.5px var(--primary-300); }
     .ptr-dot-bad { background: var(--critical); box-shadow: 0 0 0 3px var(--card), 0 0 0 4.5px var(--critical); }
     .ptr-over { position: absolute; top: 50%; transform: translateY(-50%); font-size: 13px; line-height: 1; font-weight: 700; }
     .ptr-over-r { right: 3px; } .ptr-over-l { left: 3px; }
     .ptr-good-t { color: var(--success); } .ptr-bad-t { color: var(--critical); } .ptr-chg-t { color: var(--warn); }
+    .ptr-early-t { color: var(--primary-700); }
 
     /* "not measurable yet" must be impossible to mistake for "zero variance" */
     .ptr-void { border-style: dashed; display: flex; align-items: center; justify-content: center;
@@ -1265,6 +1273,7 @@
     .ptr-sc-ib::before { top: 0; } .ptr-sc-ib::after { bottom: 0; }
     .ptr-sc-ib-good { background: var(--success); }
     .ptr-sc-ib-chg { background: var(--warn); }
+    .ptr-sc-ib-early { background: var(--primary-300); }
 
     /* filled = measured and ON the curve · hollow = a measured TOTAL placed at
        one date, claiming nothing about any other day. Same instinct as .ptr-dot:
@@ -3226,7 +3235,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.2108</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.2301</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -9813,10 +9822,49 @@ Or say what you want, in your own words:
       const tol = Math.max(1, (envelope || 0) * 0.005);   // half a percent of the envelope is noise
       const overCurve = (actCost - pvNow) > tol;
       const overValue = (actCost - evNow) > tol;
+      /* FOUR TONES, NOT THREE. The middle case used to be one amber covering two
+         findings that have nothing to do with each other:
+
+           · overCurve and NOT overValue — booked is ahead of the spend line
+             because the WORK is ahead of the baseline. Nothing has been lost.
+             It closes by itself on the day the curve catches up, and the row
+             already prints that date.
+           · overValue and NOT overCurve — finished work cost MORE than it was
+             budgeted, and the only reason the total is still under the curve is
+             that the plan had allowed for more spend by now than has happened.
+             That is a real overrun with a bigger one queued behind it.
+
+         One colour for both meant the panel's loudest element said the same
+         thing about money that is fine and money that is not, and the benign
+         case is far the more common — so the amber it wore was mostly wrong,
+         which is how an alarm colour stops being read at all. Being early gets
+         its own neutral tone: still visible, still explained, no longer dressed
+         as a warning. The amber now means exactly one thing. */
       return {
         gap: actCost - pvNow, cv: evNow - actCost, overCurve: overCurve, overValue: overValue,
-        tone: (overCurve && overValue) ? 'bad' : (overCurve || overValue) ? 'chg' : 'good'
+        tone: (overCurve && overValue) ? 'bad' : overValue ? 'chg' : overCurve ? 'early' : 'good'
       };
+    }
+
+    /* ONE MAPPING, FIVE CONSUMERS. A tone becomes a class in five places — the
+       bar, the badge, the zero-variance dot, the overflow arrow and the spend
+       curve's I-beam — and every one of them was an inline ternary ending in a
+       bare `: 'good'`. That default is the trap: a tone a renderer has not been
+       taught about does not look wrong, it looks FINE, so adding `early` by
+       hand would have had four surfaces painting a genuine overrun green and
+       nothing to say so. Named once, an unhandled tone is one edit rather than
+       five, and the fallbacks below are the neutral ones rather than the
+       reassuring ones. */
+    const PTR_TONE = {
+      bar:   { bad: 'ptr-bad', chg: 'ptr-chg', early: 'ptr-early', good: 'ptr-good' },
+      badge: { bad: 'badge-blocked', chg: 'badge-warn', early: 'badge-info', good: 'badge-ok' },
+      dot:   { bad: 'ptr-dot-bad', chg: 'ptr-dot-chg', early: 'ptr-dot-early', good: '' },
+      ib:    { bad: '', chg: 'ptr-sc-ib-chg', early: 'ptr-sc-ib-early', good: 'ptr-sc-ib-good' }
+    };
+    function ptrTone(kind, tone) {
+      const m = PTR_TONE[kind] || {};
+      return Object.prototype.hasOwnProperty.call(m, tone) ? m[tone]
+        : (kind === 'badge' ? 'badge-slack' : '');
     }
 
     /* The rate-card editor has always offered a "Currency label" field beside
@@ -11346,7 +11394,10 @@ Or say what you want, in your own words:
       // Budget: booked cost above what this activity was budgeted. Money, not a
       // ratio — a 300% overrun on a $200 task is noise beside 8% on a $90k one.
       if (bud.state !== 'needs') {
-        const work = leaves.filter(t => !t.milestone);
+        /* No `work` binding here any more. Every consumer in this block reads
+           `leaves`: a milestone can carry booked cost and plan-to-date, so
+           filtering them out was not a simplification, it was two surfaces
+           quietly disagreeing with the total they sat under. */
         /* The bar above compares booked cost against the plan TO DATE. This list
            used to compare booked cost against each activity's WHOLE budget —
            a different denominator, so the rows could not add up to the number
@@ -11448,13 +11499,18 @@ Or say what you want, in your own words:
                    sub: bits.length ? bits.join(' · ')
                      : 'booked at exactly what it was budgeted, on its planned dates' };
         };
-        bud.drivers = drivers(work, gap,
+        /* `leaves`, not `work`. The reconciliation below now counts milestones
+           because they can carry booked cost, and this list is the same
+           question asked for the top five — so drawing it from a set that
+           silently drops them would put a milestone in the table and never in
+           the list of what to look at. One population, both surfaces. */
+        bud.drivers = drivers(leaves, gap,
           v => (v > 0 ? '+' : '−') + money(Math.abs(Math.round(v))), overspent ? 1 : -1, budDetail);
         // Whether the rows actually add up is a fact, not a claim: the list is
         // capped at five and one-sided, so on a plan with activities on both
         // sides a single row can be larger than the total it sits under. Say
         // which it is rather than asserting the tidy case.
-        const budAll = work.map(t => gap(t)).filter(Number.isFinite);
+        const budAll = leaves.map(t => gap(t)).filter(Number.isFinite);
         const budShownSum = budAll.filter(v => overspent ? v > 0 : v < 0)
           .sort((a, b) => overspent ? b - a : a - b).slice(0, DRIVER_MAX).reduce((a, c) => a + c, 0);
         // measured against the BAR's own gap, not a re-derived one, so the
@@ -11474,9 +11530,37 @@ Or say what you want, in your own words:
            plan-to-date. Anything left over is money with no activity behind it
            and gets its own line rather than being quietly absorbed. */
         bud.recon = (function () {
-          const rows = work.map(t => {
+          /* EVERY ACTIVITY WITH MONEY ON EITHER SIDE — not every activity that
+             MOVES the bar. Two exclusions used to sit here, and each of them put
+             real money in the column totals with no row underneath it:
+
+               · `work` drops milestones. A plan with $2,200 booked against two
+                 of them had that money land in the residual line, the one that
+                 says it has "no activity behind it" and "nothing to open".
+                 There were two activities behind it and both opened fine.
+               · a row was dropped when its CONTRIBUTION rounded to zero, which
+                 is exactly what an activity running to plan looks like. On the
+                 plan that found this, Requirements Workshop had $7,500 booked
+                 against $7,500 due by today and vanished — the largest single
+                 booked figure on the engagement, absent from the table built to
+                 account for booked figures.
+
+             So the two source columns did not foot. Booked showed rows summing
+             to $25,200 under a total of $34,900; Due by today showed $7,279
+             under $14,779. The Contributes column and the bar were right, which
+             is the worse way round: the headline was correct and the audit trail
+             beneath it was not, in the one table whose entire purpose is being
+             checkable by hand.
+
+             Contributing nothing is a RESULT, not grounds for absence. It is the
+             row a reader most wants to see when testing whether the total is
+             honest. Still sorted by size of contribution, so the movers stay at
+             the top and the on-plan ones settle underneath them. */
+          const rows = leaves.map(t => {
+            const booked = actOf.get(t.id) || 0, due = planToDate(t);
+            if (!(booked > 0.5 || due > 0.5)) return null;
             const v = gap(t);
-            if (!Number.isFinite(v) || Math.abs(v) < 0.5) return null;
+            if (!Number.isFinite(v)) return null;
             const dt = budDetail(t, v);
             /* The OPERANDS, not just the differences. "+$8,233 off its dates"
                cannot be checked and cannot be believed: the reader has no way to
@@ -11488,16 +11572,26 @@ Or say what you want, in your own words:
                as an assertion. */
             return { id: t.id, wbs: t.wbs || '', name: t.name, kind: ekKindOf(t),
                      crit: !!t.isCritical, timing: dt.timing, over: dt.over, total: v,
-                     budget: plannedCostOf(t, hb), due: planToDate(t),
-                     earned: evOf(t), booked: (actOf.get(t.id) || 0),
+                     budget: plannedCostOf(t, hb), due: due,
+                     earned: evOf(t), booked: booked,
                      pct: t.percentComplete || 0 };
           }).filter(Boolean).sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
           const sum = rows.reduce((a, r) => a + r.total, 0);
           const barGap = actCostAll - pvNow;
+          /* The row sums are carried BESIDE the totals, not assumed equal to
+             them. pvNow comes from one whole-plan spread and each row's due
+             comes from a spread of its own, so the two are equal by
+             construction and not by proof — and "equal by construction" is what
+             the last version of this also believed. If they ever drift, the
+             residual line now shows where, in the same two columns, instead of
+             the reader finding a column that does not add up and having nothing
+             to attribute the difference to. */
           return { rows: rows, sum: sum, barGap: barGap, residual: barGap - sum,
                    timing: rows.reduce((a, r) => a + r.timing, 0),
                    over: rows.reduce((a, r) => a + r.over, 0),
                    budget: rows.reduce((a, r) => a + r.budget, 0),
+                   rowDue: rows.reduce((a, r) => a + r.due, 0),
+                   rowBooked: rows.reduce((a, r) => a + r.booked, 0),
                    due: pvNow, booked: actCostAll };
         })();
         bud.driverNote = (overspent
@@ -11623,14 +11717,21 @@ Or say what you want, in your own words:
        the figure. Being told "top 5" does not help — it names the omission
        without repairing it.
 
-       This is every activity that moves the bar, both signs, with the two
-       halves kept apart and a total that IS the bar. The identity is exact and
-       is printed, because that is what makes the table checkable rather than
-       merely longer: per activity, contribution = (EV − PV) + (AC − EV) = AC −
-       PV. So the timing column plus the overrun column is the contribution
-       column, and the contributions sum to booked minus plan-to-date. Money
-       with no activity behind it gets its own line rather than being quietly
-       absorbed into a rounding difference nobody can see. */
+       This is every activity with money on either side of the subtraction, both
+       signs, with the two halves kept apart and a total that IS the bar. The
+       identity is exact and is printed, because that is what makes the table
+       checkable rather than merely longer: per activity, contribution = (EV −
+       PV) + (AC − EV) = AC − PV. So the timing column plus the overrun column is
+       the contribution column, and the contributions sum to booked minus
+       plan-to-date. Money with no activity behind it gets its own line rather
+       than being quietly absorbed into a rounding difference nobody can see.
+
+       "Money on either side", not "moves the bar", and the difference is the
+       whole bug this table shipped with. An activity booked at exactly what was
+       due by today contributes zero and used to be dropped — taking its booked
+       figure and its due figure out of the visible rows while leaving both in
+       the totals. Two of the four source columns then failed to add up, in the
+       one table on the panel that exists to be added up. */
     function ptrRecon(r) {
       const R = r.recon;
       if (!R || !R.rows.length) return '';
@@ -11649,18 +11750,35 @@ Or say what you want, in your own words:
         + plain(x.budget) + '<td class="ptr-rc-n ptr-rc-src">' + Math.round(x.pct) + '%</td>'
         + plain(x.due) + plain(x.booked)
         + cell(x.timing, false) + cell(x.over, true) + cell(x.total, false) + '</tr>').join('');
-      const resid = Math.abs(R.residual) >= 1
+      /* The residual now carries its own DUE and BOOKED as well as its
+         contribution. Before, those two cells were hard "—" whatever the line
+         held, which is how $9,700 of real booked cost sat in a column total
+         with an em dash where its source should have been. It is drawn whenever
+         any of the three is non-trivial, not only when the contribution is:
+         money that is equally unattributable on both sides nets to zero in the
+         last column and is exactly as missing from the first two. */
+      const rDue = R.due - (R.rowDue || 0), rBooked = R.booked - (R.rowBooked || 0);
+      const resid = (Math.abs(R.residual) >= 1 || Math.abs(rDue) >= 1 || Math.abs(rBooked) >= 1)
         ? '<tr class="ptr-rc-resid"><td class="ptr-rc-a">Booked cost with no activity behind it'
           + '<span class="ptr-rc-why"> — a figure logged on the project rather than on a line of work,'
           + ' so it moves the bar and has nothing to open</span></td>'
-          + '<td class="ptr-rc-n">—</td><td class="ptr-rc-n">—</td><td class="ptr-rc-n">—</td>'
-          + '<td class="ptr-rc-n">—</td><td class="ptr-rc-n">—</td><td class="ptr-rc-n">—</td>'
+          + '<td class="ptr-rc-n">—</td><td class="ptr-rc-n">—</td>'
+          + plain(rDue) + plain(rBooked)
+          + '<td class="ptr-rc-n">—</td><td class="ptr-rc-n">—</td>'
           + cell(R.residual, false) + '</tr>'
         : '';
+      /* "with money on either side", not "that move this bar". The old wording
+         was the bug in one phrase: an activity booked at exactly what was due
+         moves the bar by nothing and belongs in the table more than most, and
+         calling the table by what it excluded is what made the exclusion look
+         intentional. */
       return '<details class="ptr-rc"><summary>Show the full reconciliation — all '
-        + R.rows.length + ' activit' + (R.rows.length === 1 ? 'y' : 'ies') + ' that move this bar'
+        + R.rows.length + ' activit' + (R.rows.length === 1 ? 'y' : 'ies')
+        + ' with money on either side'
         + '</summary>'
-        + '<p class="ptr-drv-note">Every activity, both directions. <b>Off its dates</b> plus '
+        + '<p class="ptr-drv-note">Every activity with anything booked against it or due by today, both '
+        + 'directions, <b>including the ones running exactly to plan</b> — those contribute nothing, and '
+        + 'leaving them out is what stops the columns adding up. <b>Off its dates</b> plus '
         + '<b>vs its own budget</b> is <b>contributes</b>, and the contributions add to the bar. '
         + 'Only the middle column is a fault — the first is work landing earlier or later than the '
         + 'baseline planned it, which costs nothing.</p>'
@@ -11732,8 +11850,8 @@ Or say what you want, in your own words:
         // But zero is not always GOOD: a committed end date can hold while
         // everything underneath it moves, and the row says so by colouring the
         // dot and the badge from its own verdict rather than from the length.
-        shape = '<i class="ptr-dot' + (r.tone === 'bad' ? ' ptr-dot-bad' : r.tone === 'chg' ? ' ptr-dot-chg' : '') + '"></i>';
-        badgeCls = r.tone === 'bad' ? 'badge-blocked' : r.tone === 'chg' ? 'badge-warn' : 'badge-ok';
+        shape = '<i class="ptr-dot ' + ptrTone('dot', r.tone) + '"></i>';
+        badgeCls = ptrTone('badge', r.tone);
         pctTxt = '0%';
       } else {
         const over = r.pct > 0;
@@ -11743,7 +11861,7 @@ Or say what you want, in your own words:
         // verdict. Budget is the only case: the length is how far booked cost is
         // from the plan's spend curve for today, the colour is whether that gap
         // is a problem. Schedule and Scope set no tone and are untouched.
-        const cls = r.tone ? (r.tone === 'bad' ? 'ptr-bad' : r.tone === 'chg' ? 'ptr-chg' : 'ptr-good')
+        const cls = r.tone ? ptrTone('bar', r.tone)
           : r.kind === 'change' ? (r.unpriced ? 'ptr-bad' : 'ptr-chg') : (over ? 'ptr-bad' : 'ptr-good');
         const xv = at(r.pct);
         const w = Math.max(0.8, Math.abs(xv - 50));   // floor: a real-but-tiny gap must stay visible
@@ -11795,7 +11913,7 @@ Or say what you want, in your own words:
         shape += (Math.abs(r.pct) > R
             ? '<i class="ptr-over ' + (over ? 'ptr-over-r' : 'ptr-over-l') + ' ' + cls + '-t">'
               + (over ? '▸' : '◂') + '</i>' : '');
-        badgeCls = r.tone ? (r.tone === 'bad' ? 'badge-blocked' : r.tone === 'chg' ? 'badge-warn' : 'badge-ok')
+        badgeCls = r.tone ? ptrTone('badge', r.tone)
           : r.kind === 'change' ? (r.unpriced ? 'badge-blocked' : 'badge-warn')
           : (over ? 'badge-blocked' : 'badge-ok');
         pctTxt = ptrPct(r.pct);
@@ -12219,7 +12337,7 @@ Or say what you want, in your own words:
         + escapeHtml(hasAc ? money(c.ac) + ' booked' : 'nothing booked') + '</b></span>';
       const badge = !hasAc
         ? '<span class="badge badge-slack">no cost booked yet</span>'
-        : '<span class="badge ' + (tone === 'bad' ? 'badge-blocked' : tone === 'chg' ? 'badge-warn' : 'badge-ok')
+        : '<span class="badge ' + ptrTone('badge', tone)
           + '">' + escapeHtml(flat ? 'on the plan to date'
             : (gap > 0 ? '+' : '−') + money(Math.abs(gap)) + ' vs plan to date') + '</span>';
       const sub = '<span class="ptr-sc-sub">' + escapeHtml((d.hb ? 'baseline of ' + baselineDate
@@ -12255,7 +12373,7 @@ Or say what you want, in your own words:
         // smudge rather than a measurement — and where the disc sitting inside
         // the ring already says "on the plan to date" more clearly than a bar.
         + (hasAc && gHi - gLo > 0.7
-            ? '<i class="ptr-sc-ib ' + (tone === 'good' ? 'ptr-sc-ib-good' : tone === 'chg' ? 'ptr-sc-ib-chg' : '')
+            ? '<i class="ptr-sc-ib ' + ptrTone('ib', tone)
               + '" style="left:' + nowL + ';top:' + gLo.toFixed(2) + '%;height:' + (gHi - gLo).toFixed(2) + '%"></i>'
             : '')
         + (hasAc ? '<i class="ptr-sc-m ptr-sc-ac" style="left:' + nowL + ';top:' + c.yAc.toFixed(2) + '%"></i>' : '')
@@ -12824,6 +12942,14 @@ Or say what you want, in your own words:
         + (denoms ? ' (' + denoms + ')' : '') + '. On the Budget bar the <b>length</b> is how far booked cost '
         + 'is from the plan’s own spend curve for today, and the <b>colour</b> is the verdict: spending ahead '
         + 'of that curve is only a problem when the finished work is not there to show for it. '
+        /* The colours are named because they are now four and the middle two mean
+           opposite things. They used to be one amber covering both, which put the
+           loudest colour on the page over the case that is fine — and the fine
+           case is the common one, so the alarm was mostly wrong and stopped being
+           read. */
+        + '<b class="ptr-early-t">Blue</b> is ahead of the line because the WORK is ahead, which costs nothing '
+        + 'and closes on its own; <b class="ptr-chg-t">amber</b> is finished work that cost more than it was '
+        + 'budgeted, even where the total is still under the curve; <b class="ptr-bad-t">red</b> is both at once. '
         /* The split needs a key, or a hatched block and a dashed outline are two
            unexplained textures on the one bar people take a verdict from. Only
            shown when the bar is actually drawn in parts. */
@@ -14788,7 +14914,12 @@ Or say what you want, in your own words:
       // that bar measured against the phased plan. Pace stays on the Effort card,
       // where "how much of the estimate is gone" is genuinely the question.
       const bvCard = budgetVerdict(actCostAll, pvAt(stripTime(new Date()).getTime()), earnedValue(), costRef);
-      const budTone = bvCard.tone === 'bad' ? 1 : bvCard.tone === 'chg' ? 0 : -1;
+      /* Keyed off 'good', not off 'chg'. The old form asked "is it bad, else is
+         it chg, else it is good" — so the new `early` tone fell through to −1
+         and this card would have painted a project GREEN for the one condition
+         it is meant to notice. Any tone that is not explicitly good is neutral
+         here; only 'good' earns the green. */
+      const budTone = bvCard.tone === 'bad' ? 1 : bvCard.tone === 'good' ? -1 : 0;
       const budTxt = !(costRef > 0 && actCostAll > 0) ? ''
         : Math.abs(bvCard.gap) < Math.max(1, costRef * 0.005) ? 'on the plan to date'
         : fmtMoney(Math.abs(bvCard.gap)) + (bvCard.gap > 0 ? ' above' : ' below') + ' the plan to date';
@@ -23366,7 +23497,14 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
             : '\n\nBeing watched against this activity. It is not the cause of the number beside it.');
       return '<button type="button" class="raid-watch-chip' + (asks ? ' raid-watch-ask' : '')
         + '" onclick="switchTab(\'raid\');openRaidForm(' + top.id + ')" title="'
-        + escapeHtml(tip) + '"><span aria-hidden="true">' + (asks ? '?' : '👁') + '</span>'
+        /* The eye in BOTH states. The unanswered one used to carry a "?" glyph,
+           and its label is already a question — so the chip read "? Did it
+           hold?" with two question marks, one of them punctuation and one of
+           them an icon pretending to be punctuation. The glyph's job is to say
+           what KIND of chip this is, and it is a watch chip either way; that it
+           is unanswered is already carried by the question itself and by
+           .raid-watch-ask. */
+        + escapeHtml(tip) + '"><span aria-hidden="true">👁</span>'
         + escapeHtml(lbl) + more + '</button>';
     }
     /* The whole group in one call, because WHICH chips appear is exactly the
