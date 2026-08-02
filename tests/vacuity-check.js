@@ -168,7 +168,13 @@ function normalise(s) {
       + 'an empty one is the root cause behind four separate defects fixed one at a time; this is the '
       + 'mechanical version of the question.');
   } else {
-    console.log('\nall ' + SWEEPS.length + ' checks read their input.');
+    /* rows.length, not SWEEPS.length. The first version printed "all 22 checks
+       read their input" on a run that tested 20 and skipped 2 — a summary line
+       claiming coverage the run did not have, which is the exact thing this
+       file exists to catch, in this file, about this file. The skipped ones are
+       named on every run so the number and the list cannot drift apart. */
+    console.log('\nall ' + rows.length + ' checks read their input'
+      + (skipped.length ? '; ' + skipped.length + ' not covered by this probe and named above' : '') + '.');
   }
   process.exitCode = findings.length ? 1 : 0;
 })();
