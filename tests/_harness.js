@@ -55,6 +55,12 @@ function chromePath() {
    go red. Unset — which is every real run — it is the shipped file. */
 const APP = 'file://' + path.resolve(process.env.APP_FILE
   || path.resolve(__dirname, '..', 'pert-gantt-tracker.html'));
-const FIXTURE = () => JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'fixtures', 'crm-rollout.json'), 'utf8'));
+/* FIXTURE_FILE points a check at a different plan, the way APP_FILE points it at
+   a different build. Both exist for the same reason: a check has to be runnable
+   against something OTHER than the happy case, or nothing can ask whether it is
+   reading its inputs at all. vacuity-check.js uses it to feed every sweep an
+   empty plan and require the output to change. */
+const FIXTURE = () => JSON.parse(fs.readFileSync(process.env.FIXTURE_FILE
+  || path.resolve(__dirname, '..', 'fixtures', 'crm-rollout.json'), 'utf8'));
 
 module.exports = { requirePlaywright, chromePath, APP, FIXTURE };

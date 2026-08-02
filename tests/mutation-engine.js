@@ -210,8 +210,13 @@ const MUTANTS = [
      with twelve post-baseline test cases arrived. */
 
   { what: 'envelope: the curve drops work the baseline never dated',
-    find: '        const s1 = (ub ? t.baseStart : t.startDate) || t.startDate;\n        const f1 = (ub ? t.baseFinish : t.finishDate) || t.finishDate;',
-    with: '        const s1 = ub ? t.baseStart : t.startDate;\n        const f1 = ub ? t.baseFinish : t.finishDate;' },
+    /* anchored through the comment above it, because revSpread now applies the
+       SAME baseline-then-live date rule and the two lines alone match twice.
+       A mutant that matches more than once cannot be trusted to have applied
+       where it was aimed, which is why the run reports a skip rather than
+       quietly patching the first hit. */
+    find: '           where "this was not in the commitment" gets said. */\n        const s1 = (ub ? t.baseStart : t.startDate) || t.startDate;\n        const f1 = (ub ? t.baseFinish : t.finishDate) || t.finishDate;',
+    with: '           where "this was not in the commitment" gets said. */\n        const s1 = ub ? t.baseStart : t.startDate;\n        const f1 = ub ? t.baseFinish : t.finishDate;' },
 
   { what: 'envelope: the bar divides by the frozen sum instead of the plan',
     find: '        const ref = baseCost > 0 ? budgetAtCompletion(hb) : planCost;',
@@ -596,6 +601,51 @@ const MUTANTS = [
      they were born with. It reached a user once and looked like an empty app,
      not like a crash, which is why it survived a green suite. */
 
+  /* ── money in, and the record of it ──────────────────────────────────────
+     Revenue was bill rate × effort with no way to say an invoice had gone out.
+     Two things now: a MODEL of when money is expected, and a RECORD of what
+     actually happened. These break each half in turn. */
+
+  { what: 'revenue: the curve collects the rate-card sum instead of the fee',
+    find: '      const scale = rawTotal > 0 ? fee / rawTotal : 0;',
+    with: '      const scale = 1;' },
+
+  { what: 'revenue: a deposit is ADDED to the fee rather than taken out of it',
+    find: '      const rest = 1 - (fee > 0 ? dep / fee : 0);',
+    with: '      const rest = 1;' },
+
+  { what: 'revenue: milestone billing smears across the work like a monthly',
+    find: "      if (T.kind !== 'milestone') return cashPhaseSeg(s, f, c, T);",
+    with: "      if (true) return cashPhaseSeg(s, f, c, { kind: 'monthly', days: T.days });" },
+
+  { what: 'revenue: an unrecorded invoice is counted as an invoice for nothing',
+    find: '    function taskInvoiced(t) { return (t && t.invoiced != null) ? (Number(t.invoiced) || 0) : null; }',
+    with: '    function taskInvoiced(t) { return Number((t && t.invoiced) || 0); }' },
+
+  { what: 'revenue: finished work that was never invoiced is not reported at all',
+    find: '        if (done && inv == null && worth > 0) {',
+    with: '        if (false) {' },
+
+  { what: 'revenue: the cash-positive date is the FIRST crossing, not the last dip',
+    find: '      for (let i = pts.length - 1; i >= 0; i--) {\n        if (pts[i].net < 0) break;\n        positive = pts[i].ms;\n      }',
+    with: '      for (let i = 0; i < pts.length; i++) {\n        if (pts[i].net >= 0) { positive = pts[i].ms; break; }\n      }' },
+
+  { what: 'revenue: a receipt leaks into actual cost, so CPI is computed on a mixed basis',
+    find: '      if (t.autoActualCost === false) return Number(t.actualCost) || 0;   // manual override',
+    with: '      if (t.paid != null) return Number(t.paid) || 0;\n      if (t.autoActualCost === false) return Number(t.actualCost) || 0;   // manual override' },
+
+  { what: 'form: a Decision has no way to record how it turned out',
+    find: "      Decision: [\n        { v: 'stands',     lbl: 'Still stands',            short: 'stands',     explains: true },",
+    with: "      _Decision: [\n        { v: 'stands',     lbl: 'Still stands',            short: 'stands',     explains: true }," },
+
+  { what: 'form: a decision that still stands is painted as a fault',
+    find: "      if (r.type === 'Decision') return false;",
+    with: "      if (r.type === 'Decision' && false) return false;" },
+
+  { what: 'form: the outcome question asks a decision whether it happened',
+    find: "      if (type === 'Decision') return 'Did it stand?';",
+    with: "      if (type === 'Decision') return 'Did it happen?';" },
+
   { what: 'boundary: a failing render rethrows, so the tab dies at the first throw',
     find: "        try { console.error('[render boundary] ' + label, e); } catch (e2) {}\n        return false;",
     with: "        try { console.error('[render boundary] ' + label, e); } catch (e2) {}\n        throw e;" },
@@ -717,7 +767,7 @@ const CHECKS = QUICK ? ['run-test-plan.js']
      'resourcing-sweep.js', 'persistence-sweep.js', 'export-sweep.js', 'undo-sweep.js', 'baseline-sweep.js', 'cross-surface-sweep.js', 'task-editor-sweep.js',
      'client-facing-sweep.js', 'dialog-sweep.js', 'chart-reconciliation-sweep.js',
      'bank-sweep.js', 'corrupt-file-sweep.js', 'dynamic-prose-sweep.js', 'navigation-sweep.js',
-     'error-boundary-sweep.js'];
+     'error-boundary-sweep.js', 'revenue-sweep.js'];
 
 /* Which check is EXPECTED to notice. This is a running order, not a shortcut:
    if the named check does not go red the mutant still walks every other one, so
@@ -742,7 +792,7 @@ const LIKELY = {
   'form:': 'drawn-surfaces-sweep.js', 'drill-in:': 'chart-reconciliation-sweep.js',
   'prose:': 'dynamic-prose-sweep.js', 'heatmap:': 'resourcing-sweep.js',
   'navigation:': 'navigation-sweep.js', 'worklist:': 'navigation-sweep.js',
-  'boundary:': 'error-boundary-sweep.js',
+  'boundary:': 'error-boundary-sweep.js', 'revenue:': 'revenue-sweep.js',
   'reference:': 'golden-reference.js', 'client:': 'client-facing-sweep.js',
   'card:': 'cross-surface-sweep.js', 'network:': 'schedule-sweep.js',
   'editor:': 'task-editor-sweep.js',

@@ -458,6 +458,20 @@
       padding: 0.6rem 0.9rem; margin: 0 0 0.75rem; font-size: var(--t-sm); line-height: 1.5;
       color: #78350f; display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
 
+    /* Money in. Set apart from the variance bars above it because it is a
+       different question on a different basis — a receipt, not an accrual. */
+    .ptr-mi { margin: 0.9rem 0 0.2rem; padding: 0.7rem 0.9rem; border: 1px solid var(--border);
+      border-left: 3px solid var(--primary); border-radius: 8px; background: var(--primary-50);
+      font-size: var(--t-base); line-height: 1.5; }
+    .ptr-mi-h { margin: 0 0 0.4rem; font-size: var(--t-sm); letter-spacing: 0.04em;
+      text-transform: uppercase; color: var(--primary-700); }
+    .ptr-mi-line { margin: 0 0 0.45rem; }
+    .ptr-mi-quiet { color: var(--muted); }
+    .ptr-mi-list { margin: 0 0 0.5rem; padding-left: 1.1rem; }
+    .ptr-mi-list li { margin: 0.1rem 0; }
+    .ptr-mi-more { color: var(--muted); list-style: none; margin-left: -0.6rem; }
+    .ptr-mi-foot { margin: 0.35rem 0 0; font-size: var(--t-xs); color: var(--muted); }
+
     .ptr-wrap { font-size: var(--t-base); }
     .ptr-blank { color: var(--muted); font-size: var(--t-base); line-height: 1.5; padding: 0.3rem 0; }
     .ptr-lead { display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem;
@@ -3056,7 +3070,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.1628</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.1726</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3162,6 +3176,32 @@ Or say what you want, in your own words:
             <div class="form-group">
               <span class="fg-head"><label for="mActualFinish">Actual finish</label><span class="pa-chip" id="paChipFinish" style="display:none" title="Filled in for you — edit freely">auto</span></span>
               <input id="mActualFinish" type="date" onchange="paOnDateEdit('finish')" />
+            </div>
+          </div>
+          <!-- WHAT THE CLIENT WAS ACTUALLY CHARGED, and what came back. Every
+               other money figure on this form is DERIVED from the work; these
+               two are the only ones that are a record. Blank means nobody has
+               said, which the panels report as unrecorded rather than as zero —
+               so leaving them empty costs nothing and filling one in never gets
+               overwritten by a recalculation. -->
+          <div class="pa-grid pa-grid-b">
+            <div class="form-group">
+              <span class="fg-head"><label for="mInvoiced">Invoiced $</label><button type="button" class="info-icon" aria-label="About invoicing" data-help="What was actually put on an invoice for this activity — leave blank if no invoice has gone out, or if you simply have not recorded it. Blank is not zero: the panels count it as unrecorded and will tell you how much finished work has never been charged for. Nothing here changes cost, margin, earned value or the price; it only feeds the money-in picture.">i</button></span>
+              <input id="mInvoiced" type="text" inputmode="decimal" placeholder="not recorded" oninput="refreshProgressPanel()" />
+            </div>
+            <div class="form-group">
+              <span class="fg-head"><label for="mInvoicedDate">Invoice date</label></span>
+              <input id="mInvoicedDate" type="date" />
+            </div>
+          </div>
+          <div class="pa-grid pa-grid-b">
+            <div class="form-group">
+              <span class="fg-head"><label for="mPaid">Received $</label><button type="button" class="info-icon" aria-label="About receipts" data-help="What the client has actually paid against this activity. Blank means nothing has been recorded. Where this is less than the invoiced figure the difference is shown as outstanding — money you have earned, charged for, and not yet been given.">i</button></span>
+              <input id="mPaid" type="text" inputmode="decimal" placeholder="not recorded" oninput="refreshProgressPanel()" />
+            </div>
+            <div class="form-group">
+              <span class="fg-head"><label for="mPaidDate">Received on</label></span>
+              <input id="mPaidDate" type="date" />
             </div>
           </div>
           <div class="help-text pa-note" id="paNote" style="display:none"></div>
@@ -3300,6 +3340,8 @@ Or say what you want, in your own words:
        upgrade: cash basis is opt-in and until it is opted into, the two curves
        are identical and the panel says so. */
     let cashTerms = { kind: 'none', days: 0 };
+    // the other direction: when the CLIENT pays you. deposit is a percent of the fee.
+    let revTerms = { kind: 'none', days: 0, deposit: 0 };
     let healthFindings = null;    // last health-check results
     let clientSafeReports = false;// hide financials/internal notes in copied reports
     let sowBaseline = null;       // snapshot taken when the SOW is generated (for change orders)
@@ -3417,6 +3459,9 @@ Or say what you want, in your own words:
         startNoEarlier: '', deadline: '', jira: '', autoActualStart: false, autoActualFinish: false,
         parentId: null, description: '', deliverable: '', acceptance: '',
         actualStart: '', actualFinish: '', actualEffort: null, fixedCost: 0, actualCost: 0, autoActualCost: true, audience: null, taxonomy: null, taxSrc: null,
+        // what was actually INVOICED and RECEIVED against this activity. null is
+        // "nobody has said", which is a different fact from zero.
+        invoiced: null, invoicedDate: '', paid: null, paidDate: '',
         baseStart: null, baseFinish: null, baseTe: null, baseCost: null,
         te: 0, variance: 0, es: 0, ef: 0, ls: 0, lf: 0, slack: 0, wbs: '', isSummary: false,
         isCritical: false, criticality: 0, startDate: null, finishDate: null, overallocated: false
@@ -3599,7 +3644,7 @@ Or say what you want, in your own words:
         tasks = []; nextId = 1; resources = {}; raid = []; nextRaidId = 1; statusHistory = [];
         sowDraft = ''; statusNarrative = null; projectBudget = 0;
         reserves = { contingency: { value: 0, unit: 'percent' }, management: { value: 0, unit: 'percent' } };
-        pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 }; cashTerms = { kind: 'none', days: 0 };
+        pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 }; cashTerms = { kind: 'none', days: 0 }; revTerms = { kind: 'none', days: 0, deposit: 0 };
         baselineDate = ''; baselineLog = []; collapsedIds = new Set(); levelMode = 'none';
         reqs = null; sowBaseline = null; coDraft = ''; coLog = [];
         document.getElementById('projectName').value = 'New Engagement';
@@ -4098,7 +4143,7 @@ Or say what you want, in your own words:
         weekendDays: [...weekendDays].sort().join(','),
         nextId,
         resources, reserves, baselineDate, baselineLog, levelMode, projectBudget,
-        raid, nextRaidId, statusHistory, sowDraft, statusNarrative, pricing, cashTerms, reqsBaseline,
+        raid, nextRaidId, statusHistory, sowDraft, statusNarrative, pricing, cashTerms, revTerms, reqsBaseline,
         clientSafeReports, sowBaseline, reqs, sowUserEdited, coLog,
         collapsedIds: [...collapsedIds],
         tasks: tasks.map(t => ({
@@ -4108,6 +4153,8 @@ Or say what you want, in your own words:
           parentId: t.parentId, description: t.description, deliverable: t.deliverable,
           acceptance: t.acceptance, actualStart: t.actualStart, actualFinish: t.actualFinish, actualEffort: (t.actualEffort == null ? null : t.actualEffort),
           fixedCost: t.fixedCost || 0, actualCost: t.actualCost || 0, autoActualCost: t.autoActualCost !== false, audience: t.audience || null,
+          invoiced: t.invoiced == null ? null : Number(t.invoiced), invoicedDate: t.invoicedDate || '',
+          paid: t.paid == null ? null : Number(t.paid), paidDate: t.paidDate || '',
           taxonomy: t.taxonomy || null, taxSrc: (t.taxSrc === 'ai' ? 'ai' : null),
           baseStart: t.baseStart ? fmtISO(new Date(t.baseStart)) : null,
           baseFinish: t.baseFinish ? fmtISO(new Date(t.baseFinish)) : null,
@@ -4155,6 +4202,8 @@ Or say what you want, in your own words:
         jira: String(t.jira || '').trim(),
         deadline: /^\d{4}-\d{2}-\d{2}$/.test(t.deadline || '') ? t.deadline : '',
         fixedCost: Number(t.fixedCost) || 0, actualCost: Number(t.actualCost) || 0, autoActualCost: t.autoActualCost !== false, audience: (t.audience === 'client' || t.audience === 'internal') ? t.audience : null,
+        invoiced: (t.invoiced == null || t.invoiced === '') ? null : (Number(t.invoiced) || 0), invoicedDate: t.invoicedDate || '',
+        paid: (t.paid == null || t.paid === '') ? null : (Number(t.paid) || 0), paidDate: t.paidDate || '',
         taxonomy: taxCoerce(t.taxonomy), taxSrc: (t.taxSrc === 'ai' ? 'ai' : null),
 /* TDZ note: hydrate() references taxCoerce, declared ~7500 lines later in source
    order. Safe — hydrate only RUNS from init/loadLocal/import, long after the
@@ -4211,6 +4260,7 @@ Or say what you want, in your own words:
       statusNarrative = (data.statusNarrative && data.statusNarrative.text) ? data.statusNarrative : null;
       pricing = Object.assign({ model: 'fixed', basis: 'p80', contractPrice: 0 }, data.pricing || {});
       cashTerms = cashTermsNorm(data.cashTerms);
+      revTerms = revTermsNorm(data.revTerms);
       clientSafeReports = !!data.clientSafeReports;
       sowBaseline = (data.sowBaseline && Array.isArray(data.sowBaseline.tasks)) ? data.sowBaseline : null;
       sowUserEdited = !!data.sowUserEdited;
@@ -4730,6 +4780,15 @@ Or say what you want, in your own words:
     // Live PERT TE from the modal's own O/M/P, in project units. While any leg is
     // mid-typing ("1.", "2d ") the last good value is held so the readout holds
     // steady instead of flickering to "no estimate".
+    /* Blank → null, a number → that number, anything else → null. Deliberately
+       NOT `parseFloat(v) || 0`: the null is the record's "nobody has said". */
+    function moneyFieldOrNull(id) {
+      const el = document.getElementById(id);
+      const raw = String((el && el.value) || '').replace(/[$,\s]/g, '').trim();
+      if (!raw) return null;
+      const n = parseFloat(raw);
+      return Number.isFinite(n) && n >= 0 ? n : null;
+    }
     function modalTeUnits(isMs) {
       if (isMs) return 0;
       const o = parseDurExpr(paV('mO')), m = parseDurExpr(paV('mM')), p = parseDurExpr(paV('mP'));
@@ -5209,6 +5268,12 @@ Or say what you want, in your own words:
       document.getElementById('mAcceptance').value = t.acceptance || '';
       document.getElementById('mActualStart').value = t.actualStart || '';
       document.getElementById('mActualFinish').value = t.actualFinish || '';
+      // null → empty box. Writing 0 here would turn "nobody has said" into
+      // "we charged nothing", which is the distinction these fields exist for.
+      document.getElementById('mInvoiced').value = (t.invoiced == null ? '' : String(t.invoiced));
+      document.getElementById('mInvoicedDate').value = t.invoicedDate || '';
+      document.getElementById('mPaid').value = (t.paid == null ? '' : String(t.paid));
+      document.getElementById('mPaidDate').value = t.paidDate || '';
       document.getElementById('mActualEffort').value = (t.actualEffort == null ? '' : fmtDurCell(t.actualEffort));
       document.getElementById('mActualCost').value = (t.autoActualCost === false) ? String(t.actualCost || 0) : fmtMoney(t.actualCost || 0);
       mActualCostManual = (t.autoActualCost === false);
@@ -5627,6 +5692,13 @@ Or say what you want, in your own words:
 
       const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, actualCost, actualEffort, autoActualCost: !mActualCostManual, audience: (v => (v === 'client' || v === 'internal') ? v : null)(document.getElementById('mAudience').value), taxonomy: taxCoerce(document.getElementById('mTaxonomy').value), taxSrc: null, percentComplete: pct, predecessors: finalPreds, jira: document.getElementById('mJira').value.trim(),
         parentId, description, deliverable, acceptance, actualStart, actualFinish,
+        /* An EMPTY box stays null. parseFloat('') is NaN and `|| 0` would turn
+           every activity nobody has invoiced into one invoiced for nothing —
+           which reads on the panel as "charged $0" rather than "not recorded",
+           and would quietly zero the unbilled-work figure that is the whole
+           reason these fields exist. */
+        invoiced: moneyFieldOrNull('mInvoiced'), invoicedDate: document.getElementById('mInvoicedDate').value || '',
+        paid: moneyFieldOrNull('mPaid'), paidDate: document.getElementById('mPaidDate').value || '',
         // the panel owns these: a date IT filled in stays flagged auto (so dropping
         // below 100% can still clear it), a date the user typed or edited is manual
         autoActualStart: !!mAutoStamp.start, autoActualFinish: !!mAutoStamp.finish };
@@ -8972,6 +9044,261 @@ Or say what you want, in your own words:
       }
       return out.length ? out : [{ s: f, f: f + DAY, c: c }];
     }
+
+    /* ═══ REVENUE IN — WHEN THE CLIENT PAYS YOU ═══════════════════════════════
+       The other direction, and it is NOT the cost model with the sign flipped.
+
+       Cost out is one step: the money is accrued as the work happens, and terms
+       say how long after that it leaves. Revenue in is TWO steps, and the first
+       one has no equivalent on the cost side:
+
+         1. AN INVOICE IS RAISED. Nothing is owed until you ask. When you ask is
+            the billing arrangement in the contract — at the end, monthly for
+            what was delivered, or on milestones.
+         2. THE CLIENT PAYS IT, N days later.
+
+       Milestone billing is why this could not just reuse the cost path. It is
+       the commonest fixed-fee arrangement and it is discontinuous: everything
+       earned since the last milestone becomes payable on the day the next one
+       completes, and nothing at all becomes payable in between. Cost has no
+       such thing — payroll does not wait for a checkpoint. This app already
+       holds milestones as first-class objects with dates, so the arrangement
+       people actually sign is drawable rather than approximated by a monthly.
+
+       THE TOTAL IS THE FEE, NOT THE RATE-CARD SUM. On a fixed price you invoice
+       the contract price; bill rate × effort is how the price was ARRIVED at,
+       not what appears on the invoice. So the shape comes from the work and the
+       total is normalised to what pricingFigures() says you will actually
+       charge. On T&M those two are the same number, and the normalisation is a
+       no-op — which is the check that the rule is right rather than convenient.
+
+       SAME DATE BASIS AS THE COST CURVE it is compared against. Drawing money in
+       on live dates against money out on baseline dates would produce a net
+       position that is the difference between two different plans — the exact
+       "confident nonsense" the note above warns about for mixing accrual and
+       cash. One basis, stated.
+
+       STILL A MODEL. It knows the terms, not the ledger: it cannot know an
+       invoice was disputed, that the client pays late by habit, or that a
+       milestone was signed off three weeks after it completed. Every surface
+       that draws it says so. */
+    const REV_KINDS = ['none', 'net', 'monthly', 'milestone'];
+    function revTermsNorm(x) {
+      const k = x && REV_KINDS.indexOf(x.kind) >= 0 ? x.kind : 'none';
+      const d = Math.max(0, Math.min(365, Math.round(Number(x && x.days) || 0)));
+      const dep = Math.max(0, Math.min(100, Math.round(Number(x && x.deposit) || 0)));
+      return { kind: k, days: k === 'none' ? 0 : d, deposit: k === 'none' ? 0 : dep };
+    }
+    function revTermsLabel(x) {
+      const t = revTermsNorm(x);
+      const dep = t.deposit ? t.deposit + '% up front, then ' : '';
+      if (t.kind === 'none') return 'as the work is earned';
+      if (t.kind === 'net') return dep + 'invoiced on delivery, net ' + t.days;
+      if (t.kind === 'monthly') return dep + 'invoiced monthly, net ' + t.days;
+      return dep + 'invoiced on milestones, net ' + t.days;
+    }
+    function projectRevTerms() { return revTermsNorm(revTerms); }
+    function revAnyTerms() { return projectRevTerms().kind !== 'none'; }
+
+    /* What each leaf is worth on an invoice, before normalisation. Client-side
+       people bill nothing — the same rule billingData and laborRevenue use, and
+       the reason it is repeated here rather than shared is that this needs it
+       PER LEAF while those need it per person. */
+    function taskBilledValue(t) {
+      if (!t || t.isSummary) return 0;
+      const days = t.milestone ? 0 : unitToWorkingDays(t.te || 0);
+      const labour = taskParticipants(t).reduce((s, pr) =>
+        s + (isClientResource(pr.name) ? 0 : getBillRate(pr.name) * days * pr.units / 100), 0);
+      return labour + (Number(t.fixedCost) || 0);
+    }
+    // what will actually be invoiced across the whole engagement
+    function revenueAtCompletion() {
+      try { const f = pricingFigures(); return Math.max(0, Number(f && f.price) || 0); }
+      catch (e) { return 0; }
+    }
+    /* Milestone dates, ascending, on the same basis as everything else. A
+       milestone with no date cannot bill and is counted rather than guessed at —
+       an invoice placed on an invented date is worse than an invoice the curve
+       admits it cannot place. */
+    function revMilestoneDates(ub, leaves) {
+      const out = [];
+      let undated = 0;
+      (leaves || leafTasks()).forEach(t => {
+        if (!t.milestone || t.isSummary) return;
+        const d = (ub ? t.baseFinish : t.finishDate) || t.finishDate;
+        if (d instanceof Date && !isNaN(d.getTime())) out.push({ ms: stripTime(d).getTime(), name: t.name || '(unnamed)' });
+        else undated++;
+      });
+      out.sort((a, b) => a.ms - b.ms);
+      return { dates: out, undated: undated };
+    }
+    /* One earned-revenue segment becomes one or more RECEIPT segments.
+       none/net/monthly reuse the cost path exactly — the arithmetic is the same
+       question — and `milestone` is the case that needed its own. */
+    function revPhaseSeg(s, f, c, T, msList) {
+      const DAY = 86400000;
+      if (T.kind !== 'milestone') return cashPhaseSeg(s, f, c, T);
+      /* Everything earned in (previous milestone, this milestone] bills on this
+         milestone's date. A segment spanning two milestones splits between them
+         in proportion to the time in each, because that is how much of the work
+         had been done by each checkpoint. */
+      const span = Math.max(DAY, f - s);
+      const out = [];
+      let cur = s;
+      const marks = (msList || []).map(m => m.ms).filter(m => m > s);
+      marks.push(Infinity);                       // the tail bills at the finish
+      for (let i = 0; i < marks.length && cur < f; i++) {
+        const edge = Math.min(f, marks[i] === Infinity ? f : marks[i] + DAY);
+        if (edge <= cur) continue;
+        const share = c * ((edge - cur) / span);
+        // a milestone at Infinity means work after the last checkpoint: it bills
+        // when the work itself finishes, which is the final invoice
+        const bill = (marks[i] === Infinity ? f : marks[i]) + T.days * DAY;
+        if (share > 0) out.push({ s: bill, f: bill + DAY, c: share });
+        cur = edge;
+      }
+      return out.length ? out : [{ s: f + T.days * DAY, f: f + T.days * DAY + DAY, c: c }];
+    }
+    /* The revenue curve. `cash: true` applies the billing arrangement and the
+       payment terms; without it this is the ACCRUAL — revenue earned as the work
+       happens, which is the line the cash one is compared against. */
+    function revSpread(usingBaseline, leaves, opts) {
+      const ub = usingBaseline === undefined ? hasBaseline() : !!usingBaseline;
+      const cash = !!(opts && opts.cash);
+      const T = projectRevTerms();
+      const lv = leaves || leafTasks();
+      const out = { segs: [], placed: 0, undated: 0, total: 0, cash: cash,
+        deposit: 0, msUndated: 0, scale: 1, kind: T.kind };
+      const raw = lv.map(t => ({ t: t, v: taskBilledValue(t) }));
+      const rawTotal = raw.reduce((s, r) => s + r.v, 0);
+      const fee = revenueAtCompletion();
+      /* NORMALISED TO THE FEE. With no rated work at all there is nothing to
+         take the shape FROM, and scaling by fee/0 would be an invented curve —
+         so the whole fee is reported as unplaceable rather than smeared across
+         dates nobody chose. */
+      const scale = rawTotal > 0 ? fee / rawTotal : 0;
+      out.scale = scale;
+      out.total = fee;
+      if (!(fee > 0)) return out;
+      if (!(rawTotal > 0)) { out.undated = fee; return out; }
+
+      const msInfo = revMilestoneDates(ub, lv);
+      out.msUndated = msInfo.undated;
+      /* A milestone arrangement with NO dated milestone cannot bill on one. The
+         honest answer is to say so and fall back to billing at the finish, which
+         is what revPhaseSeg's tail already does — not to silently behave like a
+         monthly. */
+      const DAY = 86400000;
+      const dep = cash && T.deposit > 0 ? fee * (T.deposit / 100) : 0;
+      const rest = 1 - (fee > 0 ? dep / fee : 0);
+      out.deposit = dep;
+      if (dep > 0) {
+        const st = projectStartDate();
+        const pay = (st ? stripTime(st).getTime() : Date.now()) + T.days * DAY;
+        out.segs.push({ s: pay, f: pay + DAY, c: dep });
+        out.placed += dep;
+      }
+      raw.forEach(r => {
+        const t = r.t;
+        const c1 = r.v * scale * (cash ? rest : 1);
+        if (!(c1 > 0)) return;
+        const s1 = (ub ? t.baseStart : t.startDate) || t.startDate;
+        const f1 = (ub ? t.baseFinish : t.finishDate) || t.finishDate;
+        const sMs = (s1 instanceof Date && !isNaN(s1.getTime())) ? stripTime(s1).getTime() : null;
+        const fMs = (f1 instanceof Date && !isNaN(f1.getTime())) ? stripTime(f1).getTime() + DAY : null;
+        if (fMs == null) { out.undated += c1; return; }
+        const a = (sMs == null || sMs >= fMs) ? fMs - DAY : sMs;   // milestones book as a one-day step
+        const parts = cash ? revPhaseSeg(a, fMs, c1, T, msInfo.dates) : [{ s: a, f: fMs, c: c1 }];
+        parts.forEach(p => { out.segs.push(p); out.placed += p.c; });
+      });
+      return out;
+    }
+    /* ═══ MODELLED, OR RECORDED ═══════════════════════════════════════════════
+       "The system assumes if we did the task we got billed for it." That was
+       exactly true, and it is the same complaint the cost side already answers:
+       actualCostOf DERIVES cost from logged effort unless somebody typed a real
+       figure, and every panel that draws it says which it is looking at. The
+       incoming side had no such distinction at all — revenue was bill rate times
+       effort, always, with no way to say an invoice had gone out, or been paid,
+       or been sat on for six weeks.
+
+       Two fields per activity, and null is load-bearing: it means NOBODY HAS
+       SAID, which is a different fact from zero and must never be drawn as
+       zero. An activity with invoiced=null is not "unbilled", it is unrecorded,
+       and telling those apart is the whole point.
+
+       The grain is the activity, like everything else here. A real invoice
+       usually covers several, and this does not pretend to be an invoice
+       ledger — it records, per line of work, what was billed for it and what
+       came back. That is enough to answer the question worth asking, which is
+       not "where is invoice 41" but "what have we finished and never charged
+       for". */
+    function taskInvoiced(t) { return (t && t.invoiced != null) ? (Number(t.invoiced) || 0) : null; }
+    function taskPaid(t) { return (t && t.paid != null) ? (Number(t.paid) || 0) : null; }
+    function revenueRecord(leaves) {
+      const lv = leaves || leafTasks();
+      const out = { billedN: 0, billed: 0, paidN: 0, paid: 0, unrecordedN: 0,
+        doneUnbilledN: 0, doneUnbilled: 0, billedUnpaidN: 0, billedUnpaid: 0,
+        rows: [], anyRecord: false };
+      lv.forEach(t => {
+        if (t.isSummary) return;
+        const inv = taskInvoiced(t), pd = taskPaid(t);
+        const worth = taskBilledValue(t);
+        const done = (t.percentComplete || 0) >= 100;
+        if (inv != null) { out.billedN++; out.billed += inv; out.anyRecord = true; }
+        if (pd != null) { out.paidN++; out.paid += pd; out.anyRecord = true; }
+        if (inv == null && pd == null) out.unrecordedN++;
+        /* FINISHED AND NEVER INVOICED — the number this whole section exists to
+           produce. Only counted where the work is worth billing: a milestone
+           and a client-side activity are worth nothing on an invoice, so
+           listing them as unbilled revenue would be a fiction that grows with
+           the size of the plan. */
+        if (done && inv == null && worth > 0) {
+          out.doneUnbilledN++; out.doneUnbilled += worth;
+          out.rows.push({ id: t.id, name: t.name || '(unnamed)', worth: worth, state: 'never invoiced' });
+        }
+        if (inv != null && inv > 0 && (pd == null || pd < inv - 0.005)) {
+          const owed = inv - (pd || 0);
+          out.billedUnpaidN++; out.billedUnpaid += owed;
+          out.rows.push({ id: t.id, name: t.name || '(unnamed)', worth: owed,
+            state: pd == null ? 'invoiced, nothing received' : 'part paid' });
+        }
+      });
+      out.rows.sort((a, b) => b.worth - a.worth);
+      return out;
+    }
+
+    /* WHEN AM I UNDERWATER. The reason the two curves exist at all.
+       Net cumulative cash = received − paid, sampled across the plan's own span.
+       Two numbers come out of it and they are the ones a delivery lead is
+       actually asking for: the deepest the position ever gets (the money the
+       firm has to carry, and when) and the date it stops being negative. */
+    function cashPositionData(inSegs, outSegs, fromMs, toMs) {
+      const DAY = 86400000;
+      const a = Math.min(fromMs, toMs), b2 = Math.max(fromMs, toMs);
+      const steps = Math.max(2, Math.min(400, Math.ceil((b2 - a) / DAY) + 1));
+      const pts = [];
+      let trough = null, positive = null;
+      for (let i = 0; i < steps; i++) {
+        const ms = a + Math.round((b2 - a) * (i / (steps - 1)));
+        const inn = accrualAt(inSegs || [], ms);
+        const outv = accrualAt(outSegs || [], ms);
+        const net = inn - outv;
+        pts.push({ ms: ms, in: inn, out: outv, net: net });
+        if (trough === null || net < trough.net) trough = { ms: ms, net: net };
+      }
+      /* the cash-positive date is the point after which it never dips again —
+         the FIRST crossing is not the answer when a later invoice gap pulls it
+         back under, and reporting that one would be an assurance the plan does
+         not support */
+      for (let i = pts.length - 1; i >= 0; i--) {
+        if (pts[i].net < 0) break;
+        positive = pts[i].ms;
+      }
+      return { points: pts, troughMoney: trough ? trough.net : 0,
+        troughAt: trough ? trough.ms : null, positiveFrom: positive,
+        endsNet: pts.length ? pts[pts.length - 1].net : 0 };
+    }
     function pvSpread(usingBaseline, leaves, opts) {
       const ub = usingBaseline === undefined ? hasBaseline() : !!usingBaseline;
       const cash = !!(opts && opts.cash);
@@ -11348,6 +11675,103 @@ Or say what you want, in your own words:
     // nothing but three paths, because a polyline is the one thing CSS cannot
     // draw; every label, marker, rule and money figure is HTML at a rem size, so
     // no type shrinks with the box.
+    /* MONEY IN, beside money out. Two questions, and the panel answers them in
+       the order somebody actually asks:
+
+         1. WHAT HAVE WE FINISHED AND NEVER CHARGED FOR. A record, not a model,
+            and it is the one that comes with money attached today. Shown
+            whenever anything is finished, whether or not billing terms are set,
+            because it does not need them.
+         2. HOW DEEP DOES THIS GO. The funding gap: the most negative the net
+            position ever gets, and the day it stops being negative. Needs the
+            terms, and says so rather than drawing a flat line.
+
+       Deliberately NOT a second chart. The spend curve above already carries
+       two lines and a crosshair, and a four-line chart where two are money out
+       and two are money in is a chart nobody reads correctly — the numbers that
+       matter here are scalars and a short list. */
+    function ptrMoneyInHtml(d) {
+      let rec, terms, fee;
+      try {
+        rec = revenueRecord(leafTasks());
+        terms = projectRevTerms();
+        fee = revenueAtCompletion();
+      } catch (e) { return ''; }
+      const bits = [];
+
+      if (rec.doneUnbilledN) {
+        const top = rec.rows.filter(r => r.state === 'never invoiced').slice(0, 3);
+        bits.push('<p class="ptr-mi-line"><b>' + fmtMoney(rec.doneUnbilled) + ' of finished work has never '
+          + 'been invoiced</b> — ' + rec.doneUnbilledN + ' ' + ptrPl(rec.doneUnbilledN, 'activity', 'activities')
+          + ' recorded as 100% complete with nothing entered against <b>Invoiced $</b>. '
+          + (rec.anyRecord
+              ? 'Other activities on this plan DO carry an invoice figure, so this is a gap in the billing, not '
+                + 'a gap in the record-keeping.'
+              : 'Nothing on this plan carries an invoice figure yet, so this may simply be unrecorded rather '
+                + 'than unbilled — the tool cannot tell those apart, and does not guess.')
+          + '</p>'
+          /* ekTask takes the TASK, not its id, and needs {name:true} — passing
+             the id rendered a bare kind mark with no name and no link, which is
+             a row identifying nothing. Same mistake the worklist made when it
+             truncated names to 22 characters: a list of money against
+             unidentifiable work is not actionable. */
+          + '<ul class="ptr-mi-list">' + top.map(r => {
+              const t = tasks.find(x => x.id === r.id);
+              const mark = t ? ekTask(t, { name: true, max: 44, xs: true,
+                onclick: 'openEditModal(' + r.id + ', true)', tip: 'Open it and record the invoice' })
+                : escapeHtml(r.name);
+              return '<li>' + mark + ' — <b>' + fmtMoney(r.worth) + '</b></li>';
+            }).join('')
+          + (rec.doneUnbilledN > top.length ? '<li class="ptr-mi-more">and ' + (rec.doneUnbilledN - top.length)
+              + ' more</li>' : '') + '</ul>');
+      }
+      if (rec.billedUnpaid > 0) {
+        bits.push('<p class="ptr-mi-line"><b>' + fmtMoney(rec.billedUnpaid) + ' invoiced and not received</b> — '
+          + rec.billedUnpaidN + ' ' + ptrPl(rec.billedUnpaidN, 'activity', 'activities')
+          + ' where what came back is less than what went out.</p>');
+      }
+
+      if (terms.kind === 'none') {
+        bits.push('<p class="ptr-mi-line ptr-mi-quiet">No billing arrangement is set, so there is no money-in '
+          + 'curve to draw and no funding gap to report. Set one under <b>Billing terms</b> on the Resources '
+          + 'tab and this becomes the question it should be: how much of your own money is carrying this '
+          + 'engagement, and until when.</p>');
+      } else if (fee > 0) {
+        try {
+          const hb = hasBaseline(), leaves = leafTasks();
+          const inn = revSpread(hb, leaves, { cash: true });
+          const outSp = pvSpread(hb, leaves, { cash: cashAnyTerms() });
+          const all = inn.segs.concat(outSp.segs);
+          if (all.length) {
+            const from = Math.min.apply(null, all.map(g => g.s));
+            const to = Math.max.apply(null, all.map(g => g.f));
+            const pos = cashPositionData(inn.segs, outSp.segs, from, to);
+            const trough = pos.troughMoney;
+            bits.push('<p class="ptr-mi-line">Billed ' + escapeHtml(revTermsLabel(terms)) + '. '
+              + (trough < -0.5
+                  ? 'The position goes <b>' + fmtMoney(Math.abs(trough)) + ' negative</b> at its deepest, around <b>'
+                    + fmtNice(new Date(pos.troughAt)) + '</b> — that is the money your firm carries before the '
+                    + 'client\'s covers it.'
+                  : 'The position never goes negative: the billing arrangement keeps you in funds throughout.')
+              + (pos.positiveFrom
+                  ? ' It is cash-positive from <b>' + fmtNice(new Date(pos.positiveFrom)) + '</b> onward'
+                    + ' — the last date it dips, not the first time it crosses, because a later invoice gap '
+                    + 'pulling it back under would make the first crossing an assurance the plan does not support.'
+                  : ' On these dates it never gets back above water inside the plan\'s own span.')
+              + (inn.undated > 0 ? ' <b>' + fmtMoney(inn.undated) + '</b> of the fee sits on work with no finish '
+                  + 'date and could not be placed on the calendar at all.' : '')
+              + '</p>');
+          }
+        } catch (e) { /* the reading is optional; the record above is not */ }
+      }
+
+      if (!bits.length) return '';
+      return '<div class="ptr-mi"><h4 class="ptr-mi-h">Money in</h4>' + bits.join('')
+        + '<p class="ptr-mi-foot">Everything else on this page is <b>money out</b> and stays that way: earned '
+        + 'value, CPI and margin are defined on accrued cost, and mixing a receipt into them produces a '
+        + 'confident number that means nothing. This section is the only one that looks at what the client has '
+        + 'been charged and has paid.</p></div>';
+    }
     function ptrCurveHtml(d) {
       const c = d && d.curve;
       ptrScState = null;                                 // a stale state would hover the PREVIOUS project
@@ -11969,6 +12393,7 @@ Or say what you want, in your own words:
         // ±% variance axis, and this chart's x is TIME and its y is MONEY.
         // Dropping it in there would assert shared geometry that does not exist.
         + ptrCurveHtml(d)
+        + ptrMoneyInHtml(d)
         + ptrStripHtml(d)
         + '<p class="ptr-foot">Each bar is the gap between plan and reality as a share of <b>that dimension’s '
         + 'own plan</b> — the only scale on which days, dollars and effort can sit side by side'
@@ -18431,7 +18856,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       });
       statusHistory = []; sowDraft = ''; statusNarrative = null; healthFindings = null; coLog = []; sowBaseline = null; coDraft = '';
       reqsBaseline = null;
-      pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 }; cashTerms = { kind: 'none', days: 0 };
+      pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 }; cashTerms = { kind: 'none', days: 0 }; revTerms = { kind: 'none', days: 0, deposit: 0 };
       reserves = { contingency: { value: 10, unit: 'percent' }, management: { value: 5, unit: 'percent' } };
       baselineDate = ''; baselineLog = []; collapsedIds = new Set(); levelMode = 'none'; projectBudget = 0; calculated = false;
       document.getElementById('projectName').value = 'Sample Client Engagement – CRM Rollout';
@@ -21862,6 +22287,8 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
         return;
       }
       row.style.display = '';
+      const q = document.querySelector('#rOutcomeRow label[for="rOutcome"]');
+      if (q) q.textContent = raidOutcomeQuestion(type);
       // dataset.want survives a type change; the select itself does not, because
       // switching Risk → Assumption throws away an option list that never
       // contained 'holding' in the first place
@@ -21985,7 +22412,7 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
       const top = un[0] || rs[0];
       const more = rs.length > 1 ? ' +' + (rs.length - 1) : '';
       const asks = !!un.length;
-      const lbl = asks ? 'Did it happen?' : (raidOutcomeOf(top) || {}).short || top.type;
+      const lbl = asks ? raidOutcomeQuestion(top.type) : (raidOutcomeOf(top) || {}).short || top.type;
       const tip = rs.map(r => {
           const o = raidOutcomeOf(r);
           return r.type + ': ' + r.title + ' — ' + (o ? o.lbl.toLowerCase() : 'outcome not recorded');
@@ -22064,11 +22491,29 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
         { v: 'holding',   lbl: 'Still holding',   short: 'holding',           explains: false },
         { v: 'broken',    lbl: 'It did not hold', short: 'Assumption broke',  explains: true  },
         { v: 'confirmed', lbl: 'Confirmed true',  short: 'confirmed',         explains: false }
+      ],
+      /* A DECISION OUTLIVES THE MEETING THAT TOOK IT, and the first version of
+         this file said otherwise: "a Decision was already taken … not waiting to
+         find out how it turned out". That is true of the taking and false of the
+         decision. Decisions get reversed, and they get overtaken by a later one,
+         and both of those are among the most expensive things that happen on an
+         engagement — the rework is charged to a choice somebody can point at.
+         Reported by a reader who had a closed decision on screen and no way to
+         say which of the three had happened to it: Closed is a status, and it
+         answers "is anyone still working this entry", not "did it hold".
+         All three EXPLAIN, because a decision shapes the work whether it stood
+         or not — "single production org, no per-team sandboxes" is a real reason
+         design cost what it did, and "…until we reversed it in week six" is a
+         better one. None is a FAULT: a reversal is a cause, not a failure, and
+         painting it red would put a red chip on good governance. */
+      Decision: [
+        { v: 'stands',     lbl: 'Still stands',            short: 'stands',     explains: true },
+        { v: 'reversed',   lbl: 'Reversed',                short: 'reversed',   explains: true },
+        { v: 'superseded', lbl: 'Superseded by a later decision', short: 'superseded', explains: true }
       ]
     };
-    // Only a Risk and an Assumption have an outcome. An Issue already happened,
-    // a Decision was already taken, an Exclusion is a boundary — none of the
-    // three is waiting to find out how it turned out.
+    // An Issue already happened and an Exclusion is a boundary: neither is
+    // waiting on anything. Risks, Assumptions and Decisions all are.
     function raidOutcomeOpts(type) { return RAID_OUTCOMES[type] || null; }
     function raidOutcomeOf(r) {
       const opts = raidOutcomeOpts(r && r.type);
@@ -22099,6 +22544,14 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
     function raidIsFault(r) {
       if (!r) return false;
       if (r.type === 'Issue') return true;
+      /* Decisions are excluded EXPLICITLY, not by omission. This function reads
+         `o.explains`, and the day Decision gained outcomes every one of them
+         carried explains:true — so a decision that simply STOOD would have
+         started painting a red fault chip on the activity it shaped, which is
+         the precise thing the paragraph above says must not happen. The
+         type-blind test was safe only while no decision had an outcome, and
+         nothing said so. */
+      if (r.type === 'Decision') return false;
       const o = raidOutcomeOf(r);
       return !!(o && o.explains);
     }
@@ -22106,6 +22559,15 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
     // Nobody has said whether it turned. This is the question the log should be
     // asking out loud, not a blank it quietly tolerates.
     function raidUnanswered(r) { return !!r && !!raidOutcomeOpts(r.type) && !raidOutcomeOf(r); }
+    /* THE QUESTION IS NOT THE SAME QUESTION. "Did it happen?" is right for a
+       risk, tolerable for an assumption and meaningless for a decision — a
+       decision plainly happened, that is what makes it a decision. Asking it
+       anyway is how a form gets answered wrongly or not at all. */
+    function raidOutcomeQuestion(type) {
+      if (type === 'Assumption') return 'Did it hold?';
+      if (type === 'Decision') return 'Did it stand?';
+      return 'Did it happen?';
+    }
     // what to call it once it HAS turned — 'Risk hit', 'Assumption broke'
     function raidCauseWord(r) {
       const o = raidOutcomeOf(r);
@@ -22153,7 +22615,7 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
         </tr>`;
       }).join('');
       cont.innerHTML = `<div class="table-wrap"><table>
-        <thead><tr><th title="Risk (might happen) · Assumption (planning on it) · Issue (happening now) · Decision · Exclusion (out of scope — feeds the SOW)">Type</th><th>Title</th><th title="Probability × Impact (1–5 each). 15+ red = act now">Score</th><th>Owner</th><th title="Linked plan task, if any">Task</th><th>Mitigation / detail</th><th title="Open → Mitigating → Closed. How much attention it still needs, not how it turned out.">Status</th><th title="How it TURNED OUT, which status cannot say: “Closed” on a risk reads the same whether it never happened or happened and was handled. Only an entry that turned is shown as the cause of a number.">Did it happen?</th><th></th></tr></thead>
+        <thead><tr><th title="Risk (might happen) · Assumption (planning on it) · Issue (happening now) · Decision · Exclusion (out of scope — feeds the SOW)">Type</th><th>Title</th><th title="Probability × Impact (1–5 each). 15+ red = act now">Score</th><th>Owner</th><th title="Linked plan task, if any">Task</th><th>Mitigation / detail</th><th title="Open → Mitigating → Closed. How much attention it still needs, not how it turned out.">Status</th><th title="How it TURNED OUT, which status cannot say: “Closed” reads the same whether a risk never happened or happened and was handled, and whether a decision still stands or was reversed. Only an entry that turned is shown as the cause of a number.">How it turned out</th><th></th></tr></thead>
         <tbody>${rows}</tbody></table></div>`;
       renderPricing();
     }
@@ -24107,6 +24569,39 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       saveLocal(); renderResources();
       if (calculated) renderAnalytics();
     }
+    /* The incoming side. One picker, because the billing arrangement and the
+       payment terms are written in the same clause of the same contract and
+       nobody knows one without the other. The deposit is separate because it is
+       negotiated separately and is the single biggest lever on the funding gap:
+       a 30% mobilisation payment is often the difference between carrying the
+       engagement and not. */
+    function revTermsPickerHtml(cur, onchange) {
+      const T = revTermsNorm(cur);
+      const opt = (k, d, lbl) => '<option value="' + k + ':' + d + '"'
+        + (T.kind === k && (k === 'none' || T.days === d) ? ' selected' : '') + '>' + escapeHtml(lbl) + '</option>';
+      return '<select class="mini-inp" style="width:auto" onchange="' + onchange + '">'
+        + opt('none', 0, 'as the work is earned (no billing model)')
+        + opt('net', 14, 'on delivery, net 14') + opt('net', 30, 'on delivery, net 30')
+        + opt('net', 45, 'on delivery, net 45') + opt('net', 60, 'on delivery, net 60')
+        + opt('monthly', 14, 'monthly in arrears, net 14')
+        + opt('monthly', 30, 'monthly in arrears, net 30')
+        + opt('monthly', 45, 'monthly in arrears, net 45')
+        + opt('milestone', 14, 'on milestones, net 14')
+        + opt('milestone', 30, 'on milestones, net 30')
+        + opt('milestone', 45, 'on milestones, net 45')
+        + '</select>';
+    }
+    function setProjectRevTerms(v) {
+      const p2 = String(v || 'none:0').split(':');
+      revTerms = revTermsNorm({ kind: p2[0], days: +p2[1], deposit: revTermsNorm(revTerms).deposit });
+      saveLocal(); renderResources();
+      if (calculated) renderAnalytics();
+    }
+    function setRevDeposit(v) {
+      revTerms = revTermsNorm(Object.assign({}, revTermsNorm(revTerms), { deposit: parseFloat(v) || 0 }));
+      saveLocal(); renderResources();
+      if (calculated) renderAnalytics();
+    }
     function setOrgCashTerms(id, v) {
       const lib = loadOrgLib().slice();
       const i = lib.findIndex(o => o.id === id);
@@ -24130,7 +24625,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         + (anyUnset ? '<tr><td class="wl-td" style="font-weight:600;color:var(--muted)">Everyone else</td>'
             + '<td class="wl-td">' + cashTermsPickerHtml(cashTerms, 'setProjectCashTerms(this.value)') + '</td>'
             + '<td class="wl-td wl-wait">this project only — in practice your own people, so usually payroll</td></tr>' : '');
-      return '<h3 style="font-size:0.95rem;margin:1.1rem 0 0.2rem">Payment terms'
+      return '<h3 style="font-size:0.95rem;margin:1.1rem 0 0.2rem">Payment terms — money out'
         + ' <span class="help-text" style="font-weight:400">(when the money actually leaves)</span></h3>'
         + '<p class="help-text" style="margin:0 0 0.4rem">Every money figure in this tool is an <b>accrual</b>: '
         + 'cost lands when the work happens, because it is derived from logged effort. Terms convert that into '
@@ -24143,7 +24638,50 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         + '<p class="help-text" style="margin:0.3rem 0 0">An activity follows the terms of <b>its owner\'s</b> '
         + 'company. Where several firms work one activity the owner decides, because splitting one activity\'s '
         + 'money across two payment schedules is a precision the rest of this file cannot support. Terms are in '
-        + 'calendar days — a payment run does not care that Saturday is not a working day.</p>';
+        + 'calendar days — a payment run does not care that Saturday is not a working day.</p>'
+        + revTermsPanelHtml();
+    }
+    /* MONEY IN. One picker rather than the per-company table above, because
+       there is one client and one contract: who did the work decides when YOU
+       pay, and the contract decides when THEY do. */
+    function revTermsPanelHtml() {
+      const T = projectRevTerms();
+      const ms = revMilestoneDates(hasBaseline(), leafTasks());
+      const fee = revenueAtCompletion();
+      const warn = (T.kind === 'milestone' && !ms.dates.length)
+        ? '<p class="help-text" style="color:var(--critical);margin:0.3rem 0 0">⚠ Billing is set to milestones and '
+          + '<b>this plan has no dated milestone</b>, so there is nothing to invoice against. Everything falls to a '
+          + 'single invoice when the work finishes — which is a real arrangement, but it is not the one selected '
+          + 'here. Add a milestone, or pick another arrangement.</p>'
+        : (T.kind === 'milestone' && ms.undated)
+          ? '<p class="help-text" style="color:var(--warn);margin:0.3rem 0 0">⚠ ' + ms.undated + ' milestone'
+            + (ms.undated === 1 ? '' : 's') + ' carry no date, so nothing can be invoiced against '
+            + (ms.undated === 1 ? 'it' : 'them') + '. That money bills at the finish instead.</p>'
+          : '';
+      return '<h3 style="font-size:0.95rem;margin:1.1rem 0 0.2rem">Billing terms — money in'
+        + ' <span class="help-text" style="font-weight:400">(when the client pays you)</span></h3>'
+        + '<p class="help-text" style="margin:0 0 0.4rem">The other direction, and it is not the same shape. '
+        + 'Cost is one step — the work happens, the money leaves N days later. Revenue is <b>two</b>: nothing is '
+        + 'owed until an invoice is raised, and the arrangement in the contract decides when that is. '
+        + 'Milestone billing is the case worth having: everything earned since the last checkpoint becomes '
+        + 'payable the day the next one completes, and nothing in between.</p>'
+        + '<div class="table-wrap"><table class="wl-t" style="font-size:var(--t-sm)">'
+        + '<thead><tr><th>Arrangement</th><th>Deposit</th><th>Invoicing against</th></tr></thead><tbody>'
+        + '<tr><td class="wl-td">' + revTermsPickerHtml(revTerms, 'setProjectRevTerms(this.value)') + '</td>'
+        + '<td class="wl-td"><input class="mini-inp" type="number" min="0" max="100" step="5" style="width:5.5rem" '
+        + 'value="' + T.deposit + '" oninput="setRevDeposit(this.value)" title="Percent of the fee invoiced at '
+        + 'project start. Often the single biggest lever on the funding gap." aria-label="Deposit percent"> %</td>'
+        + '<td class="wl-td wl-wait">' + (fee > 0 ? fmtMoney(fee) + ' — the fee you will actually invoice, not the '
+            + 'rate-card sum' : '<span style="color:var(--warn)">no price set, so there is nothing to bill</span>')
+        + (T.kind === 'milestone' ? ' · ' + ms.dates.length + ' dated milestone'
+            + (ms.dates.length === 1 ? '' : 's') : '') + '</td></tr>'
+        + '</tbody></table></div>' + warn
+        + '<p class="help-text" style="margin:0.3rem 0 0">The shape comes from the work and the total is the '
+        + '<b>fee</b>: on a fixed price you invoice the contract price, and bill rate × effort is how that price '
+        + 'was arrived at, not what appears on the invoice. On T&amp;M the two are the same number. Like the '
+        + 'terms above this is a <b>projection</b>, not a ledger — to record what was actually invoiced and '
+        + 'received, put it on the activity itself (<b>Invoiced $</b> and <b>Received $</b> in the editor), and '
+        + 'the panel will then tell you how much finished work has never been charged for.</p>';
     }
     function resourceEffortHtml() {
       const rows = resourceEffortData();

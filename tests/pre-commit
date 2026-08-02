@@ -125,6 +125,25 @@ rm -f /tmp/ptr-m.$$
 # things: a survivor says the product has an unguarded region, a skip says this
 # file is stale because the code its anchor pointed at was edited. Read which one
 # it printed before going hunting.
+# The other half of "can this check still fail". The mutants ask whether a
+# defect would be NOTICED; this asks whether the check is reading its input at
+# all. Every sweep is run twice — real plan, then an empty one — and its output
+# must change. A report that is identical whether the plan holds twenty-nine
+# activities or none is not reading the plan, and no amount of prose in the file
+# changes that. Root cause behind four defects fixed one at a time before it
+# existed. ~7m, so it rides with FULL.
+if [ -n "$FULL" ]; then
+  if node tests/vacuity-check.js > /tmp/ptr-v.$$ 2>&1; then
+    echo "  ✓ vacuity              every check reads its input"
+  else
+    echo "  ✗ VACUITY — a check reports the same thing on a full plan and an empty one"
+    sed -n '1,30p' /tmp/ptr-v.$$ | sed 's/^/      /'; fail=1
+  fi
+  rm -f /tmp/ptr-v.$$
+else
+  echo "  · vacuity              skipped (FULL=1 to run it, ~7m)"
+fi
+
 if [ -n "$FULL" ]; then
   if node tests/mutation-engine.js > /tmp/ptr-e.$$ 2>&1; then
     echo "  ✓ mutation · engine    every broken identity caught"

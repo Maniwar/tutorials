@@ -37,7 +37,16 @@ module.exports = [
       const cause = raidCauseChipFor(t.id), watch = raidWatchChipFor(t.id);
       const r = { causeChip: cause !== '', watchChip: watch !== '',
                   watchIsRed: /class="raid-chip"/.test(watch),
-                  asksTheQuestion: /Did it happen\\?/.test(watch) };
+                  /* "Did it HOLD?" — the question an assumption is actually
+                     waiting on. It read /Did it happen\\?/ while every type was
+                     asked the same thing; a decision plainly happened and an
+                     assumption does not "happen" either, so the wording is now
+                     per type and this case moved with it. Kept as a LITERAL
+                     rather than calling raidOutcomeQuestion('Assumption'): an
+                     expectation that shares its source with the thing it checks
+                     agrees by construction, and a build asking every type the
+                     wrong question would pass. */
+                  asksTheQuestion: /Did it hold\\?/.test(watch) };
       raid = saved; return r;
     }` },
 

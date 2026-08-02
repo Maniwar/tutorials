@@ -480,6 +480,68 @@ const QA = JSON.parse(fs.readFileSync(
           say('RAID form', 'the scale says 1–5 and never says what 1 or 5 MEANS, so two people scoring the '
             + 'same risk are not using the same scale and the product they are multiplied into is not '
             + 'comparable between them');
+        /* ── EVERY TYPE THAT CAN TURN OUT MUST BE ABLE TO SAY SO ──────────
+           Reported by a reader looking at a closed Decision with no way to
+           record what had happened to it: Closed is a STATUS — it answers "is
+           anyone still working this entry" — and it cannot say whether the
+           decision stood, was reversed, or was overtaken by a later one. Those
+           are among the most expensive things that happen on an engagement,
+           because the rework gets charged to a choice somebody can point at.
+           Asked per type rather than as a list, so a type added later without
+           an outcome vocabulary is caught here rather than by the next reader
+           who needs one. And the QUESTION has to fit the type: "Did it happen?"
+           on a decision is meaningless — a decision plainly happened, that is
+           what makes it a decision — and a form that asks the wrong question
+           gets the wrong answer or none. */
+        (() => {
+          const need = ['Risk', 'Assumption', 'Decision'];
+          need.forEach(ty => {
+            const opts = raidOutcomeOpts(ty);
+            if (!opts || !opts.length) {
+              say('RAID form', 'a ' + ty + ' has no way to record how it turned out, so the only thing that '
+                + 'can be said about it is a STATUS — which cannot tell "closed because it never happened" '
+                + 'from "closed because it did"');
+              return;
+            }
+            const sel = document.getElementById('rType');
+            if (sel) { sel.value = ty; raidOutcomeFormSync(); }
+            const row = document.getElementById('rOutcomeRow');
+            const oc = document.getElementById('rOutcome');
+            if (!row || row.style.display === 'none')
+              say('RAID form', 'selecting ' + ty + ' hides the outcome control, so the vocabulary exists in '
+                + 'the code and cannot be reached from the form');
+            else if (!oc || oc.options.length < opts.length + 1)
+              say('RAID form', 'the outcome control for a ' + ty + ' offers ' + ((oc && oc.options.length) || 0)
+                + ' choices for ' + opts.length + ' outcomes plus "not recorded"');
+            /* The expected wording is written out HERE, not read from
+               raidOutcomeQuestion(). The first version compared the label
+               against that function and the two agreed by construction: a build
+               where every type asked "Did it happen?" passed, because the label
+               and the expectation came from the same mutated source. A check
+               that shares its answer with the thing it checks proves nothing —
+               the same lesson as pricing-sweep recomputing revenue instead of
+               calling laborRevenue(). */
+            const WANT = { Risk: 'Did it happen?', Assumption: 'Did it hold?', Decision: 'Did it stand?' };
+            const q = (document.querySelector('#rOutcomeRow label[for="rOutcome"]') || {}).textContent || '';
+            if (q && WANT[ty] && q.trim() !== WANT[ty])
+              say('RAID form', 'with ' + ty + ' selected the outcome question reads "' + q.trim()
+                + '" instead of "' + WANT[ty] + '" — a decision plainly happened, that is what makes it a '
+                + 'decision, so asking whether it did gets the wrong answer or none');
+          });
+          /* AND A DECISION IS NOT A FAULT. Every decision outcome explains, and
+             raidIsFault reads `explains` — so the day Decision gained outcomes a
+             decision that simply STOOD would have started painting a red fault
+             chip on the activity it shaped. Good governance drawn as a defect. */
+          const d = { type: 'Decision', outcome: 'stands' };
+          if (raidIsFault(d))
+            say('RAID log', 'a decision that still STANDS is treated as a fault, so recording good governance '
+              + 'puts a red cause chip on the activity it shaped');
+          if (!raidExplains(d))
+            say('RAID log', 'a decision that stands explains nothing, so the reason an activity cost what it '
+              + 'did cannot be attached to the decision that shaped it');
+          if (raidIsFault({ type: 'Decision', outcome: 'reversed' }))
+            say('RAID log', 'a REVERSED decision is drawn as a fault — a reversal is a cause, not a failure');
+        })();
         try { closeRaidForm(); } catch (e) {}
       })();
 
