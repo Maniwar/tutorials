@@ -439,6 +439,25 @@
     .tl-new      { background: #f8fafc; border: 1px solid var(--border); color: var(--muted); }
     @media (max-width: 760px) { #tlPanel table { font-size: var(--t-xs); } }
 
+    /* Render boundaries. Styled as a plain notice rather than a red wall: the
+       message is "this one panel is out, the rest of the page and your plan are
+       fine", and alarm colouring argues against that. The technical line is
+       present but subordinate — a reader wants the reassurance first and the
+       stack second. */
+    .rf-box { background: #fffbeb; border: 1px solid #fde68a; border-left: 3px solid #d97706;
+      border-radius: 8px; padding: 0.75rem 0.9rem; margin: 0.5rem 0; font-size: var(--t-base);
+      line-height: 1.5; color: #78350f; }
+    .rf-what { display: block; margin-top: 0.4rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: var(--t-xs); color: #92400e; word-break: break-word; }
+    .rf-acts { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.6rem; }
+    /* the stale content stays legible — it is dimmed to say "not current", not
+       hidden, because someone mid-task may still need to read the last good
+       draw while they get their plan out */
+    .rf-stale > *:not(.rf-box) { opacity: 0.45; }
+    .rf-banner { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+      padding: 0.6rem 0.9rem; margin: 0 0 0.75rem; font-size: var(--t-sm); line-height: 1.5;
+      color: #78350f; display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+
     .ptr-wrap { font-size: var(--t-base); }
     .ptr-blank { color: var(--muted); font-size: var(--t-base); line-height: 1.5; padding: 0.3rem 0; }
     .ptr-lead { display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem;
@@ -3037,7 +3056,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.01.2331</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.0209</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4408,6 +4427,175 @@ Or say what you want, in your own words:
        forward arrive on popstate instead. file:// refuses pushState in some
        browsers, hence the guarded fallback — the guard flag is what stops the
        fallback's hashchange from looping. */
+    /* ═══ ERROR BOUNDARIES ═══════════════════════════════════════════════════
+       One uncaught TypeError blanked five tabs and the application said nothing.
+
+       That is the whole reason this exists, and it is worth being precise about
+       the shape, because it is not "an exception happened". A corrupt file made
+       findScheduleCycleIds throw; the throw escaped openDepFixWizard, recompute,
+       ensureCalculated and switchTab, none of which caught anything; every
+       render after it in switchTab simply never ran; and the panels kept the
+       first-run markup they were BORN with. So a reader with forty-one
+       activities was told "Nothing to compare yet. Add activities and press
+       Calculate." The failure was not that something broke — it was that the
+       page went on looking like a working page with nothing in it.
+
+       Two rules follow, and they are the opposite of the usual instinct:
+
+         A FAILURE IS NEVER SILENT. try/catch that swallows is how the birth
+         state gets shown as though it were the truth. Every catch here writes
+         what happened into the panel that failed, keeps the message, and says
+         it out loud.
+
+         ONE PANEL FAILING MUST NOT TAKE THE OTHERS. Each render is its own
+         boundary, so a Gantt that cannot draw leaves Analytics, the RAID log
+         and the activity list working — which is also what makes the app
+         usable enough to export your plan and get out.
+
+       Deliberately NOT a global try/catch around switchTab: that would catch
+       everything and tell you nothing about which surface died. The boundary is
+       per render, named, and it knows which container to write into. */
+    let renderFailures = [];
+    const RENDER_HOSTS = {
+      renderGantt: 'ganttContainer', renderPERT: 'pertContainer',
+      renderResources: 'resourcesContainer', renderBaseline: 'baselineContainer',
+      renderAnalytics: 'summaryGrid', renderHealth: 'healthContainer',
+      renderPlanTruth: 'planTruth', renderBank: 'bankPanel', renderCoHistory: 'coHistory',
+      renderPricing: 'pricingContainer',
+      renderRaid: 'raidContainer', renderWBS: 'wbsContainer', renderReqs: 'reqContainer',
+      renderTaskTable: 'taskTableWrap'
+      /* renderNarrativePanel and recompute are deliberately absent: the
+         narrative panel is display:none until there is a narrative, so writing a
+         message into it would hide the message, and recompute draws nothing at
+         all. Both still record and still raise the banner — an unmapped label
+         loses the in-place box, not the reporting. */
+    };
+    function renderFailHtml(label, err, stale) {
+      const msg = String((err && err.message) || err || 'unknown error');
+      return '<div class="rf-box" role="alert"><b>This panel could not be drawn.</b> '
+        + 'Everything else on the page still works, and your plan is unchanged and still saved — '
+        + 'nothing here writes to it. '
+        + (stale ? 'What is below is what was here BEFORE the failure, so do not read it as current. ' : '')
+        + '<span class="rf-what">' + escapeHtml(label) + ' failed: ' + escapeHtml(msg) + '</span>'
+        + '<div class="rf-acts no-print">'
+        + '<button class="btn-sm btn-secondary" onclick="renderRetry(' + ekJs2(label) + ')">↻ Try again</button>'
+        + '<button class="btn-sm btn-secondary" onclick="renderCopyFailures()">📋 Copy the details</button>'
+        + '<button class="btn-sm btn-secondary" onclick="exportJSON()">⬇ Save your plan first</button>'
+        + '</div></div>';
+    }
+    /* PREPENDED, never innerHTML=. Blanking the host reads better and breaks
+       retry: #pertContainer holds the <svg id="pertSvg"> renderPERT draws into
+       and #taskTableWrap holds the <thead> and #taskBody renderTaskTable fills,
+       so overwriting either destroys the structure the retry needs and ↻ Try
+       again would fail forever on its own error message. Stale content is left
+       standing, dimmed, and the notice says in words that it is stale — which is
+       the honest version anyway: "could not be drawn" over a blank panel cannot
+       be told apart from "there is nothing here". */
+    function renderFailInto(host, label, err) {
+      const prior = host.querySelector(':scope > .rf-box');
+      if (prior) prior.remove();
+      const stale = host.innerHTML.trim().length > 0;
+      host.classList.add('rf-stale');
+      host.insertAdjacentHTML('afterbegin', renderFailHtml(label, err, stale));
+    }
+    function renderFailClear(label) {
+      const host = document.getElementById(RENDER_HOSTS[label] || '');
+      if (!host) return;
+      host.querySelectorAll(':scope > .rf-box').forEach(el => el.remove());
+      host.classList.remove('rf-stale');
+    }
+    /* The boundary itself. Returns whether it ran, so a caller can decide
+       whether to carry on — but never rethrows, because the point is that the
+       next render still happens. */
+    function guardRender(label, fn) {
+      try { fn(); }
+      catch (e) {
+        const host = document.getElementById(RENDER_HOSTS[label] || '');
+        renderFailures.push({ label: label, msg: String((e && e.message) || e),
+          stack: String((e && e.stack) || ''), at: new Date().toISOString() });
+        if (renderFailures.length > 20) renderFailures.shift();
+        /* the reporting is itself wrapped: a boundary that can throw while
+           reporting is not a boundary, and the failing render is exactly the
+           situation where the page is already in an odd state */
+        try { if (host) renderFailInto(host, label, e); } catch (e2) {}
+        try { paintRenderBanner(); } catch (e2) {}
+        // and into the console, where a developer will look for it
+        try { console.error('[render boundary] ' + label, e); } catch (e2) {}
+        return false;
+      }
+      /* It drew. Anything this label said last time is no longer true, so the
+         notice and the banner entry go — a stale "could not be drawn" sitting
+         over a panel that is now correct is the same class of lie as the birth
+         state, just pointing the other way. */
+      if (renderFailures.some(f => f.label === label)) {
+        try {
+          renderFailures = renderFailures.filter(f => f.label !== label);
+          paintRenderBanner();
+        } catch (e2) {}
+      }
+      try { renderFailClear(label); } catch (e2) {}
+      return true;
+    }
+    function renderRetry(label) {
+      renderFailures = renderFailures.filter(f => f.label !== label);
+      paintRenderBanner();
+      /* clear the notice BEFORE re-running, not after: a render that rewrites
+         its host wholesale would take the box with it either way, but one that
+         fills a child (renderPERT into #pertSvg, renderTaskTable into #taskBody)
+         would not — and a panel that succeeded while still carrying "this panel
+         could not be drawn" is a worse lie than the failure was. */
+      renderFailClear(label);
+      const fn = window[label];
+      if (typeof fn === 'function') guardRender(label, fn);
+    }
+    function renderCopyFailures() {
+      const t = renderFailures.map(f => f.at + '  ' + f.label + ': ' + f.msg + '\n' + f.stack).join('\n\n')
+        || '(no failures recorded)';
+      try { navigator.clipboard.writeText(t); flashSaved('📋 Failure details copied'); }
+      catch (e) { download('render-failures.txt', t, 'text/plain'); }
+    }
+    /* A panel that failed on a tab you are not looking at is still a fact about
+       this session, so it is said once at the top of the page rather than only
+       where it happened. */
+    function paintRenderBanner() {
+      let el = document.getElementById('renderFailBanner');
+      if (!renderFailures.length) { if (el) el.remove(); return; }
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'renderFailBanner';
+        el.className = 'rf-banner no-print';
+        const main = document.querySelector('main') || document.body;
+        main.insertBefore(el, main.firstChild);
+      }
+      const names = [...new Set(renderFailures.map(f => f.label))];
+      el.innerHTML = '<b>⚠ ' + names.length + ' panel' + (names.length === 1 ? '' : 's')
+        + ' failed to draw this session</b> — ' + escapeHtml(names.join(', '))
+        + '. The rest of the app is working and your plan is unchanged. '
+        + '<button class="btn-sm btn-secondary" onclick="renderCopyFailures()">📋 Copy the details</button>'
+        + '<button class="btn-sm btn-secondary" onclick="renderFailures=[];paintRenderBanner()">Dismiss</button>';
+    }
+    /* The last net. Anything that escapes every boundary above — an event
+       handler, a timer, a rejected promise — would otherwise leave the page
+       looking fine and behaving oddly, which is the state this whole section
+       exists to make impossible. */
+    window.addEventListener('error', ev => {
+      try {
+        renderFailures.push({ label: 'uncaught', msg: String((ev && ev.message) || 'error'),
+          stack: String(((ev && ev.error) || {}).stack || ''), at: new Date().toISOString() });
+        if (renderFailures.length > 20) renderFailures.shift();
+        paintRenderBanner();
+      } catch (e) {}
+    });
+    window.addEventListener('unhandledrejection', ev => {
+      try {
+        const r = ev && ev.reason;
+        renderFailures.push({ label: 'unhandled promise', msg: String((r && r.message) || r),
+          stack: String((r && r.stack) || ''), at: new Date().toISOString() });
+        if (renderFailures.length > 20) renderFailures.shift();
+        paintRenderBanner();
+      } catch (e) {}
+    });
+
     let _tabNav = false;
     function tabNames() {
       return [...document.querySelectorAll('.tab[data-tab]')].map(b => b.dataset.tab);
@@ -4458,30 +4646,42 @@ Or say what you want, in your own words:
       const schedOk = ['pert', 'gantt', 'resources', 'baseline', 'analytics', 'raid'].includes(name)
         ? ensureCalculated() : true;
       if (!schedOk && tasks.length) paintScheduleBlocked();
-      if (name === 'wbs') renderWBS();
-      if (name === 'req') renderReqs();
+      /* Every render below is its own boundary. The wrapping is deliberately
+         uniform and deliberately boring: the moment one of these is left bare it
+         becomes the one that takes the tab down, and there is no way to tell by
+         reading which of them is "safe enough" to skip. */
+      if (name === 'wbs') guardRender('renderWBS', renderWBS);
+      if (name === 'req') guardRender('renderReqs', renderReqs);
       /* `&& calculated` meant a project with NO activities never wrote to these
          containers at all, so the "Calculate first" empty states these three
          functions carry for exactly this case could not be reached by clicking
          the tab — a first-time user saw three blank panels with toolbars and
          instructions about bars and nodes that were not there. Every other tab
          renders unguarded and shows a proper empty state. */
-      if (name === 'pert' && (calculated || !tasks.length)) renderPERT();
-      if (name === 'gantt' && (calculated || !tasks.length)) { renderGantt(); renderNarrativePanel(); }
-      if (name === 'resources' && calculated) renderResources();
-      if (name === 'baseline' && (calculated || !tasks.length)) renderBaseline();
+      if (name === 'pert' && (calculated || !tasks.length)) guardRender('renderPERT', renderPERT);
+      if (name === 'gantt' && (calculated || !tasks.length)) {
+        guardRender('renderGantt', renderGantt);
+        guardRender('renderNarrativePanel', renderNarrativePanel);
+      }
+      if (name === 'resources' && calculated) guardRender('renderResources', renderResources);
+      if (name === 'baseline' && (calculated || !tasks.length)) guardRender('renderBaseline', renderBaseline);
       if (name === 'analytics') {
-        try { renderBank(); } catch (e) {}
-        if (calculated) { renderAnalytics(); renderHealth(); }
+        /* was `try { renderBank(); } catch (e) {}` — a swallow, which is the
+           exact shape this section exists to remove. The bank is cross-project
+           data loaded from another store, so it is the likeliest thing on this
+           tab to fail, and it was the one failure guaranteed to be invisible. */
+        guardRender('renderBank', renderBank);
+        if (calculated) { guardRender('renderAnalytics', renderAnalytics); guardRender('renderHealth', renderHealth); }
         /* and when it is NOT calculated, still ask the panel to state its own
            state. It used to be skipped entirely, so it kept the first-run markup
            it was born with and told a reader with a full plan to add activities.
            A panel that renders only when everything is fine cannot report that
            anything is wrong. */
-        else try { renderPlanTruth(); } catch (e) {}
+        else guardRender('renderPlanTruth', renderPlanTruth);
       }
       if (name === 'raid') {
-        renderRaid(); renderCoHistory();
+        guardRender('renderRaid', renderRaid);
+        guardRender('renderCoHistory', renderCoHistory);
         if (sowDraft && !draftChangeOrder._pending) document.getElementById('sowContainer').innerHTML = sowDraft;
         const sd = document.getElementById('sowDepth'); if (sd && pricing.sowDepth) sd.value = pricing.sowDepth;
         const sm = document.getElementById('sowStoriesMode'); if (sm && pricing.sowStoriesMode) sm.value = pricing.sowStoriesMode;
@@ -7491,7 +7691,9 @@ Or say what you want, in your own words:
          a person pressing Calculate and watching absolutely nothing happen, with
          no text anywhere saying why. Reported exactly that way. The press now
          always produces a visible answer of its own. */
-      if (!recompute()) {
+      let rc = false;
+      if (!guardRender('recompute', () => { rc = recompute(); })) return;
+      if (!rc) {
         const loop = findScheduleCycleIds() || [];
         const nm = loop.map(id => (tasks.find(t => t.id === id) || {}).name).filter(Boolean);
         flashSaved('⚠ Cannot calculate — ' + (nm.length
@@ -7500,14 +7702,19 @@ Or say what you want, in your own words:
           : 'the dependencies contain a circle, so the schedule has no answer.'));
         return;
       }
-      renderTaskTable();
-      renderWBS();
-      renderAnalytics();
-      renderPricing();
-      renderGantt();
-      renderResources();
-      renderBaseline();
-      renderPERT();
+      /* Eight renders in a row, and before the boundaries a throw in the first
+         of them meant the seven after it never ran AND saveLocal() never ran —
+         so the press that was meant to commit the schedule left the panels
+         half-drawn and the result unsaved, silently. Each one is now separately
+         survivable, and the save happens whatever any panel did. */
+      guardRender('renderTaskTable', renderTaskTable);
+      guardRender('renderWBS', renderWBS);
+      guardRender('renderAnalytics', renderAnalytics);
+      guardRender('renderPricing', renderPricing);
+      guardRender('renderGantt', renderGantt);
+      guardRender('renderResources', renderResources);
+      guardRender('renderBaseline', renderBaseline);
+      guardRender('renderPERT', renderPERT);
       saveLocal();
       const btn = document.querySelector('button[onclick="calculate()"]');
       const orig = btn.textContent;
@@ -7580,7 +7787,17 @@ Or say what you want, in your own words:
     function ensureCalculated() {
       if (calculated) return true;
       if (!tasks.length) return false;
-      if (!recompute()) return false;
+      /* recompute() has TWO ways of not producing a schedule, and from out here
+         they used to be indistinguishable: it can RETURN false (a dependency
+         loop — expected, and the wizard exists for it), or it can THROW (a
+         corrupt file reaching findScheduleCycleIds), in which case the throw
+         escaped this function, escaped switchTab, and every render after it in
+         that tab simply never ran. Both now land on the same return, so callers
+         keep their single blocked path — but the throw is recorded and said out
+         loud rather than taking the rest of the page with it. */
+      let ok = false;
+      if (!guardRender('recompute', () => { ok = recompute(); })) return false;
+      if (!ok) return false;
       saveLocal();
       return true;
     }

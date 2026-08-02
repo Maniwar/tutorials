@@ -585,6 +585,52 @@ const MUTANTS = [
   { what: 'cash: a second curve is drawn on a plan with no payment terms at all',
     find: '      const anyTerms = cashAnyTerms();',
     with: '      const anyTerms = true;' },
+
+  /* ── the error boundaries ────────────────────────────────────────────────
+     Every one of these restores a variant of the SAME failure: a throw in one
+     render taking every render after it, with the panels keeping the markup
+     they were born with. It reached a user once and looked like an empty app,
+     not like a crash, which is why it survived a green suite. */
+
+  { what: 'boundary: a failing render rethrows, so the tab dies at the first throw',
+    find: "        try { console.error('[render boundary] ' + label, e); } catch (e2) {}\n        return false;",
+    with: "        try { console.error('[render boundary] ' + label, e); } catch (e2) {}\n        throw e;" },
+
+  { what: 'boundary: the failure is caught and the panel is never told, so it shows what it held before',
+    find: '        try { if (host) renderFailInto(host, label, e); } catch (e2) {}',
+    with: '        try { if (false) renderFailInto(host, label, e); } catch (e2) {}' },
+
+  { what: 'boundary: nothing is said at the top of the page, so a failure on another tab is invisible',
+    find: '        try { paintRenderBanner(); } catch (e2) {}\n        // and into the console',
+    with: '        try { void 0; } catch (e2) {}\n        // and into the console' },
+
+  { what: 'boundary: the tab switch goes back to swallowing one of its renders',
+    find: "        guardRender('renderBank', renderBank);",
+    with: '        try { renderBank(); } catch (e) {}' },
+
+  { what: 'boundary: a throw in the first of eight renders costs the seven after it and the save',
+    find: "      guardRender('renderTaskTable', renderTaskTable);",
+    with: '      renderTaskTable();' },
+
+  { what: 'boundary: a throw inside the schedule pass escapes ensureCalculated exactly as it first did',
+    find: "      if (!guardRender('recompute', () => { ok = recompute(); })) return false;",
+    with: '      ok = recompute();' },
+
+  { what: 'boundary: a host id that is not in the document, so the notice is written nowhere',
+    find: "      renderTaskTable: 'taskTableWrap'",
+    with: "      renderTaskTable: 'taskTableBody'" },
+
+  { what: 'boundary: the notice blanks its host, destroying the element the retry draws into',
+    find: "      host.insertAdjacentHTML('afterbegin', renderFailHtml(label, err, stale));",
+    with: '      host.innerHTML = renderFailHtml(label, err, stale);' },
+
+  { what: 'boundary: the banner cannot be dismissed, so it sits there for the rest of the session',
+    find: '        + \'<button class="btn-sm btn-secondary" onclick="renderFailures=[];paintRenderBanner()">Dismiss</button>\';',
+    with: "        + '';" },
+
+  { what: 'boundary: a panel that has since drawn correctly keeps saying it could not be drawn',
+    find: '      try { renderFailClear(label); } catch (e2) {}\n      return true;',
+    with: '      try { void 0; } catch (e2) {}\n      return true;' },
 ];
 
 const CHECKS = QUICK ? ['run-test-plan.js']
@@ -592,7 +638,8 @@ const CHECKS = QUICK ? ['run-test-plan.js']
      'schedule-sweep.js', 'drawn-surfaces-sweep.js', 'pricing-sweep.js',
      'resourcing-sweep.js', 'persistence-sweep.js', 'export-sweep.js', 'undo-sweep.js', 'baseline-sweep.js', 'cross-surface-sweep.js', 'task-editor-sweep.js',
      'client-facing-sweep.js', 'dialog-sweep.js', 'chart-reconciliation-sweep.js',
-     'bank-sweep.js', 'corrupt-file-sweep.js', 'dynamic-prose-sweep.js', 'navigation-sweep.js'];
+     'bank-sweep.js', 'corrupt-file-sweep.js', 'dynamic-prose-sweep.js', 'navigation-sweep.js',
+     'error-boundary-sweep.js'];
 
 /* Which check is EXPECTED to notice. This is a running order, not a shortcut:
    if the named check does not go red the mutant still walks every other one, so
@@ -617,6 +664,7 @@ const LIKELY = {
   'form:': 'drawn-surfaces-sweep.js', 'drill-in:': 'chart-reconciliation-sweep.js',
   'prose:': 'dynamic-prose-sweep.js', 'heatmap:': 'resourcing-sweep.js',
   'navigation:': 'navigation-sweep.js', 'worklist:': 'navigation-sweep.js',
+  'boundary:': 'error-boundary-sweep.js',
   'criteria:': 'ai-boundary-sweep.js', 'effort:': 'resourcing-sweep.js', 'bank:': 'bank-sweep.js', 'handoff:': 'bank-sweep.js', 'curve:': 'navigation-sweep.js',
   'drill-in:': 'chart-reconciliation-sweep.js', 'backup:': 'persistence-sweep.js', 'accrual:': 'chart-reconciliation-sweep.js', 'cash:': 'chart-reconciliation-sweep.js'
 };

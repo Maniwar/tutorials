@@ -193,6 +193,53 @@ that makes joint work count twice go missing unnoticed. And what the calibration
 learns has to reach the PROMPT, since a signal computed and never sent
 calibrates nothing.
 
+`error-boundary-sweep.js` asks whether one panel failing can still take the
+page, which is a different question from any other file here. Everything else
+checks that a computation is right; this one checks what happens when something
+is wrong.
+
+The plan behind it is in `corrupt-file-sweep.js`: two collided activity ids, a
+TypeError thrown inside `findScheduleCycleIds`, and that single throw escaping
+the finder, `openDepFixWizard`, `recompute`, `ensureCalculated` and `switchTab`
+in turn. Every render after it never ran, so the panels kept the markup they
+were BORN with, and a reader with forty-one activities was told "Nothing to
+compare yet. Add activities and press Calculate." The file went on looking like
+a working application with nothing in it. That corrupt file is healed at the
+door now, which fixes the one cause; the shape it exposed was general, and this
+sweep holds it as properties instead.
+
+A throw in one render leaves the others drawn — the check kills the FIRST of the
+three renders Analytics does and requires the two after it to be there, because
+"every render after the throw never happened" was the actual failure. The panel
+that failed says so IN PLACE, names itself, carries the real error, says the
+plan is unharmed (the first thing a person wants to know and the one thing they
+cannot check for themselves), and offers to save it. `calculate()` still saves
+after a render in it throws, because a throw in the first of eight used to cost
+the seven after it and the save with them, silently. And a throw inside the
+schedule pass is turned into the same "no schedule" answer `ensureCalculated`'s
+callers already handle, rather than escaping — the original shape exactly.
+
+Two of its checks are about the notice not becoming its own defect. The message
+is PREPENDED, never `innerHTML=`, because `#pertContainer` holds the `<svg>`
+`renderPERT` draws into and `#taskTableWrap` holds the `<thead>` and `#taskBody`
+`renderTaskTable` fills: blanking either destroys what the retry needs, and ↻ Try
+again could then only fail, on its own error message. And a panel that has since
+drawn correctly must stop saying it could not be drawn — a stale failure notice
+over a correct panel is the same lie as the birth state, pointing the other way.
+
+The last check reads the SOURCE, with comments stripped. A behavioural check
+cannot tell an empty `catch {}` from a boundary until it happens to ask that
+panel what it says, so a swallow put back beside a boundary would be invisible
+to almost everything above. The first version of that scan read the comment
+QUOTING the swallow it replaced and reported the defect the prose documents —
+a check that trips on prose gets silenced by deleting the prose, which is
+exactly the wrong repair.
+
+Nine mutants back it: rethrow instead of catch, catch and tell nobody, no
+banner, a swallow restored in `switchTab`, a bare render in `calculate()`, an
+unguarded `recompute()`, a host id that is not in the document, a notice that
+blanks its host, and a notice that outlives the failure. All nine caught.
+
 ## The written test plan
 
 `node tests/run-test-plan.js` runs 42 cases and writes two documents:
