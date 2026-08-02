@@ -206,6 +206,35 @@ const MUTANTS = [
      the CHECK fell into: let the residual absorb the difference and the columns
      add up again under a label that says the money cannot be opened. */
 
+  /* Splitting a crowded tab into sections creates two failures the old scroll
+     could not have: a section with no way to reach it, and two buttons that
+     paint the same thing because a key fell through to a default. Both look
+     completely normal. And a link into the tab is now a two-part address, so
+     one that names only the tab lands wherever you happened to be last —
+     "Set day rates" opening the worklist is a button that lies. */
+  { what: 'navigation: two sections of the team tab paint the same panel',
+    find: "        cost:     () => resourceEffortHtml() + billingBreakdownHtml() + cashTermsPanelHtml()",
+    with: "        cost:     () => levelBanner + heatmap + summary" },
+
+  /* The `hidden` attribute only sets display:none from the user-agent sheet,
+     and .toolbar carries an author display:flex — so the attribute reads
+     correctly in the DOM and changes nothing on screen. This one exists to keep
+     the check reading the COMPUTED style; an assertion on the flag agrees with
+     the code and not with the page. */
+  { what: 'navigation: the section-scoped toolbar is hidden by a flag the stylesheet overrules',
+    find: "      if (tools) tools.style.display = resTab === 'workload' ? '' : 'none';",
+    with: "      if (tools) tools.hidden = resTab !== 'workload';" },
+
+  { what: 'navigation: a link into the team tab forgets which section it meant',
+    find: '    function resGoto(k) { setResTab(k); switchTab(\'resources\'); }',
+    with: "    function resGoto(k) { switchTab('resources'); }" },
+
+  /* L1 is the executive view of the chart and it was the one with no committed
+     dates on it: collapsing the phases took every milestone underneath them. */
+  { what: 'criticality: the Gantt loses its milestones the moment a phase is collapsed',
+    find: '      const rows = ganttWbsOrder();',
+    with: '      const rows = visibleWbsOrder();' },
+
   { what: 'drill-in: an activity running exactly to plan is dropped from the reconciliation',
     find: '            if (!(booked > 0.5 || due > 0.5)) return null;',
     with: '            if (!(booked > 0.5 || due > 0.5) || Math.abs(gap(t)) < 0.5) return null;' },

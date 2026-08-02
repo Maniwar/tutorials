@@ -1533,6 +1533,28 @@
     .seg button { border-radius: 0; border: none; background: #fff; color: #334155; box-shadow: none; }
     .seg button + button { border-left: 1px solid var(--border); }
     .seg button:hover { background: #f1f5f9; }
+    /* SUB-TABS WITHIN A TAB.
+       The Resources tab had grown to eleven stacked panels answering six
+       unrelated questions, and the only way to find any of them was to scroll
+       past the other ten. Sub-tabs rather than a tenth top-level tab: the top
+       bar is already nine wide, and curing a crowded page by crowding the
+       navigation is the same disease moved one level up.
+
+       Visually a quieter relative of the main tab bar — same shape, smaller,
+       underline instead of a raised card — so it reads as "inside this tab"
+       rather than as a second set of destinations. */
+    .stab-bar { display: flex; gap: 0.15rem; border-bottom: 1px solid var(--border);
+      margin: -0.25rem 0 0.85rem; overflow-x: auto; }
+    .stab { background: none; border: none; box-shadow: none; border-radius: 0;
+      padding: 0.5rem 0.85rem; font-size: var(--t-md); font-weight: 600; color: var(--muted);
+      border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; cursor: pointer; }
+    .stab:hover { color: var(--text); background: var(--bg); }
+    .stab[aria-selected="true"] { color: var(--primary); border-bottom-color: var(--primary); background: none; }
+    .stab .stab-n { font-weight: 400; font-size: var(--t-sm); color: var(--muted); margin-left: 0.3rem; }
+    .stab[aria-selected="true"] .stab-n { color: var(--primary); }
+    /* the count turns into a warning only when it is a number somebody has to
+       act on — an over-allocation or an overdue item, never a plain total */
+    .stab .stab-n.stab-warn { color: var(--critical); font-weight: 700; }
     /* W4c: header action hierarchy */
     .btn-light { background: #fff; color: #0f172a; }
     .btn-light:hover { background: #e2e8f0; }
@@ -2988,19 +3010,21 @@ Or say what you want, in your own words:
     <div id="view-resources" role="tabpanel" class="view">
       <div class="card">
         <div class="card-header">
-          <h2>Resource workload &amp; over-allocation</h2>
-          <div class="toolbar no-print">
+          <h2>The team</h2>
+          <!-- Leveling acts on the workload, so it appears with the workload and
+               nowhere else. It stays in the header rather than moving into the
+               panel because it is an ACTION on the whole plan, not a control of
+               the picture below it — and because the applied/cleared state is
+               painted onto these three buttons by id from four call sites. -->
+          <div class="toolbar no-print" id="resLevelTools" style="display:none">
             <button id="levelSlackBtn" class="btn-primary btn-sm" onclick="autoLevel()" title="Delay non-critical tasks within their slack — finish date stays fixed">⚖ Level within slack</button>
             <button id="levelExtendBtn" class="btn-sm" style="background:#fef3c7;color:#b45309" onclick="autoLevelExtend()" title="Resolve every conflict even if the finish date must move out — use when you can't add people"><span class="ico" aria-hidden="true">📅</span> Level &amp; extend timeline</button>
             <button id="clearLevelBtn" class="btn-secondary btn-sm" onclick="clearLeveling()">↺ Clear leveling</button>
           </div>
         </div>
         <div class="card-body">
-          <p class="help-text" style="margin-bottom:0.5rem">
-            Each person/team has a capacity (100% = one full-time equivalent). A cell turns
-            <span style="color:var(--critical);font-weight:700">red</span> on any day their assigned work exceeds capacity.
-            Set a task's allocation with <strong>Units %</strong> (in its Edit dialog); raise a capacity below for a team resource (e.g. 300% = 3 people).
-          </p>
+          <div class="stab-bar" id="resTabBar" role="tablist" aria-label="Team sections"></div>
+          <p class="help-text" id="resIntro" style="margin-bottom:0.6rem"></p>
           <div id="levelStatus" class="help-text" style="margin-bottom:0.75rem"></div>
           <div id="resourcesContainer"></div>
         </div>
@@ -3235,7 +3259,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.2301</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.2324</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -9909,6 +9933,39 @@ Or say what you want, in your own words:
       return false;
     }
     function visibleWbsOrder() { return tasksInWbsOrder().filter(({ task }) => !hasCollapsedAncestor(task)); }
+    /* THE GANTT KEEPS ITS MILESTONES AT EVERY LEVEL.
+       In a tree, collapsing a node means "hide what is inside it" and that is
+       right for the task table and the WBS. The Gantt is not a tree, it is the
+       picture you paste into a status email, and L1 is the executive view — the
+       one where milestones matter MOST and were the only thing being dropped.
+       Press L1 on a plan with "Discovery complete" and "Design complete" under
+       their phases and you get three bars and no dates anyone committed to.
+
+       The SOW's own depth control has said "Milestones always appear regardless"
+       since it was written. This makes the chart agree with the document it
+       feeds, rather than the two disagreeing about what a level means.
+
+       Depth is clamped to the deepest ancestor still on screen plus one, so a
+       milestone surfaced from four levels down indents beside the phase it
+       belongs to instead of hanging in empty space under a row that is not its
+       parent. */
+    function ganttWbsOrder() {
+      const shown = new Set();
+      const out = tasksInWbsOrder().filter(({ task }) => {
+        if (!hasCollapsedAncestor(task)) { shown.add(task.id); return true; }
+        return !!task.milestone;
+      });
+      return out.map(o => {
+        if (!o.task.milestone || !hasCollapsedAncestor(o.task)) return o;
+        let d = 0, cur = o.task.parentId, guard = 0;
+        while (cur != null && guard++ < 1000) {
+          if (shown.has(cur)) { const p = tasks.find(x => x.id === cur);
+            d = (tasksInWbsOrder().find(x => x.task.id === cur) || { depth: 0 }).depth + 1; break; }
+          const p = tasks.find(x => x.id === cur); cur = p ? p.parentId : null;
+        }
+        return { task: o.task, depth: Math.min(o.depth, d) };
+      });
+    }
     // Jump from anywhere (a story card, the matrix) to an activity in the plan:
     // expand its ancestors, switch to the WBS view, scroll it into frame and flash
     // it so the eye lands on the right row.
@@ -10863,7 +10920,7 @@ Or say what you want, in your own words:
             bud.why = '<b>' + unrated + '</b> assigned ' + ptrPl(unrated, 'resource') + ' '
               + (unrated === 1 ? 'has' : 'have') + ' no day rate, so the whole plan prices at <b>$0</b>. '
               + 'That is a missing rate card, not a free project.';
-            bud.cta = { label: 'Set day rates', act: "switchTab('resources')" };
+            bud.cta = { label: 'Set day rates', act: "resGoto('team')" };
           } else if (unassigned) {
             bud.why = '<b>' + unassigned + '</b> ' + ptrPl(unassigned, 'activity', 'activities')
               + ' ' + (unassigned === 1 ? 'has' : 'have') + ' nobody assigned, so there is no rate to '
@@ -10872,7 +10929,7 @@ Or say what you want, in your own words:
           } else {
             bud.why = 'Nothing in this plan carries money — no day rates and no fixed costs — so there is '
               + 'no cost signal to compare against.';
-            bud.cta = { label: 'Set day rates', act: "switchTab('resources')" };
+            bud.cta = { label: 'Set day rates', act: "resGoto('team')" };
           }
           return;
         }
@@ -10888,7 +10945,7 @@ Or say what you want, in your own words:
           bud.why = '<b>' + money(actCost) + '</b> of cost is booked against a plan that prices at <b>$0</b> — '
             + 'money is going out with nothing to compare it to. Set the day rates the work is actually '
             + 'being done at.';
-          bud.cta = { label: 'Set day rates', act: "switchTab('resources')" };
+          bud.cta = { label: 'Set day rates', act: "resGoto('team')" };
           return;
         }
         // ---- WHERE THE PLAN SAID WE'D BE, against where we are --------------
@@ -11984,7 +12041,7 @@ Or say what you want, in your own words:
           : 'Every dated activity prices at <b>$0</b>. ')
           + 'A curve here would be a flat line on the floor with a date attached, which asserts “we plan to '
           + 'spend nothing” when the truth is “nobody has entered a rate”.';
-        c.cta = { label: 'Set day rates', act: "switchTab('resources')" };
+        c.cta = { label: 'Set day rates', act: "resGoto('team')" };
         return c;
       }
 
@@ -13078,7 +13135,7 @@ Or say what you want, in your own words:
       // summary cards
       const p80str = mcResult ? mcResult.p80.toFixed(1) : '—';
       const rl = resourceLoad || computeResourceLoad();
-      const overCard = `<div class="stat-card ${rl.overResourceDays ? 'critical' : ''}" style="cursor:pointer" onclick="switchTab('resources')" title="Open Resources tab">
+      const overCard = `<div class="stat-card ${rl.overResourceDays ? 'critical' : ''}" style="cursor:pointer" onclick="resGoto('workload')" title="Open the workload heatmap">
         <div class="value">${rl.overResourceDays}</div><div class="label">Over-allocated ${rl.overResourceDays === 1 ? 'resource-day' : 'resource-days'}</div></div>`;
       document.getElementById('summaryGrid').innerHTML = `
         <div class="stat-card" style="cursor:pointer" onclick="switchTab('gantt')" title="Critical-path length if every task takes exactly its expected (TE) duration. Click to open the Gantt."><div class="value">${projectDuration.toFixed(1)}</div><div class="label">Deterministic duration (${u})</div></div>
@@ -13585,7 +13642,7 @@ Or say what you want, in your own words:
       const holidays = getHolidaySet();
       const start = projectStartDate();
       const rv = computeReserves();
-      const rows = visibleWbsOrder();
+      const rows = ganttWbsOrder();
       const rowIndexOf = {}; rows.forEach((o, i) => rowIndexOf[o.task.id] = i);
       const visibleIds = new Set(rows.map(o => o.task.id));
 
@@ -14232,13 +14289,113 @@ Or say what you want, in your own words:
       return Math.max(180, Math.min(640, Math.ceil(maxPx)));
     }
 
+    /* ═══ THE TEAM TAB, IN FOUR QUESTIONS ═══════════════════════════════════
+       It used to be eleven panels in one scroll, in an order nobody chose: the
+       leveling receipt, rate cards, the roster, the shared library, the
+       worklist, per-person effort, payment terms, the heatmap, its legend, an
+       over-allocation summary, and the billing breakdown. Six unrelated
+       questions with no seam between them, and the only way to reach the last
+       one was to scroll past the other ten.
+
+       They are now grouped by the question each answers, in the order the
+       questions actually arrive:
+
+         Team      — who is on this, what they cost us, what we charge for them
+         Workload  — does it fit, and where does it not
+         Worklist  — who can start what right now
+         Cost      — what the people add up to, and when the money moves
+
+       Build the team, check it fits, run it, cost it. Nothing was deleted and
+       nothing was rewritten; the panels are the same panels, and what changed
+       is that you can now get to one without reading the others.
+
+       WHY THE WORKLIST IS A SUB-TAB AND NOT A TENTH TOP-LEVEL TAB. It is a
+       per-owner view of open work, so it belongs with the people it is about —
+       and the top bar is already nine wide. Curing a crowded page by crowding
+       the navigation is the same disease moved up one level. It gets a count
+       badge instead, so the thing a tenth tab was really for — knowing there is
+       something in there worth opening — is on screen without the tab. */
+    const RES_TABS = [
+      { k: 'team',     lbl: 'Team',
+        intro: 'Who is on this engagement, what they cost you and what you charge for them. Rate cards fill '
+             + 'the columns in one move; the library carries a person between engagements so nobody is retyped.' },
+      { k: 'workload', lbl: 'Workload',
+        intro: 'Capacity is 100% for one full-time equivalent. A cell turns red on any day someone’s assigned '
+             + 'work exceeds it. Set a task’s share with Units % in its editor, or raise a capacity on the Team '
+             + 'tab for a pooled resource. Leveling is in the header: within slack holds the finish date, extend '
+             + 'moves it out.' },
+      { k: 'worklist', lbl: 'Worklist',
+        intro: 'What each person can start today, read straight off the dependency network rather than off a '
+             + 'date. Blocked work names what is blocking it, so the list is a set of conversations to have.' },
+      { k: 'cost',     lbl: 'Cost & billing',
+        intro: 'What the people add up to: effort against cost rates and bill rates per person, the same total '
+             + 'broken down as a billing table, and the payment terms that decide when any of it lands.' }
+    ];
+    let resTab = 'team';
+    try { const v = localStorage.getItem('pertGantt.resTab');
+      if (v && RES_TABS.some(t => t.k === v)) resTab = v; } catch (e) {}
+    function setResTab(k) {
+      if (!RES_TABS.some(t => t.k === k)) return;
+      resTab = k;
+      try { localStorage.setItem('pertGantt.resTab', k); } catch (e) {}
+      renderResources();
+    }
+    /* EVERY LINK INTO THIS TAB NOW HAS TO SAY WHICH SECTION IT MEANT.
+       Before the split there was one destination and switchTab('resources') was
+       a complete instruction. With four sections it is not: "Set day rates"
+       landing on the Worklist because that is where you happened to be last is
+       worse than the crowded page it replaced, because the button no longer
+       does what it says. Sub-tabs turn a link into a two-part address, and
+       every existing caller was written when there was only one part. */
+    function resGoto(k) { setResTab(k); switchTab('resources'); }
+    /* The bar is painted from the SAME list the panels are built from, so a
+       section can never exist without a way to reach it — which is how a panel
+       ends up unreachable and nobody notices for a month. */
+    function paintResTabs(counts) {
+      const bar = document.getElementById('resTabBar');
+      const intro = document.getElementById('resIntro');
+      const tools = document.getElementById('resLevelTools');
+      const st = document.getElementById('levelStatus');
+      /* style.display, NOT the hidden attribute. `hidden` only sets display:none
+         through the user-agent stylesheet, and .toolbar carries an author rule
+         of display:flex — author beats UA, so the attribute was set correctly,
+         reported correctly by the DOM, and did nothing at all on screen. The
+         leveling buttons sat on all four sections while `tools.hidden` was
+         true. A check that reads the attribute agrees with the code and not
+         with the page; this is why the one below reads the computed style. */
+      if (tools) tools.style.display = resTab === 'workload' ? '' : 'none';
+      if (st) st.style.display = resTab === 'workload' ? '' : 'none';
+      if (!bar) return;
+      bar.innerHTML = RES_TABS.map(t => {
+        const c = counts ? counts[t.k] : null;
+        return '<button type="button" class="stab" role="tab" aria-selected="' + (t.k === resTab)
+          + '" onclick="setResTab(\'' + t.k + '\')">' + escapeHtml(t.lbl)
+          + (c && c.n ? '<span class="stab-n' + (c.warn ? ' stab-warn' : '') + '" title="'
+              + escapeHtml(c.tip || '') + '">' + c.n + '</span>' : '') + '</button>';
+      }).join('');
+      const cur = RES_TABS.find(t => t.k === resTab);
+      if (intro) { intro.textContent = cur ? cur.intro : ''; intro.style.display = cur ? '' : 'none'; }
+    }
+
     // ========================= RESOURCES RENDER =========================
     function renderResources() {
       const cont = document.getElementById('resourcesContainer');
+      /* The bar is hidden until there is something behind all four of its
+         sections. Four tabs over an empty state is navigation to nowhere, and
+         it makes the page look busier at exactly the moment it holds nothing. */
+      const hideTabs = () => {
+        const bar = document.getElementById('resTabBar'), intro = document.getElementById('resIntro'),
+              tools = document.getElementById('resLevelTools'), st = document.getElementById('levelStatus');
+        if (bar) bar.innerHTML = '';
+        if (intro) intro.style.display = 'none';
+        if (tools) tools.style.display = 'none';
+        if (st) st.style.display = 'none';
+      };
       if (!calculated) {
         // the library belongs to no schedule, so it renders before one exists —
         // a roster is usually built BEFORE the first Calculate, which is exactly
         // when not retyping eight people is worth the most
+        hideTabs();
         cont.innerHTML = '<div class="empty-state"><h3>Calculate first</h3></div><div id="resLibPanel"></div>';
         try { renderResLib(); } catch (e) {}
         return;
@@ -14247,6 +14404,7 @@ Or say what you want, in your own words:
       const rl = resourceLoad;
       const names = Object.keys(rl.perResource).sort((a, b) => rl.perResource[b].overDays.length - rl.perResource[a].overDays.length || a.localeCompare(b));
       if (!names.length) {
+        hideTabs();
         cont.innerHTML = `<div class="empty-state"><h3>No resources yet</h3><p>Add people/teams here, then assign them as <strong>Owner</strong> on activities — workload and over-allocation are tracked automatically.</p>
           <button class="btn-primary" style="margin-top:1rem" onclick="addResourcePrompt()"><span class="ico" aria-hidden="true">➕</span> Add resource</button></div>
           <div id="resLibPanel"></div>`;
@@ -14473,14 +14631,31 @@ Or say what you want, in your own words:
              <span class="help-text" style="display:block;margin-top:0.25rem">Re-clicking a Level button just re-runs it against the latest plan (safe). <button class="btn-sm btn-secondary" onclick="clearLeveling()">↺ Clear leveling</button> undoes the shifts.</span>
            </div>`;
       }
-      cont.innerHTML = `
-        ${levelBanner}
-        ${renderRateCardPanel(names)}
-        ${roster}
-        <div id="resLibPanel"></div>
-        ${worklistHtml()}
-        ${resourceEffortHtml()}
-        ${cashTermsPanelHtml()}
+      /* THE COUNTS ON THE TABS. Only numbers somebody has to act on, and only
+         where the number would otherwise be invisible until you opened the
+         section. A roster size is a fact and gets no badge; over-allocated
+         people and overdue work are findings and do. Being able to see there is
+         nothing to open is most of the value of putting them there at all. */
+      const wlPeople = (() => { try { return worklistData(); } catch (e) { return []; } })();
+      const wlLate = wlPeople.reduce((s, p) => s + (p.overdue || 0), 0);
+      const wlNow = wlPeople.reduce((s, p) => s + (p.now ? p.now.length : 0), 0);
+      const overPeople = names.filter(n => rl.perResource[n].overDays.length).length;
+      const resCounts = {
+        team: { n: names.length, tip: names.length + ' on the roster' },
+        workload: overPeople
+          ? { n: overPeople, warn: true, tip: overPeople + ' person/team over capacity on at least one day' }
+          : null,
+        worklist: wlLate
+          ? { n: wlLate, warn: true, tip: wlLate + ' item(s) past their planned finish' }
+          : (wlNow ? { n: wlNow, tip: wlNow + ' item(s) can be started now' } : null),
+        cost: null
+      };
+      paintResTabs(resCounts);
+
+      /* One panel is painted, not four hidden with CSS. The heatmap alone is a
+         cell per resource per calendar day, and building three sections nobody
+         is looking at was most of what made this tab feel heavy. */
+      const heatmap = `
         <h3 style="font-size:0.95rem;margin-bottom:0.4rem">Daily workload heatmap <span class="help-text" style="font-weight:400">(click any loaded day to drill into its tasks)</span></h3>
         <div id="rlDrill"></div>
         <div class="rl-wrap">
@@ -14494,11 +14669,21 @@ Or say what you want, in your own words:
           <div class="legend-item"><div class="legend-swatch" style="background:rgba(37,99,235,0.75)"></div>Near capacity</div>
           <div class="legend-item"><div class="legend-swatch" style="background:#dc2626"></div>Over capacity / work on PTO</div>
           <div class="legend-item"><div class="legend-swatch" style="background:#e9d5ff"></div>PTO</div>
-        </div>
-        ${summary}
-        ${billingBreakdownHtml()}`;
+        </div>`;
 
-      try { renderResLib(); } catch (e) {}
+      const PANELS = {
+        team:     () => renderRateCardPanel(names) + roster + '<div id="resLibPanel"></div>',
+        // the leveling receipt belongs with the thing it levelled
+        workload: () => levelBanner + heatmap + summary,
+        worklist: () => worklistHtml()
+          || '<div class="empty-state"><h3>Nothing to list</h3><p>The worklist reads open activities per owner. '
+             + 'Assign owners on the Tasks tab and it fills itself in.</p></div>',
+        cost:     () => resourceEffortHtml() + billingBreakdownHtml() + cashTermsPanelHtml()
+      };
+      cont.innerHTML = (PANELS[resTab] || PANELS.team)();
+
+      // the library paints into a host that only exists on the Team panel
+      if (resTab === 'team') { try { renderResLib(); } catch (e) {} }
       // reflect the applied leveling mode on the header buttons — "applied"
       // state lives on the button itself, so the banner reads as a receipt
       (() => {
@@ -14529,7 +14714,11 @@ Or say what you want, in your own words:
         const isOver = (R.overDays || []).indexOf(iso) >= 0;
         const settled = !isOver && day.load > R.capacity + 1e-6;
         const list = day.tasks.map(idq => tasks.find(x => x.id === idq)).filter(Boolean);
+        // the drill-in host lives on the Workload panel and only on it, so a
+        // click that somehow arrives while another section is painted finds
+        // nothing rather than throwing inside a click handler
         const el = document.getElementById('rlDrill');
+        if (!el) return;
         el.innerHTML = `<div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:.6rem .8rem;margin:.4rem 0 .6rem;font-size:.8rem">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
             <strong>📅 ${escapeHtml(name)} — ${escapeHtml(fmtNice(dd))}: ${Math.round(day.load)}% of ${R.capacity}% capacity${isOver ? ' <span style="color:var(--critical);font-weight:700">⚠ over</span>' : settled ? ' <span style="color:var(--muted);font-weight:600">— finished work</span>' : ''}</strong>

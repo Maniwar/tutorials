@@ -148,7 +148,14 @@ const DATA = FIXTURE();
       say('Status report', 'has a resourcing line and does not state the ' + n + ' over-allocated resource-days');
 
     // ── 6. the panel on screen ────────────────────────────────────────────
-    switchTab('resources'); renderResources();
+    switchTab('resources');
+    /* The workload section, selected by name. Since the team tab was split into
+       four sections, reaching the tab no longer paints the heatmap or the
+       over-allocation total — those live on Workload, and which section is
+       showing is a remembered preference rather than anything this file sets.
+       Without this the whole group reads an empty container and reports the
+       product for drawing nothing. */
+    if (typeof setResTab === 'function') setResTab('workload'); else renderResources();
     const host = document.getElementById('resourcesContainer');
     const txt = host ? strip(host.innerHTML) : '';
     if (/NaN|Infinity|undefined/.test(txt)) say('Resources panel', 'prints a broken figure');
@@ -240,7 +247,8 @@ const DATA = FIXTURE();
       if (n2 > 0 && !out.reportNamesWho)
         say('Status report', 'states a count without naming the over-allocated people');
 
-      switchTab('resources'); renderResources();
+      switchTab('resources');
+      if (typeof setResTab === 'function') setResTab('workload'); else renderResources();
       const h2 = document.getElementById('resourcesContainer');
       const t2 = h2 ? strip(h2.innerHTML) : '';
       out.panelSays = (t2.match(/(\d+)\s+over-allocated resource-day/) || [])[1] || null;
@@ -299,7 +307,8 @@ const DATA = FIXTURE();
        than go quiet. */
     const heatmap = (() => {
       const out = {};
-      switchTab('resources'); renderResources();
+      switchTab('resources');
+      if (typeof setResTab === 'function') setResTab('workload'); else renderResources();
       const host = document.getElementById('resourcesContainer');
       const rl3 = computeResourceLoad();
       const truth = new Set();
@@ -489,8 +498,13 @@ const DATA = FIXTURE();
         say('Effort by company', 'people with no company are grouped under "' + unset.name
           + '", which reads as a real firm');
 
-      // and it has to be drawn, not merely computed
-      const effTxt = host ? host.textContent.replace(/\s+/g, ' ') : '';
+      /* And it has to be drawn, not merely computed — on the section it belongs
+         to. Per-person effort is a cost question and lives under Cost & billing
+         now, so this reads that section rather than whichever one the heatmap
+         checks above left showing. */
+      if (typeof setResTab === 'function') setResTab('cost');
+      const effHost = document.getElementById('resourcesContainer') || host;
+      const effTxt = effHost ? effHost.textContent.replace(/\s+/g, ' ') : '';
       out.effortTableDrawn = /Effort & variance by person|Effort &amp; variance by person/.test(effTxt);
       if (!out.effortTableDrawn)
         say('Effort by person', 'the breakdown is computed and never drawn on the tab it belongs to');

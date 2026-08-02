@@ -443,7 +443,10 @@ module.exports = [
       w.slice(0, 2).forEach(t => { const n = taskParticipants(t)[0].name;
         if (resources[n]) resources[n].capacity = 25; });
       calculate();
-      switchTab('resources'); renderResources();
+      switchTab('resources');
+      // the total lives on the Workload section since the team tab was split;
+      // reaching the tab is no longer the same as reaching the panel
+      if (typeof setResTab === 'function') setResTab('workload'); else renderResources();
       const panel = document.getElementById('resourcesContainer').textContent.replace(/\\s+/g, ' ');
       autoLevel();
       const st = (document.getElementById('levelStatus') || {}).textContent || '';

@@ -153,6 +153,46 @@ const QA = JSON.parse(fs.readFileSync(
         });
       }
 
+      /* ── 1b. EVERY MILESTONE SURVIVES EVERY ZOOM LEVEL ──────────────────
+         L1 collapsed the phases and took the milestones down with them, so the
+         executive view of the chart — the one that gets pasted into a status
+         email — showed three bars and not one date anybody had committed to.
+         The SOW's own depth control has said "milestones always appear
+         regardless" since it was written; the chart it feeds did the opposite.
+
+         Asserted across ALL THREE levels rather than only the one that broke.
+         A milestone is the thing a Gantt exists to communicate, and there is no
+         level at which dropping it is the right answer — so the check states
+         that rule, not the single case that was reported.
+
+         The names are read out of the drawn SVG, not out of the row model, so
+         a level that computes the right set and paints the wrong one is still
+         caught. */
+      switchTab('gantt');
+      {
+        const allMs = tasks.filter(t => t.milestone);
+        out.milestonesInPlan = allMs.length;
+        if (!allMs.length) {
+          out.milestoneLevels = 'SKIPPED-no-milestones';
+        } else {
+          const seen = {};
+          [['L1', 0], ['L2', 1], ['All', Infinity]].forEach(([lbl, depth]) => {
+            setCollapseLevel(depth);
+            renderGantt();
+            const g = document.getElementById('ganttChart') || document.getElementById('ganttContainer');
+            const txt = g ? (g.textContent || '') : '';
+            const missing = allMs.filter(t => txt.indexOf(t.name.replace(/^◆\s*/, '')) < 0);
+            seen[lbl] = allMs.length - missing.length;
+            if (missing.length)
+              say('Gantt', 'at ' + lbl + ', ' + missing.length + ' of ' + allMs.length
+                + ' milestone(s) are not drawn at all, e.g. "' + missing[0].name
+                + '" — the level meant to be the executive view is the one with no committed dates on it');
+          });
+          out.milestoneLevels = seen;
+          setCollapseLevel(Infinity); renderGantt();
+        }
+      }
+
       // ═══ 2. THE PERT NETWORK ═════════════════════════════════════════════
       switchTab('pert');
       try { renderPERT(); } catch (e) { say('PERT', 'threw while rendering: ' + e.message); }

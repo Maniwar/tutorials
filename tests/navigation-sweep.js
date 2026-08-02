@@ -96,6 +96,100 @@ const { chromium } = requirePlaywright();
     say('Navigation', mism.length + ' tab(s) do not write their own name into the address: '
       + mism.map(x => x.tab + '→"' + x.hash + '"').join(', '));
 
+  /* ═══ 1c. A SECTION BEHIND A SUB-TAB IS STILL A PLACE YOU CAN GET TO ═════
+     The team tab was eleven panels in one scroll and is now four sections
+     behind a sub-tab bar. That trades one problem for two new ones, and both
+     are silent:
+
+       · a section can exist in the code with no button that reaches it, which
+         is strictly worse than the crowded scroll it replaced — at least
+         everything was on screen;
+       · two buttons can paint the same thing, because a key that misses the
+         panel map falls through to a default and the tab still looks alive.
+
+     So the bar is required to name every declared section, every section is
+     required to paint something, and no two are allowed to paint the same
+     thing. The last one is what catches a wiring mistake: a panel builder
+     pointed at the wrong key looks completely normal until you compare two.
+
+     And the links INTO the tab are checked, because a sub-tab turns a
+     destination into a two-part address and every caller was written when
+     there was only one part. "Set day rates" landing wherever you happened to
+     be last is a button that no longer does what it says. */
+  await page.goto(APP, {waitUntil:'load'});
+  await page.evaluate(d => { hydrate(d); calculate(); }, FIXTURE());
+  await page.waitForTimeout(700);
+  const sub = await page.evaluate(() => {
+    const bad = [], out = {};
+    const say2 = x => bad.push('Team sections :: ' + x);
+    if (typeof RES_TABS === 'undefined') { say2('there are no declared sections to check'); return { bad, out }; }
+    switchTab('resources');
+    const seen = {};
+    RES_TABS.forEach(t => {
+      setResTab(t.k);
+      const c = document.getElementById('resourcesContainer');
+      const txt = c ? (c.textContent || '').replace(/\s+/g, ' ').trim() : '';
+      seen[t.k] = txt;
+      const btn = [...document.querySelectorAll('#resTabBar .stab')]
+        .find(b => (b.textContent || '').indexOf(t.lbl) === 0);
+      if (!btn) say2('"' + t.lbl + '" is a section with no button that reaches it');
+      else if (btn.getAttribute('aria-selected') !== 'true')
+        say2('selecting "' + t.lbl + '" left a different button marked as the current one');
+      if (txt.length < 40)
+        say2('"' + t.lbl + '" paints ' + txt.length + ' characters — the section is a dead end');
+      /* Leveling acts on the workload and belongs nowhere else. Read off the
+         COMPUTED STYLE, not off the `hidden` attribute. The first version read
+         the attribute, agreed with the code, and passed on a build where the
+         buttons were visible on all four sections: `hidden` only sets
+         display:none from the user-agent sheet and .toolbar carries an author
+         display:flex, which wins. An element's own property said hidden while
+         the page showed it — asserting the flag instead of the visibility is
+         the same mistake as asserting a row exists instead of what it says. */
+      const tools = document.getElementById('resLevelTools');
+      const lvlShown = !!tools && getComputedStyle(tools).display !== 'none' && !!tools.offsetParent;
+      if (tools && lvlShown !== (t.k === 'workload'))
+        say2('the leveling buttons are ' + (lvlShown ? 'VISIBLE on' : 'not visible on') + ' "' + t.lbl
+          + '" — they act on the workload and belong with it');
+    });
+    const keys = Object.keys(seen);
+    for (let i = 0; i < keys.length; i++)
+      for (let j = i + 1; j < keys.length; j++)
+        if (seen[keys[i]] && seen[keys[i]] === seen[keys[j]])
+          say2('"' + keys[i] + '" and "' + keys[j] + '" paint exactly the same thing, so one of them is '
+            + 'wired to the wrong panel and the bar is showing a section that does not exist');
+    out.sections = keys.length;
+    out.sizes = keys.map(k => k + ':' + seen[k].length);
+
+    /* The two deep links that exist, checked against what their LABEL promises
+       rather than against the key they happen to pass. */
+    setResTab('worklist');
+    const rateBtn = (() => { switchTab('analytics'); renderAnalytics();
+      return [...document.querySelectorAll('#view-analytics button')]
+        .find(b => /set day rates/i.test(b.textContent || '')); })();
+    if (rateBtn) { rateBtn.click(); out.rateLanding = resTab;
+      if (resTab !== 'team') say2('"Set day rates" opened the "' + resTab + '" section, and the rates are '
+        + 'on Team — the button no longer does what it says'); }
+    else out.rateLanding = 'SKIPPED-no-such-button-on-this-plan';
+    /* Found by what it DOES — it is a card that navigates into this tab — not
+       by the word "over" appearing in its text. The first version matched on
+       the word and picked up a different card whose onclick goes somewhere
+       else, then reported the product for not navigating. A link is identified
+       by its target, and the target is in the attribute. */
+    setResTab('worklist');
+    const intoTeam = [...document.querySelectorAll('#view-analytics [onclick]')]
+      .filter(c => /resGoto|switchTab\('resources'\)/.test(c.getAttribute('onclick') || ''));
+    out.linksIntoTeam = intoTeam.length;
+    const overCard = intoTeam.find(c => /capacity|allocat|over/i.test(c.textContent || ''));
+    if (overCard) { overCard.click(); out.overLanding = resTab;
+      if (resTab !== 'workload') say2('the card that opens this tab from the analytics summary landed on "'
+        + resTab + '" rather than the workload it is about — its onclick is: '
+        + (overCard.getAttribute('onclick') || '')); }
+    else out.overLanding = 'SKIPPED-nothing-on-analytics-links-into-this-tab';
+    return { bad, out };
+  });
+  sub.bad.forEach(x => bad.push(x));
+  note.teamSections = sub.out;
+
   /* ═══ 1b. A READING YOU CAN REACH ═══════════════════════════════════════
      The spend curve's readout names the activities behind the day you point at,
      each as a button that opens it. The buttons sit BELOW the chart, so moving
@@ -186,8 +280,14 @@ const { chromium } = requirePlaywright();
     if (!row.state)
       say2('a row states no status at all, so a due date is the only thing said about the work');
 
-    // and it must be DRAWN, not merely computed
-    switchTab('resources'); renderResources();
+    /* And it must be DRAWN, not merely computed. The worklist now lives behind
+       a sub-tab, so reaching the tab is no longer the same as reaching the
+       panel — every check below reads what is painted, and painting is what
+       selecting the section does. Selected explicitly rather than relying on
+       whichever section happened to be remembered from the last run, which is
+       a stored preference and therefore not a fact this file controls. */
+    switchTab('resources');
+    if (typeof setResTab === 'function') setResTab('worklist'); else renderResources();
     const host = document.getElementById('resourcesContainer');
     const html = host ? host.innerHTML : '';
     out.drawnRiskMarks = (html.match(/wl-risk-i/g) || []).length;
