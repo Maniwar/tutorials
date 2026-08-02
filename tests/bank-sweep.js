@@ -405,6 +405,106 @@ const { chromium } = requirePlaywright();
     })();
 
     saveBank([]);
+    /* ═══ DOES THIS CLIENT PAY, AND HOW FAST ════════════════════════════════
+       The bank learned how long work TAKES and archived what was invoiced and
+       received without reading any of it. Data accumulating that nothing looks
+       at is a slower version of not collecting it.
+
+       CONSTRUCTED, because no committed fixture has ever been archived with an
+       invoice figure — without building the history this whole block would
+       confirm an empty book, which is the shape the panel fails in anyway. */
+    ran('payment·history');
+    (() => {
+      const keep = loadBank();
+      const mk = (proj, i, inv, paid, days) => ({ proj: proj, pid: 'p' + proj, when: '2026-01-01',
+        name: 'A' + i, tax: 'delivery', te: 2, actual: 2, ratio: 1, basis: 'logged', unit: 'days',
+        org: 'Northwind', invoiced: inv, paid: paid, invoicedDate: '2026-03-01',
+        paidDate: days == null ? '' : '2026-04-01', daysToPay: days });
+      const rows = [];
+      [10, 20, 30].forEach((d, i) => rows.push(mk('Acme', i, 1000, 1000, d)));
+      [70, 80, 90].forEach((d, i) => rows.push(mk('Globex', i + 10, 2000, 2000, d)));
+      rows.push(mk('Globex', 20, 5000, 0, null));                 // invoiced, nothing back
+      rows.push(Object.assign(mk('Acme', 30, null, null, null), { invoiced: null, paid: null }));
+      saveBank(rows);
+      const P = bankPayment();
+      if (!P) { say('bankPayment returned nothing on a bank with payment history'); saveBank(keep); return; }
+      out.payMedian = P.medianDays; out.payN = P.paidN; out.payCollected = P.collectedPct;
+
+      /* THE MEDIAN, NOT THE MEAN. 10/20/30/70/80/90 has a median of 50 and a
+         mean of 50 too — so the set is deliberately chosen NOT to distinguish
+         them, and the outlier case below is what does. */
+      if (P.medianDays !== 50)
+        say('six settled invoices at 10/20/30/70/80/90 days report a median of ' + P.medianDays + ', not 50');
+      if (P.paidN !== 6)
+        say('only ' + P.paidN + ' of 6 settled invoices counted toward days-to-pay');
+      /* AN OUTSTANDING INVOICE HAS NO DURATION. Counting it as zero flatters the
+         figure and counting today's gap turns an unpaid invoice into a fast one
+         the day after it is raised. It has no paid date, so it must not appear. */
+      const withOutlier = rows.concat([mk('Acme', 40, 1000, 1000, 300)]);
+      saveBank(withOutlier);
+      const P2 = bankPayment();
+      out.payMedianWithOutlier = P2.medianDays;
+      if (P2.medianDays > 80)
+        say('one invoice chased for 300 days moved the headline to ' + P2.medianDays
+          + ' — that is a mean, and the figure people want is what NORMALLY happens');
+      saveBank(rows);
+
+      // the money adds up: 3x1000 + 3x2000 + 5000 invoiced, 3x1000 + 3x2000 received
+      if (P.invoiced !== 14000) say('invoiced totals ' + P.invoiced + ', not 14000');
+      if (P.received !== 9000) say('received totals ' + P.received + ', not 9000');
+      if (P.outstanding !== 5000) say('outstanding reads ' + P.outstanding + ' against 14000 invoiced and 9000 received');
+      if (P.collectedPct !== 64) say('collected reads ' + P.collectedPct + '%, not 64%');
+      if (P.neverInvoicedN !== 1)
+        say(P.neverInvoicedN + ' archived rows counted as never invoiced; one was filed with no invoice figure');
+
+      /* BY ENGAGEMENT, because one project is one client and days-to-pay is the
+         client's habit. Grouping it by the company on the record would blame the
+         firm that DID the work for the behaviour of whoever pays for it. */
+      const byE = {}; (P.byEngagement || []).forEach(e => byE[e.k] = e.median);
+      out.byEngagement = byE;
+      if (byE.Globex !== 80 || byE.Acme !== 20)
+        say('per-engagement medians came out ' + JSON.stringify(byE) + ' against Acme 20 / Globex 80');
+      if ((P.byEngagement || []).length && P.byEngagement[0].k !== 'Globex')
+        say('the slowest payer is not listed first, so the row that matters is not the one a reader sees');
+
+      /* DRAWN ON THE PANEL, not merely returned by its builder. Calling
+         bankPaymentHtml() and asserting it produces markup passes on a build
+         that never puts that markup anywhere — the function is correct and the
+         reader sees nothing, which is the whole failure. Rendered and read back
+         off the DOM, which is the only thing that cannot be satisfied by a
+         string nobody appends. */
+      renderBank();
+      /* textContent, not innerText. The bank panel lives inside the Analytics
+         view, which is not the active tab here — and innerText returns EMPTY
+         for anything not being rendered, so the first version of this reported
+         the shipped build for a defect that did not exist. Whether the markup
+         reaches the panel and whether the tab is open are different questions,
+         and this one is the first. */
+      const panel = (document.getElementById('bankPanel') || {}).textContent || '';
+      const h = bankPaymentHtml();
+      out.payDrawn = /Getting paid/.test(panel);
+      if (!out.payDrawn)
+        say('the payment history is computed and never reaches the panel — bankPaymentHtml returns '
+          + (/Getting paid/.test(h) ? 'markup that nothing appends' : 'nothing'));
+      if (!/median/i.test(h)) say('the panel prints a days figure without saying it is a median');
+      if (/NaN|Infinity|undefined/.test(h)) say('the payment panel prints a broken figure');
+      if (!/billing discipline|whoever DID the work/i.test(h))
+        say('the company cut is drawn without saying it is billing discipline rather than payment behaviour — '
+          + 'the company on a record is who did the work, not who pays, and labelling it as payment blames '
+          + 'the wrong party');
+
+      /* AND AN EMPTY BOOK SAYS SO rather than laying zeros out like measurements.
+         Statistics formatted like real ones read as "we measured this and it is
+         zero", which is a different and false claim. */
+      saveBank(rows.map(r => Object.assign({}, r, { invoiced: null, paid: null, daysToPay: null })));
+      const h2 = bankPaymentHtml();
+      out.payEmptyState = /no payment history|carries an invoice figure/i.test(h2);
+      if (!out.payEmptyState)
+        say('with nothing recorded the panel still lays out statistics, which reads as "we measured this and '
+          + 'it is zero" rather than "nobody has recorded it"');
+      saveBank(keep);
+    })();
+
     return { contradictions: bad, counts: out };
   });
 

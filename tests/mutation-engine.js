@@ -647,6 +647,37 @@ const MUTANTS = [
   /* ── money in, on the way out ─────────────────────────────────────────────
      The record reached one panel and nothing that leaves the tool. */
 
+  /* ── getting paid ─────────────────────────────────────────────────────────
+     The archive carried invoices and receipts and nothing read them. */
+
+  { what: 'bank: days-to-pay is a mean, so one chased invoice moves the headline',
+    find: "      const med = arr => {\n        if (!arr.length) return null;\n        const v = arr.slice().sort((a, b) => a - b);\n        return v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;\n      };",
+    with: "      const med = arr => arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : null;" },
+
+  { what: 'bank: an outstanding invoice counts as paid in zero days',
+    find: "      const paidRows = rows.filter(r => Number.isFinite(Number(r.daysToPay)) && r.daysToPay != null);",
+    with: "      const paidRows = rows.map(r => Object.assign({}, r, { daysToPay: Number(r.daysToPay) || 0 }));" },
+
+  { what: 'bank: what is still owed is reported as collected',
+    find: "      out.collectedPct = out.invoiced > 0 ? Math.round(100 * out.received / out.invoiced) : null;",
+    with: "      out.collectedPct = out.invoiced > 0 ? 100 : null;" },
+
+  { what: 'bank: the slowest payer is listed last, where nobody reads it',
+    find: "        max: Math.max.apply(null, v) })).sort((a, b) => b.median - a.median);",
+    with: "        max: Math.max.apply(null, v) })).sort((a, b) => a.median - b.median);" },
+
+  { what: 'bank: the payment history is computed and never drawn',
+    find: "      host.innerHTML = head + hist + bankCalHtml() + bankPaymentHtml() + cards",
+    with: '      host.innerHTML = head + hist + bankCalHtml() + cards' },
+
+  { what: 'bank: an empty book is laid out as measured zeros',
+    find: "      if (!P.invoicedN) {",
+    with: '      if (false) {' },
+
+  { what: 'bank: the billing-discipline cut is presented as payment behaviour',
+    find: "          + '. This is your own billing discipline, not anybody\\'s payment behaviour — the company on a record '\n          + 'is whoever DID the work, not whoever pays for it.</p>'",
+    with: "          + '.</p>'" },
+
   { what: 'client: a lint finding carries money into the request body in screen-share mode',
     find: "        const redact = v => safe ? String(v).replace(/[$£€]\\s?[\\d][\\d,]*(\\.\\d+)?/g, '(withheld)') : v;",
     with: '        const redact = v => v;' },

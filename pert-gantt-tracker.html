@@ -554,6 +554,30 @@
     .raid-why-body { flex: 1 1 auto; min-width: 0; }
     .raid-why-q { display: block; font-size: var(--t-xs); color: var(--muted); margin-bottom: 0.15rem; }
 
+    /* Getting paid — beside the estimating picture, visibly a different block
+       so the two questions are not read as one. */
+    .bk-pay { margin: 0.9rem 0; padding: 0.7rem 0.9rem; border: 1px solid var(--border);
+      border-left: 3px solid var(--success); border-radius: 8px; background: #f8fafc;
+      font-size: var(--t-base); line-height: 1.5; }
+    .bk-pay-none { border-left-color: var(--border); color: var(--muted); }
+    .bk-pay-h { margin: 0 0 0.45rem; font-size: var(--t-xs); text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--muted); }
+    .bk-pay-stats { display: flex; flex-wrap: wrap; gap: 0.5rem 1.6rem; margin-bottom: 0.5rem; }
+    .bk-pay-s { display: flex; flex-direction: column; }
+    .bk-pay-v { font-size: 1.15rem; font-weight: 700; line-height: 1.15; }
+    .bk-pay-slow .bk-pay-v { color: var(--critical); }
+    .bk-pay-l { font-size: var(--t-xs); color: var(--muted); }
+    .bk-pay-rows { margin: 0.3rem 0 0.4rem; }
+    .bk-pay-r { display: flex; align-items: baseline; gap: 0.5rem; font-size: var(--t-sm);
+      padding: 0.12rem 0; border-bottom: 1px solid var(--border); }
+    .bk-pay-r:last-child { border-bottom: 0; }
+    .bk-pay-k { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bk-pay-n { flex: 0 0 auto; color: var(--muted); font-size: var(--t-xs); }
+    .bk-pay-d { flex: 0 0 auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .bk-pay-d.bk-pay-slow { color: var(--critical); }
+    .bk-pay-w { flex: 0 0 auto; color: var(--muted); font-size: var(--t-xs); }
+    .bk-pay-foot { margin: 0.35rem 0 0; font-size: var(--t-xs); color: var(--muted); }
+
     .ptr-mi { margin: 0.9rem 0 0.2rem; padding: 0.7rem 0.9rem; border: 1px solid var(--border);
       border-left: 3px solid var(--primary); border-radius: 8px; background: var(--primary-50);
       font-size: var(--t-base); line-height: 1.5; }
@@ -3202,7 +3226,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.2022</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.2108</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -20077,6 +20101,74 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     // Calibration the model can act on: how far off we run, by kind and by role.
     // Only "logged" rows count — span-derived actuals measure elapsed time, not
     // work, and would bias every ratio upward.
+    /* ═══ DOES THIS CLIENT PAY, AND HOW FAST ════════════════════════════════
+       The bank learns how long work TAKES. Every row now also carries what was
+       invoiced against it, what came back and how many days that took — and
+       until this, none of it was read. Data accumulating that nothing looks at
+       is a slower version of not collecting it.
+
+       WHOSE BEHAVIOUR IS THIS. The honest cut is by ENGAGEMENT: one project is
+       one client, and days-to-pay is the client's habit. Grouping it by company
+       would read as "this partner's work gets paid slowly", and `org` on a bank
+       row is the OWNER's firm — the supplier, not the payer. So the company cut
+       here answers a different question and is labelled as one: whether work
+       owned by that firm gets INVOICED at all, which is your own billing
+       discipline rather than anybody's payment behaviour.
+
+       MEDIAN, never mean. One invoice chased for three hundred days would drag
+       a mean past every real number in the set, and the figure people want is
+       "what normally happens".
+
+       Only rows with BOTH dates count toward days-to-pay. An invoice still
+       outstanding has no payment date and no known duration — counting it as
+       zero flatters the number and counting today's gap turns an unpaid invoice
+       into a fast one the day after it is raised. It is reported separately as
+       what it is: still owed. */
+    function bankPayment() {
+      const rows = loadBank();
+      if (!rows.length) return null;
+      const med = arr => {
+        if (!arr.length) return null;
+        const v = arr.slice().sort((a, b) => a - b);
+        return v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
+      };
+      const num = x => (x == null || x === '') ? null : (Number(x) || 0);
+      const paidRows = rows.filter(r => Number.isFinite(Number(r.daysToPay)) && r.daysToPay != null);
+      const invoicedRows = rows.filter(r => num(r.invoiced) != null);
+      const out = {
+        n: rows.length,
+        invoicedN: invoicedRows.length,
+        invoiced: invoicedRows.reduce((s, r) => s + (num(r.invoiced) || 0), 0),
+        received: rows.reduce((s, r) => s + (num(r.paid) || 0), 0),
+        paidN: paidRows.length,
+        medianDays: med(paidRows.map(r => Number(r.daysToPay))),
+        worstDays: paidRows.length ? Math.max.apply(null, paidRows.map(r => Number(r.daysToPay))) : null,
+        /* archived work that finished and was never invoiced. On a live plan
+           this is recoverable; in the bank it is history, and the only thing it
+           can still do is tell you how often it happens. */
+        neverInvoicedN: rows.filter(r => num(r.invoiced) == null && (r.ratio > 0 || r.actual > 0)).length,
+        byEngagement: [], byOwnerFirm: []
+      };
+      out.outstanding = Math.max(0, out.invoiced - out.received);
+      out.collectedPct = out.invoiced > 0 ? Math.round(100 * out.received / out.invoiced) : null;
+      // by engagement — the client's payment behaviour
+      const gp = {};
+      paidRows.forEach(r => { const k = r.proj || r.pid; if (!k) return; (gp[k] = gp[k] || []).push(Number(r.daysToPay)); });
+      out.byEngagement = Object.entries(gp).map(([k, v]) => ({ k: k, n: v.length, median: med(v),
+        max: Math.max.apply(null, v) })).sort((a, b) => b.median - a.median);
+      /* by the OWNER's firm — billing discipline, not payment behaviour. What
+         share of that firm's finished work ever got an invoice figure at all. */
+      const go = {};
+      rows.forEach(r => {
+        const k = r.org || null; if (!k) return;
+        const b2 = (go[k] = go[k] || { n: 0, billed: 0 });
+        b2.n++; if (num(r.invoiced) != null) b2.billed++;
+      });
+      out.byOwnerFirm = Object.entries(go).filter(([, v]) => v.n >= 3)
+        .map(([k, v]) => ({ k: k, n: v.n, billedPct: Math.round(100 * v.billed / v.n) }))
+        .sort((a, b) => a.billedPct - b.billedPct);
+      return out;
+    }
     function bankCalibration() {
       const rows = loadBank().filter(r => r.basis === 'logged' && r.ratio > 0);
       if (!rows.length) return null;
@@ -20415,6 +20507,62 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
       if (pid === activeProjectId()) { flashSaved('That is the project you already have open.'); return; }
       switchProject(pid);
     }
+    /* The payment picture, beside the estimating one and deliberately not mixed
+       into it. "This work takes 1.3× what we think" and "this client pays in 62
+       days" are both learned from the same archive and are different questions:
+       one changes what you quote, the other changes whether you can carry the
+       engagement. A reader who conflates them prices a slow payer as a
+       difficult delivery. */
+    function bankPaymentHtml() {
+      let P = null;
+      try { P = bankPayment(); } catch (e) { return ''; }
+      if (!P) return '';
+      /* NOT DRAWN AT ALL when nothing has been recorded, with one sentence
+         saying why rather than a row of dashes. Empty statistics laid out like
+         real ones read as "we measured this and it is zero". */
+      if (!P.invoicedN) {
+        return '<div class="bk-pay bk-pay-none"><b>Nothing archived carries an invoice figure.</b> '
+          + 'The bank has ' + P.n + ' record' + (P.n === 1 ? '' : 's') + ' and none of them says what was '
+          + 'charged or what came back, so there is no payment history to read yet. Record <b>Invoiced $</b> '
+          + 'and <b>Received $</b> on activities before archiving and this fills in — one engagement is enough '
+          + 'to start.</div>';
+      }
+      const days = P.medianDays;
+      const stat = (v, lbl, tone) => '<div class="bk-pay-s' + (tone ? ' bk-pay-' + tone : '') + '">'
+        + '<span class="bk-pay-v">' + v + '</span><span class="bk-pay-l">' + lbl + '</span></div>';
+      const eng = P.byEngagement.length
+        ? '<div class="bk-pay-rows">' + P.byEngagement.slice(0, 6).map(r =>
+            '<div class="bk-pay-r"><span class="bk-pay-k">' + escapeHtml(r.k) + '</span>'
+            + '<span class="bk-pay-n">n=' + r.n + '</span>'
+            + '<span class="bk-pay-d' + (r.median > 60 ? ' bk-pay-slow' : '') + '">' + Math.round(r.median)
+            + ' days</span>'
+            + (r.max > r.median * 1.5 ? '<span class="bk-pay-w">worst ' + Math.round(r.max) + '</span>' : '')
+            + '</div>').join('') + '</div>'
+        : '';
+      /* the billing-discipline cut, named as what it is. `org` on a bank row is
+         the firm that OWNED the work, so a low figure here says invoices are not
+         being raised against that firm's activities — it says nothing about any
+         client's willingness to pay, and labelling it as payment behaviour would
+         blame the wrong party. */
+      const firms = P.byOwnerFirm.filter(f => f.billedPct < 100);
+      const firmLine = firms.length
+        ? '<p class="bk-pay-foot"><b>Invoiced at all, by the firm that owned the work:</b> '
+          + firms.slice(0, 4).map(f => escapeHtml(f.k) + ' ' + f.billedPct + '% of ' + f.n).join(' · ')
+          + '. This is your own billing discipline, not anybody\'s payment behaviour — the company on a record '
+          + 'is whoever DID the work, not whoever pays for it.</p>'
+        : '';
+      return '<div class="bk-pay"><h4 class="bk-pay-h">Getting paid</h4>'
+        + '<div class="bk-pay-stats">'
+        + stat(days == null ? '—' : Math.round(days) + 'd', 'median days to pay, across ' + P.paidN
+            + ' settled ' + ptrPl(P.paidN, 'invoice'), days != null && days > 60 ? 'slow' : '')
+        + stat(P.collectedPct == null ? '—' : P.collectedPct + '%', 'of what was invoiced has been received')
+        + stat(fmtMoney(P.outstanding), 'still owed on archived work', P.outstanding > 0 ? 'slow' : '')
+        + (P.neverInvoicedN ? stat(String(P.neverInvoicedN), 'archived activities never invoiced at all', 'slow') : '')
+        + '</div>' + eng + firmLine
+        + '<p class="bk-pay-foot">Median, never mean — one invoice chased for three hundred days would drag an '
+        + 'average past every real number here. Only invoices with BOTH dates count toward it: one still '
+        + 'outstanding has no duration yet, and counting it as zero would flatter the figure.</p></div>';
+    }
     function renderBank() {
       const host = document.getElementById('bankPanel');
       if (!host) return;
@@ -20548,7 +20696,7 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
         + 'calibration is worth trusting. Consistently 20% over and wildly unpredictable are opposite problems '
         + 'with opposite fixes, which is why the distribution is drawn before the average.</p>';
 
-      host.innerHTML = head + hist + bankCalHtml() + cards + bar + table + notes + bankManageHtml(all, projects);
+      host.innerHTML = head + hist + bankCalHtml() + bankPaymentHtml() + cards + bar + table + notes + bankManageHtml(all, projects);
     }
 
     /* HOW THE BANK IS MANAGED — the half of this feature that was never on screen.
