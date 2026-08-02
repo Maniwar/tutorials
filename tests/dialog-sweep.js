@@ -263,12 +263,42 @@ const QA = JSON.parse(fs.readFileSync(
       if (t0) { openAndScan('activity editor', () => openEditModal(t0.id, true));
                 try { closeModal(); } catch (e) {} }
 
-      // ── the dependency map for an activity that has links
-      const t1 = leafTasks().find(t => (t.predecessors || []).length);
-      if (t1 && typeof openDepMap === 'function') {
-        openAndScan('dependency map', () => openDepMap(t1.id));
-        try { closeModal(); } catch (e) {}
+      /* ── the story modal, and the RAID form
+         What stood here was `if (t1 && typeof openDepMap === 'function')` — and
+         there is no openDepMap in the application, so the guard was permanently
+         false and the branch had never run once. A `typeof … === 'function'`
+         guard is the polite way to write an optional case and it is also the
+         perfect way to hide a name that does not exist: nothing throws, nothing
+         is scanned, and `out.opened` simply never lists it. The dependency map
+         it was reaching for is not a surface this app has; the wizard above is,
+         and is already covered.
+         Replaced with two dialogs that DO exist and were not being scanned. The
+         story modal is the one that draws model-written prose and entity marks,
+         which is precisely what this sweep is looking for. */
+      const st = (reqs && reqs.stories || [])[0];
+      if (st) {
+        openAndScan('story modal', () => openStoryModal(st.id));
+        try { closeStoryModal(); } catch (e) { try { closeModal(); } catch (e2) {} }
+      } else {
+        // said out loud rather than skipped in silence: the qa-reference plan
+        // carries no stories, so this dialog is genuinely unreachable there and
+        // the real export is the only run that covers it
+        out.opened.push('story modal·SKIPPED-fixture-has-no-story');
       }
+      openAndScan('RAID form', () => openRaidForm());
+      try { closeRaidForm(); } catch (e) {}
+
+      /* and the names have to be REAL. Every dialog above is opened through a
+         function this file names in source; if one is renamed out of the product
+         the opener throws and openAndScan reports it — except where a typeof
+         guard would swallow it, which is the trap this block just came out of.
+         So the count is asserted: a dialog that silently stopped being opened
+         shows up here as a smaller number rather than as nothing at all. */
+      out.expectedDialogs = ['activity editor', 'RAID form'].concat(st ? ['story modal'] : []);
+      const missed = out.expectedDialogs.filter(n => out.opened.indexOf(n) < 0);
+      if (missed.length)
+        say('Dialogs', missed.join(', ') + ' never opened, so nothing in them was scanned — a dialog that '
+          + 'quietly stopped being reachable is indistinguishable from a clean one');
 
       return { contradictions: bad, counts: out };
     }, label);

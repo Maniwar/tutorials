@@ -82,6 +82,20 @@ for t in tests/golden-reference.js tests/*sweep*.js; do
   rm -f /tmp/ptr-t.$$
 done
 
+# Before asking whether the product is right, ask whether the checks can still
+# say no. Two ways they have died here: no exit code (seven sweeps once printed
+# findings and exited 0, so every one arrived as a tick), and a call in a
+# reporting branch that the page does not have (money() vs fmtMoney(), eleven
+# times, green until the moment it was right). Both are invisible from outside.
+# Cheap — one browser, a few seconds — so it runs on every commit, first.
+if node tests/harness-meta.js > /tmp/ptr-hm.$$ 2>&1; then
+  echo "  ✓ harness meta         every check can still fail"
+else
+  echo "  ✗ HARNESS META — a check cannot report what it finds"
+  sed -n '1,40p' /tmp/ptr-hm.$$ | sed 's/^/      /'; fail=1
+fi
+rm -f /tmp/ptr-hm.$$
+
 # A check is only worth its runtime if it can still fail. Plant defects and
 # confirm the suite names them, so a check that quietly went vacuous is caught
 # here rather than by the user — which is how the PERT weighting was broken with

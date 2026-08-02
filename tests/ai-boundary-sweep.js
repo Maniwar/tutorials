@@ -130,12 +130,45 @@ const DATA = FIXTURE();
       const r = V([one({ text: payload })], null);
       const kept = (r.items || [])[0];
       if (!kept) return { dropped: true };
+      /* RENDERED THROUGH THE REAL PATH, and it was not.
+         This read `ptRenderItems ? ptRenderItems([kept]) : ''` inside a
+         try/catch. There is no ptRenderItems in the application and there never
+         was — a bare reference to an undeclared name throws ReferenceError, the
+         catch swallowed it, and control fell to `ptReadingHtml('base')`. Which
+         made it worse rather than saving it: with no API key that function
+         returns the "Readings are off" placeholder, so the payload was not in
+         the markup at all and `live` was false for the one reason that proves
+         nothing. The escaping check on model output — the security-relevant one
+         in this file — had never once rendered the injected string.
+         So the state the real renderer needs is built: a key so the panel is
+         not in its no-key branch, and the kept item filed where the panel reads
+         its items from. Then the assertion is about markup that actually
+         contains the payload, which is asserted here rather than assumed. */
       let html = '';
-      try { html = ptRenderItems ? ptRenderItems([kept]) : ''; } catch (e) {}
-      if (!html) { try { html = ptReadingHtml('base'); } catch (e) { html = ''; } }
+      const keyEl = document.getElementById('aiKey');
+      const savedKey = keyEl ? keyEl.value : '';
+      const pid = activeProjectId();
+      const savedStore = ptStore[pid];
+      try {
+        if (keyEl) keyEl.value = 'sk-ant-probe-not-a-real-key';
+        ptStore[pid] = { items: [kept], drops: [], quiet: '', fp: ptFp(),
+          at: new Date().toISOString(), model: 'probe' };
+        html = ptReadingHtml(kept.panel) || '';
+      } catch (e) { say('Reading render', 'ptReadingHtml threw on a kept item: ' + e.message); }
+      finally {
+        if (keyEl) keyEl.value = savedKey;
+        ptStore[pid] = savedStore;
+      }
+      /* the payload has to BE there before its inertness means anything — this
+         is the assertion whose absence let the whole case pass on a placeholder */
+      const carries = /img|script/i.test(String(html)) && String(html).indexOf('onerror') >= 0;
+      if (!carries)
+        say('Reading render', 'the rendered panel does not contain the injected payload at all, so the '
+          + 'escaping assertion below is passing on markup that never held it — which is exactly the state '
+          + 'this case was in while it called a renderer that does not exist');
       const live = /<img[^>]+onerror|<script/i.test(String(html));
       if (live) say('Reading render', 'draws model output as live HTML — an injected tag would execute');
-      return { dropped: false, escapedOnRender: !live };
+      return { dropped: false, renderedLen: String(html).length, carriesPayload: carries, escapedOnRender: !live };
     })();
     // and the same for a title that reaches the RAID form
     (() => {

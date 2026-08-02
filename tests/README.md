@@ -1,9 +1,13 @@
-# Probes
+# Checks
 
-Headless Playwright probes for `pert-gantt-tracker.html`. Run any of them with
-`node tests/<name>.js` from the repo root; each prints JSON and exits 0.
-`_harness.js` finds playwright-core and the pre-installed Chromium wherever the
-runner put them, so the probes are not tied to one working directory.
+Headless Playwright checks for `pert-gantt-tracker.html`. Run any of them with
+`node tests/<name>.js` from the repo root; each prints JSON and sets an exit
+code — green is 0, a finding is 1, and `harness-meta.js` enforces that on every
+file in here. `_harness.js` finds playwright-core and the pre-installed Chromium
+wherever the runner put them, so nothing is tied to one working directory.
+
+Things that only OBSERVE live in `tests/probes/` and are not checks. See that
+directory's README for why the distinction is kept visible.
 
 ## The two sweeps
 
@@ -301,6 +305,73 @@ wording — on crm-rollout the finish is held, so both take their other branch a
 there is nothing to disagree about. It survives for want of a fixture, not for
 want of a check, and listing it would report a permanent false hole.
 
+## The checks, checked
+
+`harness-meta.js` is the only file here that does not look at the product. It
+asks whether the checks can still say no, because twice the answer has been no
+and both times it was invisible from outside.
+
+**No exit code.** Seven of the seventeen sweeps once printed their
+contradictions and exited 0. The gate and the mutation harness both judge by
+exit status, so every finding arrived as a tick. It surfaced only when two
+deliberate defects were planted, reported BY NAME in a sweep's own output, and
+still counted as SURVIVED.
+
+**A reporting branch that throws.** cross-surface-sweep read `money(...)` where
+the global is `fmtMoney(...)` — eleven times, every one inside the branch that
+reports a finding. Green through all of development, and guaranteed to die the
+first time it was right.
+
+The second is why this loads the app in a browser rather than only reading
+source: whether `money` exists is a question about the page, not about the
+check. It extracts every call in a `page.evaluate` body, subtracts what is
+declared there and what the language provides, and requires the rest to be real
+functions on the loaded application. A branch nobody has ever taken is held to
+exactly the same standard as one taken every run — frequency is what hid the
+defect, and a static reading does not care.
+
+It also plants both defects into synthetic files on every run and requires
+itself to name them, which is why it is not in the mutation set: a linter that
+has gone blind reports a clean directory, and that is indistinguishable from a
+clean directory. Proving it on every commit is stronger than a mutant under
+`FULL=1`.
+
+Its first run found two dead branches, both hidden the same way:
+
+- **ai-boundary-sweep called a renderer that does not exist.** The XSS case read
+  `ptRenderItems ? ptRenderItems([kept]) : ''` inside a try/catch. There is no
+  `ptRenderItems` in the application; a bare reference to an undeclared name
+  throws ReferenceError, the catch swallowed it, and control fell to a fallback
+  that made it worse — with no API key `ptReadingHtml` returns the "Readings are
+  off" placeholder, so the injected payload was not in the markup at all and the
+  escaping assertion passed for the one reason that proves nothing. The
+  security-relevant check in that file had never rendered the payload. It now
+  builds the state the real renderer needs, and asserts the payload IS present
+  before asserting it is inert.
+- **dialog-sweep guarded a dialog that was never built.** `if (t1 && typeof
+  openDepMap === 'function')` — there is no `openDepMap`, so the guard was
+  permanently false and the branch had never run. A `typeof` guard is the polite
+  way to write an optional case and the perfect way to hide a name that does not
+  exist: nothing throws, nothing is scanned, and the opened list simply never
+  mentions it. Replaced with the story modal and the RAID form, which do exist
+  and were not being scanned, plus an assertion on which dialogs opened.
+
+The scanner needed one fix of its own, and it is the recurring lesson in this
+directory: it collected identifiers out of regex literals, so a pattern like
+`/(\d+)\s+activit(?:y|ies)/` was read as a call to `activit()`. Six false
+findings on the first run. Comments, strings, template literals and regex
+literals are all blanked before anything is read — text that LOOKS like code is
+not code, the same trap as the `switchTab` source scan that reported the defect
+its own comment documents.
+
+Two anti-vacuum assertions guard the guard: it fails if it locates fewer than 20
+evaluate bodies or resolves fewer than 30 calls against the app, since a regex
+that silently stops matching would otherwise report a clean directory forever.
+Current run: 24 checks, 65 bodies, 340 calls resolved.
+
+Probes live in `tests/probes/` and are out of scope by design — they observe and
+never fail, which is stated in their own README.
+
 ## The written test plan
 
 `node tests/run-test-plan.js` runs 42 cases and writes two documents:
@@ -377,11 +448,16 @@ later at the same specificity and once repainted an under-budget row red for a
 fact about the schedule. An assertion on the class name passed; the screen was
 still wrong.
 
-## Feature probes
+## Feature probes — which are NOT checks
 
-`budget-split.js` — the budget driver rows over four states: early and under,
-early and over, exactly on budget, and whether the sum claim is the true one.
+`budget-split.js` and `raid-outcomes.js` moved to `tests/probes/`, because they
+were being read as coverage and are not. They contain zero assertions and set no
+exit code: they load a plan, put the app into a state, and print what they see.
+473 lines that could only ever report success, listed here beside the real
+sweeps. That is the same shape as the seven sweeps that once printed
+contradictions and exited 0 — a red finding arriving as a tick.
 
-`raid-outcomes.js` — outcomes, the cause/watch chip split, the form, the table,
-persistence including old files with no outcome field, and "raise the issue it
-became".
+They are kept because they are still the fastest way to answer "what does the
+panel actually do in this state", which is what a check is bad at. See
+`tests/probes/README.md`. `harness-meta.js` scans `tests/` only, so nothing in
+there is held to the two properties a check must have.

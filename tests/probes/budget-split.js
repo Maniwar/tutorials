@@ -1,4 +1,4 @@
-const { requirePlaywright, chromePath, APP, FIXTURE } = require('./_harness');
+const { requirePlaywright, chromePath, APP, FIXTURE } = require('../_harness');
 const { chromium } = requirePlaywright();
 const fs = require('fs');
 (async () => {
