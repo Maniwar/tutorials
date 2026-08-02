@@ -634,6 +634,27 @@ const MUTANTS = [
     find: '      if (t.autoActualCost === false) return Number(t.actualCost) || 0;   // manual override',
     with: '      if (t.paid != null) return Number(t.paid) || 0;\n      if (t.autoActualCost === false) return Number(t.actualCost) || 0;   // manual override' },
 
+  /* ── the plan-vs-actual marks ─────────────────────────────────────────────
+     Three columns of correct numbers that nobody could scan. A bar that
+     disagrees with its own number is worse than no bar: it is read first and
+     believed, and the number underneath is what gets doubted. */
+
+  { what: 'chart: over-plan rows draw no overrun, so over and under look the same',
+    find: "          + (over > 0 ? '<i class=\"pv-over' + (clipped ? ' pv-over-clip' : '') + '\" style=\"width:' + over + 'px\"></i>' : '')",
+    with: "          + ''" },
+
+  { what: 'chart: the meter fills the track in the under-plan colour when it is over',
+    find: "          + '<i class=\"pv-fill' + (r > 1.001 ? ' pv-fill-over' : '') + '\" style=\"width:' + fill + 'px\"></i></span>'",
+    with: "          + '<i class=\"pv-fill\" style=\"width:' + fill + 'px\"></i></span>'" },
+
+  { what: 'chart: early and late are drawn on the same side of the centre line',
+    find: "        const late = days > 0;",
+    with: '        const late = true;' },
+
+  { what: 'chart: the bars ship with no key, so the geometry is a guess',
+    find: '        <p class="help-text pv-keyrow">',
+    with: '        <p class="help-text pv-keyrow" style="display:none">' },
+
   { what: 'form: a decision cannot record which option was taken',
     find: "      const isDec = (document.getElementById('rType') || {}).value === 'Decision';\n      row.style.display = isDec ? '' : 'none';",
     with: "      const isDec = false;\n      row.style.display = isDec ? '' : 'none';" },
@@ -651,12 +672,30 @@ const MUTANTS = [
     with: '        whys: [],' },
 
   { what: 'form: each why repeats the original question instead of the answer above it',
-    /* raidWhyRelabel is what the reader actually sees — raidAddWhyRow builds
-       the first label and relabel rewrites every one of them on each edit. The
-       anchor was written against the wrong one of the two and matched nothing,
-       which the run reported as a SKIP rather than passing it off as applied. */
-    find: "          : (prev ? 'And why did that happen? — “' + (prev.length > 60 ? prev.slice(0, 60) + '…' : prev) + '”'",
-    with: "          : (prev ? 'And why did that happen?'" },
+    find: "      return 'And why did THAT happen? — “' + q + '”';",
+    with: "      return 'And why did THAT happen?' + (q ? '' : '');" },
+
+  /* the trail turns back into editable rows, which is the regression that
+     matters: the moment more than one why is answerable at once it stops being
+     an interview and becomes a form, and a form gets five restatements of the
+     same sentence. A mutant that merely moved the step index was a no-op — the
+     renderer still drew one card — and is not listed, because a mutant that
+     changes nothing observable reports a hole that is not there. */
+  { what: 'form: the why wizard makes every step answerable at once',
+    find: "          + '<span class=\"why-past-t\">' + escapeHtml(t) + '</span>'",
+    with: "          + '<input class=\"mini-inp why-past-t\" value=\"' + escapeHtml(t) + '\">'" },
+
+  { what: 'form: the wizard never says which step the reader is on',
+    find: "        + '<div class=\"why-head\"><span class=\"why-step\">Step ' + (whyState.step + 1) + ' of up to ' + WHY_MAX",
+    with: "        + '<div class=\"why-head\"><span class=\"why-step\">Why' + '' + ('' + WHY_MAX).slice(1)" },
+
+  { what: 'form: concluding the chain drops the answer it was concluding',
+    find: '    function raidWhyFinish() {\n      raidWhyCommit();',
+    with: '    function raidWhyFinish() {' },
+
+  { what: 'form: the trail of answers already given is not shown',
+    find: "      const trail = whyState.chain.slice(0, whyState.done ? whyState.chain.length : whyState.step)",
+    with: "      const trail = [].slice.call([], 0, 0)" },
 
   { what: 'form: a chain with no root cause named draws no objection',
     find: "            : '<b style=\"color:var(--warn)\">' + whys.length + ' steps and no root cause named.</b>",
@@ -825,6 +864,7 @@ const LIKELY = {
   'prose:': 'dynamic-prose-sweep.js', 'heatmap:': 'resourcing-sweep.js',
   'navigation:': 'navigation-sweep.js', 'worklist:': 'navigation-sweep.js',
   'boundary:': 'error-boundary-sweep.js', 'revenue:': 'revenue-sweep.js',
+  'chart:': 'drawn-surfaces-sweep.js',
   'reference:': 'golden-reference.js', 'client:': 'client-facing-sweep.js',
   'card:': 'cross-surface-sweep.js', 'network:': 'schedule-sweep.js',
   'editor:': 'task-editor-sweep.js',

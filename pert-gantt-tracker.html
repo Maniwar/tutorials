@@ -462,11 +462,82 @@
        different question on a different basis — a receipt, not an accrual. */
     /* Options considered, and the five-why chain. Both are lists of one-line
        facts, so they share a shape: a marker, a field, a way to drop the row. */
+    /* ═══ PLAN VS ACTUAL MARKS ═══════════════════════════════════════════════
+       A meter for the two ratio columns and a diverging bar for the date shift.
+       Specs held deliberately: 4px rounded data-end and square at the baseline,
+       a 2px gap in the SURFACE colour separating the fill from its overrun
+       rather than a border (a stroke adds ink that is not data), and a track
+       that is a lighter step of the fill's own ramp so the state reads across
+       the whole bar rather than only across the filled part. */
+    .pv-keyrow { margin: 0.45rem 0 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 1rem; }
+    .pv-key-note { flex: 1 1 16rem; min-width: 14rem; }
+    .pv-key { display: flex; flex-wrap: wrap; gap: 0.15rem 1rem; margin-bottom: 0.35rem; }
+    .pv-key-i { display: inline-flex; align-items: center; gap: 0.35rem; }
+    .pv-td { white-space: nowrap; vertical-align: middle; }
+    .pv-line { display: flex; align-items: center; gap: 0.4rem; }
+    .pv-d { font-size: var(--t-xs); font-weight: 700; font-variant-numeric: tabular-nums; }
+    .pv-pair { font-size: var(--t-xs); color: var(--muted); margin-top: 0.1rem;
+      font-variant-numeric: tabular-nums; }
+    .pv-pair .pv-ar { color: var(--slack); margin: 0 0.2rem; }
+    .pv-pair b { color: var(--text); font-weight: 600; }
+
+    .pv-mark { display: inline-flex; align-items: center; flex: 0 0 auto; height: 10px; }
+    .pv-mark-none { width: 58px; border-bottom: 1px dashed var(--border); height: 6px; }
+    /* the track IS the plan: full width always, so two rows are comparable */
+    .pv-track { position: relative; height: 8px; border-radius: 0 4px 4px 0;
+      background: var(--primary-50); box-shadow: inset 0 0 0 1px var(--primary-200); }
+    .pv-fill { position: absolute; left: 0; top: 0; height: 8px; border-radius: 0 4px 4px 0;
+      background: var(--primary); }
+    /* at or past the plan the fill squares off — the value continues past it */
+    .pv-fill-over { border-radius: 0; background: var(--critical); }
+    .pv-over { height: 8px; border-radius: 0 4px 4px 0; background: var(--critical);
+      margin-left: 2px; }                       /* the 2px surface gap, not a border */
+    /* clipped: the overrun ran out of room, so the end is square and notched */
+    .pv-over-clip { border-radius: 0;
+      background: repeating-linear-gradient(135deg, var(--critical) 0 4px, #fff 4px 5px); }
+
+    .pv-dtrack { position: relative; height: 8px; }
+    .pv-zero { position: absolute; left: 50%; top: -1px; width: 1px; height: 10px;
+      background: var(--border); }
+    .pv-slip { position: absolute; top: 0; height: 8px; }
+    .pv-slip-late { border-radius: 0 4px 4px 0; background: var(--critical); }
+    .pv-slip-early { border-radius: 4px 0 0 4px; background: var(--success); }
+    @media print { .pv-fill, .pv-over, .pv-slip { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+
     .raid-sub { font-weight: 400; font-size: var(--t-xs); color: var(--muted); margin-top: 0.15rem;
       line-height: 1.35; }
     .raid-sub-k { text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.62rem;
       color: var(--primary-700); font-weight: 700; margin-right: 0.2rem; }
     .raid-sub-warn { color: var(--warn); font-weight: 600; }
+
+    /* the five-why stepper: a trail of what has been answered, then one card */
+    .why-past { display: flex; align-items: flex-start; gap: 0.4rem; margin-bottom: 0.25rem;
+      font-size: var(--t-xs); color: var(--muted); }
+    .why-past-t { flex: 1 1 auto; padding-top: 0.15rem; }
+    .why-n { flex: 0 0 auto; width: 1.15rem; height: 1.15rem; border-radius: 50%;
+      background: var(--primary-50); color: var(--primary-700); font-weight: 700; font-size: 0.62rem;
+      display: flex; align-items: center; justify-content: center; margin-top: 0.1rem; }
+    .why-card, .why-done { border: 1px solid var(--primary-200); border-left: 3px solid var(--primary);
+      border-radius: 8px; padding: 0.6rem 0.7rem; background: var(--primary-50); margin-top: 0.3rem; }
+    .why-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+      margin-bottom: 0.3rem; }
+    .why-step { font-size: var(--t-xs); font-weight: 700; letter-spacing: 0.03em;
+      text-transform: uppercase; color: var(--primary-700); }
+    .why-dots { display: flex; gap: 0.22rem; }
+    .why-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--primary-200); }
+    .why-dot-on { background: var(--primary); }
+    .why-dot-now { box-shadow: 0 0 0 2px var(--primary-50), 0 0 0 3px var(--primary); }
+    /* the question is a SENTENCE, and it quotes the reader's own words back —
+       the global label rule sets uppercase with letter-spacing, which turns a
+       quoted answer into a shout and makes it unreadable at the length these
+       run to */
+    .why-q { display: block; font-weight: 600; font-size: var(--t-sm); margin-bottom: 0.3rem;
+      text-transform: none; letter-spacing: normal; color: var(--text); line-height: 1.4; }
+    #rWhyIn { width: 100%; }
+    .why-done #rRootCause { width: 100%; }
+    .why-acts { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.45rem; }
+    .why-done b { display: block; font-size: var(--t-xs); text-transform: uppercase;
+      letter-spacing: 0.04em; color: var(--primary-700); margin-bottom: 0.2rem; }
 
     .raid-opt, .raid-why { display: flex; align-items: flex-start; gap: 0.45rem; margin-bottom: 0.35rem; }
     .raid-opt-pick { display: flex; align-items: center; gap: 0.25rem; flex: 0 0 auto;
@@ -2977,14 +3048,8 @@ Or say what you want, in your own words:
                  almost never the cause. "The build slipped" is a restatement of
                  the miss, not a reason for it. -->
             <div class="form-group" id="rWhyRow">
-              <span class="fg-head"><label for="rWhys">Why did it happen?</label><button type="button" class="info-icon" aria-label="About five whys" data-help="Each answer becomes the next question. The first answer to “why” is usually a restatement of the symptom and the fix that follows it is a patch — you address what you can see and the same thing happens again next quarter under a different name. Keep asking and the chain usually turns from an event into a condition somewhere around the third or fourth step: not “the client was slow to review” but “nobody is named as the approver in the contract”. The last line is the one worth fixing, and it is the one this stores as the root cause. Stop early if a chain genuinely ends — a short honest chain beats five padded lines.">i</button></span>
+              <span class="fg-head"><label>Why did it happen?</label><button type="button" class="info-icon" aria-label="About five whys" data-help="One question at a time, each built from your last answer. The first answer to why is usually a restatement of the symptom, and the fix that follows it is a patch — you address what you can see and the same thing happens again next quarter under a different name. Keep asking and the chain usually turns from an event into a condition somewhere around the third or fourth step: not the client was slow to review but nobody is named as the approver in the contract. The last line is the one worth fixing, and it is what this stores as the root cause. Five is a ceiling, not a quota — end it the moment it bottoms out.">i</button></span>
               <div id="rWhys"></div>
-              <button type="button" class="btn-sm btn-secondary" onclick="raidAddWhyRow()">+ Ask why again</button>
-              <div id="rRootRow" style="margin-top:0.5rem;display:none">
-                <label for="rRootCause" style="font-weight:600">Root cause — the last link, and the one worth fixing</label>
-                <input id="rRootCause" type="text" class="mini-inp" style="width:100%" placeholder="The condition underneath it all, in one sentence" oninput="raidWhyHint()" />
-              </div>
-              <p class="help-text" id="rWhyHint" style="margin:0.3rem 0 0"></p>
             </div>
             <div class="form-group" id="rOutcomeRow" style="display:none">
               <span class="fg-head"><label for="rOutcome">Did it happen?</label><button type="button" class="info-icon" aria-label="About outcomes" data-help="Status tracks how much attention an entry still needs. This tracks how it TURNED OUT, which is a different fact recorded on a different day. It matters because only an entry that turned explains a number: a risk that materialised, or an assumption that did not hold, is a cause and is shown in red beside the variance it caused. One that is still pending, was avoided, or is holding is being watched, not blamed, and is shown in grey so it never stands in for a reason. Leaving this blank is itself reported — on an activity that is finished or overdue, nobody having said whether a linked risk turned is a gap the health check will name.">i</button></span>
@@ -3118,7 +3183,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.1817</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.1834</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -14192,14 +14257,86 @@ Or say what you want, in your own words:
       // being captured at the same moment baseStart/baseFinish were.
       const dColor = v => v > 0 ? 'var(--critical)' : v < 0 ? 'var(--success)' : 'var(--muted)';
       // one grammar for every dimension: what we said → what happened, and the gap
-      const pairCell = (estTxt, actTxt, deltaTxt, deltaVal, tip) =>
-        `<td style="white-space:nowrap"${tip ? ` title="${escapeHtml(tip)}"` : ''}>
-          <span style="font-size:0.78rem;color:var(--muted)">${estTxt}</span>
-          <span style="color:var(--slack);margin:0 0.2rem">→</span><b style="font-size:0.8rem">${actTxt}</b>
-          ${deltaTxt ? `<div style="font-size:var(--t-xs);font-weight:700;color:${dColor(deltaVal)}">${deltaTxt}</div>` : ''}
+      /* ═══ THREE COLUMNS OF NUMBERS BECOME THREE COLUMNS YOU CAN SCAN ═══════
+         Every row read "$2,850 → $3,600" over "+$750", forty times down the
+         page, and the only way to find the row that matters was to read all of
+         them. The numbers were right and the column was unreadable: nothing
+         about "+$750" against "+26%" against "−81%" tells you which is the big
+         one without arithmetic in your head.
+
+         So each cell gains a MARK, and the mark is chosen by what the number
+         actually is rather than by what looks good:
+
+           BUDGET and EFFORT are a ratio against a limit, which is a METER —
+           the plan is the track, the actual is the fill, and anything past the
+           plan continues beyond the track's end in the fault colour. Over and
+           under are then different SHAPES, not just different words, and the
+           worst row on the page is the one with the longest red tail.
+
+           SCHEDULE is not a ratio. It is a signed distance from a baseline,
+           which is a DIVERGING bar: a centre line at the committed date, early
+           to the left, late to the right. A meter here would have to invent a
+           denominator, and "20% of what" has no answer for a date.
+
+         The two are deliberately different geometries because they answer
+         different questions; drawing a date shift as a fill would make the
+         column look comparable to the two beside it when it is not.
+
+         The numbers stay. The mark is a way in, not a replacement — the pair
+         moves to a second line in muted text and the delta rides at the bar's
+         tip, which is where a bar's value belongs. */
+      const MARK_W = 58;                 // the track: the plan, whatever it is
+      const MARK_OVER = 30;              // room past the plan for an overrun
+      const meterMark = (used, plan, tip) => {
+        if (!(plan > 0) || used == null || !Number.isFinite(used))
+          return '<span class="pv-mark pv-mark-none" title="' + escapeHtml(tip || 'nothing to compare') + '"></span>';
+        const r = used / plan;
+        const fill = Math.max(1, Math.round(MARK_W * Math.min(1, r)));
+        // the overrun is drawn to the SAME scale as the track until it runs out
+        // of room, then it is clipped and the tip is squared off to say so
+        const overRaw = r > 1 ? MARK_W * (r - 1) : 0;
+        const over = Math.min(MARK_OVER, Math.round(overRaw));
+        const clipped = overRaw > MARK_OVER + 0.5;
+        return '<span class="pv-mark" title="' + escapeHtml(tip || '') + '">'
+          + '<span class="pv-track" style="width:' + MARK_W + 'px">'
+          + '<i class="pv-fill' + (r > 1.001 ? ' pv-fill-over' : '') + '" style="width:' + fill + 'px"></i></span>'
+          + (over > 0 ? '<i class="pv-over' + (clipped ? ' pv-over-clip' : '') + '" style="width:' + over + 'px"></i>' : '')
+          + '</span>';
+      };
+      /* Scaled to the WORST row in this table, not to an absolute number of
+         days: the question a reader has is "which of these moved most", and a
+         fixed scale answers a different one and flattens every plan that never
+         slips a fortnight. The scale is named under the table so the bar is
+         never read as an absolute. */
+      const slipMark = (days, worst, tip) => {
+        if (days == null || !Number.isFinite(days))
+          return '<span class="pv-mark pv-mark-none" title="' + escapeHtml(tip || 'no baseline') + '"></span>';
+        const half = MARK_W / 2;
+        const w = worst > 0 ? Math.max(days === 0 ? 0 : 2, Math.round(half * Math.min(1, Math.abs(days) / worst))) : 0;
+        const late = days > 0;
+        return '<span class="pv-mark" title="' + escapeHtml(tip || '') + '">'
+          + '<span class="pv-dtrack" style="width:' + MARK_W + 'px">'
+          + '<i class="pv-zero"></i>'
+          + (w > 0 ? '<i class="pv-slip ' + (late ? 'pv-slip-late' : 'pv-slip-early') + '" style="width:' + w
+              + 'px;' + (late ? 'left:' + half + 'px' : 'left:' + (half - w) + 'px') + '"></i>' : '')
+          + '</span></span>';
+      };
+      const pairCell = (estTxt, actTxt, deltaTxt, deltaVal, tip, mark) =>
+        `<td class="pv-td"${tip ? ` title="${escapeHtml(tip)}"` : ''}>
+          <div class="pv-line">${mark || ''}${deltaTxt
+            ? `<span class="pv-d" style="color:${dColor(deltaVal)}">${deltaTxt}</span>` : ''}</div>
+          <div class="pv-pair"><span>${estTxt}</span><span class="pv-ar">→</span><b>${actTxt}</b></div>
         </td>`;
       const pctTxt = (a, b) => (b > 0 && Number.isFinite(a)) ? ((a / b - 1) >= 0 ? '+' : '−') + Math.abs(Math.round((a / b - 1) * 100)) + '%' : '';
 
+      /* the diverging scale, taken from the table's own worst row so the bars
+         are comparable to each other rather than to an invented constant */
+      const worstSlip = leaves.reduce((m, x) => {
+        if (!hb || !(x.baseFinish instanceof Date)) return m;
+        const c = currentFinish(x);
+        if (!(c instanceof Date) || isNaN(c.getTime())) return m;
+        return Math.max(m, Math.abs(varianceDays(x.baseFinish, c)));
+      }, 0);
       const rows = tasksInWbsOrder().map(({ task: t, depth }) => {
         if (t.isSummary) {
           return `<tr style="font-weight:700;background:#f8fafc">
@@ -14256,10 +14393,15 @@ Or say what you want, in your own words:
           <td style="padding-left:${8 + depth * 16}px">${escapeHtml(ekName(t))}${isNew ? ' <span class="badge badge-warn" title="Added after the baseline was set — this is new scope">+ new</span>' : ''}</td>
           ${pairCell(hb ? fmtNice(bf) : '<span title="No baseline saved">—</span>', fmtNice(cf) + actNote,
             fv == null ? '' : (fv > 0 ? '+' : '') + fv + 'd', fv,
-            hb ? `Baseline ${fmtNice(bs)} → ${fmtNice(bf)}; now ${fmtNice(cs)} → ${fmtNice(cf)}` : 'No baseline saved — this is the live forecast')}
+            hb ? `Baseline ${fmtNice(bs)} → ${fmtNice(bf)}; now ${fmtNice(cs)} → ${fmtNice(cf)}` : 'No baseline saved — this is the live forecast',
+            slipMark(hb ? fv : null, worstSlip, fv == null ? 'No baseline to compare against'
+              : fv === 0 ? 'Finished on its baseline date'
+              : Math.abs(fv) + ' calendar days ' + (fv > 0 ? 'later' : 'earlier') + ' than its baseline finish'))}
           ${pairCell(fmtMoney(planCost), started ? fmtMoney(actCost) : '<span style="color:var(--muted)">—</span>',
             cd.txt, cd.v,
-            started ? `${hb ? 'Baselined' : 'Planned'} at ${fmtMoney(planCost)}, actual so far ${fmtMoney(actCost)}` : 'Not started — no actual cost yet')}
+            started ? `${hb ? 'Baselined' : 'Planned'} at ${fmtMoney(planCost)}, actual so far ${fmtMoney(actCost)}` : 'Not started — no actual cost yet',
+            meterMark(started ? actCost : null, planCost,
+              started ? fmtMoney(actCost) + ' against a plan of ' + fmtMoney(planCost) : 'Not started'))}
           ${pairCell((planTe > 0 ? fmtDurCell(planTe) : '—')
               + ((hb && t.baseTe != null && Math.abs((t.te || 0) - t.baseTe) > 0.01)
                 ? ` <span class="badge badge-warn" style="font-size:0.6rem" title="Re-estimated since the baseline: ${escapeHtml(fmtDurCell(t.baseTe))} → ${escapeHtml(fmtDurCell(t.te || 0))}">${(t.te || 0) > t.baseTe ? '+' : '−'}${escapeHtml(fmtDurCell(Math.abs((t.te || 0) - t.baseTe)))}</span>` : ''),
@@ -14269,7 +14411,9 @@ Or say what you want, in your own words:
                 : `<span class="eff-none" onclick="event.stopPropagation();openTimeSpent(${t.id})" title="Nothing logged yet — click to record the time spent.">not logged</span>`)
               : `<span class="eff-ok" onclick="event.stopPropagation();openTimeSpent(${t.id})" title="Click to change the time spent">${escapeHtml(fmtDurCell(spent))}</span>`,
             ed.txt, ed.v,
-            spent == null ? 'No time spent logged against this activity' : `Estimated ${fmtDurCell(planTe)}, logged ${fmtDurCell(spent)}`)}
+            spent == null ? 'No time spent logged against this activity' : `Estimated ${fmtDurCell(planTe)}, logged ${fmtDurCell(spent)}`,
+            meterMark(spent, planTe, spent == null ? 'Nothing logged yet'
+              : fmtDurCell(spent) + ' logged against an estimate of ' + fmtDurCell(planTe)))}
           <td>${t.percentComplete || 0}%</td>
           <td><span class="badge ${cls}">${status}</span></td>
           <td style="white-space:nowrap">
@@ -14419,8 +14563,22 @@ Or say what you want, in your own words:
             <th title="Record reality here — feeds variance, actual cost and the cross-project estimate bank">Actual start / finish</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
+        <p class="help-text pv-keyrow">          <span class="pv-key">
+            <span class="pv-key-i"><span class="pv-mark"><span class="pv-track" style="width:34px"><i class="pv-fill" style="width:22px"></i></span></span> under the plan</span>
+            <span class="pv-key-i"><span class="pv-mark"><span class="pv-track" style="width:34px"><i class="pv-fill pv-fill-over" style="width:34px"></i></span><i class="pv-over" style="width:12px"></i></span> over it, by the length past the track</span>
+            <span class="pv-key-i"><span class="pv-mark"><span class="pv-dtrack" style="width:34px"><i class="pv-zero"></i><i class="pv-slip pv-slip-early" style="width:12px;left:5px"></i></span></span> early</span>
+            <span class="pv-key-i"><span class="pv-mark"><span class="pv-dtrack" style="width:34px"><i class="pv-zero"></i><i class="pv-slip pv-slip-late" style="width:12px;left:17px"></i></span></span> late</span>
+          </span>
+          <span class="pv-key-note">the track is the <b>plan</b>; the fill is what happened; past the track is
+          the overrun. Schedule has no denominator, so it is a shift from a centre line at the committed
+          date${worstSlip > 0 ? ', scaled to the largest move here — ' + worstSlip + ' calendar '
+            + ptrPl(worstSlip, 'day') : ''}.</span></p>
         ${baselineLogHtml()}
-        <p class="help-text" style="margin-top:0.75rem">${hb ? 'Baseline set ' + escapeHtml(baselineDate) + '. ' : ''}“Now” uses actual dates where entered, otherwise the live forecast. Positive variance = later, dearer or longer than planned. Effort compares the logged time spent against the estimate — the same figure the estimate bank calibrates future projects from.</p>`;
+        <p class="help-text" style="margin-top:0.75rem">
+          The bars say <b>which row</b> to look at; the numbers beside them say by how much. A hatched end
+          means the overrun ran out of room to draw. The schedule scale is relative to THIS plan — it says which
+          row moved most, never how many days is a lot.
+          ${hb ? 'Baseline set ' + escapeHtml(baselineDate) + '. ' : ''}“Now” uses actual dates where entered, otherwise the live forecast. Positive variance = later, dearer or longer than planned. Effort compares the logged time spent against the estimate — the same figure the estimate bank calibrates future projects from.</p>`;
     }
     function setActual(id, field, val) {
       const t = tasks.find(x => x.id === id); if (!t) return;
@@ -22364,91 +22522,118 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
        is named as the root cause, because a chain nobody drew a conclusion from
        is a paragraph, not an analysis. */
     const WHY_MAX = 5;
-    function raidWhyRows() { return [...document.querySelectorAll('#rWhys .raid-why')]; }
-    function raidAddWhyRow(text) {
+    /* ONE QUESTION AT A TIME, and it says where you are.
+
+       The first build of this drew all five rows at once, and a column of five
+       identical boxes is not an interview — it is a form, and a form gets
+       filled top to bottom with five restatements of the same sentence. The
+       whole value of five whys is that each question is BUILT FROM the previous
+       answer and you cannot see the next one until you have given this one.
+
+       So it is a wizard: the chain you have already given stays above as a
+       trail you can go back into, the current question quotes the answer it
+       came from, and the step counter says how far in you are and that five is
+       a ceiling rather than a quota. Ending early is a first-class button —
+       "this is the root cause" is available at every step, because a chain that
+       genuinely bottoms out at three is worth more than five padded lines. */
+    let whyState = { chain: [], step: 0, root: '' };
+    function raidWhyQuestion(prevAnswer) {
+      if (!prevAnswer) return 'Why did it happen?';
+      const q = prevAnswer.length > 90 ? prevAnswer.slice(0, 90) + '…' : prevAnswer;
+      return 'And why did THAT happen? — “' + q + '”';
+    }
+    function raidWhyCommit() {
+      const el = document.getElementById('rWhyIn');
+      const v = ((el || {}).value || '').trim();
+      if (!v) return false;
+      whyState.chain[whyState.step] = v;
+      whyState.chain = whyState.chain.slice(0, whyState.step + 1);
+      return true;
+    }
+    function raidWhyNext() {
+      if (!raidWhyCommit()) return;
+      if (whyState.step < WHY_MAX - 1) whyState.step++;
+      raidWhyRender();
+    }
+    function raidWhyBack() {
+      if (whyState.step > 0) whyState.step--;
+      raidWhyRender();
+    }
+    function raidWhyJump(i) { whyState.step = Math.max(0, Math.min(WHY_MAX - 1, i)); raidWhyRender(); }
+    /* Ending the chain COMMITS the answer first. Without that, typing the last
+       link and pressing the button that names it the root cause would store the
+       root and lose the step it came from — the conclusion with its own working
+       thrown away. */
+    function raidWhyFinish() {
+      raidWhyCommit();
+      const last = whyState.chain[whyState.chain.length - 1] || '';
+      if (!whyState.root) whyState.root = last;
+      whyState.done = true;
+      raidWhyRender();
+    }
+    function raidWhyReopen() { whyState.done = false; raidWhyRender(); }
+    function raidWhySetRoot(v) { whyState.root = String(v || ''); raidWhyRender(true); }
+    function raidWhyRender(keepFocus) {
       const host = document.getElementById('rWhys');
       if (!host) return;
-      const i = host.children.length;
-      if (i >= WHY_MAX) { raidWhyHint(); return; }
-      const prior = raidWhyRows().map(r => (r.querySelector('.raid-why-text').value || '').trim()).filter(Boolean);
-      /* The QUESTION carries the previous answer, so the reader is asked why
-         THAT happened rather than why the original thing happened five times
-         over. Without it people answer the same question repeatedly and the
-         chain goes sideways instead of down — which is the failure mode of
-         every five-whys exercise ever run on a whiteboard. */
-      const q = i === 0
-        ? 'Why did it happen?'
-        : (prior[i - 1]
-            ? 'And why did that happen? — “' + (prior[i - 1].length > 60 ? prior[i - 1].slice(0, 60) + '…' : prior[i - 1]) + '”'
-            : 'And why did that happen?');
-      const row = document.createElement('div');
-      row.className = 'raid-why';
-      row.innerHTML = '<span class="raid-why-n">' + (i + 1) + '</span>'
-        + '<div class="raid-why-body"><span class="raid-why-q"></span>'
-        + '<input type="text" class="raid-why-text mini-inp" placeholder="Because…" '
-        + 'oninput="raidWhyHint()" onchange="raidWhyRelabel()">'
-        + '</div><button type="button" class="btn-sm btn-lite raid-why-x" title="Remove this step" '
-        + 'onclick="this.closest(\'.raid-why\').remove();raidWhyRelabel();raidWhyHint()">✕</button>';
-      host.appendChild(row);
-      row.querySelector('.raid-why-q').textContent = q;
-      row.querySelector('.raid-why-text').value = text || '';
-      raidWhyRelabel();
-      raidWhyHint();
-      if (!text) { try { row.querySelector('.raid-why-text').focus(); } catch (e) {} }
+      const n = whyState.chain.filter(Boolean).length;
+      const atMax = whyState.step >= WHY_MAX - 1;
+      const dots = Array.from({ length: WHY_MAX }, (_, i) =>
+        '<i class="why-dot' + (i < n ? ' why-dot-on' : '') + (i === whyState.step ? ' why-dot-now' : '') + '"></i>').join('');
+      // the trail: what has already been answered, still reachable
+      const trail = whyState.chain.slice(0, whyState.done ? whyState.chain.length : whyState.step)
+        .map((t, i) => '<div class="why-past"><span class="why-n">' + (i + 1) + '</span>'
+          + '<span class="why-past-t">' + escapeHtml(t) + '</span>'
+          + (whyState.done ? '' : '<button type="button" class="btn-sm btn-lite" title="Go back and change this" '
+              + 'onclick="raidWhyJump(' + i + ')">✎</button>') + '</div>').join('');
+      if (whyState.done) {
+        host.innerHTML = trail
+          + '<div class="why-done"><b>Root cause</b>'
+          + '<input id="rRootCause" type="text" class="mini-inp" value="' + escapeHtml(whyState.root) + '" '
+          + 'oninput="whyState.root=this.value" placeholder="The condition underneath it all, in one sentence">'
+          + '<p class="help-text" style="margin:0.3rem 0 0">' + n + ' step' + (n === 1 ? '' : 's')
+          + ' down to this. It is the line worth fixing — a fix aimed at any earlier step in the chain treats '
+          + 'the symptom, which is how the same thing comes back next quarter under a different name.'
+          + ' <button type="button" class="btn-sm btn-secondary" onclick="raidWhyReopen()">Keep asking</button></p>'
+          + '</div>';
+        return;
+      }
+      const cur = whyState.chain[whyState.step] || '';
+      const prev = whyState.step > 0 ? (whyState.chain[whyState.step - 1] || '') : '';
+      host.innerHTML = trail
+        + '<div class="why-card">'
+        + '<div class="why-head"><span class="why-step">Step ' + (whyState.step + 1) + ' of up to ' + WHY_MAX
+        + '</span><span class="why-dots">' + dots + '</span></div>'
+        + '<label class="why-q" for="rWhyIn">' + escapeHtml(raidWhyQuestion(prev)) + '</label>'
+        + '<input id="rWhyIn" type="text" class="mini-inp" placeholder="Because…" value="' + escapeHtml(cur) + '" '
+        + 'onkeydown="if(event.key===\'Enter\'){event.preventDefault();raidWhyNext();}">'
+        + '<div class="why-acts">'
+        + (whyState.step > 0 ? '<button type="button" class="btn-sm btn-secondary" onclick="raidWhyBack()">← Back</button>' : '')
+        + (atMax ? '' : '<button type="button" class="btn-sm btn-primary" onclick="raidWhyNext()">Ask why again →</button>')
+        + '<button type="button" class="btn-sm btn-secondary" onclick="raidWhyFinish()">This is the root cause ✓</button>'
+        + '</div>'
+        + '<p class="help-text" style="margin:0.35rem 0 0">'
+        + (whyState.step === 0
+            ? 'The first answer is almost always the symptom said again, so it is worth asking at least twice '
+              + 'before believing it.'
+            : atMax
+              ? 'Five is the convention and the ceiling here. If the chain is genuinely longer, the last line '
+                + 'is still the one to write down.'
+              : 'Each question is built from your last answer, so the chain goes down rather than sideways. '
+                + 'Stop the moment it bottoms out — a short honest chain beats five padded lines.')
+        + '</p></div>';
+      if (!keepFocus) { try { document.getElementById('rWhyIn').focus(); } catch (e) {} }
     }
-    // the questions restate the answer above them, so they are rebuilt whenever
-    // one changes or a step is removed
-    function raidWhyRelabel() {
-      const rows = raidWhyRows();
-      rows.forEach((r, i) => {
-        const prev = i === 0 ? '' : (rows[i - 1].querySelector('.raid-why-text').value || '').trim();
-        r.querySelector('.raid-why-n').textContent = String(i + 1);
-        r.querySelector('.raid-why-q').textContent = i === 0
-          ? 'Why did it happen?'
-          : (prev ? 'And why did that happen? — “' + (prev.length > 60 ? prev.slice(0, 60) + '…' : prev) + '”'
-                  : 'And why did that happen?');
-      });
-    }
-    function raidWhysRead() {
-      return raidWhyRows().map(r => (r.querySelector('.raid-why-text').value || '').trim()).filter(Boolean);
-    }
-    function raidWhyHint() {
-      const el = document.getElementById('rWhyHint');
-      const rootRow = document.getElementById('rRootRow');
-      const rootEl = document.getElementById('rRootCause');
-      if (!el) return;
-      const whys = raidWhysRead();
-      const root = ((rootEl || {}).value || '').trim();
-      // the root-cause box appears once there is a chain to draw a conclusion from
-      if (rootRow) rootRow.style.display = whys.length >= 2 ? '' : 'none';
-      const addBtn = document.querySelector('#rWhyRow button[onclick="raidAddWhyRow()"]');
-      if (addBtn) addBtn.style.display = raidWhyRows().length >= WHY_MAX ? 'none' : '';
-      el.innerHTML = !whys.length
-        ? 'One line is a description; a chain is an analysis. The first answer is usually the symptom said '
-          + 'again, so it is worth asking at least twice before believing it.'
-        : whys.length === 1
-          ? '<b>One step.</b> “' + escapeHtml(whys[0].slice(0, 70)) + '” — ask why THAT happened. Almost every '
-            + 'first answer is the thing you already knew.'
-          : root
-            ? '<b>Root cause recorded.</b> ' + whys.length + ' step' + (whys.length === 1 ? '' : 's')
-              + ' down to “' + escapeHtml(root.slice(0, 70)) + '”. That is the line worth fixing — a fix aimed '
-              + 'at any earlier step in this chain treats the symptom.'
-            : '<b style="color:var(--warn)">' + whys.length + ' steps and no root cause named.</b> The chain is '
-              + 'the working; the last link is the conclusion. Say it in the box above, or a reader gets a '
-              + 'paragraph and has to draw their own.'
-        + (raidWhyRows().length >= WHY_MAX ? ' <span class="ptr-aside">Five is the convention and the limit '
-            + 'here. If the chain is genuinely longer, the last line is still the one to write down.</span>' : '');
+    function raidWhysRead() { return whyState.chain.map(x => String(x || '').trim()).filter(Boolean); }
+    function raidWhyRootRead() {
+      const el = document.getElementById('rRootCause');
+      return ((el ? el.value : whyState.root) || '').trim();
     }
     function raidWhysFill(r) {
-      const host = document.getElementById('rWhys');
-      if (!host) return;
-      host.innerHTML = '';
-      const whys = (r && Array.isArray(r.whys)) ? r.whys : [];
-      whys.forEach(t => raidAddWhyRow(t));
-      const rootEl = document.getElementById('rRootCause');
-      if (rootEl) rootEl.value = (r && r.rootCause) || '';
-      if (!whys.length) raidAddWhyRow('');       // always one empty step to start
-      raidWhyHint();
+      whyState = { chain: (r && Array.isArray(r.whys) ? r.whys.slice() : []), step: 0,
+        root: (r && r.rootCause) || '', done: !!(r && r.rootCause) };
+      whyState.step = Math.max(0, Math.min(WHY_MAX - 1, whyState.chain.length ? whyState.chain.length - 1 : 0));
+      raidWhyRender(true);
     }
     function raidOptionRows() {
       return [...document.querySelectorAll('#rOptions .raid-opt')];
@@ -22610,7 +22795,7 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
         // the chain and the conclusion, on every type — anything in this log can
         // have a cause worth tracing, not only an issue
         whys: raidWhysRead(),
-        rootCause: (document.getElementById('rRootCause') || {}).value.trim() || '',
+        rootCause: raidWhyRootRead(),
         // whatever the Status control now holds — the form used to write nothing,
         // so a new entry was Open forever until someone found the table dropdown
         status: (document.getElementById('rStatus') || {}).value || 'Open',

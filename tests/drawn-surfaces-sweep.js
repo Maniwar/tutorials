@@ -570,42 +570,74 @@ const QA = JSON.parse(fs.readFileSync(
             if (rd.chosen !== 0 || rd.options.length !== 2)
               say('RAID form', 'marking an option as taken reads back as ' + JSON.stringify(rd));
 
-            // the five-why chain, and the conclusion drawn from it
+            /* THE FIVE WHYS IS A WIZARD, not a column of five boxes. Five
+               identical fields side by side get filled top to bottom with five
+               restatements of the same sentence — the value of the technique is
+               that each question is BUILT FROM the previous answer and you
+               cannot see the next one until you have given this one.
+               So the properties are: one step at a time, a Next that advances,
+               the question quoting the answer it came from, and a visible
+               position in the process. Reported as "there should be a next
+               button, and we should restate the question with the given answer
+               explaining where the user is". */
             const whyRow = document.getElementById('rWhyRow');
             if (!whyRow) { say('RAID form', 'there is no way to record WHY something happened beyond a single '
               + 'description box, which collects the first answer and the first answer is the symptom'); return; }
             const chain = ['It slipped', 'The review took three weeks', 'Nobody owned the sign-off'];
+            const stepTxt = () => ((document.querySelector('.why-step') || {}).textContent || '');
+            const qTxt = () => ((document.querySelector('.why-q') || {}).textContent || '');
+            const posSeen = [];
             chain.forEach((t, i) => {
-              if (i > 0) raidAddWhyRow('');
-              const w = [...document.querySelectorAll('#rWhys .raid-why')];
-              if (!w[i]) return;
-              w[i].querySelector('.raid-why-text').value = t;
-              raidWhyRelabel(); raidWhyHint();
+              const inp = document.getElementById('rWhyIn');
+              if (!inp) { say('RAID form', 'step ' + (i + 1) + ' of the why chain has no input'); return; }
+              posSeen.push(stepTxt());
+              /* ONE AT A TIME. Two inputs on screen means it is a form again,
+                 and the reader answers the wrong question. */
+              if (document.querySelectorAll('#rWhys input.mini-inp').length > 1)
+                say('RAID form', 'more than one why is answerable at once — the chain then gets filled top to '
+                  + 'bottom with restatements instead of being built one answer at a time');
+              if (i > 0 && qTxt().indexOf(chain[i - 1]) < 0)
+                say('RAID form', 'step ' + (i + 1) + ' asks "' + qTxt().slice(0, 70) + '" without quoting the '
+                  + 'answer it came from — the chain then goes sideways instead of down, which is how five '
+                  + 'whys produces five symptoms');
+              inp.value = t;
+              if (i < chain.length - 1) {
+                const next = [...whyRow.querySelectorAll('button')].find(b => /ask why again/i.test(b.textContent));
+                if (!next) { say('RAID form', 'there is no Next control, so the chain cannot be advanced '
+                  + 'one question at a time'); return; }
+                next.click();
+              }
             });
-            const ws = [...document.querySelectorAll('#rWhys .raid-why')];
-            if (ws.length < 3) { say('RAID form', 'the why chain will not extend past ' + ws.length + ' step(s)'); }
+            /* WHERE AM I. A wizard with no position is a series of surprises —
+               the reader cannot tell whether this is the last question. */
+            if (!/step\s*1\b/i.test(posSeen[0] || '') || !/step\s*3\b/i.test(stepTxt()))
+              say('RAID form', 'the wizard does not say where the reader is: it read ' + JSON.stringify(posSeen)
+                + ' then "' + stepTxt() + '"');
+            if (!/of up to|of\s*5/i.test(stepTxt()))
+              say('RAID form', 'the position does not say five is a CEILING, so it reads as a quota and gets '
+                + 'padded to five');
+            if (whyRow.querySelectorAll('.why-past').length < chain.length - 1)
+              say('RAID form', 'the answers already given are not shown as a trail, so the reader cannot see '
+                + 'the chain they are building or go back into it');
+            // and it can be ended early, at any step — a chain that bottoms out at three is worth more
+            const fin = [...whyRow.querySelectorAll('button')].find(b => /root cause/i.test(b.textContent));
+            if (!fin) say('RAID form', 'the chain cannot be ended before step five, so a chain that genuinely '
+              + 'bottoms out early gets padded to fill the form');
             else {
-              /* EACH QUESTION CARRIES THE ANSWER ABOVE IT. Without that people
-                 answer the same question five times and the chain goes sideways
-                 instead of down, which is the failure mode of every five-whys
-                 exercise run on a whiteboard. */
-              const q2 = (ws[1].querySelector('.raid-why-q') || {}).textContent || '';
-              if (q2.indexOf(chain[0]) < 0)
-                say('RAID form', 'step 2 asks "' + q2.slice(0, 60) + '" without restating step 1 — the chain '
-                  + 'then goes sideways instead of down, which is how five whys produces five symptoms');
-            }
-            const hintNoRoot = (document.getElementById('rWhyHint') || {}).textContent || '';
-            if (!/no root cause named/i.test(hintNoRoot))
-              say('RAID form', 'a chain with no root cause named draws no objection — the chain is the '
-                + 'working and the last link is the conclusion, and without it a reader gets a paragraph');
-            const rootEl = document.getElementById('rRootCause');
-            if (!rootEl || document.getElementById('rRootRow').style.display === 'none')
-              say('RAID form', 'there is nowhere to name the root cause the chain arrives at');
-            else {
-              rootEl.value = 'Ownership is not assigned in the RACI';
-              raidWhyHint();
-              if (!/Root cause recorded/i.test((document.getElementById('rWhyHint') || {}).textContent || ''))
-                say('RAID form', 'naming the root cause is not acknowledged');
+              fin.click();
+              const rootEl = document.getElementById('rRootCause');
+              if (!rootEl) say('RAID form', 'ending the chain leaves nowhere to name the root cause');
+              else {
+                /* ENDING COMMITS THE ANSWER FIRST. Without that, typing the last
+                   link and pressing the button that names it the root cause
+                   stores the conclusion and throws away the step it came from. */
+                if (raidWhysRead().length !== chain.length)
+                  say('RAID form', 'ending the chain kept ' + raidWhysRead().length + ' of ' + chain.length
+                    + ' answers — the last one was typed and then dropped by the button that concludes it');
+                if (!rootEl.value) say('RAID form', 'the root cause box is empty after concluding the chain');
+                rootEl.value = 'Ownership is not assigned in the RACI';
+                rootEl.dispatchEvent(new Event('input'));
+              }
             }
             /* AND IT SURVIVES A SAVE AND A RELOAD. A field the editor writes and
                the file drops is worse than no field: the analysis looks recorded
@@ -689,6 +721,102 @@ const QA = JSON.parse(fs.readFileSync(
             say('RAID log', 'a REVERSED decision is drawn as a fault — a reversal is a cause, not a failure');
         })();
         try { closeRaidForm(); } catch (e) {}
+      })();
+
+      /* ── THE MARK MUST AGREE WITH THE NUMBER BESIDE IT ──────────────────
+         Plan vs actual gained a meter on budget and effort and a diverging bar
+         on schedule, because three columns of "$2,850 → $3,600 / +$750" forty
+         rows deep are correct and unreadable — nothing about them says which
+         row is the big one without arithmetic in your head.
+         A bar that disagrees with its own number is worse than no bar: it is
+         read FIRST and believed, and the number underneath is what gets
+         doubted. So the geometry is checked against the arithmetic, not merely
+         checked for existing. */
+      (() => {
+        switchTab('baseline'); renderBaseline();
+        const host = document.getElementById('baselineContainer');
+        if (!host) { say('Plan vs actual', 'the panel did not draw'); return; }
+        const rows = [...host.querySelectorAll('tbody tr')].filter(r => r.querySelectorAll('.pv-td').length >= 3);
+        out.pvRows = rows.length;
+        if (rows.length < 3) { say('Plan vs actual', 'only ' + rows.length + ' rows carry the plan/actual '
+          + 'cells, so nothing below is testing the marks'); return; }
+        const px = el => el ? parseFloat(getComputedStyle(el).width) || 0 : 0;
+        let over = 0, under = 0, checked = 0, wrong = 0;
+        rows.forEach(r => {
+          const cells = [...r.querySelectorAll('.pv-td')];
+          // cell 1 is schedule (diverging), 2 budget, 3 effort (both meters)
+          [cells[1], cells[2]].forEach(td => {
+            if (!td) return;
+            const d = td.querySelector('.pv-d');
+            const txt = ((d && d.textContent) || '').trim();
+            if (!txt) return;
+            const mark = td.querySelector('.pv-mark');
+            if (!mark || mark.classList.contains('pv-mark-none')) return;
+            checked++;
+            /* "+0%" and "+$0" are exactly ON the plan and draw no overrun,
+               correctly. The first version tested only the leading sign and a
+               narrow literal, so it read "+0%" as over and reported the product
+               for behaving right — the same shape as anchoring on the artefact
+               (a plus sign) instead of the property (a non-zero magnitude). */
+            const mag = Math.abs(parseFloat(txt.replace(/[^\d.]/g, '')) || 0);
+            const isOver = txt.charAt(0) === '+' && mag > 0;
+            const overSeg = td.querySelector('.pv-over');
+            const fill = td.querySelector('.pv-fill');
+            if (isOver) {
+              over++;
+              if (!overSeg) { wrong++; say('Plan vs actual', 'a row reading "' + txt + '" draws no overrun '
+                + 'past the track, so over and under look identical at a glance — which is the whole reason '
+                + 'the mark is there'); }
+              if (fill && !fill.classList.contains('pv-fill-over')) { wrong++;
+                say('Plan vs actual', 'a row reading "' + txt + '" fills the track in the under-plan colour'); }
+            } else {
+              under++;
+              if (overSeg && px(overSeg) > 0) { wrong++;
+                say('Plan vs actual', 'a row reading "' + txt + '" draws an OVERRUN segment — it is not over'); }
+            }
+          });
+          // the diverging mark sits on the correct side of the centre line
+          const sc = cells[0];
+          const sd = sc && sc.querySelector('.pv-d');
+          const slip = sc && sc.querySelector('.pv-slip');
+          if (sd && slip) {
+            const n = parseFloat((sd.textContent || '').replace(/[^\d.-]/g, ''));
+            const late = slip.classList.contains('pv-slip-late');
+            if (Number.isFinite(n) && n !== 0 && ((n > 0) !== late)) {
+              wrong++;
+              say('Plan vs actual', 'the schedule bar for a row reading "' + (sd.textContent || '').trim()
+                + '" is drawn on the ' + (late ? 'LATE' : 'EARLY') + ' side of the centre line');
+            }
+          }
+        });
+        out.pvMarksChecked = checked; out.pvOver = over; out.pvUnder = under; out.pvWrong = wrong;
+        /* BOTH DIRECTIONS HAVE TO OCCUR, or the check confirms one shape and
+           says nothing about the other — the vacuum this directory keeps
+           finding. crm-rollout carries rows of each; if it stops, say so. */
+        if (!over) say('Plan vs actual', 'no row on this plan is over its budget or estimate, so the overrun '
+          + 'half of the mark was never drawn and this check only proves the under-plan case');
+        if (!under) say('Plan vs actual', 'no row is under, so only the overrun case was exercised');
+        /* AND THE MARKS ARE EXPLAINED. A bar with no key is a reader guessing
+           at geometry — and the two geometries here mean different things on
+           purpose, so guessing gets it wrong rather than merely vague. */
+        /* VISIBLE, not merely present. Asserting the element exists passes on a
+           key with display:none — which is no key at all to the person reading
+           the table, and is exactly the artefact-instead-of-property mistake
+           this suite keeps finding. Measured, because that is the only thing
+           that cannot be satisfied by markup nobody sees. */
+        const key = host.querySelector('.pv-key');
+        const keyShown = !!(key && key.getBoundingClientRect().width > 0 && key.offsetParent !== null);
+        if (!keyShown) say('Plan vs actual', 'the bars carry no VISIBLE key, so a reader has to infer that '
+          + 'the track is the plan and that the schedule bar is a different geometry from the other two'
+          + (key ? ' — the markup is there and is not being shown, which is the same thing to a reader' : ''));
+        if (key) {
+          const kt = (key.textContent || '');
+          if (!/under|over/i.test(kt) || !/early|late/i.test(kt))
+            say('Plan vs actual', 'the key does not cover both mark types: "' + kt.replace(/\s+/g, ' ').trim().slice(0, 80) + '"');
+          if (key.querySelectorAll('.pv-mark').length < 4)
+            say('Plan vs actual', 'the key names the states in words and does not SHOW them, so it teaches '
+              + 'the vocabulary and not the geometry');
+        }
       })();
 
       /* ── THE RED RING MUST SAY WHAT IT MEANS ────────────────────────────
