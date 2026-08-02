@@ -240,6 +240,63 @@ banner, a swallow restored in `switchTab`, a bare render in `calculate()`, an
 unguarded `recompute()`, a host id that is not in the document, a notice that
 blanks its host, and a notice that outlives the failure. All nine caught.
 
+## The five checks that had never failed
+
+A hundred and three mutants in, five of the twenty-two checks had never once
+been the one to go red: `golden-reference`, `client-facing-sweep`,
+`cross-surface-sweep`, `schedule-sweep` and `task-editor-sweep`. That is not
+proof they were broken — a mutant stops at the FIRST check that notices, and
+something earlier in the running order usually did. But it is the absence of
+proof, and the premise of the whole apparatus is that an unexercised check is
+worth nothing until it has failed once on purpose.
+
+Eleven mutants now target regions belonging to those five, with `LIKELY` routing
+each to the check under examination so the verdict names it. Getting them caught
+turned up three things that were wrong in the CHECKS, all of the same species:
+an assertion that could not fire.
+
+**Three of schedule-sweep's four dependency types had never executed.** It holds
+FS, SS, FF and SF; crm-rollout carries 26 dependencies and field-export 31, and
+all 57 are FS. So the forward and backward passes could compute SS, FF and SF
+however they liked with the suite green — the PERT-weighting shape exactly: a
+correct check and a fixture that cannot tell the difference. The sweep now
+constructs one link of each type with a non-zero lag, reschedules, and asserts
+the textbook identity, with a coverage assertion so the block cannot go quietly
+vacuous if the rewiring stops taking.
+
+That check then needed two corrections of its own. It first asked only that the
+successor start no EARLIER than the constraint, and an SS link scheduled as
+though it were FS passed — treating SS as FS puts the successor LATER, which a
+one-sided test cannot see, and a type that is silently stricter than it says
+pushes the committed date out for a reason nothing on screen gives. It asserts
+equality now, since the constructed link is the only predecessor. And the first
+version of THAT reported the shipped build, because the forward pass has a third
+floor the check had forgotten: `if (start < 0) start = 0`. An SF link whose lag
+puts the required start before day zero is not the binding constraint. The check
+was wrong, not the app; where the clamp binds it now asserts the clamp.
+
+**client-facing-sweep's audience fallback had never run.** All ten test cases in
+the fixture carry `audience:"internal"`, so `testCaseAudience` returns on its
+first line every time and the half that decides what an UNKNOWN audience becomes
+was never reached. The loop was counting to zero on a build that answered
+"client" to every unknown — the exact defect it was written against. The case is
+constructed now: audience removed, AC id resolving to nothing.
+
+**cross-surface-sweep was reading the wrong element.** Its "must not paint the
+project red when the verdict is not bad" check picked the card's delta with
+`.find(x => /font-weight:700/.test(style))`, and both the value pair and the
+delta are 700 — so it read the pair, which is painted ordinary text colour on
+every plan there has ever been. A build that rendered every Budget card critical
+passed it. The delta is now identified by what it says rather than by its
+position, and a null colour is itself a finding.
+
+One mutant is deliberately absent and says so in the file: silencing the
+Schedule card's count of activities off their own dates. cross-surface compares
+that count against the bar's, and the bar only prints one in the projVar ≠ 0
+wording — on crm-rollout the finish is held, so both take their other branch and
+there is nothing to disagree about. It survives for want of a fixture, not for
+want of a check, and listing it would report a permanent false hole.
+
 ## The written test plan
 
 `node tests/run-test-plan.js` runs 42 cases and writes two documents:

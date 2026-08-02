@@ -186,6 +186,42 @@ const DATA = FIXTURE();
           say('Audience', guessedClient + ' test case(s) verify no criterion and carry no audience, and '
             + 'are reported CLIENT-FACING anyway — an unknown answered in the direction that puts '
             + 'internal notes in front of a client');
+        /* CONSTRUCTED, because the fixture cannot reach the branch. All ten of
+           its test cases carry audience:"internal", so testCaseAudience returns
+           on its first line every time and the fallback — the half that decides
+           what an UNKNOWN audience becomes — has never once executed here. The
+           loop above was therefore counting to zero on a build that answered
+           "client" to every unknown, which is the exact defect it was written
+           against. Same shape as the dependency types in schedule-sweep: a
+           correct check and a fixture that cannot tell the difference.
+
+           So the case is built: a test case with its audience removed and an AC
+           id that resolves to nothing. The only safe answer is 'unclassified' —
+           hiding a client case costs a moment's confusion, showing an internal
+           one puts an internal note in front of the client. */
+        if (tcs.length) {
+          const probe = tcs[0];
+          const savedAud = probe.audience, savedName = probe.name;
+          probe.audience = undefined;
+          probe.name = 'TC ZZ-none-99 — constructed: an audience nobody can determine';
+          const verdict = testCaseAudience(probe);
+          aud.constructedUnknownVerdict = verdict;
+          if (verdict === 'client')
+            say('Audience', 'a test case with no audience and no criterion behind it is reported '
+              + 'CLIENT-FACING — the unknown is answered in the direction that puts an internal note '
+              + 'in front of the client');
+          else if (verdict !== 'unclassified')
+            say('Audience', 'a test case with no audience and no criterion behind it reports "'
+              + verdict + '" rather than unclassified');
+          // and an EXPLICIT audience must still win over anything inferred
+          probe.audience = 'internal';
+          const explicit = testCaseAudience(probe);
+          aud.constructedExplicitVerdict = explicit;
+          if (explicit !== 'internal')
+            say('Audience', 'a test case carrying audience:"internal" reports "' + explicit
+              + '" — the value somebody typed on purpose is losing to a guess');
+          probe.audience = savedAud; probe.name = savedName;
+        }
         aud.internal = tcs.filter(t => testCaseAudience(t) === 'internal').length;
         aud.client = tcs.filter(t => testCaseAudience(t) === 'client').length;
         aud.unclassified = tcs.filter(t => testCaseAudience(t) === 'unclassified').length;

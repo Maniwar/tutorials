@@ -77,7 +77,17 @@ const DATA = FIXTURE();
     const cards = [...cardsHost.querySelectorAll('.bl-cards .stat-card')].map(el => ({
       label: (el.querySelector('.label') || {}).textContent || '',
       text: el.textContent.replace(/\s+/g, ' ').trim(),
-      deltaColour: (() => { const d = [...el.children].find(x => /font-weight:700/.test(x.getAttribute('style') || ''));
+      /* THE DELTA, not the pair. Both are font-weight:700, and `.find` returns
+         the FIRST — which is the "$14,779 due by today → $27,900" line, painted
+         the ordinary text colour on every plan there has ever been. So the
+         red-when-the-verdict-is-not-bad check below read an element that cannot
+         go red, and could not fail: a build that painted every Budget card
+         critical passed it. The delta is the one carrying dColor(), and it is
+         identified by what it SAYS rather than by its position, because the
+         position is exactly what went wrong. */
+      deltaColour: (() => {
+        const d = [...el.children].find(x => /(above|below|on) the plan to date|vs baseline|scope unchanged/i
+          .test(x.textContent || ''));
         return d ? getComputedStyle(d).color : null; })()
     }));
     const budCard = cards.find(c => /Budget/.test(c.label));
@@ -94,6 +104,10 @@ const DATA = FIXTURE();
         say('Plan vs actual · Budget card', 'states no gap while the bar states ' + fmtMoney(bv.gap));
       }
       // and it must not colour the project red when the bar does not
+      if (budCard.deltaColour == null)
+        say('Plan vs actual · Budget card', 'its delta line could not be located, so the colour check below '
+          + 'read nothing and proved nothing — that is the state it was in when it was reading the value '
+          + 'pair instead');
       const red = /rgb\(\s*2[0-2]\d\s*,\s*[0-5]?\d\s*,/.test(budCard.deltaColour || '');
       if (red && bv.tone !== 'bad')
         say('Plan vs actual · Budget card', 'renders red while budgetVerdict says "' + bv.tone + '"');

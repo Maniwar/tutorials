@@ -100,8 +100,8 @@ rm -f /tmp/ptr-m.$$
 # the commitment log, the estimate bank's calibration, a wizard button that acts
 # on the wrong object, a caption that states a figure typed by hand, a render
 # boundary that swallows instead of reporting — and confirm something goes red.
-# A hundred and three of them. It runs min(4, cores-2) lanes, so the wall-clock
-# is the machine: about twenty-five minutes on a four-core box, proportionally
+# A hundred and fourteen of them. It runs min(4, cores-2) lanes, so the wall-clock
+# is the machine: about twenty-eight minutes on a four-core box, proportionally
 # less with more. Too much for every commit, worth it before anything the user
 # sees. FULL=1 git commit.
 #

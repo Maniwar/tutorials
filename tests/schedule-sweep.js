@@ -109,6 +109,136 @@ const DATA = FIXTURE();
       });
     });
 
+    /* ═══ 3b. AND THE THREE LINK TYPES NOBODY HAS EVER SCHEDULED ═══════════
+       The block above holds four link types and, on every committed fixture,
+       has only ever executed one. crm-rollout carries 26 dependencies and
+       field-export 31, and all 57 of them are FS — so the SS, FF and SF
+       branches were dead code inside a passing check, and the forward and
+       backward passes could compute those three however they liked with the
+       suite green. That is the same shape as the PERT weighting: a check that
+       is correct and a fixture that cannot tell the difference.
+
+       So the links are CONSTRUCTED here. One of each type, with a non-zero lag
+       so an implementation that ignores lag is caught too, rewritten onto real
+       activities in the loaded plan and rescheduled. The identities are the
+       textbook ones and are asserted independently of how the app computes
+       them: SS means the successor may not START before the predecessor starts
+       (plus lag), FF that it may not FINISH before the predecessor finishes,
+       SF that it may not FINISH before the predecessor starts.
+
+       The coverage assertion at the end is the load-bearing half. Without it
+       this whole block goes quietly vacuous the moment the rewiring stops
+       taking — which is precisely the state it was written to end. */
+    const linkCover = { built: {}, checked: {}, floors: {}, violations: [] };
+    (() => {
+      const saved = JSON.stringify(tasks.map(t => ({ id: t.id, predecessors: t.predecessors })));
+      // pick leaves that already have a predecessor, so rewiring changes a TYPE
+      // rather than inventing a dependency the plan does not have
+      const wired = leaves().filter(t => (t.predecessors || []).length
+        && (t.predecessors || []).some(p => {
+          const pid = (typeof p === 'object') ? p.id : p;
+          const pr = tasks.find(x => x.id === pid);
+          return pr && !pr.isSummary && !pr.milestone;
+        }) && !t.milestone);
+      const types = ['SS', 'FF', 'SF'];
+      if (wired.length < types.length) {
+        say('Link types', 'the fixture has only ' + wired.length + ' rewireable dependency(ies), so the '
+          + 'SS/FF/SF branches cannot be exercised — this check is vacuous and must not be trusted');
+        return;
+      }
+      types.forEach((ty, i) => {
+        const t = wired[i];
+        const first = (t.predecessors || [])[0];
+        const pid = (typeof first === 'object') ? first.id : first;
+        t.predecessors = [{ id: pid, type: ty, lag: 2 }];
+        linkCover.built[ty] = t.name;
+      });
+      if (!recompute()) { say('Link types', 'the plan will not schedule with SS/FF/SF links present'); }
+      else {
+        types.forEach(ty => {
+          const t = leaves().find(x => (x.predecessors || []).some(p => p && p.type === ty));
+          if (!t) { say('Link types', 'the ' + ty + ' link did not survive the reschedule, so nothing was tested'); return; }
+          const p = (t.predecessors || []).find(q => q && q.type === ty);
+          const pred = tasks.find(x => x.id === p.id);
+          if (!pred) { say('Link types', 'the ' + ty + ' predecessor vanished'); return; }
+          linkCover.checked[ty] = t.name + ' ← ' + pred.name;
+          const lag = Number(p.lag) || 0;
+          let need, got, what;
+          if (ty === 'SS') { need = pred.es + lag; got = t.es; what = 'start'; }
+          else if (ty === 'FF') { need = pred.ef + lag; got = t.ef; what = 'finish'; }
+          else { need = pred.es + lag; got = t.ef; what = 'finish'; }
+          /* EQUALITY, not a lower bound. The first version of this asked only
+             that the successor start no EARLIER than the constraint, and an SS
+             link scheduled as though it were FS passed it — treating SS as FS
+             puts the successor LATER, which satisfies a one-sided test
+             perfectly. A dependency type that is silently stricter than it says
+             pushes out the committed date, and the reader sees a plan that is
+             merely pessimistic rather than wrong.
+             The rewiring above left exactly ONE predecessor and this is the only
+             floor, so the link is the binding constraint and the pass has no
+             licence to place the activity anywhere else. The two other floors
+             the forward pass honours are excluded explicitly rather than
+             assumed away. */
+          /* THREE floors, not one. The forward pass honours a levelling delay,
+             a start pin, and — the one this check first forgot — the project
+             start itself: `if (start < 0) start = 0`. An SF link whose lag puts
+             the required START before day zero is therefore NOT the binding
+             constraint, and the first version of this reported the shipped
+             build for it (Solution Design, required finish 4.00, actual 6.33,
+             because its required start was −2.33 and got clamped). The check was
+             wrong, not the app. Where the clamp binds, the assertion that still
+             holds is the one-sided one plus the clamp itself. */
+          const reqStart = (ty === 'SS') ? need : need - (t.te || 0);
+          const otherFloor = (t.levelDelay || 0) > 0 || t.startNoEarlier;
+          const clamped = reqStart < -1e-6;
+          linkCover.floors[ty] = otherFloor ? 'levelling/pin' : clamped ? 'project start' : 'the link';
+          if (otherFloor) {
+            say('Link types', t.name + ' carries a levelling delay or a start pin, so the ' + ty
+              + ' link is not the binding constraint and this case proves nothing — pick another activity');
+          } else if (clamped) {
+            if (Math.abs(t.es) > 1e-6)
+              say(t.name, 'has a ' + ty + ' link requiring a start of ' + reqStart.toFixed(2)
+                + ', which is before the project begins, so it must be clamped to 0 — it starts at '
+                + t.es.toFixed(2));
+            if (got < need - 1e-6)
+              say(t.name, 'has a ' + ty + ' link from "' + pred.name + '" requiring it to ' + what
+                + ' no earlier than ' + need.toFixed(2) + ' — it ' + what + 'es at ' + got.toFixed(2));
+          } else if (Math.abs(got - need) > 1e-6) {
+            linkCover.violations.push(ty);
+            say(t.name, 'has a ' + ty + ' link from "' + pred.name + '" with a lag of ' + lag
+              + ' as its ONLY constraint, so it must ' + what + ' at exactly ' + need.toFixed(2)
+              + ' — it ' + what + 'es at ' + got.toFixed(2)
+              + (got > need ? ' (later than the link requires: the type is stricter than it says, and the '
+                  + 'committed date is pushed out for a reason nothing on the screen gives)'
+                : ' (earlier than the link requires: the dependency is not being honoured at all)'));
+          }
+          /* and the LAG has to be read. With lag dropped the constraint sits
+             `lag` units earlier, and that is a different number from the one
+             asserted above — so this is already covered by the equality. Kept as
+             an explicit note so nobody re-adds a weaker lag test believing it
+             was missing. */
+        });
+      }
+      // put the plan back before anything downstream reads it
+      const orig = JSON.parse(saved);
+      orig.forEach(o => { const t = tasks.find(x => x.id === o.id); if (t) t.predecessors = o.predecessors; });
+      recompute();
+      /* The equality only runs where the LINK is the binding floor, so a run in
+         which every constructed link is clamped to the project start would
+         report three ticks having tested nothing stricter than "not negative".
+         At least one has to be genuinely link-bound, and it is named in the
+         output so a reader can see which. */
+      const bound = types.filter(ty => linkCover.floors[ty] === 'the link');
+      linkCover.linkBound = bound;
+      if (!bound.length)
+        say('Link types', 'every constructed link was clamped by the project start, so the equality that '
+          + 'catches a type scheduled as a STRICTER type never ran — this check is one-sided again');
+      const missing = types.filter(ty => !linkCover.checked[ty]);
+      if (missing.length)
+        say('Link types', missing.join('/') + ' were never actually scheduled, so those branches of this '
+          + 'check proved nothing — the same vacuum they were in before this block existed');
+    })();
+
     // ═══ 4. THE CRITICAL PATH IS A CHAIN, NOT A SET ════════════════════════
     /* A critical "path" that is really a disconnected set of zero-slack
        activities is the classic CPM presentation bug: it reads as a sequence,
@@ -235,7 +365,7 @@ const DATA = FIXTURE();
 
     hydrate(JSON.parse(JSON.stringify(window.__fixture))); calculate();
 
-    return { contradictions: bad,
+    return { contradictions: bad, linkTypes: linkCover,
              counts: { leaves: leaves().length, edges, violated, critical: crit.length, nonWorking },
              projectFinish: +projEf.toFixed(3),
              reserves: { cpm: +rv.cpmUnits.toFixed(2), committed: +rv.committedUnits.toFixed(2),

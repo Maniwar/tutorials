@@ -628,6 +628,73 @@ const MUTANTS = [
     find: "      host.insertAdjacentHTML('afterbegin', renderFailHtml(label, err, stale));",
     with: '      host.innerHTML = renderFailHtml(label, err, stale);' },
 
+  /* ── the five checks with no evidence they can fail ───────────────────────
+     A hundred and three mutants, and five of the twenty-two checks had never
+     been the one to go red: golden-reference, client-facing, cross-surface,
+     schedule and task-editor. That is not proof they are broken — a mutant
+     stops at the FIRST check that notices, and something earlier in the running
+     order usually did. But it is the absence of proof, and the whole premise of
+     this file is that an unexercised check is worth nothing until it has failed
+     once on purpose.
+
+     So each of these targets a region that belongs to one of those five, and
+     LIKELY points at it, so that check runs first and the verdict names it.
+     One of them found a real hole on the way in: schedule-sweep holds four
+     dependency types and every committed fixture is FS, so three of its four
+     branches had never executed. That check now constructs the links. */
+
+  { what: 'reference: the milestone convention adds a day and the panel stops saying why',
+    find: '            if (!planEndsOnMilestone()) return \'\';',
+    with: '            if (true) return \'\';' },
+
+  { what: 'client: client-safe mode prints the money it exists to withhold',
+    find: "      const costLine = clientSafeReports ? '' : (cost > 0 || projectBudget > 0)",
+    with: "      const costLine = false ? '' : (cost > 0 || projectBudget > 0)" },
+
+  { what: 'client: a test case whose audience nobody can determine is called client-facing',
+    find: "      return s ? storyAudience(s) : 'unclassified';",
+    with: "      return s ? storyAudience(s) : 'client';" },
+
+  { what: 'client: the RAID export silently drops the first entry',
+    find: '      raid.forEach(r => rows.push([r.type, r.title, r.probability, r.impact,',
+    with: '      raid.slice(1).forEach(r => rows.push([r.type, r.title, r.probability, r.impact,' },
+
+  { what: 'card: the Budget pair and its delta go back to different references',
+    find: "          ${card('Budget', fmtMoney(pvAt(stripTime(new Date()).getTime())) + ' due by today', fmtMoney(actCostAll),",
+    with: "          ${card('Budget', fmtMoney(costRef) + ' envelope', fmtMoney(actCostAll)," },
+
+  /* A mutant that is NOT here: silencing the Schedule card's count of
+     activities off their own dates. cross-surface compares that count against
+     the BAR's, and the bar only prints one in the projVar ≠ 0 wording — on
+     crm-rollout the finish is held, so both take their other branch and there
+     is nothing to disagree about. The mutant survives for want of a fixture,
+     not for want of a check, and listing it would report a permanent false
+     hole. The card's colour is the reachable half of the same card. */
+
+  { what: 'card: the Budget card paints the project red while the verdict does not',
+    find: "      const budTone = bvCard.tone === 'bad' ? 1 : bvCard.tone === 'chg' ? 0 : -1;",
+    with: '      const budTone = 1;' },
+
+  { what: 'network: an SS link is scheduled as though it were FS',
+    find: "          const L = p.lag;\n          switch (p.type) {\n            case 'SS': s = es[p.id] + L; break;",
+    with: "          const L = p.lag;\n          switch (p.type) {\n            case 'SS': s = ef[p.id] + L; break;" },
+
+  { what: 'network: contingency is subtracted, so the committed date precedes the CPM finish',
+    find: '      const committedUnits = cpmUnits + contingencyUnits;',
+    with: '      const committedUnits = cpmUnits - contingencyUnits;' },
+
+  { what: 'network: the confidence a date carries is reported as its complement',
+    find: '        return n / mcResult.durations.length * 100;',
+    with: '        return 100 - n / mcResult.durations.length * 100;' },
+
+  { what: 'editor: the live preview weights the estimate differently from the plan it writes into',
+    find: '      return (mLastEstUnits = pertTE(o, m, p));',
+    with: '      return (mLastEstUnits = (o + 3 * m + p) / 5);' },
+
+  { what: 'editor: a half-typed estimate collapses the readout to zero instead of holding',
+    find: '      if (![o, m, p].every(v => Number.isFinite(v) && v >= 0)) return mLastEstUnits;',
+    with: '      if (![o, m, p].every(v => Number.isFinite(v) && v >= 0)) return 0;' },
+
   { what: 'boundary: the banner cannot be dismissed, so it sits there for the rest of the session',
     find: '        + \'<button class="btn-sm btn-secondary" onclick="renderFailures=[];paintRenderBanner()">Dismiss</button>\';',
     with: "        + '';" },
@@ -669,6 +736,9 @@ const LIKELY = {
   'prose:': 'dynamic-prose-sweep.js', 'heatmap:': 'resourcing-sweep.js',
   'navigation:': 'navigation-sweep.js', 'worklist:': 'navigation-sweep.js',
   'boundary:': 'error-boundary-sweep.js',
+  'reference:': 'golden-reference.js', 'client:': 'client-facing-sweep.js',
+  'card:': 'cross-surface-sweep.js', 'network:': 'schedule-sweep.js',
+  'editor:': 'task-editor-sweep.js',
   'criteria:': 'ai-boundary-sweep.js', 'effort:': 'resourcing-sweep.js', 'bank:': 'bank-sweep.js', 'handoff:': 'bank-sweep.js', 'curve:': 'navigation-sweep.js',
   'drill-in:': 'chart-reconciliation-sweep.js', 'backup:': 'persistence-sweep.js', 'accrual:': 'chart-reconciliation-sweep.js', 'cash:': 'chart-reconciliation-sweep.js'
 };
