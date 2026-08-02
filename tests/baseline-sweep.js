@@ -350,7 +350,94 @@ const QA = JSON.parse(fs.readFileSync(
             + 'nothing about it, so the reset count above will not match the rows anyone can count');
       }
 
-      return { contradictions: bad, counts: out };
+      /* ═══ TICKING SOMETHING COMPLETE MUST NOT INVENT ITS DATES ══════════════
+       Reported from use: ticking a 5.17-day activity complete in one gesture
+       stamped today into BOTH actual start and actual finish. The plan then
+       asserted a five-day activity ran for one day — 24 calendar days early
+       against its baseline, and a duration a fifth of the estimate archived to
+       the bank, every figure arithmetic on a date the tool made up.
+
+       The mechanism is the ordering, which is why this checks the ONE-GESTURE
+       path rather than setting the fields directly: 0% straight to 100%
+       satisfies both "it has started" and "it has finished", and the started
+       rule ran first, stamped today, and left the finished rule with a start
+       already present. Any check that set 50% first and then 100% would pass on
+       the broken build. */
+    ran('actualsFromCheckOff');
+    (() => {
+      const t = leafTasks().find(x => !x.isSummary && !x.milestone && !x.actualStart && !x.actualFinish
+        && (x.percentComplete || 0) === 0 && unitToWorkingDays(x.te || 0) > 3);
+      if (!t) { say('Check-off', 'no multi-day unstarted activity on this plan, so the date inference is '
+        + 'untested — the whole point is an activity whose duration is longer than a day'); return; }
+      const durD = unitToWorkingDays(t.te || 0);
+      out.checkOffTask = t.name; out.checkOffDurDays = Math.round(durD * 100) / 100;
+      updatePct(t.id, 100);
+      out.checkOffStart = t.actualStart; out.checkOffFinish = t.actualFinish;
+      if (!t.actualStart || !t.actualFinish) { say('Check-off', 'ticking complete left an actual date empty'); return; }
+      const sd = new Date(t.actualStart + 'T00:00:00'), fd = new Date(t.actualFinish + 'T00:00:00');
+      const span = workingDaysBetween(sd, fd, getHolidaySet()) + 1;
+      out.checkOffSpan = span;
+      if (span <= 1)
+        say('Check-off', 'ticking a ' + (Math.round(durD * 10) / 10) + '-day activity complete recorded it as '
+          + 'starting and finishing on the SAME day — the plan then reports it finishing far early against its '
+          + 'baseline and archives a duration nobody observed');
+      if (Math.abs(span - Math.round(durD)) > 1)
+        say('Check-off', 'the inferred span is ' + span + ' working days against a planned ' + Math.round(durD)
+          + ' — the back-dating is not using the activity\'s own duration');
+      // the finish is OBSERVED and must be today; only the start is a guess
+      if (t.actualFinish !== fmtISO(new Date()))
+        say('Check-off', 'the actual finish is ' + t.actualFinish + ', not today — that one IS observed');
+      /* AND IT SAYS THE START IS A GUESS. A date the tool worked out, presented
+         with the same weight as one somebody recorded, is how an invented figure
+         reaches the estimate bank wearing a record's clothes. */
+      if (!t.actualStartInferred)
+        say('Check-off', 'the back-dated start is not flagged as inferred, so nothing downstream can tell a '
+          + 'date the tool worked out from one a person recorded');
+      // a one-day activity is the case where same-day IS right
+      const s1 = leafTasks().find(x => !x.isSummary && !x.milestone && !x.actualStart
+        && (x.percentComplete || 0) === 0 && unitToWorkingDays(x.te || 0) <= 1);
+      if (s1) {
+        updatePct(s1.id, 100);
+        out.shortSameDay = s1.actualStart === s1.actualFinish;
+        if (!out.shortSameDay)
+          say('Check-off', 'a one-day activity was back-dated anyway, so the inference is applied where there '
+            + 'is nothing to infer');
+      }
+    })();
+
+    /* ═══ COMPLETE, WITH NOBODY HAVING WRITTEN DOWN WHEN ════════════════════
+       A different gap from a miss, and it had no surface: an activity can sit
+       at 100% with both dates empty and every panel treats it as done. It
+       matters because every figure on this tab is measured FROM those dates —
+       blank, the row falls back to the forecast and reports "0 days against its
+       baseline" for the reason that nothing was measured at all. */
+    ran('undatedCompletions');
+    (() => {
+      const undated = undatedCompletions();
+      out.undatedCount = undated.length;
+      switchTab('baseline'); renderBaseline();
+      const txt = (document.getElementById('baselineContainer') || {}).innerText || '';
+      const shown = /no actual dates recorded/i.test(txt);
+      out.undatedBannerShown = shown;
+      if (undated.length && !shown)
+        say('Undated completions', undated.length + ' completed ' + (undated.length === 1 ? 'activity has' : 'activities have')
+          + ' no actual dates and the panel says nothing — those rows report 0 days against their baseline '
+          + 'because nothing was measured, which is indistinguishable from landing exactly on plan');
+      if (!undated.length && shown)
+        say('Undated completions', 'the panel warns about undated completions and there are none');
+      if (undated.length) {
+        // and the offered repair actually dates it
+        const id = undated[0].id, nm = undated[0].name;
+        stampActualsFromPlan(id);
+        const t2 = tasks.find(x => x.id === id);
+        if (!t2.actualStart || !t2.actualFinish)
+          say('Undated completions', '"Use the planned dates" left "' + nm + '" undated');
+        else if (!t2.actualStartInferred)
+          say('Undated completions', 'dating an activity from its plan does not flag the start as inferred');
+      }
+    })();
+
+    return { contradictions: bad, counts: out };
     }, label);
   };
 

@@ -639,6 +639,31 @@ const MUTANTS = [
      disagrees with its own number is worse than no bar: it is read first and
      believed, and the number underneath is what gets doubted. */
 
+  /* ── ticking something complete ───────────────────────────────────────────
+     The ordinary one-gesture check-off, which is how most work actually gets
+     recorded, and it was inventing the dates every other figure is measured
+     from. */
+
+  { what: 'check-off: the started rule pre-empts the finished one, so nothing is back-dated',
+    find: "      if (pct > 0 && prevPct <= 0 && !t.actualStart && !completing) { t.actualStart = today; t.autoActualStart = true; }",
+    with: "      if (pct > 0 && prevPct <= 0 && !t.actualStart) { t.actualStart = today; t.autoActualStart = true; }" },
+
+  { what: 'check-off: a five-day activity is recorded as starting and finishing the same day',
+    find: '          const back = Math.max(0, Math.round(durD) - 1);',
+    with: '          const back = 0;' },
+
+  { what: 'check-off: the observed finish is back-dated too, so nothing is anchored to today',
+    find: "        if (!t.actualFinish) { t.actualFinish = today; t.autoActualFinish = true; }\n        /* A FIVE-DAY ACTIVITY",
+    with: "        if (!t.actualFinish) { t.actualFinish = fmtISO(subWorkingDays(new Date(), 3, getHolidaySet())); t.autoActualFinish = true; }\n        /* A FIVE-DAY ACTIVITY" },
+
+  { what: 'check-off: an inferred start is presented as a recorded one',
+    find: '          t.actualStartInferred = back > 0;      // said out loud on the panel',
+    with: '          t.actualStartInferred = false;' },
+
+  { what: 'check-off: work marked complete with no dates at all is not reported',
+    find: '      cont.innerHTML = `${banner}${undatedCompletionsHtml()}${completionReviewHtml()}',
+    with: '      cont.innerHTML = `${banner}${completionReviewHtml()}' },
+
   { what: 'revenue: the funding gap is stated in words and never drawn',
     find: "            bits.push(ptrCashSvg(pos)\n              + '<p class=\"ptr-mi-line\">Billed '",
     with: "            bits.push('' \n              + '<p class=\"ptr-mi-line\">Billed '" },
@@ -882,7 +907,7 @@ const LIKELY = {
   'prose:': 'dynamic-prose-sweep.js', 'heatmap:': 'resourcing-sweep.js',
   'navigation:': 'navigation-sweep.js', 'worklist:': 'navigation-sweep.js',
   'boundary:': 'error-boundary-sweep.js', 'revenue:': 'revenue-sweep.js',
-  'chart:': 'drawn-surfaces-sweep.js',
+  'chart:': 'drawn-surfaces-sweep.js', 'check-off:': 'baseline-sweep.js',
   'reference:': 'golden-reference.js', 'client:': 'client-facing-sweep.js',
   'card:': 'cross-surface-sweep.js', 'network:': 'schedule-sweep.js',
   'editor:': 'task-editor-sweep.js',

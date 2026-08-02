@@ -3202,7 +3202,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.1859</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.1909</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4285,6 +4285,7 @@ Or say what you want, in your own words:
           parentId: t.parentId, description: t.description, deliverable: t.deliverable,
           acceptance: t.acceptance, actualStart: t.actualStart, actualFinish: t.actualFinish, actualEffort: (t.actualEffort == null ? null : t.actualEffort),
           fixedCost: t.fixedCost || 0, actualCost: t.actualCost || 0, autoActualCost: t.autoActualCost !== false, audience: t.audience || null,
+          actualStartInferred: !!t.actualStartInferred,
           invoiced: t.invoiced == null ? null : Number(t.invoiced), invoicedDate: t.invoicedDate || '',
           paid: t.paid == null ? null : Number(t.paid), paidDate: t.paidDate || '',
           taxonomy: t.taxonomy || null, taxSrc: (t.taxSrc === 'ai' ? 'ai' : null),
@@ -4334,6 +4335,7 @@ Or say what you want, in your own words:
         jira: String(t.jira || '').trim(),
         deadline: /^\d{4}-\d{2}-\d{2}$/.test(t.deadline || '') ? t.deadline : '',
         fixedCost: Number(t.fixedCost) || 0, actualCost: Number(t.actualCost) || 0, autoActualCost: t.autoActualCost !== false, audience: (t.audience === 'client' || t.audience === 'internal') ? t.audience : null,
+        actualStartInferred: !!t.actualStartInferred,
         invoiced: (t.invoiced == null || t.invoiced === '') ? null : (Number(t.invoiced) || 0), invoicedDate: t.invoicedDate || '',
         paid: (t.paid == null || t.paid === '') ? null : (Number(t.paid) || 0), paidDate: t.paidDate || '',
         taxonomy: taxCoerce(t.taxonomy), taxSrc: (t.taxSrc === 'ai' ? 'ai' : null),
@@ -4573,6 +4575,23 @@ Or say what you want, in your own words:
       while (added < target) {
         d.setDate(d.getDate() + 1);
         if (isWorkingDay(d, holidays)) added++;
+      }
+      return d;
+    }
+    /* Backwards, and its own function on purpose. addWorkingDays clamps n to
+       max(0, …) and snaps FORWARD to a working day first, so handing it a
+       negative returns the start unchanged — silently, which is how a
+       back-dated actual start would have come out as "today" again with nothing
+       to show for the attempt. Snapping backward is the mirror, not the same
+       loop with a sign. */
+    function subWorkingDays(end, n, holidays) {
+      let d = stripTime(new Date(end));
+      while (!isWorkingDay(d, holidays)) d.setDate(d.getDate() - 1);
+      let done = 0;
+      const target = Math.max(0, Math.round(n));
+      while (done < target) {
+        d.setDate(d.getDate() - 1);
+        if (isWorkingDay(d, holidays)) done++;
       }
       return d;
     }
@@ -4968,7 +4987,20 @@ Or say what you want, in your own words:
     function paSyncChips() {
       [['start', 'paChipStart', 'mActualStart'], ['finish', 'paChipFinish', 'mActualFinish']].forEach(([k, chipId, inpId]) => {
         const c = document.getElementById(chipId), i = document.getElementById(inpId);
-        if (c) c.style.display = (mAutoStamp[k] && i && i.value) ? '' : 'none';
+        if (!c) return;
+        c.style.display = (mAutoStamp[k] && i && i.value) ? '' : 'none';
+        /* "auto" and "inferred" are different claims and the chip used to make
+           only the first. A finish stamped on the day you ticked it is
+           OBSERVED; the start back-dated from the duration is a guess the tool
+           made, and a guess presented as a record is how a made-up date ends up
+           in the estimate bank. */
+        const inferred = k === 'start' && editingId != null
+          && !!(tasks.find(x => x.id === editingId) || {}).actualStartInferred;
+        c.textContent = inferred ? 'inferred' : 'auto';
+        c.title = inferred
+          ? 'Worked back from the planned duration when you ticked this complete — nobody observed this date. '
+            + 'Correct it if it started elsewhere; the finish is the one that was actually recorded.'
+          : 'Filled in for you — edit freely';
       });
     }
     function paFlash(el) { if (!el) return; el.classList.remove('pa-flash'); void el.offsetWidth; el.classList.add('pa-flash'); }
@@ -5990,10 +6022,45 @@ Or say what you want, in your own words:
       const today = fmtISO(new Date());
       const pct = t.percentComplete || 0;
       prevPct = prevPct || 0;
-      if (pct > 0 && prevPct <= 0 && !t.actualStart) { t.actualStart = today; t.autoActualStart = true; }
-      if (pct >= 100 && prevPct < 100) {
-        if (!t.actualStart) { t.actualStart = today; t.autoActualStart = true; }
+      /* THE TWO RULES FIRE IN ONE CALL, and the order was the bug. Ticking
+         something straight from 0% to 100% satisfies BOTH "it has started" and
+         "it has finished". The started rule ran first, stamped today, and the
+         finished rule then found a start already present and left it — so the
+         back-dating below could never run on the one path that needs it most,
+         which is the ordinary one-gesture check-off. `completing` hands the
+         whole decision to the block that knows about duration. */
+      const completing = pct >= 100 && prevPct < 100;
+      if (pct > 0 && prevPct <= 0 && !t.actualStart && !completing) { t.actualStart = today; t.autoActualStart = true; }
+      if (completing) {
         if (!t.actualFinish) { t.actualFinish = today; t.autoActualFinish = true; }
+        /* A FIVE-DAY ACTIVITY DID NOT START AND FINISH ON THE SAME DAY.
+           Ticking something complete in one gesture — 0% straight to 100%, which
+           is how most work actually gets recorded — used to stamp today into
+           BOTH fields. The plan then asserted that a 5.17-day activity ran for
+           one day: it read as 24 calendar days early against its baseline, its
+           actual duration went into the estimate bank as a fifth of the
+           estimate, and every one of those numbers was arithmetic on a date the
+           tool made up. Reported exactly that way.
+           The finish is OBSERVED — it is today, that is why you are ticking it.
+           The start is not, and the only defensible inference is the activity's
+           own planned duration: it ran for as long as it was estimated to
+           unless somebody says otherwise. So the start is back-dated by that,
+           in WORKING days off the same calendar the schedule uses, and stays
+           flagged auto so it is editable and visibly derived rather than
+           recorded. Wrong is possible; silently claiming a one-day run is
+           wrong AND invisible. */
+        if (!t.actualStart) {
+          const durU = Number(t.te) || 0;
+          const durD = t.milestone ? 0 : Math.max(0, unitToWorkingDays(durU));
+          // a duration of one working day or less starts and finishes today,
+          // which is the one case where the old behaviour was right
+          const back = Math.max(0, Math.round(durD) - 1);
+          const st = back > 0 ? subWorkingDays(new Date(), back, getHolidaySet())
+            : stripTime(new Date());
+          t.actualStart = fmtISO(st);
+          t.autoActualStart = true;
+          t.actualStartInferred = back > 0;      // said out loud on the panel
+        }
       }
       if (pct < 100 && prevPct >= 100 && t.autoActualFinish) { t.actualFinish = ''; t.autoActualFinish = false; }
       if (pct <= 0 && prevPct > 0 && t.autoActualStart && !t.actualFinish) { t.actualStart = ''; t.autoActualStart = false; }
@@ -6096,6 +6163,56 @@ Or say what you want, in your own words:
       saveLocal();
       renderBaseline();
       flashSaved('Noted — no entry needed for “' + ekName(t) + '”');
+    }
+    /* FINISHED, AND NOBODY WROTE DOWN WHEN. A separate gap from a MISS, and it
+       had no surface at all: an activity can sit at 100% with both actual dates
+       empty and every panel treats it as done. Reported by a reader looking at
+       exactly that row. It matters because every variance on the Plan vs actual
+       tab is computed FROM those dates — with them blank the row silently falls
+       back to the forecast, reports 0d against its baseline, and contributes a
+       confident "on plan" to a figure that measured nothing. The estimate bank
+       then archives a duration nobody observed.
+       Distinct from the completion review above it, which asks WHY something
+       missed. This one asks whether it happened at all. */
+    function undatedCompletions() {
+      return leafTasks().filter(t => !t.isSummary && (Number(t.percentComplete) || 0) >= 100
+        && !t.actualStart && !t.actualFinish && !t.milestone);
+    }
+    function stampActualsFromPlan(id) {
+      const t = tasks.find(x => x.id === id);
+      if (!t) return;
+      const f = currentFinish(t) || t.finishDate;
+      if (!(f instanceof Date) || isNaN(f.getTime())) { flashSaved('⚠ No planned finish to copy from'); return; }
+      const durD = Math.max(0, unitToWorkingDays(Number(t.te) || 0));
+      t.actualFinish = fmtISO(stripTime(f));
+      t.actualStart = fmtISO(subWorkingDays(f, Math.max(0, Math.round(durD) - 1), getHolidaySet()));
+      t.autoActualStart = true; t.autoActualFinish = true; t.actualStartInferred = true;
+      saveLocal(); renderBaseline(); if (calculated) renderTaskTable();
+      flashSaved('Dated “' + ekName(t) + '” from its plan — edit either date if it ran differently');
+    }
+    function undatedCompletionsHtml() {
+      const rows = undatedCompletions();
+      if (!rows.length) return '';
+      const MAX = 6;
+      const li = rows.slice(0, MAX).map(t => '<li class="cr-li">'
+        + '<button type="button" class="ptr-sc-rbtn no-print" onclick="openEditModal(' + t.id + ', true)" '
+        + 'title="Open it and record the dates">'
+        + ekTok(ekKindOf(t), t.wbs || '', ekName(t), { xs: true, max: 26 }) + '</button>'
+        + '<span class="cr-why">marked complete with <b>no actual start or finish</b> — its variance is '
+        + 'computed from the forecast, so it reports on plan without anything having been measured</span>'
+        + '<button class="btn-sm btn-secondary no-print" onclick="stampActualsFromPlan(' + t.id + ')" '
+        + 'title="Use the planned dates as the actuals — both stay editable">Use the planned dates</button>'
+        + '</li>').join('');
+      return '<div class="cr no-print-open"><p class="cr-h">📅 <b>' + rows.length + ' completed '
+        + ptrPl(rows.length, 'activity', 'activities') + ' ' + (rows.length === 1 ? 'has' : 'have')
+        + ' no actual dates recorded.</b> Every figure on this tab is measured from those dates. Without them '
+        + 'the row falls back to the forecast and reports <i>0 days against its baseline</i> — not because it '
+        + 'landed on plan, but because nothing was measured against the plan at all.</p>'
+        + '<ul class="cr-l">' + li + '</ul>'
+        + (rows.length > MAX ? '<p class="cr-foot">and ' + (rows.length - MAX) + ' more below.</p>' : '')
+        + '<p class="cr-foot">“Use the planned dates” is a real answer when the work did run to plan — it '
+        + 'writes them as actuals and leaves both editable. It is not the same as leaving them blank, because '
+        + 'a recorded date can be wrong and a blank one cannot be right.</p></div>';
     }
     function completionReviewHtml() {
       const rows = missesNeedingCause();
@@ -14457,7 +14574,12 @@ Or say what you want, in your own words:
         else if (fv > 0) { status = `${fv}d late`; cls = 'badge-blocked'; }
         else if (fv < 0) { status = `${-fv}d early`; cls = 'badge-ok'; }
         else { status = 'On plan'; cls = 'badge-ok'; }
-        const actNote = (t.actualStart || t.actualFinish) ? ' <span class="help-text" style="font-size:0.65rem">(actual)</span>' : '';
+        const actNote = (t.actualStart || t.actualFinish)
+          ? ' <span class="help-text" style="font-size:0.65rem"' + (t.actualStartInferred
+              ? ' title="The finish was recorded when this was ticked complete. The START was worked back from '
+                + 'the planned duration — nobody observed it, so correct it if the work began elsewhere."'
+              : '') + '>(actual' + (t.actualStartInferred ? ', start inferred' : '') + ')</span>'
+          : '';
 
         // BUDGET — what the task was priced at vs what it has actually cost.
         // A task with no progress has no actual yet; showing −100% there would be
@@ -14586,7 +14708,7 @@ Or say what you want, in your own words:
       const usedTxt = (used, plan, noun) => (plan > 0 && used > 0)
         ? Math.round(used / plan * 100) + '% of ' + noun + ' used at ' + Math.round(donePct) + '% complete' : '';
 
-      cont.innerHTML = `${banner}${completionReviewHtml()}${ptReadingHtml('base')}
+      cont.innerHTML = `${banner}${undatedCompletionsHtml()}${completionReviewHtml()}${ptReadingHtml('base')}
         <div class="summary-grid bl-cards" style="margin-bottom:1rem">
           ${(() => {
             /* A HELD END DATE IS NOT A STILL PLAN. Both ends of this comparison
@@ -14685,7 +14807,7 @@ Or say what you want, in your own words:
       const t = tasks.find(x => x.id === id); if (!t) return;
       t[field] = val || '';
       // typed by hand → no longer an auto-stamp; check-off logic must not touch it
-      if (field === 'actualStart') t.autoActualStart = false;
+      if (field === 'actualStart') { t.autoActualStart = false; t.actualStartInferred = false; }
       if (field === 'actualFinish') t.autoActualFinish = false;
       saveLocal();
       renderBaseline();
