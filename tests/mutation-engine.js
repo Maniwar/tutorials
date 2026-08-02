@@ -697,9 +697,15 @@ const MUTANTS = [
     find: "      const trail = whyState.chain.slice(0, whyState.done ? whyState.chain.length : whyState.step)",
     with: "      const trail = [].slice.call([], 0, 0)" },
 
-  { what: 'form: a chain with no root cause named draws no objection',
-    find: "            : '<b style=\"color:var(--warn)\">' + whys.length + ' steps and no root cause named.</b>",
-    with: "            : '<b>' + whys.length + ' steps recorded.</b>" },
+  /* the objection this replaces was written against the LIST version of the why
+     chain, where a reader could type five answers and never draw a conclusion.
+     The wizard cannot reach that state — concluding fills the root cause from
+     the last link — so the property moved with the design: the conclusion has
+     to actually be filled, and the anchor now points at the line that fills it.
+     Reported as a SKIP rather than quietly matching nothing. */
+  { what: 'form: concluding a chain leaves the root cause empty',
+    find: '      if (!whyState.root) whyState.root = last;',
+    with: '      if (false) whyState.root = last;' },
 
   { what: 'form: the log shows the entry and hides the analysis behind it',
     find: '          <td style="font-weight:600">${escapeHtml(r.title)}${raidTitleSubHtml(r)}</td>',
