@@ -293,8 +293,12 @@ const MUTANTS = [
     with: '      if (!calculated) { host.innerHTML = blank; return; }' },
 
   { what: 'blocked tab: Calculate fails silently again',
-    find: '      if (!recompute()) {\n        const loop = findScheduleCycleIds() || [];',
-    with: '      if (!recompute()) { return; }\n      if (false) {\n        const loop = findScheduleCycleIds() || [];' },
+    /* anchor moved when calculate() gained its boundary: the bare
+       `if (!recompute())` became a guarded call whose result is read from `rc`.
+       Repaired rather than deleted — the property it holds is still live and the
+       skip was reported precisely so this would not go quietly vacuous. */
+    find: '      if (!rc) {\n        const loop = findScheduleCycleIds() || [];',
+    with: '      if (!rc) { return; }\n      if (false) {\n        const loop = findScheduleCycleIds() || [];' },
 
   { what: 'changes panel: a large diff expands over the whole tab again',
     find: '      const BIG = d.total > 12;',
