@@ -634,6 +634,38 @@ const MUTANTS = [
     find: '      if (t.autoActualCost === false) return Number(t.actualCost) || 0;   // manual override',
     with: '      if (t.paid != null) return Number(t.paid) || 0;\n      if (t.autoActualCost === false) return Number(t.actualCost) || 0;   // manual override' },
 
+  { what: 'form: a decision cannot record which option was taken',
+    find: "      const isDec = (document.getElementById('rType') || {}).value === 'Decision';\n      row.style.display = isDec ? '' : 'none';",
+    with: "      const isDec = false;\n      row.style.display = isDec ? '' : 'none';" },
+
+  { what: 'form: options with none marked as taken are accepted in silence',
+    find: "          ? '<b style=\"color:var(--warn)\">' + filled.length + ' option' + (filled.length === 1 ? '' : 's')\n            + ' and none marked as taken.</b>",
+    with: "          ? '<b>' + filled.length + ' option' + (filled.length === 1 ? '' : 's')\n            + ' recorded.</b>" },
+
+  { what: 'form: the why chain loses which option was taken on save',
+    find: "        chosen: document.getElementById('rType').value === 'Decision' ? raidOptionsRead().chosen : null,",
+    with: '        chosen: null,' },
+
+  { what: 'form: the why chain is written by the editor and dropped by the file',
+    find: '        whys: raidWhysRead(),',
+    with: '        whys: [],' },
+
+  { what: 'form: each why repeats the original question instead of the answer above it',
+    /* raidWhyRelabel is what the reader actually sees — raidAddWhyRow builds
+       the first label and relabel rewrites every one of them on each edit. The
+       anchor was written against the wrong one of the two and matched nothing,
+       which the run reported as a SKIP rather than passing it off as applied. */
+    find: "          : (prev ? 'And why did that happen? — “' + (prev.length > 60 ? prev.slice(0, 60) + '…' : prev) + '”'",
+    with: "          : (prev ? 'And why did that happen?'" },
+
+  { what: 'form: a chain with no root cause named draws no objection',
+    find: "            : '<b style=\"color:var(--warn)\">' + whys.length + ' steps and no root cause named.</b>",
+    with: "            : '<b>' + whys.length + ' steps recorded.</b>" },
+
+  { what: 'form: the log shows the entry and hides the analysis behind it',
+    find: '          <td style="font-weight:600">${escapeHtml(r.title)}${raidTitleSubHtml(r)}</td>',
+    with: '          <td style="font-weight:600">${escapeHtml(r.title)}</td>' },
+
   { what: 'form: a Decision has no way to record how it turned out',
     find: "      Decision: [\n        { v: 'stands',     lbl: 'Still stands',            short: 'stands',     explains: true },",
     with: "      _Decision: [\n        { v: 'stands',     lbl: 'Still stands',            short: 'stands',     explains: true }," },

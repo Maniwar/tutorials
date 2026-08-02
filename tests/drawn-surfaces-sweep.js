@@ -528,6 +528,152 @@ const QA = JSON.parse(fs.readFileSync(
                 + '" instead of "' + WANT[ty] + '" — a decision plainly happened, that is what makes it a '
                 + 'decision, so asking whether it did gets the wrong answer or none');
           });
+          /* ═══ WHAT WAS DECIDED, AND WHY IT HAPPENED ═══════════════════
+             Two things the log could not hold. It recorded that a decision
+             EXISTED and, later, whether it still stood — never WHICH OPTION was
+             taken out of which others, which is the decision itself. Reported
+             as "still stands is not a decision, I have to pick a b or c". And
+             "Say why" opened a single description box, which collects the FIRST
+             answer to why — almost always the symptom restated, and a fix aimed
+             at that is a patch.
+             Both are round-tripped rather than merely present on the form: a
+             field the editor writes and the file drops is worse than no field,
+             because the analysis looks recorded right up until somebody reopens
+             the plan. */
+          (() => {
+            const sel = document.getElementById('rType');
+            // options belong to a Decision and to nothing else
+            if (sel) { sel.value = 'Risk'; raidOutcomeFormSync(); }
+            const optRow = document.getElementById('rOptionsRow');
+            if (!optRow) { say('RAID form', 'there is no way to record the options a decision was taken from, '
+              + 'so the log holds the sentence somebody ended up with and not the choice they made'); return; }
+            if (optRow.style.display !== 'none')
+              say('RAID form', 'a Risk is offered "options considered" — a risk has no options, and a field '
+                + 'that applies to nothing is a field nobody clears');
+            if (sel) { sel.value = 'Decision'; raidOutcomeFormSync(); }
+            if (optRow.style.display === 'none')
+              say('RAID form', 'a Decision cannot record which option was taken');
+
+            raidAddOptionRow('Option A'); raidAddOptionRow('Option B');
+            const rows = [...document.querySelectorAll('#rOptions .raid-opt')];
+            if (rows.length < 2) { say('RAID form', 'option rows cannot be added'); return; }
+            /* OPTIONS WITH NONE MARKED must be objected to. It records that
+               there was a choice and refuses to say which way it went, which is
+               strictly less useful than writing nothing at all. */
+            const hintNone = (document.getElementById('rOptionsHint') || {}).textContent || '';
+            if (!/none marked as taken/i.test(hintNone))
+              say('RAID form', 'two options with neither marked as taken draws no objection — the log then '
+                + 'says a choice happened and not which way it went');
+            rows[0].querySelector('.raid-opt-radio').checked = true;
+            raidOptionsHint();
+            const rd = raidOptionsRead();
+            if (rd.chosen !== 0 || rd.options.length !== 2)
+              say('RAID form', 'marking an option as taken reads back as ' + JSON.stringify(rd));
+
+            // the five-why chain, and the conclusion drawn from it
+            const whyRow = document.getElementById('rWhyRow');
+            if (!whyRow) { say('RAID form', 'there is no way to record WHY something happened beyond a single '
+              + 'description box, which collects the first answer and the first answer is the symptom'); return; }
+            const chain = ['It slipped', 'The review took three weeks', 'Nobody owned the sign-off'];
+            chain.forEach((t, i) => {
+              if (i > 0) raidAddWhyRow('');
+              const w = [...document.querySelectorAll('#rWhys .raid-why')];
+              if (!w[i]) return;
+              w[i].querySelector('.raid-why-text').value = t;
+              raidWhyRelabel(); raidWhyHint();
+            });
+            const ws = [...document.querySelectorAll('#rWhys .raid-why')];
+            if (ws.length < 3) { say('RAID form', 'the why chain will not extend past ' + ws.length + ' step(s)'); }
+            else {
+              /* EACH QUESTION CARRIES THE ANSWER ABOVE IT. Without that people
+                 answer the same question five times and the chain goes sideways
+                 instead of down, which is the failure mode of every five-whys
+                 exercise run on a whiteboard. */
+              const q2 = (ws[1].querySelector('.raid-why-q') || {}).textContent || '';
+              if (q2.indexOf(chain[0]) < 0)
+                say('RAID form', 'step 2 asks "' + q2.slice(0, 60) + '" without restating step 1 — the chain '
+                  + 'then goes sideways instead of down, which is how five whys produces five symptoms');
+            }
+            const hintNoRoot = (document.getElementById('rWhyHint') || {}).textContent || '';
+            if (!/no root cause named/i.test(hintNoRoot))
+              say('RAID form', 'a chain with no root cause named draws no objection — the chain is the '
+                + 'working and the last link is the conclusion, and without it a reader gets a paragraph');
+            const rootEl = document.getElementById('rRootCause');
+            if (!rootEl || document.getElementById('rRootRow').style.display === 'none')
+              say('RAID form', 'there is nowhere to name the root cause the chain arrives at');
+            else {
+              rootEl.value = 'Ownership is not assigned in the RACI';
+              raidWhyHint();
+              if (!/Root cause recorded/i.test((document.getElementById('rWhyHint') || {}).textContent || ''))
+                say('RAID form', 'naming the root cause is not acknowledged');
+            }
+            /* AND IT SURVIVES A SAVE AND A RELOAD. A field the editor writes and
+               the file drops is worse than no field: the analysis looks recorded
+               until somebody reopens the plan. */
+            document.getElementById('rTitle').value = 'Probe — options and whys';
+            const before = raid.length;
+            saveRaidEntry();
+            const e = raid[raid.length - 1];
+            if (raid.length !== before + 1 || !e) say('RAID form', 'the entry did not save');
+            else {
+              if (!(e.options || []).length || e.chosen !== 0)
+                say('RAID log', 'the saved entry lost the options or which one was taken: '
+                  + JSON.stringify({ options: e.options, chosen: e.chosen }));
+              if ((e.whys || []).length < 3 || !e.rootCause)
+                say('RAID log', 'the saved entry lost the why chain or the root cause: '
+                  + JSON.stringify({ whys: (e.whys || []).length, root: e.rootCause }));
+              const round = JSON.parse(JSON.stringify(serialize()));
+              const keep = raid.length;
+              hydrate(round);
+              const e2 = raid[raid.length - 1];
+              if (raid.length !== keep || !e2 || !(e2.options || []).length || e2.chosen !== 0
+                  || (e2.whys || []).length < 3 || !e2.rootCause)
+                say('RAID log', 'saving the plan and loading it back drops the decision options or the why '
+                  + 'chain — the analysis looks recorded right up until somebody reopens the file');
+              // and the log SHOWS it, or it is a form nobody reads
+              renderRaid();
+              const tbl = (document.getElementById('raidContainer') || {}).innerText || '';
+              if (tbl.indexOf('Option A') < 0)
+                say('RAID log', 'the option that was taken does not appear in the log itself, so the analysis '
+                  + 'lives only inside the editor');
+              if (!/root cause/i.test(tbl))
+                say('RAID log', 'the root cause does not appear in the log itself');
+              raid = raid.slice(0, before);
+              renderRaid();
+            }
+            try { closeRaidForm(); openRaidForm(); } catch (e) {}
+          })();
+
+          /* THE HELP TEXT HAS TO BE TRUE OF THE TYPE IT IS UNDER. This is the
+             half that made the working control look broken: three good options
+             sat under a sentence saying "until this is answered the entry is
+             shown as something being watched, and it will never be offered as
+             the reason a number moved", which is right for a risk and false for
+             a decision — raidExplains returns true for a Decision with no
+             outcome at all, and raidWatches is already false. A reader takes the
+             sentence at its word and concludes the field does nothing.
+             So the copy is checked AGAINST THE BEHAVIOUR rather than against
+             itself: whatever the hint claims about watching and about red must
+             match what raidWatches and raidIsFault actually return. */
+          (() => {
+            const sel = document.getElementById('rType');
+            const hintEl = document.getElementById('rOutcomeHint');
+            ['Risk', 'Assumption', 'Decision'].forEach(ty => {
+              if (sel) { sel.value = ty; raidOutcomeFormSync(); }
+              const h = ((hintEl || {}).textContent || '');
+              const probe = { type: ty, outcome: '' };
+              if (/being watched|never be offered as the reason/i.test(h) && !raidWatches(probe))
+                say('RAID form', 'with ' + ty + ' selected and no outcome recorded, the help text says the '
+                  + 'entry is being WATCHED and will never be offered as a reason — raidWatches says '
+                  + 'otherwise, so the form is telling the reader the control does nothing when it does');
+              if (/in red/i.test(h) && !raidIsFault({ type: ty, outcome: 'x' }) && ty === 'Decision')
+                say('RAID form', 'the help text promises a ' + ty + ' will appear in RED, and raidIsFault '
+                  + 'never marks one as a fault');
+              if (!h.trim())
+                say('RAID form', 'selecting ' + ty + ' leaves the outcome help text empty');
+            });
+          })();
+
           /* AND A DECISION IS NOT A FAULT. Every decision outcome explains, and
              raidIsFault reads `explains` — so the day Decision gained outcomes a
              decision that simply STOOD would have started painting a red fault

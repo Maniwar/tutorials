@@ -460,6 +460,29 @@
 
     /* Money in. Set apart from the variance bars above it because it is a
        different question on a different basis — a receipt, not an accrual. */
+    /* Options considered, and the five-why chain. Both are lists of one-line
+       facts, so they share a shape: a marker, a field, a way to drop the row. */
+    .raid-sub { font-weight: 400; font-size: var(--t-xs); color: var(--muted); margin-top: 0.15rem;
+      line-height: 1.35; }
+    .raid-sub-k { text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.62rem;
+      color: var(--primary-700); font-weight: 700; margin-right: 0.2rem; }
+    .raid-sub-warn { color: var(--warn); font-weight: 600; }
+
+    .raid-opt, .raid-why { display: flex; align-items: flex-start; gap: 0.45rem; margin-bottom: 0.35rem; }
+    .raid-opt-pick { display: flex; align-items: center; gap: 0.25rem; flex: 0 0 auto;
+      padding: 0.3rem 0.45rem; border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+      background: #fff; white-space: nowrap; }
+    .raid-opt-pick:has(.raid-opt-radio:checked) { border-color: var(--primary); background: var(--primary-50); }
+    .raid-opt-tag { font-size: var(--t-xs); color: var(--muted); }
+    .raid-opt-pick:has(.raid-opt-radio:checked) .raid-opt-tag { color: var(--primary-700); font-weight: 600; }
+    .raid-opt-text, .raid-why-text { flex: 1 1 auto; width: 100%; }
+    .raid-opt-x, .raid-why-x { flex: 0 0 auto; }
+    .raid-why-n { flex: 0 0 auto; width: 1.5rem; height: 1.5rem; margin-top: 0.9rem;
+      border-radius: 50%; background: var(--primary-50); color: var(--primary-700);
+      font-size: var(--t-xs); font-weight: 700; display: flex; align-items: center; justify-content: center; }
+    .raid-why-body { flex: 1 1 auto; min-width: 0; }
+    .raid-why-q { display: block; font-size: var(--t-xs); color: var(--muted); margin-bottom: 0.15rem; }
+
     .ptr-mi { margin: 0.9rem 0 0.2rem; padding: 0.7rem 0.9rem; border: 1px solid var(--border);
       border-left: 3px solid var(--primary); border-radius: 8px; background: var(--primary-50);
       font-size: var(--t-base); line-height: 1.5; }
@@ -2938,6 +2961,31 @@ Or say what you want, in your own words:
               <div id="rLinks" class="chip-static" style="display:flex;flex-wrap:wrap;gap:0.3rem;align-items:center;margin-bottom:0.4rem"></div>
               <select id="rLinkPick" class="mini-inp" style="width:100%;max-width:34rem" onchange="raidAddLinkFromPicker()"></select>
             </div>
+            <!-- WHAT WAS ACTUALLY DECIDED. A decision log that records only the
+                 sentence you ended up with loses the thing the meeting was
+                 about: there were options, one was taken, and the ones that were
+                 not are the reason nobody should relitigate it in six weeks.
+                 Only shown for a Decision — a risk has no options. -->
+            <div class="form-group" id="rOptionsRow" style="display:none">
+              <span class="fg-head"><label for="rOptions">Options considered — mark the one taken</label><button type="button" class="info-icon" aria-label="About options" data-help="The choices that were on the table, and which one was picked. This is the decision itself: the title says what was decided, this says what it was decided INSTEAD OF. It matters months later, when somebody proposes the option you already rejected and nobody can remember why — the rejected options with a line of reasoning are the cheapest thing in this log to write and the most expensive to have skipped. Leave it empty if there genuinely were no alternatives; a decision with one option is a fact, not a choice.">i</button></span>
+              <div id="rOptions"></div>
+              <button type="button" class="btn-sm btn-secondary" onclick="raidAddOptionRow()">+ Add an option</button>
+              <p class="help-text" id="rOptionsHint" style="margin:0.3rem 0 0"></p>
+            </div>
+            <!-- FIVE WHYS. "Say why" used to open a form with one description
+                 box, and a description box collects the FIRST answer — which is
+                 almost never the cause. "The build slipped" is a restatement of
+                 the miss, not a reason for it. -->
+            <div class="form-group" id="rWhyRow">
+              <span class="fg-head"><label for="rWhys">Why did it happen?</label><button type="button" class="info-icon" aria-label="About five whys" data-help="Each answer becomes the next question. The first answer to “why” is usually a restatement of the symptom and the fix that follows it is a patch — you address what you can see and the same thing happens again next quarter under a different name. Keep asking and the chain usually turns from an event into a condition somewhere around the third or fourth step: not “the client was slow to review” but “nobody is named as the approver in the contract”. The last line is the one worth fixing, and it is the one this stores as the root cause. Stop early if a chain genuinely ends — a short honest chain beats five padded lines.">i</button></span>
+              <div id="rWhys"></div>
+              <button type="button" class="btn-sm btn-secondary" onclick="raidAddWhyRow()">+ Ask why again</button>
+              <div id="rRootRow" style="margin-top:0.5rem;display:none">
+                <label for="rRootCause" style="font-weight:600">Root cause — the last link, and the one worth fixing</label>
+                <input id="rRootCause" type="text" class="mini-inp" style="width:100%" placeholder="The condition underneath it all, in one sentence" oninput="raidWhyHint()" />
+              </div>
+              <p class="help-text" id="rWhyHint" style="margin:0.3rem 0 0"></p>
+            </div>
             <div class="form-group" id="rOutcomeRow" style="display:none">
               <span class="fg-head"><label for="rOutcome">Did it happen?</label><button type="button" class="info-icon" aria-label="About outcomes" data-help="Status tracks how much attention an entry still needs. This tracks how it TURNED OUT, which is a different fact recorded on a different day. It matters because only an entry that turned explains a number: a risk that materialised, or an assumption that did not hold, is a cause and is shown in red beside the variance it caused. One that is still pending, was avoided, or is holding is being watched, not blamed, and is shown in grey so it never stands in for a reason. Leaving this blank is itself reported — on an activity that is finished or overdue, nobody having said whether a linked risk turned is a gap the health check will name.">i</button></span>
               <div style="display:grid;grid-template-columns:1fr 2fr;gap:0.75rem">
@@ -3070,7 +3118,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.1800</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.1817</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4247,7 +4295,13 @@ Or say what you want, in your own words:
             finish: '', activities: 0, stories: 0, acs: 0, inferred: true }] : []);
       levelMode = ['none','slack','extend'].includes(data.levelMode) ? data.levelMode : 'none';
       projectBudget = Number(data.projectBudget) || 0;
-      raid = Array.isArray(data.raid) ? data.raid.map(r => Object.assign({ id: 0, type: 'Risk', title: '', description: '', probability: 3, impact: 3, owner: '', status: 'Open', mitigation: '', taskId: null, createdAt: '', links: null, outcome: '', outcomeNote: '', v: 1 }, r)) : [];
+      raid = Array.isArray(data.raid) ? data.raid.map(r => Object.assign({ id: 0, type: 'Risk', title: '', description: '', probability: 3, impact: 3, owner: '', status: 'Open', mitigation: '', taskId: null, createdAt: '', links: null, outcome: '', outcomeNote: '', options: [], chosen: null, whys: [], rootCause: '', v: 1 }, r))
+        .map(r => Object.assign(r, {
+          options: Array.isArray(r.options) ? r.options.filter(x => typeof x === 'string') : [],
+          chosen: (Number.isInteger(r.chosen) && r.chosen >= 0) ? r.chosen : null,
+          whys: Array.isArray(r.whys) ? r.whys.filter(x => typeof x === 'string') : [],
+          rootCause: typeof r.rootCause === 'string' ? r.rootCause : ''
+        })) : [];
       nextRaidId = data.nextRaidId || (Math.max(0, ...raid.map(r => r.id)) + 1);
       statusHistory = Array.isArray(data.statusHistory) ? data.statusHistory : [];
       reqsBaseline = (data.reqsBaseline && Array.isArray(data.reqsBaseline.stories))
@@ -22257,6 +22311,8 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
       // mitigation used to fall back to description because there was nowhere to
       // put a description; now there is, so the two stop sharing one box
       document.getElementById('rDesc').value = r ? (r.description || '') : '';
+      raidOptionsFill(r);
+      raidWhysFill(r);
       document.getElementById('rOutcome').dataset.want = r ? String(r.outcome || '') : '';
       document.getElementById('rOutcomeNote').value = r ? String(r.outcomeNote || '') : '';
       raidOutcomeFormSync();
@@ -22273,7 +22329,201 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
        is how a form teaches nobody anything. Rebuilt on every type change so
        switching Risk → Assumption never leaves 'materialised' selected on a
        list that does not contain it. */
+    /* ═══ WHAT WAS DECIDED, not just what the decision was called ═══════════
+       The RAID log recorded that a decision existed and, later, whether it still
+       stood. It never recorded THE CHOICE — which option was taken, out of which
+       others. Reported plainly: "still stands is not a decision, I have to pick
+       a b or c". Exactly right, and the two are different facts: the option
+       taken is what was decided, and stands/reversed is what became of it.
+
+       Kept deliberately small. Options are lines of text and one of them is
+       marked as taken; there is no scoring, no weighting and no matrix, because
+       the value here is the REJECTED options being written down at all. The
+       expensive thing is somebody proposing in month six the option that was
+       already considered and dismissed in month one, with nobody able to say
+       why — and that costs the same whether or not the alternatives were
+       scored. */
+    /* ═══ FIVE WHYS ═════════════════════════════════════════════════════════
+       The log already asked for a cause and got a description box, and a
+       description box collects the FIRST answer. The first answer to "why" is
+       almost always the symptom restated — "the build slipped", "the client was
+       slow" — and a fix aimed at that is a patch: you address what you can see,
+       and the same thing happens next quarter wearing different words. This is
+       the complaint that produced the feature, made about this tool's own test
+       suite: the same defect kept arriving in different clothes because each
+       instance was fixed where it appeared.
+
+       So each answer becomes the next question. The chain usually turns from an
+       EVENT into a CONDITION around the third or fourth step — not "the client
+       was slow to review" but "nobody is named as the approver in the contract"
+       — and the condition is the only link anybody can actually fix.
+
+       Five is a convention, not a rule, and the wizard says so. A chain that
+       genuinely ends at three is worth more than five padded lines, and a form
+       that demands five gets five. What it DOES insist on is that the last link
+       is named as the root cause, because a chain nobody drew a conclusion from
+       is a paragraph, not an analysis. */
+    const WHY_MAX = 5;
+    function raidWhyRows() { return [...document.querySelectorAll('#rWhys .raid-why')]; }
+    function raidAddWhyRow(text) {
+      const host = document.getElementById('rWhys');
+      if (!host) return;
+      const i = host.children.length;
+      if (i >= WHY_MAX) { raidWhyHint(); return; }
+      const prior = raidWhyRows().map(r => (r.querySelector('.raid-why-text').value || '').trim()).filter(Boolean);
+      /* The QUESTION carries the previous answer, so the reader is asked why
+         THAT happened rather than why the original thing happened five times
+         over. Without it people answer the same question repeatedly and the
+         chain goes sideways instead of down — which is the failure mode of
+         every five-whys exercise ever run on a whiteboard. */
+      const q = i === 0
+        ? 'Why did it happen?'
+        : (prior[i - 1]
+            ? 'And why did that happen? — “' + (prior[i - 1].length > 60 ? prior[i - 1].slice(0, 60) + '…' : prior[i - 1]) + '”'
+            : 'And why did that happen?');
+      const row = document.createElement('div');
+      row.className = 'raid-why';
+      row.innerHTML = '<span class="raid-why-n">' + (i + 1) + '</span>'
+        + '<div class="raid-why-body"><span class="raid-why-q"></span>'
+        + '<input type="text" class="raid-why-text mini-inp" placeholder="Because…" '
+        + 'oninput="raidWhyHint()" onchange="raidWhyRelabel()">'
+        + '</div><button type="button" class="btn-sm btn-lite raid-why-x" title="Remove this step" '
+        + 'onclick="this.closest(\'.raid-why\').remove();raidWhyRelabel();raidWhyHint()">✕</button>';
+      host.appendChild(row);
+      row.querySelector('.raid-why-q').textContent = q;
+      row.querySelector('.raid-why-text').value = text || '';
+      raidWhyRelabel();
+      raidWhyHint();
+      if (!text) { try { row.querySelector('.raid-why-text').focus(); } catch (e) {} }
+    }
+    // the questions restate the answer above them, so they are rebuilt whenever
+    // one changes or a step is removed
+    function raidWhyRelabel() {
+      const rows = raidWhyRows();
+      rows.forEach((r, i) => {
+        const prev = i === 0 ? '' : (rows[i - 1].querySelector('.raid-why-text').value || '').trim();
+        r.querySelector('.raid-why-n').textContent = String(i + 1);
+        r.querySelector('.raid-why-q').textContent = i === 0
+          ? 'Why did it happen?'
+          : (prev ? 'And why did that happen? — “' + (prev.length > 60 ? prev.slice(0, 60) + '…' : prev) + '”'
+                  : 'And why did that happen?');
+      });
+    }
+    function raidWhysRead() {
+      return raidWhyRows().map(r => (r.querySelector('.raid-why-text').value || '').trim()).filter(Boolean);
+    }
+    function raidWhyHint() {
+      const el = document.getElementById('rWhyHint');
+      const rootRow = document.getElementById('rRootRow');
+      const rootEl = document.getElementById('rRootCause');
+      if (!el) return;
+      const whys = raidWhysRead();
+      const root = ((rootEl || {}).value || '').trim();
+      // the root-cause box appears once there is a chain to draw a conclusion from
+      if (rootRow) rootRow.style.display = whys.length >= 2 ? '' : 'none';
+      const addBtn = document.querySelector('#rWhyRow button[onclick="raidAddWhyRow()"]');
+      if (addBtn) addBtn.style.display = raidWhyRows().length >= WHY_MAX ? 'none' : '';
+      el.innerHTML = !whys.length
+        ? 'One line is a description; a chain is an analysis. The first answer is usually the symptom said '
+          + 'again, so it is worth asking at least twice before believing it.'
+        : whys.length === 1
+          ? '<b>One step.</b> “' + escapeHtml(whys[0].slice(0, 70)) + '” — ask why THAT happened. Almost every '
+            + 'first answer is the thing you already knew.'
+          : root
+            ? '<b>Root cause recorded.</b> ' + whys.length + ' step' + (whys.length === 1 ? '' : 's')
+              + ' down to “' + escapeHtml(root.slice(0, 70)) + '”. That is the line worth fixing — a fix aimed '
+              + 'at any earlier step in this chain treats the symptom.'
+            : '<b style="color:var(--warn)">' + whys.length + ' steps and no root cause named.</b> The chain is '
+              + 'the working; the last link is the conclusion. Say it in the box above, or a reader gets a '
+              + 'paragraph and has to draw their own.'
+        + (raidWhyRows().length >= WHY_MAX ? ' <span class="ptr-aside">Five is the convention and the limit '
+            + 'here. If the chain is genuinely longer, the last line is still the one to write down.</span>' : '');
+    }
+    function raidWhysFill(r) {
+      const host = document.getElementById('rWhys');
+      if (!host) return;
+      host.innerHTML = '';
+      const whys = (r && Array.isArray(r.whys)) ? r.whys : [];
+      whys.forEach(t => raidAddWhyRow(t));
+      const rootEl = document.getElementById('rRootCause');
+      if (rootEl) rootEl.value = (r && r.rootCause) || '';
+      if (!whys.length) raidAddWhyRow('');       // always one empty step to start
+      raidWhyHint();
+    }
+    function raidOptionRows() {
+      return [...document.querySelectorAll('#rOptions .raid-opt')];
+    }
+    function raidAddOptionRow(text, taken) {
+      const host = document.getElementById('rOptions');
+      if (!host) return;
+      const i = host.children.length;
+      const row = document.createElement('div');
+      row.className = 'raid-opt';
+      row.innerHTML = '<label class="raid-opt-pick" title="Mark this as the option that was taken">'
+        + '<input type="radio" name="rOptTaken" class="raid-opt-radio"' + (taken ? ' checked' : '')
+        + ' onchange="raidOptionsHint()"><span class="raid-opt-tag">taken</span></label>'
+        + '<input type="text" class="raid-opt-text mini-inp" placeholder="Option ' + String.fromCharCode(65 + i)
+        + ' — what it was, and in a few words why it was or was not taken" value="">'
+        + '<button type="button" class="btn-sm btn-lite raid-opt-x" title="Remove this option" '
+        + 'onclick="this.closest(\'.raid-opt\').remove();raidOptionsHint()">✕</button>';
+      host.appendChild(row);
+      row.querySelector('.raid-opt-text').value = text || '';
+      raidOptionsHint();
+      if (!text) { try { row.querySelector('.raid-opt-text').focus(); } catch (e) {} }
+    }
+    function raidOptionsHint() {
+      const el = document.getElementById('rOptionsHint');
+      if (!el) return;
+      const rows = raidOptionRows();
+      const filled = rows.filter(r => (r.querySelector('.raid-opt-text').value || '').trim());
+      const taken = rows.filter(r => r.querySelector('.raid-opt-radio').checked
+        && (r.querySelector('.raid-opt-text').value || '').trim());
+      /* A list of options with none marked is the one state worth objecting to:
+         it records that there was a choice and refuses to say which way it went,
+         which is strictly less useful than writing nothing. Said here rather
+         than blocking the save, because half-finished notes are how real logs
+         get written and a form that will not let you leave is a form people
+         stop opening. */
+      el.innerHTML = !filled.length
+        ? 'No alternatives recorded. Fine if there genuinely were none — a decision with one option is a '
+          + 'fact rather than a choice. If there were, the rejected ones are the cheapest line in this log '
+          + 'to write and the most expensive to have skipped.'
+        : !taken.length
+          ? '<b style="color:var(--warn)">' + filled.length + ' option' + (filled.length === 1 ? '' : 's')
+            + ' and none marked as taken.</b> That records that there was a choice and not which way it went, '
+            + 'which is less use than writing nothing. Click <b>taken</b> beside the one that was chosen.'
+          : '<b>Taken:</b> ' + escapeHtml((taken[0].querySelector('.raid-opt-text').value || '').trim().slice(0, 80))
+            + (filled.length > 1 ? ' — instead of ' + (filled.length - 1) + ' other'
+                + (filled.length === 2 ? '' : 's') + ' recorded here.' : '.');
+    }
+    function raidOptionsRead() {
+      const out = [];
+      let chosen = null;
+      raidOptionRows().forEach(r => {
+        const t = (r.querySelector('.raid-opt-text').value || '').trim();
+        if (!t) return;
+        if (r.querySelector('.raid-opt-radio').checked) chosen = out.length;
+        out.push(t);
+      });
+      return { options: out, chosen: chosen };
+    }
+    function raidOptionsFill(r) {
+      const host = document.getElementById('rOptions');
+      if (!host) return;
+      host.innerHTML = '';
+      const opts = (r && Array.isArray(r.options)) ? r.options : [];
+      opts.forEach((t, i) => raidAddOptionRow(t, r && r.chosen === i));
+      raidOptionsHint();
+    }
+    function raidOptionsFormSync() {
+      const row = document.getElementById('rOptionsRow');
+      if (!row) return;
+      const isDec = (document.getElementById('rType') || {}).value === 'Decision';
+      row.style.display = isDec ? '' : 'none';
+      if (isDec) raidOptionsHint();
+    }
     function raidOutcomeFormSync() {
+      raidOptionsFormSync();
       const row = document.getElementById('rOutcomeRow');
       const sel = document.getElementById('rOutcome');
       const hint = document.getElementById('rOutcomeHint');
@@ -22300,12 +22550,38 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
       sel.value = keep;
       sel.dataset.want = keep;
       const cur = opts.find(o => o.v === keep);
+      /* THE HINT HAS TO BE TRUE OF THIS TYPE, and for a Decision it was not.
+         It read "until this is answered the entry is shown as something being
+         watched, and it will never be offered as the reason a number moved" —
+         written for risks and assumptions, where it is exactly right, and shown
+         under Decision the day decisions gained outcomes. It is false there:
+         raidExplains returns true for a Decision unconditionally, so the entry
+         is ALREADY offered as a reason and raidWatches is already false. A
+         reader looking at three perfectly good options under a sentence telling
+         them the field does nothing reasonably concludes they cannot record it.
+         Reported that way, in those words.
+         Nor does a decision ever appear in RED: raidIsFault excludes it, because
+         a reversal is a cause and not a failure. So both branches needed a
+         decision-shaped answer rather than one borrowed from a risk. */
+      const isDec = type === 'Decision';
       hint.innerHTML = !cur
-        ? 'Until this is answered the entry is shown as something being <b>watched</b>, and it will never '
-          + 'be offered as the reason a number moved.'
+        ? (isDec
+            ? 'A decision explains the shape of the work whether or not this is answered, so it is <b>already</b> '
+              + 'shown beside the activities it is linked to. What is missing is whether it is still the '
+              + 'decision in force — which is what tells a reader the reason is current rather than history.'
+            : 'Until this is answered the entry is shown as something being <b>watched</b>, and it will never '
+              + 'be offered as the reason a number moved.')
         : (cur.explains
-            ? 'This is now a <b>cause</b>. It will appear in red beside every variance on the activities it is '
-              + 'linked to, and it keeps doing so after you close it.'
+            ? (isDec
+                ? (keep === 'stands'
+                    ? 'Recorded as <b>still in force</b>. It stays the reason beside the activities it shaped, '
+                      + 'and a reader can now see the choice was not revisited.'
+                    : 'Recorded as <b>no longer in force</b>. It stays the reason beside the activities it '
+                      + 'shaped — and this is usually where rework came from, so it is worth a line in '
+                      + '“what actually happened”.')
+                  + ' A decision is never drawn as a fault: it is a cause, not a failure.'
+                : 'This is now a <b>cause</b>. It will appear in red beside every variance on the activities it is '
+                  + 'linked to, and it keeps doing so after you close it.')
             : 'Still being <b>watched</b>, not blamed. It stays out of the way of the numbers.');
     }
     function closeRaidForm() { document.getElementById('raidForm').style.display = 'none'; editingRaidId = null; }
@@ -22327,6 +22603,14 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
           ? String(document.getElementById('rOutcome').value || '') : '',
         outcomeNote: raidOutcomeOpts(document.getElementById('rType').value)
           ? document.getElementById('rOutcomeNote').value.trim() : '',
+        /* only a Decision has options; writing them on a Risk would leave a
+           field no reader looks at and no writer clears */
+        options: document.getElementById('rType').value === 'Decision' ? raidOptionsRead().options : [],
+        chosen: document.getElementById('rType').value === 'Decision' ? raidOptionsRead().chosen : null,
+        // the chain and the conclusion, on every type — anything in this log can
+        // have a cause worth tracing, not only an issue
+        whys: raidWhysRead(),
+        rootCause: (document.getElementById('rRootCause') || {}).value.trim() || '',
         // whatever the Status control now holds — the form used to write nothing,
         // so a new entry was Open forever until someone found the table dropdown
         status: (document.getElementById('rStatus') || {}).value || 'Open',
@@ -22600,7 +22884,7 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
         const closed = r.status === 'Closed';
         return `<tr style="${closed ? 'opacity:0.55' : ''}">
           <td><span class="badge badge-slack">${r.type}</span></td>
-          <td style="font-weight:600">${escapeHtml(r.title)}</td>
+          <td style="font-weight:600">${escapeHtml(r.title)}${raidTitleSubHtml(r)}</td>
           <td>${raidScoreBadge(r)}</td>
           <td style="font-size:0.8rem">${escapeHtml(r.owner || '—') + roleSub(r.owner)}</td>
           <td style="font-size:0.8rem">${raidLinkChips(r, false)}</td>
@@ -22621,6 +22905,31 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
     }
     /* The cell, not a column of empty selects: an Issue has no outcome to
        record, so it says why rather than showing a control that does nothing. */
+    /* THE ANALYSIS HAS TO BE VISIBLE IN THE LOG, or it is a form people fill in
+       and nobody reads. Two sub-lines under the title, both one line: the option
+       that was TAKEN (with how many were considered, because "chosen from three"
+       and "chosen from one" are different facts), and the ROOT CAUSE with the
+       length of the chain behind it. A five-why chain sitting only inside the
+       editor would be the same shape as an outcome nobody can see. */
+    function raidTitleSubHtml(r) {
+      const bits = [];
+      if (r && Array.isArray(r.options) && r.options.length) {
+        const took = Number.isInteger(r.chosen) ? r.options[r.chosen] : null;
+        bits.push(took
+          ? '<span class="raid-sub-k">took</span> ' + escapeHtml(took.slice(0, 70))
+            + (r.options.length > 1 ? ' <span class="ptr-aside">over ' + (r.options.length - 1) + ' other'
+                + (r.options.length === 2 ? '' : 's') + '</span>' : '')
+          : '<span class="raid-sub-warn">' + r.options.length + ' options recorded, none marked as taken</span>');
+      }
+      if (r && r.rootCause) {
+        bits.push('<span class="raid-sub-k">root cause</span> ' + escapeHtml(String(r.rootCause).slice(0, 80))
+          + ((r.whys || []).length ? ' <span class="ptr-aside">' + r.whys.length + ' why'
+              + (r.whys.length === 1 ? '' : 's') + '</span>' : ''));
+      } else if (r && (r.whys || []).length >= 2) {
+        bits.push('<span class="raid-sub-warn">' + r.whys.length + ' whys recorded and no root cause named</span>');
+      }
+      return bits.length ? '<div class="raid-sub">' + bits.join('</div><div class="raid-sub">') + '</div>' : '';
+    }
     function raidOutcomeCell(r) {
       const opts = raidOutcomeOpts(r.type);
       if (!opts) return '<span class="help-text" style="margin:0" title="'
