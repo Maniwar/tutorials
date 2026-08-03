@@ -254,6 +254,35 @@ const MUTANTS = [
     find: "      const vRec = kind === 'clear' ? null : pushVersion('baseline',\n        kind === 'set' ? (baselineLog.length ? 'Re-baselined' : 'Original commitment') : String(kind));",
     with: '      const vRec = null;' },
 
+  /* Three fields that shipped wired to nothing, and one that counted the wrong
+     set. Each is a "reads correct, does nothing" defect — the shape no
+     value-comparing check can see, because the value it would compare is never
+     produced. */
+
+  { what: 'baseline: the evidence field goes back to being unreachable',
+    find: '            <div class="form-group" id="mTcRow" style="display:none;margin-bottom:0">',
+    with: '            <div class="form-group" id="mTcRowGone" style="display:none;margin-bottom:0">' },
+
+  { what: 'baseline: typing evidence into the editor is read but never stored',
+    find: '      t.tcEvidence = ev.value.trim();',
+    with: '      /* mutant: read and discarded */' },
+
+  { what: 'baseline: a failure recorded in the app raises nothing to chase',
+    find: "      if (result) { try { raised = raiseTestDefect(t, result, o.note, 'recorded in the app'); } catch (e) {} }",
+    with: '      if (false) { raised = true; }' },
+
+  { what: 'baseline: re-running a failing case opens a second defect for the same thing',
+    find: "      if (raid.some(x => x.taskId === tc.id && x.title === title && x.status !== 'Closed')) return false;",
+    with: '      if (false) return false;' },
+
+  { what: 'baseline: delivered stops being distinguished from accepted',
+    find: '        if (done && worth > 0 && unaccepted.has(t.id)) {',
+    with: '        if (false) {' },
+
+  { what: 'change order: the cumulative total counts scope nobody has agreed',
+    find: '      const acc = coAccepted();',
+    with: '      const acc = coLog;' },
+
   { what: 'baseline: a sign-off records a date instead of the version it signed',
     find: "      const v = pushVersion('signoff', 'Accepted: ' + (ref || scope));",
     with: '      const v = { v: null };' },

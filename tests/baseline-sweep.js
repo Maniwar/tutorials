@@ -234,14 +234,30 @@ const QA = JSON.parse(fs.readFileSync(
         renderCoHistory();
         const el = document.getElementById('coHistory');
         const txt = el ? el.textContent.replace(/\s+/g, ' ') : '';
-        const cum = coLog.reduce((s, c) => s + (c.finishDelta || 0), 0);
-        const m = txt.match(/cumulative:\s*([+\-−]?\d+)\s*days/);
-        if (m && parseInt(m[1].replace('−', '-'), 10) !== cum)
-          say('Change order', 'the history states a cumulative ' + m[1] + ' days against '
-            + cum + ' in the log');
+        /* ACCEPTED only, on both sides. The header stopped summing the whole
+           log once change orders gained states — an issued one is a request and
+           a rejected one is a refusal, and adding either into "cumulative"
+           reports scope nobody agreed as scope that was. This check summed
+           everything and would now disagree with a header that is right. */
+        const cum = coAccepted().reduce((s, c) => s + (c.finishDelta || 0), 0);
+        const m = txt.match(/agreed:\s*([+\-−]?\d+)\s*days/);
+        if (!m)
+          say('Change order', 'the history header no longer states an agreed schedule total, so the figure '
+            + 'this check exists to reconcile is not on screen');
+        else if (parseInt(m[1].replace('−', '-'), 10) !== cum)
+          say('Change order', 'the history states an agreed ' + m[1] + ' days against '
+            + cum + ' across the accepted entries in the log');
 
         // ── 10. THE LOG SURVIVES SAVE AND LOAD ───────────────────────────
         ran('10·logSurvives');
+        /* Compared POST-hydrate against POST-hydrate. hydrate normalises a log
+           entry — it coerces the state against the known set and defaults the
+           fields a file written before states existed does not carry — so
+           comparing the in-memory array to the one that comes back reports the
+           normalisation as data loss. The property is that saving and loading
+           is STABLE, not that hydrate is the identity function, and the second
+           round trip is where that becomes visible. */
+        hydrate(JSON.parse(JSON.stringify(serialize()))); calculate();
         const logJson = JSON.stringify(coLog);
         hydrate(JSON.parse(JSON.stringify(serialize()))); calculate();
         if (JSON.stringify(coLog) !== logJson)
@@ -457,7 +473,11 @@ const QA = JSON.parse(fs.readFileSync(
     const say = x => bad.push('Version chain :: ' + x);
     await page.evaluate(d => { hydrate(d); calculate(); }, CRM);
     await page.waitForTimeout(400);
-    const r = await page.evaluate(() => {
+    /* async, because drafting a change order is. The block was synchronous
+       until it needed to raise one, and `await` inside a non-async arrow is a
+       syntax error that takes the whole file out rather than failing a check —
+       a sweep that will not parse reports nothing at all. */
+    const r = await page.evaluate(async () => {
       const out = {}, fail = [];
       const v1 = pushVersion('sow', 'test baseline');
 
@@ -594,6 +614,166 @@ const QA = JSON.parse(fs.readFileSync(
           + '— it is computing a diff and painting nothing');
         if (!/owner/i.test(cmpHost.textContent || ''))
           fail.push('the drawn comparison does not name the field that moved');
+      }
+
+      /* ── 3d. THE EVIDENCE FIELD CAN ACTUALLY BE FILLED ──────────────────
+         It shipped in the model, in serialize, in hydrate and in the round-trip
+         check, and the only setter took it from an options argument the single
+         caller never passed. A field that accepts, stores and reloads a value
+         nobody can enter is indistinguishable from one that does not exist,
+         except that it reads as though the evidence is being recorded. So the
+         assertion is REACHABILITY, not persistence — persistence was never the
+         part that was broken. */
+      {
+        const anyTc = tasks.filter(isTestCase)[0];
+        const plain = leafTasks().find(t2 => !isTestCase(t2) && !t2.milestone);
+        openEditModal(anyTc.id, true);
+        const row = document.getElementById('mTcRow');
+        const ev = document.getElementById('mTcEvidence');
+        out.evidenceFieldExists = !!ev;
+        out.evidenceRowShownOnTc = !!row && row.style.display !== 'none';
+        if (!ev) fail.push('there is no way to type acceptance evidence anywhere in the editor, so tcEvidence '
+          + 'stores and reloads a value nobody can enter');
+        else if (!out.evidenceRowShownOnTc)
+          fail.push('the evidence field is in the document and hidden on a test case, which is the one kind of '
+            + 'activity it is for');
+        else {
+          ev.value = 'probe/AC-evidence.pdf';
+          /* The estimate is normalised through the form before saving, and that
+             is not tidying. An earlier section of this check tripled a most-
+             likely estimate past its own pessimistic bound, and saveActivity
+             CORRECTLY refuses that — so the save was rejected on a rule about
+             PERT triples and this check reported it as "typing evidence does not
+             reach the activity", which is a product defect that did not exist.
+             A check must not inherit state from the section above it and then
+             blame the product for the consequences. */
+          document.getElementById('mO').value = '1';
+          document.getElementById('mM').value = '2';
+          document.getElementById('mP').value = '3';
+          /* And logged effort, because recording a result marks the case
+             finished and the form then requires effort against any progress —
+             correctly, since progress with no time spent is the shape that
+             makes every variance read zero. Two separate rules refused this
+             save and both of them were the product being right. */
+          document.getElementById('mActualEffort').value = '0.5';
+          saveActivity();
+          /* Whether the modal is still OPEN, not whether editingId is still set
+             — closeModal closes the overlay and deliberately leaves editingId
+             alone, so keying the refusal off that variable reported a refusal
+             on a save that had plainly worked. Anchored to an incidental
+             representation of "the form is still up", which is the exact
+             pattern this repo now has a probe for, written by the person who
+             wrote the probe. */
+          const ov = document.getElementById('modal');
+          if (ov && ov.classList.contains('active')) {
+            fail.push('saving the editor was refused and the form stayed up, so nothing below this point '
+              + 'tested the evidence field');
+            closeModal();
+          }
+          const back = tasks.find(t2 => t2.id === anyTc.id);
+          out.evidenceSaved = back.tcEvidence;
+          if (back.tcEvidence !== 'probe/AC-evidence.pdf')
+            fail.push('typing evidence into the editor and saving did not reach the activity — it holds "'
+              + back.tcEvidence + '"');
+        }
+        if (plain) {
+          openEditModal(plain.id, true);
+          const r2 = document.getElementById('mTcRow');
+          out.evidenceHiddenOnPlain = !r2 || r2.style.display === 'none';
+          if (!out.evidenceHiddenOnPlain)
+            fail.push('a result-and-evidence row is offered on an ordinary build activity, where a test result '
+              + 'means nothing');
+          closeModal();
+        }
+      }
+
+      /* ── 3e. A FAILURE IS CHASEABLE, AND ONCE ───────────────────────────
+         Raising a defect existed only on the path where results arrive by
+         PASTE. Recording a fail in the app — which is how a tester works —
+         produced a red mark and nothing to act on: the same defect with two
+         doors and one of them wired. */
+      {
+        const tc2 = tasks.filter(isTestCase)[1] || tasks.filter(isTestCase)[0];
+        const before = raid.length;
+        tcSetResult(tc2.id, 'fail');
+        out.raidAfterFail = raid.length - before;
+        if (raid.length === before)
+          fail.push('recording a test case as FAILED opened nothing in the RAID log — the failure is a number '
+            + 'with nothing tracking it, while the same result arriving by paste raises a defect');
+        const linked = raid[raid.length - 1];
+        if (raid.length > before && linked.taskId !== tc2.id)
+          fail.push('the defect raised by a failing test is not linked to the case that failed');
+        tcSetResult(tc2.id, 'fail');
+        out.raidAfterSecondFail = raid.length - before;
+        if (raid.length - before > 1)
+          fail.push('re-running the same failing case opened a SECOND defect — three attempts at one broken '
+            + 'thing is one defect with three attempts');
+      }
+
+      /* ── 3f. DELIVERED IS NOT ACCEPTED, AND ONLY ONE IS BILLABLE ─────────
+         The money-in surface could only ask whether finished work had been
+         invoiced. With a real result to read it can ask the question before
+         that one. */
+      {
+        const tc3 = tasks.filter(isTestCase)[0];
+        tc3.owner = leafTasks().map(t2 => t2.owner).find(o2 => o2 && !isClientResource(o2) && getBillRate(o2) > 0)
+          || tc3.owner;
+        tc3.invoiced = 1200;
+        tcSetResult(tc3.id, 'fail');
+        const rec = revenueRecord(leafTasks());
+        out.doneUnacceptedN = rec.doneUnacceptedN;
+        out.billedUnacceptedN = rec.billedUnacceptedN;
+        if (!rec.doneUnacceptedN)
+          fail.push('an activity finished with a FAILED test case against it is not counted as delivered-'
+            + 'but-unaccepted, so the panel can only tell you whether finished work was invoiced and never '
+            + 'whether the client agreed it was finished');
+        if (!rec.billedUnacceptedN)
+          fail.push('work invoiced with a failed test case against it is not flagged — that is the invoice '
+            + 'that comes back');
+        tcSetResult(tc3.id, 'pass');
+        const rec2 = revenueRecord(leafTasks());
+        out.unacceptedAfterPass = rec2.doneUnacceptedN;
+        if (rec2.doneUnacceptedN >= rec.doneUnacceptedN)
+          fail.push('passing the failing case did not clear the delivered-but-unaccepted count, so the flag '
+            + 'never goes away and stops being read');
+      }
+
+      /* ── 3g. AN ISSUED CHANGE ORDER IS A REQUEST, NOT REVENUE ────────────
+         The header used to sum the whole log. With only accepted entries in it
+         that is indistinguishable from summing the accepted ones, which is why
+         a mutant restoring the old behaviour survived the first version of this
+         check: the case that tells them apart has to be BUILT. So one is issued
+         and deliberately left unsigned. */
+      {
+        const v0 = pushVersion('sow', 'issue-probe baseline');
+        const g2 = leafTasks().find(t2 => !t2.milestone && (t2.te || 0) > 0);
+        g2.m = (Number(g2.m) || 1) + 5; calculate();
+        await draftChangeOrder();
+        issueChangeOrder();
+        const issued = coLog[coLog.length - 1];
+        out.issuedState = issued && issued.state;
+        out.issuedTouchedBaseline = issued && issued.toV != null;
+        if (!issued || issued.state !== 'issued')
+          fail.push('issuing a change order did not log it as issued — the log cannot tell what you have '
+            + 'ASKED for from what you have been given');
+        if (issued && issued.toV != null)
+          fail.push('issuing a change order rolled the contract baseline, so the next one will diff from '
+            + 'scope the client has not signed and will stop asking for it');
+        renderCoHistory();
+        const hdr = (document.getElementById('coHistory') || {}).textContent || '';
+        const agreed = coAccepted().reduce((s2, c2) => s2 + (c2.priceDelta || 0), 0);
+        const all = coLog.reduce((s2, c2) => s2 + (c2.priceDelta || 0), 0);
+        out.agreedVsAll = [Math.round(agreed), Math.round(all)];
+        if (Math.abs(agreed - all) < 1)
+          fail.push('the issued change order carries no price, so agreed-versus-everything cannot be told '
+            + 'apart here and this check proves nothing');
+        else if (hdr.indexOf(fmtMoney(Math.abs(all))) >= 0 && hdr.indexOf(fmtMoney(Math.abs(agreed))) < 0)
+          fail.push('the history header states ' + fmtMoney(Math.abs(all)) + ', which is the whole log '
+            + 'including scope nobody has signed — an issued change order is a request and reporting it as '
+            + 'cumulative impact turns a request into revenue');
+        if (!/out for signature/i.test(hdr))
+          fail.push('nothing on the history says a change order is still out for signature, so the '
+            + 'difference between asked-for and agreed is invisible on the surface people read');
       }
 
       /* ── 4. SIGN-OFF IS AGAINST A VERSION, NOT A DATE ───────────────────

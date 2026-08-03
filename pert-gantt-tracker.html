@@ -3287,7 +3287,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.03.0238</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.03.0706</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3476,6 +3476,16 @@ Or say what you want, in your own words:
                 <label>Acceptance criteria</label>
                 <textarea id="mAcceptance" rows="2" placeholder="Definition of done"></textarea>
               </div>
+            </div>
+            <!-- TEST CASES ONLY. Shown by openEditModal when the activity is a
+                 test case, hidden otherwise, because a result and its evidence
+                 are meaningless on a build activity and an always-visible pair
+                 of empty fields is how a form teaches people to skip it. -->
+            <div class="form-group" id="mTcRow" style="display:none;margin-bottom:0">
+              <span class="fg-head"><label for="mTcEvidence">Result &amp; evidence</label><button type="button" class="info-icon" aria-label="About result and evidence" data-help="The RESULT is what happened when this case was run — separate from % complete, which is only how far through running it you are. A failed test is finished work and unaccepted scope at the same time, and only one of those is billable. EVIDENCE is where the proof lives: a file in the evidence pack, a screenshot, a defect reference. A result with nothing behind it is an assertion; the criterion it verifies is what a client is invoiced against.">i</button></span>
+              <div id="mTcResultBtns" style="margin-bottom:0.4rem"></div>
+              <input id="mTcEvidence" type="text" placeholder="06-Acceptance/AC-5.1_mapping-spec-approval.pdf — or a defect reference" />
+              <div class="help-text" id="mTcRuns" style="margin-top:0.3rem"></div>
             </div>
             <div class="form-group" style="margin-bottom:0">
               <label for="mJira">Jira / evidence link</label><button type="button" class="info-icon" aria-label="About Jira / evidence link" data-help="The build team's ticket for this work — or, on a test case, the link that EVIDENCES the result (the Jira where the run/defect lives). Renders as a 🔗 chip in the test-case views, survives the editable-workbook round trip, and lets the ⬆ Jira export UPDATE the linked ticket instead of creating a duplicate.">i</button>
@@ -4531,7 +4541,13 @@ Or say what you want, in your own words:
         stories: data.reqs.stories
       } : null;
       normalizeStoryLinks();   // give every story a wbsIds[] (migrates old single wbsId)
-      coLog = Array.isArray(data.coLog) ? data.coLog : [];
+      /* State coerced against the known set on the way in. An unknown string
+         would behave like a fifth state nobody wrote a rule for, and coAccepted
+         would silently drop the entry out of every cumulative figure. */
+      coLog = (Array.isArray(data.coLog) ? data.coLog : []).map(c => Object.assign({}, c, {
+        state: CO_STATES[c && c.state] ? c.state : 'accepted',
+        stateAt: (c && c.stateAt) || '', reversedAt: (c && c.reversedAt) || '',
+        diff: Array.isArray(c && c.diff) ? c.diff : [] }));
       /* The chain, and a counter that must be AHEAD of every number in it.
          Deriving nextVersionNo from max+1 rather than trusting the stored
          counter: a file hand-edited or merged from two sources can carry a
@@ -5444,6 +5460,7 @@ Or say what you want, in your own words:
       document.getElementById('mDesc').value = '';
       document.getElementById('mDeliverable').value = '';
       document.getElementById('mAcceptance').value = '';
+      tcRowFill(null);
       document.getElementById('mActualStart').value = '';
       document.getElementById('mActualFinish').value = '';
       document.getElementById('mActualEffort').value = '';
@@ -5573,6 +5590,7 @@ Or say what you want, in your own words:
       document.getElementById('mDesc').value = (isTestCaseTask(t) && hasRealSteps(t)) ? tcStepLines(t.description) : (t.description || '');
       document.getElementById('mDeliverable').value = t.deliverable || '';
       document.getElementById('mAcceptance').value = t.acceptance || '';
+      tcRowFill(t);
       document.getElementById('mActualStart').value = t.actualStart || '';
       document.getElementById('mActualFinish').value = t.actualFinish || '';
       // null → empty box. Writing 0 here would turn "nobody has said" into
@@ -6021,6 +6039,9 @@ Or say what you want, in your own words:
         if (cur && cur.name.trim() !== name.trim()) { renamedTask = cur; renamedFrom = cur.name; }
         const prevPct = cur ? (cur.percentComplete || 0) : 0;
         Object.assign(cur, fields);
+        // after the assign, so it reads the task as it now stands rather than
+        // the one that existed before the name and type could have changed
+        tcRowRead(cur);
         if (!isSum) applyPctActuals(cur, prevPct);
       }
       if (owner && !isSum) syncResources();
@@ -9694,7 +9715,35 @@ Or say what you want, in your own words:
       const lv = leaves || leafTasks();
       const out = { billedN: 0, billed: 0, paidN: 0, paid: 0, unrecordedN: 0,
         doneUnbilledN: 0, doneUnbilled: 0, billedUnpaidN: 0, billedUnpaid: 0,
+        /* DELIVERED IS NOT ACCEPTED, and only one of them is billable under
+           most SOWs. Until acceptance had a result to read, "finished" was the
+           only signal here and the panel could only ask whether finished work
+           had been invoiced. It can now ask the question before that one: does
+           the client agree it is done. Billing ahead of acceptance is not a
+           mistake the tool should make on your behalf, and billing work whose
+           test FAILED is the version of it that ends up in a dispute. */
+        doneUnacceptedN: 0, doneUnaccepted: 0, billedUnacceptedN: 0, billedUnaccepted: 0,
         rows: [], anyRecord: false };
+      /* Built once, not per activity. Walking every story's criteria inside the
+         per-task loop is the same rollup recomputed twenty-nine times. */
+      const failedAc = new Set();
+      try {
+        ((reqs && reqs.stories) || []).forEach(st => (st.ac || []).forEach(a => {
+          const r = acAcceptance(a.id);
+          if (r.state === 'accepted') return;
+          if (r.state === 'no-cases' || r.state === 'untested') return;   // untested is not refused
+          (r.cases || []).forEach(cse => failedAc.add(cse.id));
+        }));
+      } catch (e) {}
+      /* An activity is UNACCEPTED when a test case that verifies it, or one
+         nested under it, has failed or is blocked. Untested is deliberately not
+         counted: most plans are mostly untested most of the time, and a warning
+         that fires on every activity is one nobody reads. */
+      const unaccepted = new Set();
+      failedAc.forEach(tcId => {
+        let cur = tasks.find(x => x.id === tcId);
+        for (let g = 0; cur && g < 100; g++) { unaccepted.add(cur.id); cur = tasks.find(x => x.id === cur.parentId); }
+      });
       lv.forEach(t => {
         if (t.isSummary) return;
         const inv = taskInvoiced(t), pd = taskPaid(t);
@@ -9711,6 +9760,10 @@ Or say what you want, in your own words:
         if (done && inv == null && worth > 0) {
           out.doneUnbilledN++; out.doneUnbilled += worth;
           out.rows.push({ id: t.id, name: t.name || '(unnamed)', worth: worth, state: 'never invoiced' });
+        }
+        if (done && worth > 0 && unaccepted.has(t.id)) {
+          out.doneUnacceptedN++; out.doneUnaccepted += worth;
+          if (inv != null && inv > 0) { out.billedUnacceptedN++; out.billedUnaccepted += inv; }
         }
         if (inv != null && inv > 0 && (pd == null || pd < inv - 0.005)) {
           const owed = inv - (pd || 0);
@@ -16362,6 +16415,34 @@ Or say what you want, in your own words:
       if (t.verifiesAc) return String(t.verifiesAc);
       return ((String(t.name || '').match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '');
     }
+    /* ── A FAILURE THAT NOBODY CHASES IS A COUNT ────────────────────────────
+       This existed already, and only on the path where results arrive by
+       PASTE — an emailed round trip coming back in. Recording a fail in the app
+       itself, which is how a tester actually works, produced a red mark and
+       nothing to act on. Same defect, two doors, one of them wired.
+
+       Now one function and both doors go through it. `origin` says where the
+       result came from, because "reported fail in imported test results" on an
+       entry somebody created by clicking a button is a small lie that costs a
+       reader a minute of confusion later.
+
+       Deduplicated on an OPEN entry for the same case: re-running a failing
+       test three times is one defect with three attempts, not three defects. */
+    function raiseTestDefect(tc, result, note, origin) {
+      if (!tc) return false;
+      if (!(result === 'fail' || (result === 'blocked' && note))) return false;
+      const today = fmtISO(new Date());
+      const title = (result === 'fail' ? 'Defect: ' : 'Blocked: ') + String(tc.name).replace(/^TC\s+/i, '').slice(0, 90);
+      if (raid.some(x => x.taskId === tc.id && x.title === title && x.status !== 'Closed')) return false;
+      const ev = tc.tcEvidence || tc.jira || '';
+      raid.push({ id: nextRaidId++, type: 'Issue', title: title,
+        description: (note || 'recorded ' + result + ' when the case was run') + ' (' + (origin || 'test result')
+          + ', ' + today + ')' + (ev ? ' — evidence: ' + ev : ''),
+        probability: 4, impact: 3, owner: tc.owner || '', status: 'Open', mitigation: '',
+        taskId: tc.id, createdAt: today });
+      return true;
+    }
+
     function tcSetResult(id, result, opts) {
       const t = tasks.find(x => x.id === id);
       if (!t) return;
@@ -16387,9 +16468,16 @@ Or say what you want, in your own words:
         t.tcResult = null; t.tcResultAt = ''; t.tcResultBy = ''; t.tcRuns = [];
       }
       if (o.evidence != null) t.tcEvidence = String(o.evidence);
+      // the same door the pasted results go through, so a fail recorded by
+      // hand is as chaseable as one that arrived in an email
+      let raised = false;
+      if (result) { try { raised = raiseTestDefect(t, result, o.note, 'recorded in the app'); } catch (e) {} }
       saveLocal();
       try { renderReqs(); } catch (e) {}
       try { renderTaskTable(); } catch (e) {}
+      if (raised) { try { renderRaid(); } catch (e) {}
+        flashSaved('⚑ ' + (result === 'fail' ? 'Defect' : 'Blocker') + ' opened in the RAID log against this '
+          + 'case — a failure with nothing tracking it is a number, not a finding'); }
     }
 
     /* ── ROLLUP: CASE → CRITERION → STORY ────────────────────────────────────
@@ -16602,6 +16690,54 @@ Or say what you want, in your own words:
         id ? stories.find(s => String(s.id).toLowerCase() === id.toLowerCase()).id : '', by, '');
       try { renderReqs(); } catch (e) {}
       flashSaved('✓ Sign-off #' + rec.no + ' recorded against plan version v' + rec.v);
+    }
+
+    /* ── THE EVIDENCE FIELD, WHICH NOBODY COULD FILL ────────────────────────
+       tcEvidence shipped in the model, in serialize, in hydrate, and in the
+       round-trip check — and the only code that could set it took the value
+       from an options argument the single caller never passed. A field that
+       accepts, stores and reloads a value nobody can enter is indistinguishable
+       from a field that does not exist, except that it reads as though the
+       evidence is being recorded. This file has a comment elsewhere about
+       exactly that shape; I wrote this one while building the acceptance
+       record.
+
+       Both halves live here rather than only in the table, because the editor
+       is where somebody works through one case in detail and the sheet is where
+       they run down forty. The run history is printed too: a result with three
+       runs behind it is a different fact from a result with one, and the
+       editor is the only place with room to say so. */
+    function tcRowFill(t) {
+      const row = document.getElementById('mTcRow');
+      if (!row) return;
+      const show = !!t && isTestCase(t);
+      row.style.display = show ? '' : 'none';
+      const ev = document.getElementById('mTcEvidence');
+      const btns = document.getElementById('mTcResultBtns');
+      const runs = document.getElementById('mTcRuns');
+      if (ev) ev.value = show ? (t.tcEvidence || '') : '';
+      if (btns) btns.innerHTML = show ? tcResultCell(t) : '';
+      if (!runs) return;
+      if (!show || !(t.tcRuns || []).length) {
+        runs.textContent = show ? 'Not run yet. Recording a result also marks the activity finished — running '
+          + 'it is the work.' : '';
+        return;
+      }
+      runs.innerHTML = (t.tcRuns || []).map((r, i) => escapeHtml((i + 1) + '. ' + r.at + ' — '
+        + ((TC_RESULTS[r.result] || {}).lbl || r.result) + (r.by ? ' (' + r.by + ')' : ''))).join('<br>')
+        + ((t.tcRuns || []).length > 1
+            ? '<br><b>' + ((t.tcRuns || []).length - 1) + ' re-test' + ((t.tcRuns || []).length > 2 ? 's' : '')
+              + '</b> — passing eventually is a different fact from passing, and it is the one that predicts '
+              + 'the next estimate.'
+            : '');
+    }
+    /* Read on save like every other field. Not routed through tcSetResult,
+       because typing where the proof lives is not running the test again — it
+       must not append a run or stamp a date. */
+    function tcRowRead(t) {
+      const ev = document.getElementById('mTcEvidence');
+      if (!t || !ev || !isTestCase(t)) return;
+      t.tcEvidence = ev.value.trim();
     }
 
     /* Three buttons and a state, not a dropdown. Recording a result is the
@@ -19442,13 +19578,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         if (result === 'pass') newPct = 100;
         if ((tc.percentComplete || 0) !== newPct) { const prev = tc.percentComplete || 0; tc.percentComplete = newPct; applyPctActuals(tc, prev); }
         const notes = cell(c.notes);
-        if (result === 'fail' || (result === 'blocked' && notes)) {
-          const title = (result === 'fail' ? 'Defect: ' : 'Blocked: ') + tc.name.replace(/^TC\s+/i, '').slice(0, 90);
-          if (!raid.some(x => x.taskId === tc.id && x.title === title && x.status !== 'Closed')) {
-            raid.push({ id: nextRaidId++, type: 'Issue', title, description: (notes || 'reported ' + result + ' in imported test results') + ' (imported test result, ' + today + ')' + (tc.jira ? ' \u2014 evidence: ' + tc.jira : ''), probability: 4, impact: 3, owner: tc.owner || '', status: 'Open', mitigation: '', taskId: tc.id, createdAt: today });
-            defects++;
-          }
-        }
+        if (raiseTestDefect(tc, result, notes, 'imported test results')) defects++;
       });
       if (defects) rep.notes.push(defects + ' failed/blocked result(s) opened RAID issues (linked to their test-case tasks)');
       syncResources(); saveLocal(); calculated = false;
@@ -25526,8 +25656,16 @@ Professional, client-ready, no hype, no invented facts.`;
         if (!a) { add('added', id, b.name, '', null, b.name, { priceDelta: b.value || 0, days: b.te }); return; }
         if (a.name !== b.name) add('renamed', id, b.name, 'name', a.name, b.name);
         if (Math.abs((a.te || 0) - (b.te || 0)) > 0.05)
+          /* The three estimates travel with the record, not just the effort
+             they produce. te is derived — (o+4m+p)/6 — so reversing by scaling
+             o/m/p to hit the old te restores the NUMBER and not the estimate:
+             optimistic 3 / likely 5 / pessimistic 9 came back as 3.9/6.6/11.8,
+             which has the right mean and is not what anybody typed. The
+             snapshot already held all three; only the diff record was throwing
+             them away. */
           add('re-estimated', id, b.name, 'effort', a.te, b.te,
-              { priceDelta: (b.value || 0) - (a.value || 0), days: (b.te || 0) - (a.te || 0) });
+              { priceDelta: (b.value || 0) - (a.value || 0), days: (b.te || 0) - (a.te || 0),
+                omp: { o: a.o, m: a.m, p: a.p } });
         if (String(a.owner || '') !== String(b.owner || ''))
           add('reassigned', id, b.name, 'owner', a.owner || '(nobody)', b.owner || '(nobody)');
         if (predKey(a.predecessors) !== predKey(b.predecessors))
@@ -25745,7 +25883,13 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       const th = td + 'background:#f1f5f9;font-weight:700;text-align:left;';
       const u = unitLabel();
       const coNo = 'CO-' + String(coLog.length + 1).padStart(3, '0');
-      const amendedNote = coLog.length ? ' as previously amended by ' + coLog.map(c => c.no).join(', ') : '';
+      /* ACCEPTED ones only. "As previously amended by CO-002" about a change
+         order the client rejected is a claim on the face of a contract document
+         that the contract was amended by something nobody signed. The lint
+         above deliberately still counts the whole log, because its question is
+         "did anyone raise one at all" and issuing is raising. */
+      const amended = coAccepted();
+      const amendedNote = amended.length ? ' as previously amended by ' + amended.map(c => c.no).join(', ') : '';
       coDraft = `<div style="font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;max-width:860px">
         <h1 style="margin:0 0 2px;font-size:20px">Change Order ${coNo} — ${escapeHtml(projName())}</h1>
         <p style="color:#64748b;font-size:12px;margin:0 0 12px">DRAFT ${new Date().toLocaleDateString()} • diffs against the contract baseline of ${escapeHtml(sowBaseline.date)}${escapeHtml(amendedNote)}</p>
@@ -25828,14 +25972,48 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       };
       document.getElementById('sowContainer').innerHTML = coDraft +
         `<div class="no-print" style="margin-top:0.75rem;padding:0.7rem 0.9rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap">
-          <button class="btn-sm btn-success" onclick="approveChangeOrder()" title="Logs ${coNo} in the change history and rolls the contract baseline to today's plan — the NEXT change order will diff only changes made after this one">✅ Mark ${coNo} approved &amp; roll baseline</button>
-          <span class="help-text" style="margin:0">after the client signs — keeps successive change orders incremental instead of re-listing old changes</span>
+          <button class="btn-sm btn-secondary" onclick="issueChangeOrder()" title="Log ${coNo} as SENT and awaiting signature. Nothing is agreed and the baseline does not roll — this is how the log tells apart what you have asked for from what you have been given.">📤 Mark ${coNo} issued</button>
+          <button class="btn-sm btn-success" onclick="approveChangeOrder()" title="Logs ${coNo} in the change history and rolls the contract baseline to today's plan — the NEXT change order will diff only changes made after this one">✅ Mark ${coNo} accepted &amp; roll baseline</button>
+          <span class="help-text" style="margin:0">issue it when you send it, accept it when they sign — an issued change order is a request, and counting one as revenue is how a forecast goes wrong quietly</span>
         </div>`;
       flashSaved('✓ ' + coNo + ' drafted — review, 📋 Copy CO, then mark approved once signed');
+    }
+    /* ISSUED does NOT roll the baseline, and that is the point of having it.
+       Rolling would tell the next change order that this scope is already
+       agreed, so a client who never signs would silently stop being asked. The
+       entry is logged so the request is on the record; the contract version
+       stays where it was. */
+    function issueChangeOrder() {
+      const p = draftChangeOrder._pending;
+      if (!p) { alert('Draft a change order first (Δ Change order).'); return; }
+      if ((coLog || []).some(c => c.no === p.no)) { alert(p.no + ' is already in the log.'); return; }
+      coLog.push({ no: p.no, date: fmtISO(new Date()), scope: p.scope, detail: p.detail,
+        finishDelta: p.finishDelta, priceDelta: p.priceDelta, newFinish: p.newFinish, newPrice: p.newPrice,
+        diff: p.diff || [], lineSum: p.lineSum || 0,
+        fromV: p.fromV, toV: null, state: 'issued', stateAt: fmtISO(new Date()) });
+      saveLocal();
+      renderCoHistory();
+      flashSaved('📤 ' + p.no + ' logged as issued — the baseline has NOT rolled, so it still counts as scope '
+        + 'you have asked for rather than scope you have');
     }
     function approveChangeOrder() {
       const p = draftChangeOrder._pending;
       if (!p) { alert('Draft a change order first (Δ Change order).'); return; }
+      /* Accepting one that was already issued moves that entry rather than
+         writing a second. Two rows with one number is how a cumulative total
+         doubles a change order nobody raised twice. */
+      const already = (coLog || []).find(c => c.no === p.no);
+      if (already) {
+        const toV0 = pushVersion('co', p.no);
+        already.state = 'accepted'; already.stateAt = fmtISO(new Date());
+        already.toV = toV0.v; already.date = fmtISO(new Date());
+        sowBaseline = Object.assign({ date: toV0.snap.at, v: toV0.v }, toV0.snap);
+        draftChangeOrder._pending = null;
+        saveLocal(); renderCoHistory();
+        flashSaved('✓ ' + p.no + ' accepted — the entry already on the log moved from issued to accepted '
+          + 'rather than a second one being written');
+        return;
+      }
       /* The approved version is pushed FIRST, so the log entry can name both
          ends of what it changed. `fromV` and `toV` are what turn coLog from a
          list of summaries into a chain: any two versions can be diffed, the plan
@@ -25846,7 +26024,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       coLog.push({ no: p.no, date: fmtISO(new Date()), scope: p.scope, detail: p.detail,
         finishDelta: p.finishDelta, priceDelta: p.priceDelta, newFinish: p.newFinish, newPrice: p.newPrice,
         diff: p.diff || [], lineSum: p.lineSum || 0,
-        fromV: p.fromV, toV: toV.v, state: 'accepted' });
+        fromV: p.fromV, toV: toV.v, state: 'accepted', stateAt: fmtISO(new Date()) });
       /* No second snapshot. snapshotSowBaseline() PUSHES a version, so calling
          it here wrote a duplicate of the one taken two lines above — two
          versions, same content, one of them parenting the other, and the chain
@@ -25858,6 +26036,141 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       renderCoHistory();
       flashSaved('✓ ' + p.no + ' logged and baseline rolled — the next change order starts from today’s plan');
     }
+    /* ═══ A CHANGE ORDER HAS A LIFE, NOT A BIRTH ═══════════════════════════
+       `state` was written as the constant 'accepted' and read nowhere, so every
+       change order in the log was born signed. The commonest real situation —
+       drafted, sent, waiting on the client — could not be represented at all,
+       which means the log answered "what have we agreed" and "what have we
+       asked for" with the same list. Those are different numbers and a
+       forecast built on the wrong one is a forecast of money nobody has
+       promised.
+
+       Four states and the transitions between them. Rejected is the one worth
+       the machinery: the plan has already moved on by the time a client says
+       no, so rejecting has to be able to put the scope BACK, and that is only
+       possible because the log entry carries the structured change set rather
+       than a sentence. */
+    const CO_STATES = {
+      issued:     { lbl: 'Issued', short: 'sent, unsigned', cls: 'badge-warn',
+                    tip: 'Drafted and sent. Nothing is agreed — this scope is a request, not revenue.' },
+      accepted:   { lbl: 'Accepted', short: 'signed', cls: 'badge-ok',
+                    tip: 'Signed by the client. The scope and the money are committed and the baseline rolled.' },
+      rejected:   { lbl: 'Rejected', short: 'declined', cls: 'badge-blocked',
+                    tip: 'The client declined it. The scope it carried is not agreed and not billable.' },
+      superseded: { lbl: 'Superseded', short: 'replaced', cls: 'badge-slack',
+                    tip: 'Replaced by a later change order covering the same ground.' }
+    };
+    /* Entries written before states existed default to ACCEPTED, not to issued.
+       They were logged by a build where approving was the only way in, so
+       accepted is what they are — defaulting them to "still out for signature"
+       would invent a pile of unsigned change orders on every old file. */
+    function coState(c) { return CO_STATES[c && c.state] ? c.state : 'accepted'; }
+    /* The badge and the transitions in one cell. Only the moves that make sense
+       from where it is: an accepted one can be rejected or superseded, an
+       issued one can go either way, and a rejected one can be re-accepted
+       because clients change their minds. */
+    function coStateCell(c) {
+      const st = coState(c), d = CO_STATES[st];
+      const to = { issued: ['accepted', 'rejected'], accepted: ['rejected', 'superseded'],
+                   rejected: ['accepted'], superseded: [] }[st] || [];
+      return '<span class="badge ' + d.cls + '" title="' + escapeHtml(d.tip) + '">' + escapeHtml(d.lbl) + '</span>'
+        + (c.reversedAt ? ' <span class="help-text" title="Its changes were put back into the plan on this day">↩ reversed</span>' : '')
+        + to.map(k => ' <button class="btn-sm btn-secondary no-print" onclick="setCoState(\'' + ekJs(c.no)
+            + '\',\'' + k + '\')" title="' + escapeHtml(CO_STATES[k].tip) + '">→ '
+            + escapeHtml(CO_STATES[k].lbl.toLowerCase()) + '</button>').join('');
+    }
+    /* ONLY ACCEPTED SCOPE COUNTS. Every cumulative figure reads this rather
+       than the whole log, because adding an issued or a rejected change order
+       into "cumulative price impact" is the arithmetic that turns a request
+       into revenue on a status report. */
+    function coAccepted() { return (coLog || []).filter(c => coState(c) === 'accepted'); }
+    function setCoState(no, next) {
+      const c = (coLog || []).find(x => x.no === no);
+      if (!c || !CO_STATES[next]) return;
+      const was = coState(c);
+      if (was === next) return;
+      /* Rejecting an ACCEPTED change order is the only transition that has to
+         touch the plan, and it is offered rather than performed silently: the
+         scope may have been built by now, and quietly deleting somebody's work
+         because a signature was withdrawn is not a decision software gets to
+         make on its own. */
+      if (was === 'accepted' && next === 'rejected') {
+        const n = (c.diff || []).length;
+        const ok = confirm('Reject ' + c.no + '?\n\nIt was accepted, so its ' + n + ' change(s) are in the plan '
+          + 'now.\n\nOK — put the scope back the way it was before this change order.\n'
+          + 'Cancel — mark it rejected and LEAVE the plan as it is (you keep the work; it is now unbilled).');
+        if (ok) {
+          const undone = coReverse(c);
+          c.reversedAt = fmtISO(new Date());
+          flashSaved('↩ ' + c.no + ' rejected — ' + undone + ' change(s) put back');
+        } else {
+          c.reversedAt = '';
+          flashSaved('✓ ' + c.no + ' marked rejected — the plan is unchanged, so that scope is now unbilled');
+        }
+      }
+      c.state = next;
+      c.stateAt = fmtISO(new Date());
+      saveLocal();
+      try { renderCoHistory(); } catch (e) {}
+      try { if (calculated) { recompute(); refreshAll(); } } catch (e) {}
+    }
+    /* ── REVERSAL ───────────────────────────────────────────────────────────
+       The whole reason the log entry stores a typed change set instead of a
+       joined string. Each record names the id, the field and BOTH values, so
+       putting it back is reading `from` where it read `to`.
+
+       Only the kinds that can be un-applied without inventing anything are
+       handled. An added activity is deleted; a removed one cannot be restored,
+       because the snapshot holds what it was called and what it cost, not the
+       description, the steps or the links that hung off it — and a
+       resurrection that quietly drops half the activity is worse than an
+       honest refusal. Said out loud in the count rather than silently skipped. */
+    function coReverse(c) {
+      let n = 0, refused = 0, approx = 0;
+      (c.diff || []).slice().reverse().forEach(d => {
+        const t = tasks.find(x => x.id === d.id);
+        switch (d.kind) {
+          case 'added':
+            if (t) { tasks = tasks.filter(x => x.id !== d.id && x.parentId !== d.id); n++; }
+            break;
+          case 're-estimated':
+            /* The three inputs, restored exactly. te is derived and writing it
+               back would leave the estimate disagreeing with the numbers it
+               comes from, and the next recompute would overwrite it anyway.
+               Change orders raised before `omp` travelled on the record fall
+               back to scaling, which restores the effort but not the estimate
+               — and says so rather than pretending it was exact. */
+            if (t && d.omp && Number.isFinite(+d.omp.m)) {
+              t.o = +d.omp.o || 0; t.m = +d.omp.m || 0; t.p = +d.omp.p || 0; n++;
+            } else if (t && (t.te || 0) > 0) {
+              const k = (Number(d.from) || 0) / (Number(d.to) || 1);
+              if (k > 0 && isFinite(k)) { t.o = (t.o || 0) * k; t.m = (t.m || 0) * k; t.p = (t.p || 0) * k;
+                n++; approx++; }
+            }
+            break;
+          case 'renamed':      if (t) { t.name = String(d.from); n++; } break;
+          case 'reassigned':   if (t) { t.owner = (d.from === '(nobody)' ? '' : String(d.from)); n++; } break;
+          case 'repriced':     if (t) { t.fixedCost = Number(d.from) || 0; n++; } break;
+          case 'reallocated':  if (t) { t.units = Number(d.from) || 100; n++; } break;
+          case 'date-pinned':
+            if (t) {
+              const v = (d.from === '(none)') ? '' : String(d.from);
+              if (/deadline/i.test(d.field)) t.deadline = v; else t.startNoEarlier = v;
+              n++;
+            }
+            break;
+          default: refused++;      // removed, story/ac changes — not restorable from a snapshot
+        }
+      });
+      if (refused) flashSaved('↩ ' + n + ' change(s) put back; ' + refused + ' could not be — a withdrawn '
+        + 'activity or an edited criterion is not restorable from a summary, and inventing the missing half '
+        + 'would be worse than saying so');
+      else if (approx) flashSaved('↩ ' + n + ' change(s) put back, ' + approx + ' of them approximately: '
+        + 'this change order predates estimates travelling on the record, so the effort is right and the '
+        + 'optimistic/likely/pessimistic split behind it is not what was originally typed');
+      return n;
+    }
+
     /* ── THE CHAIN, ON SCREEN ────────────────────────────────────────────────
        Without this the versions exist and nobody can see that they do, which is
        the same failure as computing a panel and never appending it. Each row
@@ -25901,14 +26214,23 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       if (!el) return;
       if (!coLog.length && !planVersions.length) { el.innerHTML = ''; return; }
       if (!coLog.length) { el.innerHTML = versionChainHtml(); return; }
-      const cumSched = coLog.reduce((s, c) => s + (c.finishDelta || 0), 0);
-      const cumPrice = coLog.reduce((s, c) => s + (c.priceDelta || 0), 0);
+      /* ACCEPTED only. Summing the whole log put issued and rejected change
+         orders into "cumulative price impact", which reports a request as
+         revenue and a refusal as money. The two counts are printed side by
+         side below rather than one of them quietly winning. */
+      const acc = coAccepted();
+      const cumSched = acc.reduce((s, c) => s + (c.finishDelta || 0), 0);
+      const cumPrice = acc.reduce((s, c) => s + (c.priceDelta || 0), 0);
+      const pending = coLog.filter(c => coState(c) === 'issued');
+      const pendPrice = pending.reduce((s, c) => s + (c.priceDelta || 0), 0);
       el.innerHTML = `<details open style="margin-bottom:0.75rem">
-        <summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)"><span class="ico" aria-hidden="true">📑</span> Change-order history (${coLog.length}) — cumulative: ${cumSched >= 0 ? '+' : ''}${cumSched} days, ${cumPrice >= 0 ? '+' : ''}${fmtMoney(Math.abs(cumPrice)).replace('$', cumPrice < 0 ? '−$' : '$')}</summary>
+        <summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)"><span class="ico" aria-hidden="true">📑</span> Change-order history (${coLog.length}) — <b>agreed</b>: ${cumSched >= 0 ? '+' : ''}${cumSched} days, ${cumPrice >= 0 ? '+' : ''}${fmtMoney(Math.abs(cumPrice)).replace('$', cumPrice < 0 ? '−$' : '$')}${pending.length ? ` · <span style="color:var(--warn)">${pending.length} still out for signature worth ${pendPrice >= 0 ? '+' : ''}${fmtMoney(Math.abs(pendPrice))}</span>` : ''}</summary>
         <div class="table-wrap" style="margin-top:0.5rem"><table>
-          <thead><tr><th>CO</th><th>Approved</th><th>Scope</th><th>Schedule Δ</th><th title="The project price movement this change order recorded">Price Δ</th><th title="What its own lines added up to. Where the two differ, part of the movement was the rate card or the pricing basis rather than scope.">Lines</th><th>New finish</th><th title="The plan version before and after — any two can be diffed">Versions</th></tr></thead>
+          <thead><tr><th>CO</th><th title="Only accepted scope is agreed scope. An issued change order is a request; a rejected one is work you may have done and cannot bill.">State</th><th>Raised</th><th>Scope</th><th>Schedule Δ</th><th title="The project price movement this change order recorded">Price Δ</th><th title="What its own lines added up to. Where the two differ, part of the movement was the rate card or the pricing basis rather than scope.">Lines</th><th>New finish</th><th title="The plan version before and after — any two can be diffed">Versions</th></tr></thead>
           <tbody>${coLog.map(c => `<tr title="${escapeHtml(c.detail || '')}">
-            <td><b>${escapeHtml(c.no)}</b></td><td style="white-space:nowrap">${escapeHtml(c.date)}</td>
+            <td><b>${escapeHtml(c.no)}</b></td>
+            <td style="white-space:nowrap">${coStateCell(c)}</td>
+            <td style="white-space:nowrap">${escapeHtml(c.date)}</td>
             <td style="font-size:0.82rem">${escapeHtml(c.scope)}</td>
             <td>${c.finishDelta >= 0 ? '+' : ''}${c.finishDelta} d</td>
             <td>${c.priceDelta >= 0 ? '+' : ''}${fmtMoney(Math.abs(c.priceDelta)).replace('$', c.priceDelta < 0 ? '−$' : '$')}</td>
@@ -27416,6 +27738,28 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
                 + 'the invoices. Receivables (.csv) on the Resources tab is the working list.'
               : 'If you bill outside this tool that is fine — but nothing here can then tell finished-and-billed '
                 + 'from finished-and-forgotten. Recording even the totals makes the gap visible.'
+          });
+        }
+        /* Ahead of the unbilled finding in severity terms, because these two
+           point opposite ways: one is money you have earned and not asked for,
+           the other is money you have asked for and may not have earned. The
+           second is the one that comes back. */
+        if (rec.doneUnacceptedN) {
+          findings.push({
+            severity: rec.billedUnacceptedN ? 'high' : 'medium',
+            area: 'Delivered, not accepted',
+            finding: fmtMoney(rec.doneUnaccepted) + ' of finished work has a test case against it that FAILED '
+              + 'or is blocked, across ' + rec.doneUnacceptedN + ' activit'
+              + (rec.doneUnacceptedN === 1 ? 'y' : 'ies')
+              + (rec.billedUnacceptedN
+                  ? ' — and ' + fmtMoney(rec.billedUnaccepted) + ' of it has already been invoiced'
+                  : ''),
+            recommendation: rec.billedUnacceptedN
+              ? 'An invoice against work the client\u2019s own acceptance test rejected is the one that comes '
+                + 'back. Close the defects in the RAID log and re-run the cases, or agree the reduced scope as '
+                + 'a change order before the invoice is queried.'
+              : 'Finished is not accepted. Close the open defects and re-run those cases before invoicing — '
+                + 'the criteria are the billing checklist and right now they say no.'
           });
         }
         if (rec.billedUnpaid > 0) {
