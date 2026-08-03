@@ -551,6 +551,51 @@ const QA = JSON.parse(fs.readFileSync(
             + 'order is a total nobody can check');
       }
 
+      /* ── 3c. THE COMPARISON IS DRAWN, NOT MERELY COMPUTABLE ─────────────
+         Every fact needed to answer "what moved since we agreed this" was
+         already stored before the compare view existed, and the commitment
+         history ended at a sentence — "nothing changed", "the one before it
+         recorded no totals". A sentence is where a reader stops. So the check
+         is that the table EXISTS with a row per change, not that planDiff can
+         return one: a diff nothing renders is the same as no diff.
+
+         Read out of the painted DOM rather than out of the function, because
+         computed-and-never-appended is a failure this repo has shipped before
+         and no arithmetic check can see it. */
+      setBaseline();
+      const w2 = leafTasks().filter(t => !t.milestone && (t.te || 0) > 0);
+      w2[0].owner = (w2[0].owner === 'QA' ? 'PMO' : 'QA');
+      calculate();
+      switchTab('baseline'); renderBaseline();
+      const cmpHost = document.getElementById('versionCompareBl');
+      out.compareHostDrawn = !!cmpHost;
+      if (!cmpHost) fail.push('the version comparison is not on the Plan vs actual tab at all — the commitment '
+        + 'history still ends at a sentence');
+      else {
+        const sels = cmpHost.querySelectorAll('select');
+        out.comparePickers = sels.length;
+        if (sels.length < 2) fail.push('the comparison offers ' + sels.length + ' picker(s) — you cannot choose '
+          + 'which two versions to compare, which is the whole request');
+        const btns = [...document.querySelectorAll('#view-baseline button')]
+          .filter(b2 => /what moved/i.test(b2.textContent || ''));
+        out.perRowButtons = btns.length;
+        /* Reported AND guarded. The first version pushed the finding and then
+           clicked btns[btns.length - 1] anyway — on a build where no row offers
+           the button that is undefined, so the sweep threw inside page.evaluate
+           and died before printing anything. A check that crashes instead of
+           reporting is a check that reports nothing, and it fails hardest
+           exactly on the builds it was written to catch. */
+        if (!btns.length) fail.push('no commitment row offers to show what moved since it, so the comparison '
+          + 'can only be reached by hunting for it');
+        else btns[btns.length - 1].click();
+        const rows = cmpHost.querySelectorAll('tbody tr').length;
+        out.compareRowsDrawn = rows;
+        if (!rows) fail.push('an owner was changed after the newest commitment and the comparison drew no rows '
+          + '— it is computing a diff and painting nothing');
+        if (!/owner/i.test(cmpHost.textContent || ''))
+          fail.push('the drawn comparison does not name the field that moved');
+      }
+
       /* ── 4. SIGN-OFF IS AGAINST A VERSION, NOT A DATE ───────────────────
          Otherwise a criterion reworded the day after signing is invisible. */
       const s0 = ((reqs && reqs.stories) || [])[0];

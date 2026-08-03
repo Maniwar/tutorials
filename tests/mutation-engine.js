@@ -242,6 +242,18 @@ const MUTANTS = [
     find: '               retests: cases.reduce((s, t) => s + Math.max(0, (t.tcRuns || []).length - 1), 0) };',
     with: '               retests: 0 };' },
 
+  /* The comparison is computed correctly and reaches no host — the failure this
+     repo has shipped before and that no arithmetic check can see. And the
+     commitment log stops taking a version, so every row goes back to ending at
+     a sentence with nothing behind it. */
+  { what: 'baseline: the version comparison is computed and never drawn',
+    find: "        + '<div id=\"versionCompareBl\" style=\"margin-top:.6rem\">' + versionCompareHtml() + '</div>'",
+    with: "        + ((() => versionCompareHtml())(), '')" },
+
+  { what: 'baseline: a commitment stops recording which version it took',
+    find: "      const vRec = kind === 'clear' ? null : pushVersion('baseline',\n        kind === 'set' ? (baselineLog.length ? 'Re-baselined' : 'Original commitment') : String(kind));",
+    with: '      const vRec = null;' },
+
   { what: 'baseline: a sign-off records a date instead of the version it signed',
     find: "      const v = pushVersion('signoff', 'Accepted: ' + (ref || scope));",
     with: '      const v = { v: null };' },
