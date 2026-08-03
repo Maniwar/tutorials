@@ -776,6 +776,103 @@ const QA = JSON.parse(fs.readFileSync(
             + 'difference between asked-for and agreed is invisible on the surface people read');
       }
 
+      /* ── 3h. A VERSION CAN BE OPENED, AND GONE BACK TO ────────────────
+         The chain could diff any two and reverse a change order, and could not
+         show you one — so "the plan as we agreed it" was answerable only by
+         reading a diff and doing the arithmetic yourself.
+
+         The assertion that matters most here is NOT that the restore works. It
+         is that it leaves the actuals alone. A version stores what was
+         promised; progress, actual dates, logged effort and anything invoiced
+         are what HAPPENED, and a restore that quietly deletes them destroys the
+         record of work people did in order to tidy up a plan. That is the one
+         failure in this feature that would be unrecoverable, so it is the one
+         asserted first. */
+      {
+        const vv = pushVersion('sow', 'restore-probe');
+        const w3 = leafTasks().filter(t2 => !t2.milestone && (t2.te || 0) > 0);
+        const vic = w3[0], wasM3 = vic.m, wasOwner3 = w3[1].owner;
+        vic.m = (Number(wasM3) || 1) * 3; w3[1].owner = (w3[1].owner === 'QA' ? 'PMO' : 'QA');
+        // real progress that must survive
+        vic.percentComplete = 40; vic.actualStart = '2026-08-01';
+        vic.actualEffort = 2.5; vic.invoiced = 900;
+        const newId = Math.max(nextId, ...tasks.map(t2 => t2.id)) + 1;
+        nextId = newId + 1;
+        tasks.push(makeTask({ id: newId, name: 'Added after the probe version', o: 1, m: 2, p: 3,
+          parentId: vic.parentId, predecessors: [], owner: 'QA', units: 100 }));
+        /* And something that DEPENDS on it, on a SUMMARY. A leaf's links are
+           overwritten from the snapshot during the restore, so a dangling one
+           can never survive there and a check that puts it on a leaf exercises
+           nothing — which is how the pruning mutant survived the first attempt.
+           A summary is not in the snapshot at all (it stores leaves), so its
+           links are never restored and are the only place a pointer to a
+           deleted activity can outlive the restore. */
+        const summary = tasks.find(t2 => t2.isSummary && t2.id !== vic.parentId);
+        if (summary) summary.predecessors = (summary.predecessors || [])
+          .concat([{ id: newId, type: 'FS', lag: 0 }]);
+        else fail.push('this plan has no summary to hang a link on, so the dangling-link prune was not tested');
+        calculate();
+        const nBefore = leafTasks().length;
+
+        /* renderBaseline FIRST, then open the version. The panel is built two
+           ways — inline while the tab renders, and by paintVersionCompare when a
+           picker moves — and rendering after opening rebuilt it through the
+           inline path, so a mutant that removed the view from the REPAINT path
+           survived. The order here is the one a person produces: the tab is
+           already up when they click open. */
+        switchTab('baseline'); renderBaseline();
+        versionView(vv.v);
+        const vh = document.getElementById('versionCompareBl');
+        out.viewRows = vh ? vh.querySelectorAll('.vc-view tbody tr').length : 0;
+        if (!out.viewRows)
+          fail.push('opening a version drew no activities — the chain can still only be diffed, not read');
+        if (vh && !/COMMITTED, not as it ran/.test(vh.textContent || ''))
+          fail.push('the as-of view does not say that a version holds what was promised rather than what '
+            + 'happened, so a reader will look for dates and actuals that are deliberately not in it');
+        versionView(vv.v);
+        if (vh && vh.querySelectorAll('.vc-view').length)
+          fail.push('the as-of view cannot be closed again');
+
+        versionRestore(vv.v);
+        const back = tasks.find(t2 => t2.id === vic.id);
+        out.restoredEstimate = Math.abs((back.m || 0) - wasM3) < 1e-9;
+        out.restoredOwner = tasks.find(t2 => t2.id === w3[1].id).owner === wasOwner3;
+        out.removedAdded = !tasks.some(t2 => t2.name === 'Added after the probe version');
+        out.actualsKept = { pct: back.percentComplete, start: back.actualStart,
+                            eff: back.actualEffort, inv: back.invoiced };
+        if (!out.restoredEstimate)
+          fail.push('restoring a version left the estimate at ' + back.m + ' against the ' + wasM3
+            + ' the version recorded');
+        if (!out.restoredOwner) fail.push('restoring a version did not put the owner back');
+        if (!out.removedAdded)
+          fail.push('an activity added after the version survived a restore to it, so "go back to what we '
+            + 'agreed" leaves scope nobody agreed in the plan');
+        if (nBefore <= leafTasks().length)
+          fail.push('the restore removed nothing at all');
+        /* THE UNRECOVERABLE ONE. */
+        if (back.percentComplete !== 40 || back.actualStart !== '2026-08-01'
+            || back.actualEffort !== 2.5 || back.invoiced !== 900)
+          fail.push('restoring a version destroyed the ACTUALS on an activity — progress ' + back.percentComplete
+            + ', actual start "' + back.actualStart + '", effort ' + back.actualEffort + ', invoiced '
+            + back.invoiced + '. A version is what was promised; deleting what happened in order to tidy up a '
+            + 'plan is the one failure here nobody can undo');
+        const last = planVersions[planVersions.length - 1];
+        out.safetyVersion = last && last.label;
+        if (!last || !/before restoring/i.test(last.label || ''))
+          fail.push('the plan as it stood was not saved as a version before being overwritten, so a restore '
+            + 'cannot itself be undone');
+        // and no dangling links survive, or the schedule will not compute
+        const liveIds = new Set(tasks.map(t2 => t2.id));
+        const dangling = tasks.reduce((n2, t2) =>
+          n2 + (t2.predecessors || []).filter(pr => !liveIds.has(pr.id)).length, 0);
+        if (summary && !tasks.some(t2 => t2.id === summary.id))
+          fail.push('the summary the probe hung a link on was itself deleted, so nothing below tested pruning');
+        out.danglingAfterRestore = dangling;
+        if (dangling)
+          fail.push(dangling + ' predecessor(s) point at activities the restore deleted — a dangling link is '
+            + 'a schedule that will not compute');
+      }
+
       /* ── 4. SIGN-OFF IS AGAINST A VERSION, NOT A DATE ───────────────────
          Otherwise a criterion reworded the day after signing is invisible. */
       const s0 = ((reqs && reqs.stories) || [])[0];

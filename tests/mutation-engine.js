@@ -253,8 +253,8 @@ const MUTANTS = [
      commitment log stops taking a version, so every row goes back to ending at
      a sentence with nothing behind it. */
   { what: 'baseline: the version comparison is computed and never drawn',
-    find: "        + '<div id=\"versionCompareBl\" style=\"margin-top:.6rem\">' + versionCompareHtml() + '</div>'",
-    with: "        + ((() => versionCompareHtml())(), '')" },
+    find: "        + '<div id=\"versionCompareBl\" style=\"margin-top:.6rem\">' + versionViewHtml() + versionCompareHtml() + '</div>'",
+    with: "        + ((() => versionViewHtml() + versionCompareHtml())(), '')" },
 
   { what: 'baseline: a commitment stops recording which version it took',
     find: "      const vRec = kind === 'clear' ? null : pushVersion('baseline',\n        kind === 'set' ? (baselineLog.length ? 'Re-baselined' : 'Original commitment') : String(kind));",
@@ -288,6 +288,30 @@ const MUTANTS = [
   { what: 'change order: the cumulative total counts scope nobody has agreed',
     find: '      const acc = coAccepted();',
     with: '      const acc = coLog;' },
+
+  /* View and restore. The middle one is the unrecoverable failure in this
+     feature: a restore that tidies the plan by deleting the record of work
+     people actually did. */
+
+  { what: 'baseline: a version can be diffed but not opened',
+    find: "        if (el) { try { el.innerHTML = versionViewHtml() + versionCompareHtml(); } catch (e) {} }",
+    with: "        if (el) { try { el.innerHTML = versionCompareHtml(); } catch (e) {} }" },
+
+  { what: 'baseline: restoring a version wipes the actuals along with the plan',
+    find: '        if (s2.acceptance != null) t.acceptance = s2.acceptance;',
+    with: "        t.percentComplete = 0; t.actualStart = ''; t.actualFinish = ''; t.actualEffort = null; t.invoiced = null;\n        if (s2.acceptance != null) t.acceptance = s2.acceptance;" },
+
+  { what: 'baseline: a restore leaves the scope added after the version in place',
+    find: "      const rm = new Set();\n      addedSince.forEach(t => { rm.add(t.id); allDescendants(t.id).forEach(d => rm.add(d.id)); });\n      tasks = tasks.filter(t => !rm.has(t.id));",
+    with: '      const rm = new Set();' },
+
+  { what: 'baseline: a restore overwrites the present without recording it first',
+    find: "      pushVersion('draft', 'Before restoring v' + v.v);",
+    with: '      /* mutant: the present is not saved */' },
+
+  { what: 'baseline: a restore leaves links pointing at activities it deleted',
+    find: '        t.predecessors = (t.predecessors || []).filter(pr => live.has(pr.id));',
+    with: '        t.predecessors = (t.predecessors || []);' },
 
   { what: 'baseline: a sign-off records a date instead of the version it signed',
     find: "      const v = pushVersion('signoff', 'Accepted: ' + (ref || scope));",
