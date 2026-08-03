@@ -144,6 +144,27 @@ else
   echo "  · vacuity              skipped (FULL=1 to run it, ~7m)"
 fi
 
+# The OTHER other half. The mutants change what the panels say and require a
+# check to go red; vacuity asks whether a check reads the plan at all. This
+# changes only HOW the page is dressed — an unused class, a hidden empty span, a
+# space either side of some text, none of it visible to a human — and requires
+# every check to stay GREEN. A check that goes red was asserting on the
+# packaging: a position, a style value, an exact class string. That is the
+# second root cause in this directory, nine-plus instances, all of them in the
+# checks rather than in the product, and until this file it was caught by
+# reading and by screenshot rather than by machinery. ~9m, so it rides with FULL.
+if [ -n "$FULL" ]; then
+  if node tests/anchor-check.js > /tmp/ptr-a.$$ 2>&1; then
+    echo "  ✓ anchoring            every check reads the property, not the packaging"
+  else
+    echo "  ✗ ANCHORING — a check breaks when the page is restyled without changing what it says"
+    sed -n '1,30p' /tmp/ptr-a.$$ | sed 's/^/      /'; fail=1
+  fi
+  rm -f /tmp/ptr-a.$$
+else
+  echo "  · anchoring            skipped (FULL=1 to run it, ~9m)"
+fi
+
 if [ -n "$FULL" ]; then
   if node tests/mutation-engine.js > /tmp/ptr-e.$$ 2>&1; then
     echo "  ✓ mutation · engine    every broken identity caught"

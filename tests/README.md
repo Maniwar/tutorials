@@ -387,6 +387,74 @@ it cannot prove that what it read was enough to test with. The two are different
 questions and both have to be answered — mechanically for the first, in the
 check's own words for the second.
 
+## Reading the property, not the packaging
+
+`node tests/anchor-check.js` — the mechanical guard for the second root cause in
+this directory, and the last of the three to get one.
+
+The first root cause was *the fixture cannot reach the branch, and nothing says
+so*; `vacuity-check` answers it by feeding every sweep an empty plan and
+requiring the output to change. The second is *the assertion is on an artefact
+that usually accompanies the property* — a position, a style value, an attribute
+flag, the existence of a row — and it produced at least nine defects, every one
+of them in a **check** rather than in the product:
+
+- `cross-surface` found the delta with `.find(font-weight:700)` and got the value
+  pair: the first thing matching a shape, not the thing wanted.
+- a health-finding check matched `/unbilled/i` against the **area label**, so it
+  survived a rename that removed the finding entirely.
+- an outstanding-total check asserted the row *existed* rather than what it said.
+- a legend check asserted the key existed rather than that it was *visible*.
+- a bank check used `innerText`, which returns `''` for anything not being
+  rendered, and reported the shipped build for a defect that did not exist.
+- the leveling-toolbar check read the `hidden` **attribute**, agreed with the
+  code, and passed on a build where the buttons showed on all four sections.
+
+Each of those correlates with the truth until the day it does not, and on that
+day the check stays green and is counted as coverage.
+
+**The question, asked mechanically.** The mutation engine changes what the panels
+*say* and requires a check to go red. This changes only *how they say it* and
+requires every check to stay **green**. Three mutations, all invisible to a human
+looking at the page:
+
+1. an unused class on every element — no CSS rule matches it, so nothing moves;
+2. a hidden, empty, bold decoy span inside every table cell — no text, no
+   layout, and "find the bold one" now finds nothing;
+3. a space either side of the text in leaf elements — HTML collapses it, so the
+   rendering is identical and `textContent` gains two characters.
+
+A red run is therefore a defect in the **check**, never in the product.
+
+**Proven able to fail.** A green run from a probe that cannot go red is worth
+nothing, so the probe was pointed at three deliberately anchored assertions —
+exact `className` equality, "find the element with `font-weight:700`", exact
+untrimmed `textContent` — and each mutation caught its own. The scratch sweep was
+deleted afterwards; what matters is that the three mutations were each shown to
+bite something.
+
+**And it found a defect in itself first.** Appending the decoy made a table cell
+non-empty of children, so the leaf test for the padding stopped being true for
+exactly the cells it was aimed at: 93 leaf cells, 0 padded. Two of the probe's
+own three mutations cancelled, and it reported green. Found by counting what
+landed rather than by reading the code, which is the only reason it was found at
+all.
+
+**What it does not catch**, stated so nobody reads more into a green run than is
+in it. It cannot catch an assertion anchored to a *label's words*, because
+renaming a heading is not meaning-preserving and resolving a column by its header
+is the correct pattern — a probe that renamed headings would punish the right
+answer. It cannot catch *asserted the row exists rather than what it says*,
+because existence survives every mutation here by design. And it cannot catch an
+attribute read that disagrees with the computed style, because swapping `hidden`
+for `display:none` is not equivalent in general.
+
+So it covers the positional and stylistic third of the pattern. Three probes,
+three questions: the mutants ask *would you have noticed a wrong value*,
+`vacuity-check` asks *did you look at the input*, and this asks *did you look at
+the thing itself, or at what it happened to be wearing*. None of the three is the
+whole standard.
+
 ## The written test plan
 
 `node tests/run-test-plan.js` runs 42 cases and writes two documents:
