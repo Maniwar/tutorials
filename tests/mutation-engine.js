@@ -167,9 +167,15 @@ const MUTANTS = [
     find: '      draftChangeOrder._pending = null;\n      saveLocal();\n      renderCoHistory();',
     with: '      saveLocal();\n      renderCoHistory();' },
 
+  /* Anchored on the ACCEPT path specifically. The short anchor stopped being
+     unique the moment issuing became its own path writing its own log entry,
+     and the engine SKIPPED it rather than picking one — correctly: a mutant
+     that lands somewhere ambiguous is not evidence about anything. Reported as
+     stale rather than as a survivor, which is the distinction that made this a
+     two-minute repair instead of a hunt. */
   { what: 'change order: the log records a price delta the client never approved',
-    find: 'priceDelta: p.priceDelta, newFinish: p.newFinish',
-    with: 'priceDelta: (p.priceDelta||0)+500, newFinish: p.newFinish' },
+    find: "        finishDelta: p.finishDelta, priceDelta: p.priceDelta, newFinish: p.newFinish, newPrice: p.newPrice,\n        diff: p.diff || [], lineSum: p.lineSum || 0,\n        fromV: p.fromV, toV: toV.v, state: 'accepted', stateAt: fmtISO(new Date()) });",
+    with: "        finishDelta: p.finishDelta, priceDelta: (p.priceDelta || 0) + 500, newFinish: p.newFinish, newPrice: p.newPrice,\n        diff: p.diff || [], lineSum: p.lineSum || 0,\n        fromV: p.fromV, toV: toV.v, state: 'accepted', stateAt: fmtISO(new Date()) });" },
 
   /* ── the dependency wizard: a button that acts on something else ───────────
      These three are not arithmetic. They are the shape of defect the user hit
