@@ -441,10 +441,142 @@ const QA = JSON.parse(fs.readFileSync(
     }, label);
   };
 
+  /* ═══ VERSIONS, ACCEPTANCE, AND THE DIFF THAT SITS ON BOTH ═══════════════
+     Three layers, checked in the order they depend on each other, because that
+     is the order they had to be built in: a change order is only meaningful
+     against a real version, and whether a difference is drift or agreed depends
+     on what was accepted.
+
+     Every case below is CONSTRUCTED. None of these conditions exists in a
+     committed fixture — nothing is renamed, no test case carries a result,
+     nobody has signed anything — so a check that merely looked at a loaded plan
+     would pass against a build with any of it removed. The setup is asserted
+     before anything is concluded from it. */
+  const chain = await (async () => {
+    const bad = [], note = {};
+    const say = x => bad.push('Version chain :: ' + x);
+    await page.evaluate(d => { hydrate(d); calculate(); }, CRM);
+    await page.waitForTimeout(400);
+    const r = await page.evaluate(() => {
+      const out = {}, fail = [];
+      const v1 = pushVersion('sow', 'test baseline');
+
+      /* ── 1. A RENAME IS A RENAME ────────────────────────────────────────
+         The defect that motivated the whole layer: identity was the name
+         string, so renaming an activity produced a removal and a priced
+         addition — two line items on a document a client signs, for a change
+         that moved nothing. */
+      const w = leafTasks().filter(t => !t.milestone && (t.te || 0) > 0);
+      if (w.length < 3) { fail.push('the fixture has fewer than three estimated activities, so nothing below was built'); return { fail, out }; }
+      const wasName = w[0].name;
+      w[0].name = wasName + ' (reworded)';
+      calculate();
+      const dRename = planDiff(v1.snap, snapshotPlan());
+      out.renameKinds = dRename.map(x => x.kind);
+      if (!dRename.length) fail.push('renaming an activity produced no diff at all, so the diff is not reading names');
+      if (dRename.some(x => x.kind === 'added') || dRename.some(x => x.kind === 'removed'))
+        fail.push('renaming one activity produced an add and/or a remove — identity is still the name, so a '
+          + 'client gets two priced line items for a change that moved nothing');
+      if (!dRename.some(x => x.kind === 'renamed'))
+        fail.push('renaming an activity produced ' + dRename.map(x => x.kind).join(', ')
+          + ' and no rename record');
+      w[0].name = wasName; calculate();
+
+      /* ── 2. THE DIFF SEES MORE THAN THREE FIELDS ────────────────────────
+         The old comparison was name, effort, milestone. Rewire the network,
+         move every owner, pin every date, and it reported no differences —
+         which is how scope stops being billable without anyone deciding to
+         give it away. */
+      const before = snapshotPlan();
+      w[1].owner = (w[1].owner === 'PMO' ? 'QA' : 'PMO');
+      w[2].startNoEarlier = '2026-09-01';
+      w[2].units = (Number(w[2].units) || 100) === 50 ? 75 : 50;
+      calculate();
+      const dFields = planDiff(before, snapshotPlan());
+      out.fieldKinds = dFields.map(x => x.kind).sort();
+      ['reassigned', 'date-pinned', 'reallocated'].forEach(k => {
+        if (!dFields.some(x => x.kind === k))
+          fail.push('changing the ' + k.replace('-', ' ') + ' of an activity is invisible to the diff, so a '
+            + 'change order raised on this plan would say nothing about it');
+      });
+
+      /* ── 3. ACCEPTANCE IS NOT COMPLETION ────────────────────────────────
+         A test case at 100% used to mean the criterion was covered. It means
+         somebody spent the time. */
+      const tcs = tasks.filter(isTestCase);
+      out.testCases = tcs.length;
+      if (!tcs.length) { fail.push('the fixture has no test cases, so nothing about acceptance was tested'); return { fail, out }; }
+      const ac = tcAcOf(tcs[0]);
+      if (!ac) fail.push('the first test case verifies no criterion, so the rollup below has nothing to roll up');
+      updatePct(tcs[0].id, 100);
+      const doneNoResult = acAcceptance(ac);
+      out.stateWhenDoneButUnrun = doneNoResult.state;
+      if (doneNoResult.state === 'accepted')
+        fail.push('a test case marked 100% complete with NO result recorded reports its criterion as accepted '
+          + '— finishing the activity is being read as the test passing, which is the defect this layer exists for');
+      tcSetResult(tcs[0].id, 'fail');
+      out.stateAfterFail = acAcceptance(ac).state;
+      if (acAcceptance(ac).state !== 'failed')
+        fail.push('a criterion whose test case FAILED reports "' + acAcceptance(ac).state
+          + '" — a failure has to be a failure, not a shade of partial, because it is the one state that '
+          + 'means finished work and unaccepted scope at the same time');
+      tcSetResult(tcs[0].id, 'pass');
+      out.stateAfterPass = acAcceptance(ac).state;
+      out.retestsCounted = acAcceptance(ac).retests;
+      if (acAcceptance(ac).state !== 'accepted')
+        fail.push('a criterion whose every test case passed reports "' + acAcceptance(ac).state + '"');
+      if (!(acAcceptance(ac).retests >= 1))
+        fail.push('a case run twice records no re-test — "passed" and "passed on the second attempt" are the '
+          + 'same fact in this file, and the second one is the one that predicts the next estimate');
+
+      /* ── 3b. A PRICED LINE CARRIES ITS OWN MONEY ────────────────────────
+         The change order's total has to be the sum of its lines, and a line can
+         only carry money if the snapshot stores what the activity is CHARGED
+         at. The first version stored the baselined cost, which on any plan with
+         a schedule baseline is frozen and identical in both snapshots — so
+         every re-estimated line priced at exactly zero and the document said
+         "not priced" about work that had visibly doubled. */
+      const beforePrice = snapshotPlan();
+      const grow = leafTasks().find(t => !t.milestone && (t.te || 0) > 0
+        && taskParticipants(t).some(pr => !isClientResource(pr.name) && getBillRate(pr.name) > 0));
+      if (!grow) fail.push('no activity on this plan is billed at a rate, so line pricing was not tested');
+      else {
+        grow.m = (Number(grow.m) || 1) * 3; calculate();
+        const dPrice = planDiff(beforePrice, snapshotPlan()).filter(x => x.kind === 're-estimated');
+        out.pricedLine = dPrice.length ? Math.round(dPrice[0].priceDelta) : null;
+        if (!dPrice.length) fail.push('tripling an estimate produced no re-estimated line');
+        else if (!(Math.abs(dPrice[0].priceDelta) > 1))
+          fail.push('an activity billed at a real rate tripled its estimate and its change-order line carries '
+            + 'a price impact of ' + dPrice[0].priceDelta + ' — the line cannot be added up, so the change '
+            + 'order is a total nobody can check');
+      }
+
+      /* ── 4. SIGN-OFF IS AGAINST A VERSION, NOT A DATE ───────────────────
+         Otherwise a criterion reworded the day after signing is invisible. */
+      const s0 = ((reqs && reqs.stories) || [])[0];
+      if (!s0 || !(s0.ac || []).length) { fail.push('no story with criteria, so sign-off drift was not tested'); return { fail, out }; }
+      const so = recordSignoff('story', s0.id, 'Client UAT Lead', '');
+      out.signoffVersion = so.v;
+      if (!so.v) fail.push('a sign-off was recorded against no version, so nothing can say later what was signed');
+      if (signoffDrift().length)
+        fail.push('drift was reported the instant the sign-off was taken — a record that disagrees with itself '
+          + 'at the moment it is written');
+      s0.ac[0].text = String(s0.ac[0].text || '') + ' AND exports to PDF';
+      const drift = signoffDrift();
+      out.driftAfterReword = drift.length;
+      if (!drift.length)
+        fail.push('an acceptance criterion was reworded AFTER it was signed for and nothing noticed — the '
+          + 'client agreed to different words from the ones the plan now holds');
+      return { fail, out };
+    });
+    (r.fail || []).forEach(say);
+    return { contradictions: bad, counts: r.out };
+  })();
+
   const qa = await sweep('QA reference', QA);
   const crm = await sweep('Real export', CRM);
-  const R = { contradictions: [].concat(qa.contradictions, crm.contradictions),
-              qaCounts: qa.counts, crmCounts: crm.counts,
+  const R = { contradictions: [].concat(qa.contradictions, crm.contradictions, chain.contradictions),
+              qaCounts: qa.counts, crmCounts: crm.counts, versionsAndAcceptance: chain.counts,
               pageErrors: errs.slice(0, 8) };
   console.log(JSON.stringify(R, null, 1));
   await b.close();

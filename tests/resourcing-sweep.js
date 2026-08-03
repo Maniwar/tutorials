@@ -386,7 +386,19 @@ const DATA = FIXTURE();
          "Peak load 200%" can sit next to a green OK. Both are true; together they
          read as a contradiction, and it is the same collision one surface over.
          Where they disagree the badge has to say which rule it applied. */
-      const rosterRows2 = host ? [...host.querySelectorAll('table tbody tr')] : [];
+      /* The ROSTER is on the Team section; everything above this point reads the
+         Workload one. Splitting the tab moved them apart and this check kept
+         reading whichever container happened to be painted, found no rows, and
+         passed — the mutation engine caught it by planting the exact defect it
+         exists for and watching it survive. Selected explicitly, and the empty
+         case is now a finding rather than a quiet pass, because "no rows to
+         check" and "every row was fine" were indistinguishable here for
+         precisely as long as it took to notice. */
+      if (typeof setResTab === 'function') setResTab('team');
+      const rosterHost = document.getElementById('resourcesContainer') || host;
+      const rosterRows2 = rosterHost ? [...rosterHost.querySelectorAll('table tbody tr')] : [];
+      if (!rosterRows2.length)
+        say('Roster', 'the roster table drew no rows, so the peak-vs-badge check below compared nothing');
       let mute = 0;
       rosterRows2.forEach(tr => {
         const nm = (tr.querySelector('td') || {}).textContent || '';

@@ -156,9 +156,12 @@ const MUTANTS = [
     find: '          baseStart: t.baseStart ? fmtISO(new Date(t.baseStart)) : null,',
     with: '          baseStart: null,' },
 
+  /* Rolling the baseline is now "push a version and point at it", so the
+     mutant is the version not being taken: the next change order then diffs
+     from the one before and re-lists scope the client already approved. */
   { what: 'change order: approval does not roll the baseline, so the next one re-bills',
-    find: '      sowBaseline = snapshotSowBaseline(); // next CO diffs from here',
-    with: '      /* mutant: the baseline is not rolled */' },
+    find: "      const toV = pushVersion('co', p.no);",
+    with: '      const toV = contractVersion() || pushVersion(\'co\', p.no);' },
 
   { what: 'change order: approval leaves the draft pending and it can be logged twice',
     find: '      draftChangeOrder._pending = null;\n      saveLocal();\n      renderCoHistory();',
@@ -205,6 +208,43 @@ const MUTANTS = [
      under it stops being one. The last mutant is the trap the first version of
      the CHECK fell into: let the residual absorb the difference and the columns
      add up again under a label that says the money cannot be opened. */
+
+  /* ── VERSIONS, ACCEPTANCE, AND THE DIFF THAT SITS ON BOTH ────────────────
+     Seven mutants for the three layers, each restoring one of the specific
+     defects they were built to end. All seven are invisible to a
+     value-comparing check on a loaded fixture, because none of these conditions
+     exists in a committed plan: nothing is renamed, no test carries a result,
+     nobody has signed anything. The checks that catch them build the case
+     first, which is why they are in baseline-sweep rather than anywhere that
+     merely looks. */
+
+  { what: 'baseline: the diff goes back to keying activities by name',
+    find: '      const A = new Map((fromSnap.tasks || []).map(t => [t.id, t]));\n      const B = new Map((toSnap.tasks || []).map(t => [t.id, t]));',
+    with: '      const A = new Map((fromSnap.tasks || []).map(t => [t.name, t]));\n      const B = new Map((toSnap.tasks || []).map(t => [t.name, t]));' },
+
+  { what: 'baseline: an owner change is invisible to the change order again',
+    find: "        if (String(a.owner || '') !== String(b.owner || ''))",
+    with: '        if (false)' },
+
+  { what: 'baseline: a change-order line prices off the frozen baseline, so nothing is priced',
+    find: '          value: Math.round(taskBilledValue(t) || 0),',
+    with: '          value: Math.round(plannedCostOf(t, hasBaseline()) || 0),' },
+
+  { what: 'baseline: finishing a test case counts as the test passing',
+    find: "      else if (passed.length === cases.length) state = 'accepted';",
+    with: "      else if (cases.every(t => (t.percentComplete || 0) >= 100)) state = 'accepted';" },
+
+  { what: 'baseline: a failed test case stops making its criterion fail',
+    find: "      else if (failed.length) state = 'failed';",
+    with: "      else if (false) state = 'failed';" },
+
+  { what: 'baseline: a re-test leaves no trace, so passed and passed-eventually are one fact',
+    find: '               retests: cases.reduce((s, t) => s + Math.max(0, (t.tcRuns || []).length - 1), 0) };',
+    with: '               retests: 0 };' },
+
+  { what: 'baseline: a sign-off records a date instead of the version it signed',
+    find: "      const v = pushVersion('signoff', 'Accepted: ' + (ref || scope));",
+    with: '      const v = { v: null };' },
 
   /* Splitting a crowded tab into sections creates two failures the old scroll
      could not have: a section with no way to reach it, and two buttons that

@@ -1533,6 +1533,22 @@
     .seg button { border-radius: 0; border: none; background: #fff; color: #334155; box-shadow: none; }
     .seg button + button { border-left: 1px solid var(--border); }
     .seg button:hover { background: #f1f5f9; }
+    /* A result is three taps wide and lives in a table cell, so it is drawn as
+       three small toggles rather than a control. The pressed one carries the
+       verdict colour; the others stay quiet, because a row of four coloured
+       chips per line turns a sheet of forty test cases into a fruit salad and
+       nothing reads as a finding any more. */
+    .tc-rs { display: inline-flex; align-items: center; gap: 2px; }
+    .tc-r { border: 1px solid var(--border); background: #fff; color: var(--muted);
+      border-radius: 6px; padding: 1px 6px; font-size: var(--t-sm); line-height: 1.5;
+      box-shadow: none; min-width: 22px; }
+    .tc-r:hover { background: var(--bg); color: var(--text); }
+    .tc-r-on { font-weight: 700; }
+    .tc-r-good { background: #dcfce7; border-color: #86efac; color: #166534; }
+    .tc-r-bad  { background: var(--critical-bg); border-color: #fecaca; color: #b91c1c; }
+    .tc-r-chg  { background: #fef3c7; border-color: #fde68a; color: #b45309; }
+    .tc-rt { font-size: var(--t-xs); color: var(--muted); margin-left: 4px; white-space: nowrap; }
+    .tc-rt-warn { color: var(--warn); font-weight: 600; }
     /* SUB-TABS WITHIN A TAB.
        The Resources tab had grown to eleven stacked panels answering six
        unrelated questions, and the only way to find any of them was to scroll
@@ -3259,7 +3275,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.02.2324</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.03.0009</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3651,6 +3667,20 @@ Or say what you want, in your own words:
         // what was actually INVOICED and RECEIVED against this activity. null is
         // "nobody has said", which is a different fact from zero.
         invoiced: null, invoicedDate: '', paid: null, paidDate: '',
+        /* ACCEPTANCE, WHICH IS NOT COMPLETION.
+           A test case used to have exactly one state: percentComplete. Marking
+           it 100% said the ACTIVITY finished — somebody spent the time — and
+           the app then reported acceptance criteria as covered. Whether the
+           test PASSED was nowhere in the file. The two are different facts and
+           the difference is the whole job: a failed test is finished work and
+           unaccepted scope at the same time, and only one of those gets billed.
+
+           null is "not run", which is distinct from a recorded result of any
+           kind. `verifiesAc` is the trace BY ID; the old trace parsed the AC id
+           back out of the activity name with a regex, so renaming an activity
+           silently broke it — the same name-as-identity flaw the change orders
+           had. The regex survives as a fallback for plans written before this. */
+        tcResult: null, tcResultAt: '', tcResultBy: '', tcEvidence: '', tcRuns: [], verifiesAc: '',
         baseStart: null, baseFinish: null, baseTe: null, baseCost: null,
         te: 0, variance: 0, es: 0, ef: 0, ls: 0, lf: 0, slack: 0, wbs: '', isSummary: false,
         isCritical: false, criticality: 0, startDate: null, finishDate: null, overallocated: false
@@ -4334,6 +4364,10 @@ Or say what you want, in your own words:
         resources, reserves, baselineDate, baselineLog, levelMode, projectBudget,
         raid, nextRaidId, statusHistory, sowDraft, statusNarrative, pricing, cashTerms, revTerms, reqsBaseline,
         clientSafeReports, sowBaseline, reqs, sowUserEdited, coLog,
+        // the version chain travels with the plan. A history that lives only in
+        // one browser session is not a history — the whole point of parenting
+        // versions is that a later reader can walk back through them.
+        planVersions, nextVersionNo, signoffs, nextSignoffNo,
         collapsedIds: [...collapsedIds],
         tasks: tasks.map(t => ({
           id: t.id, name: t.name, o: t.o, m: t.m, p: t.p, milestone: t.milestone,
@@ -4345,6 +4379,14 @@ Or say what you want, in your own words:
           actualStartInferred: !!t.actualStartInferred,
           invoiced: t.invoiced == null ? null : Number(t.invoiced), invoicedDate: t.invoicedDate || '',
           paid: t.paid == null ? null : Number(t.paid), paidDate: t.paidDate || '',
+          tcResult: TC_RESULTS[t.tcResult] ? t.tcResult : null,
+          tcResultAt: t.tcResultAt || '', tcResultBy: t.tcResultBy || '',
+          tcEvidence: t.tcEvidence || '', verifiesAc: t.verifiesAc || '',
+          // the whole run history, not just the latest. "Passed on the third
+          // attempt" is a different fact from "passed", and it is the one that
+          // predicts how the next engagement will go.
+          tcRuns: (t.tcRuns || []).map(r => ({ at: String(r.at || ''), result: String(r.result || ''),
+            by: String(r.by || ''), note: String(r.note || '') })),
           taxonomy: t.taxonomy || null, taxSrc: (t.taxSrc === 'ai' ? 'ai' : null),
           baseStart: t.baseStart ? fmtISO(new Date(t.baseStart)) : null,
           baseFinish: t.baseFinish ? fmtISO(new Date(t.baseFinish)) : null,
@@ -4395,6 +4437,16 @@ Or say what you want, in your own words:
         actualStartInferred: !!t.actualStartInferred,
         invoiced: (t.invoiced == null || t.invoiced === '') ? null : (Number(t.invoiced) || 0), invoicedDate: t.invoicedDate || '',
         paid: (t.paid == null || t.paid === '') ? null : (Number(t.paid) || 0), paidDate: t.paidDate || '',
+        /* Coerced against the known set, not trusted. An unknown string here
+           would sit in the file behaving like a fourth result nobody wrote a
+           rule for, and the rollup would quietly treat it as "not run". */
+        tcResult: TC_RESULTS[t.tcResult] ? t.tcResult : null,
+        tcResultAt: /^\d{4}-\d{2}-\d{2}$/.test(t.tcResultAt || '') ? t.tcResultAt : '',
+        tcResultBy: String(t.tcResultBy || ''), tcEvidence: String(t.tcEvidence || ''),
+        verifiesAc: String(t.verifiesAc || ''),
+        tcRuns: Array.isArray(t.tcRuns) ? t.tcRuns.filter(Boolean).map(r => ({
+          at: String(r.at || ''), result: TC_RESULTS[r.result] ? r.result : 'blocked',
+          by: String(r.by || ''), note: String(r.note || '') })) : [],
         taxonomy: taxCoerce(t.taxonomy), taxSrc: (t.taxSrc === 'ai' ? 'ai' : null),
 /* TDZ note: hydrate() references taxCoerce, declared ~7500 lines later in source
    order. Safe — hydrate only RUNS from init/loadLocal/import, long after the
@@ -4468,6 +4520,22 @@ Or say what you want, in your own words:
       } : null;
       normalizeStoryLinks();   // give every story a wbsIds[] (migrates old single wbsId)
       coLog = Array.isArray(data.coLog) ? data.coLog : [];
+      /* The chain, and a counter that must be AHEAD of every number in it.
+         Deriving nextVersionNo from max+1 rather than trusting the stored
+         counter: a file hand-edited or merged from two sources can carry a
+         counter behind its own history, and a repeated version number turns a
+         parent pointer into a cycle. Same reasoning for the sign-off numbers. */
+      planVersions = Array.isArray(data.planVersions)
+        ? data.planVersions.filter(x => x && x.snap && Number.isFinite(+x.v))
+            .map(x => ({ v: +x.v, at: String(x.at || ''), kind: String(x.kind || 'snapshot'),
+                         label: String(x.label || ''),
+                         parent: (x.parent == null ? null : +x.parent), snap: x.snap }))
+        : [];
+      nextVersionNo = Math.max(1, ...planVersions.map(x => x.v + 1),
+        Number.isFinite(+data.nextVersionNo) ? +data.nextVersionNo : 1);
+      signoffs = Array.isArray(data.signoffs) ? data.signoffs.filter(Boolean) : [];
+      nextSignoffNo = Math.max(1, ...signoffs.map(x => (+x.no || 0) + 1),
+        Number.isFinite(+data.nextSignoffNo) ? +data.nextSignoffNo : 1);
       // AFTER tasks, reqs and coLog: every remembered label must resolve against
       // THIS project, not the one being switched away from
       normalizeRaidLinks();
@@ -15849,6 +15917,7 @@ Or say what you want, in your own words:
           <td style="font-size:0.75rem;white-space:nowrap">${escapeHtml(tc.owner || '—') + roleSub(tc.owner)}</td>
           <td style="font-size:0.75rem;white-space:nowrap">${tc.startDate ? escapeHtml(fmtNice(tc.startDate) + ' → ' + fmtNice(tc.finishDate)) : '—'}</td>
           <td style="font-size:0.75rem;white-space:nowrap">${(tc.percentComplete || 0)}% · ${escapeHtml(st.label)}</td>
+          <td style="white-space:nowrap" onclick="event.stopPropagation()">${tcResultCell(tc)}</td>
         </tr>`;
       }).join('');
       // 📏 consolidated non-functional requirements — the same aggregation the
@@ -15929,11 +15998,11 @@ Or say what you want, in your own words:
         <p class="req-scrollhint">Wide execution sheet — scroll sideways.</p>
         ${tcAll.length
           ? `<div id="tcListPanel" class="req-audit"><table>
-              <thead><tr><th>Test case</th><th title="The acceptance criterion this verifies — hover for the Given/When/Then">Verifies</th><th>Steps for the tester</th><th>Pass when</th><th>Owner</th><th>Scheduled window</th><th>Status</th></tr></thead>
+              <thead><tr><th>Test case</th><th title="The acceptance criterion this verifies — hover for the Given/When/Then">Verifies</th><th>Steps for the tester</th><th>Pass when</th><th>Owner</th><th>Scheduled window</th><th title="How far through running it — this is EFFORT, not the outcome">Progress</th><th title="What actually happened when it was run. Deliberately separate from progress: a failed test is finished work and unaccepted scope at the same time, and only one of those is billable.">Result</th></tr></thead>
               <tbody>${tcRows}</tbody></table></div>`
           : '<div id="tcListPanel"><p class="help-text" style="margin-top:0.5rem">None yet — 🧪 Generate test plan creates one executable test case per UAT-testable acceptance criterion, scheduled under your UAT activities.</p></div>'}
       </div>`;
-      html += `<section class="refx" aria-label="Reference & audit"><div class="refx-cap">Reference &amp; audit</div>${rowPersonas}${rowNfr}${rowDep}${rowTrace}${rowTc}</section>`;
+      html += `<section class="refx" aria-label="Reference & audit"><div class="refx-cap">Reference &amp; audit</div>${rowPersonas}${rowNfr}${rowDep}${rowTrace}${rowTc}${acceptanceRowHtml()}</section>`;
 
       const intCount = stories.filter(isInternalStory).length;
       html += `<div id="reqEpicsAnchor" class="toolbar no-print" style="margin:0 0 0.5rem;align-items:center;gap:0.4rem;flex-wrap:wrap">
@@ -16222,10 +16291,313 @@ Or say what you want, in your own words:
        all overstated coverage, and in-place regeneration could rewrite the
        wrong case. The boundary check is what a token means: the character after
        the id must not extend it. */
+    /* ═══════════════════════════════════════════════════════════════════════
+       ACCEPTANCE IS NOT COMPLETION
+
+       This file could plan acceptance in real depth — criteria per story, a
+       generated test case per criterion with steps and an expected result,
+       nested under the UAT activity — and could not record a single thing
+       about how any of it went. The only state a test case had was
+       percentComplete, so "done" meant somebody spent the time. Whether the
+       test PASSED was not in the file, which made the app's own phrase for
+       acceptance criteria — "the billing checklist" — an aspiration.
+
+       A failed test is finished work AND unaccepted scope at the same time.
+       Those two facts point at different money and only one of them is
+       billable, so they cannot share a field. */
+    const TC_RESULTS = {
+      pass:    { lbl: 'Pass',    icon: '✓', tone: 'good', accepts: true },
+      fail:    { lbl: 'Fail',    icon: '✗', tone: 'bad',  accepts: false },
+      blocked: { lbl: 'Blocked', icon: '⊘', tone: 'chg',  accepts: false }
+    };
+    function isTestCase(t) { return !!t && /^tc\s/i.test(String(t.name || '').trim()); }
+    /* THE TRACE, BY ID FIRST. `verifiesAc` is written when the case is created
+       and survives every rename. The name parse stays as a fallback because
+       every plan written before this has nothing else — but it is second, so a
+       stored trace always wins over a guess made from a string a user edits. */
+    function tcAcOf(t) {
+      if (!t) return '';
+      if (t.verifiesAc) return String(t.verifiesAc);
+      return ((String(t.name || '').match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '');
+    }
+    function tcSetResult(id, result, opts) {
+      const t = tasks.find(x => x.id === id);
+      if (!t) return;
+      const o = opts || {};
+      if (result && !TC_RESULTS[result]) return;
+      const today = fmtISO(new Date());
+      if (result) {
+        /* Every run is appended, and the latest is ALSO kept flat because that
+           is what every table reads. Derived-and-stored, so the invariant is
+           worth stating: tcResult is always the last element of tcRuns. */
+        t.tcRuns = (t.tcRuns || []).concat([{ at: today, result: result,
+          by: String(o.by || t.owner || ''), note: String(o.note || '') }]);
+        t.tcResult = result; t.tcResultAt = today; t.tcResultBy = String(o.by || t.owner || '');
+        /* A recorded result means the case was RUN, so the activity is done —
+           but only forward. Passing a case does not un-finish anything, and a
+           failure does not roll completion back to zero: the work of running it
+           happened either way. */
+        if ((t.percentComplete || 0) < 100) updatePct(t.id, 100);
+      } else {
+        // clearing is "this was never run", so the history goes with it —
+        // keeping runs under a null result would claim evidence for a state
+        // that says there is none
+        t.tcResult = null; t.tcResultAt = ''; t.tcResultBy = ''; t.tcRuns = [];
+      }
+      if (o.evidence != null) t.tcEvidence = String(o.evidence);
+      saveLocal();
+      try { renderReqs(); } catch (e) {}
+      try { renderTaskTable(); } catch (e) {}
+    }
+
+    /* ── ROLLUP: CASE → CRITERION → STORY ────────────────────────────────────
+       Stated as a rule rather than a count, because the counts are what people
+       argue about: a criterion is ACCEPTED only when it has at least one case
+       and every case passed. Not "most passed", not "the last one passed" —
+       one failing case is one piece of the criterion that does not work, and a
+       criterion with no case at all is untested rather than accepted, which is
+       the distinction that makes coverage worth measuring. */
+    function acAcceptance(acId) {
+      const cases = testCasesForAC(acId);
+      const ran = cases.filter(t => t.tcResult);
+      const failed = cases.filter(t => t.tcResult === 'fail');
+      const blocked = cases.filter(t => t.tcResult === 'blocked');
+      const passed = cases.filter(t => t.tcResult === 'pass');
+      let state = 'untested';
+      if (!cases.length) state = 'no-cases';
+      else if (failed.length) state = 'failed';
+      else if (blocked.length) state = 'blocked';
+      else if (passed.length === cases.length) state = 'accepted';
+      else if (ran.length) state = 'partial';
+      return { acId: acId, state: state, cases: cases, n: cases.length, ran: ran.length,
+               passed: passed.length, failed: failed.length, blocked: blocked.length,
+               // a re-test is evidence about the estimate as well as the build
+               retests: cases.reduce((s, t) => s + Math.max(0, (t.tcRuns || []).length - 1), 0) };
+    }
+    function storyAcceptance(s) {
+      const acs = (s && s.ac) || [];
+      /* An artifact-verified story is accepted by its deliverable, not by a
+         scheduled test — the app already models that distinction for planning
+         and would otherwise report every kickoff and every workshop as
+         permanently untested, which is noise that hides the real gaps. */
+      const artifact = (s && s.verification) === 'artifact';
+      const rows = acs.map(a => acAcceptance(a.id));
+      const any = k => rows.some(r => r.state === k);
+      let state = 'untested';
+      if (!acs.length) state = 'no-criteria';
+      else if (artifact) state = 'artifact';
+      else if (any('failed')) state = 'failed';
+      else if (any('blocked')) state = 'blocked';
+      else if (rows.every(r => r.state === 'accepted')) state = 'accepted';
+      else if (rows.some(r => r.state === 'accepted' || r.state === 'partial')) state = 'partial';
+      else if (rows.every(r => r.state === 'no-cases')) state = 'no-cases';
+      return { id: s && s.id, state: state, rows: rows, acs: acs.length,
+               accepted: rows.filter(r => r.state === 'accepted').length };
+    }
+    const ACC_STATE = {
+      accepted:  { lbl: 'Accepted',   tone: 'good', cls: 'badge-ok' },
+      failed:    { lbl: 'Failed',     tone: 'bad',  cls: 'badge-blocked' },
+      blocked:   { lbl: 'Blocked',    tone: 'chg',  cls: 'badge-warn' },
+      partial:   { lbl: 'Part-run',   tone: 'chg',  cls: 'badge-warn' },
+      untested:  { lbl: 'Not run',    tone: 'flat', cls: 'badge-slack' },
+      'no-cases':{ lbl: 'No test',    tone: 'chg',  cls: 'badge-warn' },
+      'no-criteria': { lbl: 'No criteria', tone: 'chg', cls: 'badge-warn' },
+      artifact:  { lbl: 'By artifact', tone: 'flat', cls: 'badge-info' }
+    };
+    function acceptanceSummary() {
+      const stories = ((reqs && reqs.stories) || []);
+      const rows = stories.map(storyAcceptance);
+      const cases = tasks.filter(isTestCase);
+      const by = k => rows.filter(r => r.state === k).length;
+      return { stories: rows.length, rows: rows,
+               accepted: by('accepted'), failed: by('failed'), blocked: by('blocked'),
+               partial: by('partial'), untested: by('untested'), noCases: by('no-cases'),
+               artifact: by('artifact'),
+               cases: cases.length,
+               run: cases.filter(t => t.tcResult).length,
+               pass: cases.filter(t => t.tcResult === 'pass').length,
+               fail: cases.filter(t => t.tcResult === 'fail').length,
+               retests: cases.reduce((s, t) => s + Math.max(0, (t.tcRuns || []).length - 1), 0),
+               /* Finished but never run: the exact state the old model could not
+                  express, and the one that used to read as covered. */
+               doneUnrun: cases.filter(t => (t.percentComplete || 0) >= 100 && !t.tcResult).length };
+    }
+
+    /* ── SIGN-OFF ────────────────────────────────────────────────────────────
+       Against a VERSION, not against a date. "The client accepted this on the
+       14th" is not a record if the criteria were reworded on the 15th and
+       nothing can tell. Storing the version number means the acceptance and
+       the change control point at the same object, which is the join that lets
+       a reworded criterion after sign-off become a finding rather than a
+       surprise in a later invoice dispute. */
+    let signoffs = [];
+    let nextSignoffNo = 1;
+    function recordSignoff(scope, ref, by, note) {
+      const v = pushVersion('signoff', 'Accepted: ' + (ref || scope));
+      const rec = { no: nextSignoffNo++, at: fmtISO(new Date()), scope: scope, ref: String(ref || ''),
+                    by: String(by || ''), note: String(note || ''), v: v.v };
+      signoffs.push(rec);
+      saveLocal();
+      return rec;
+    }
+    function signoffFor(scope, ref) {
+      const r = signoffs.filter(x => x.scope === scope && x.ref === String(ref));
+      return r.length ? r[r.length - 1] : null;
+    }
+    /* THE FINDING THIS EXISTS FOR: criteria that moved after somebody signed
+       for them. Compared against the snapshot taken AT sign-off, so it survives
+       any number of later versions, and reported per criterion rather than as a
+       count — "3 criteria changed" is not something you can take to a client. */
+    function signoffDrift() {
+      const out = [];
+      signoffs.forEach(so => {
+        const v = versionByNo(so.v);
+        if (!v) return;
+        const then = new Map((v.snap.stories || []).map(s => [s.id, s]));
+        const nowStories = ((reqs && reqs.stories) || []);
+        nowStories.forEach(s => {
+          if (so.scope === 'story' && String(s.id) !== so.ref) return;
+          const was = then.get(String(s.id));
+          if (!was) return;
+          const wasAc = new Map((was.ac || []).map(a => [a.id, a]));
+          (s.ac || []).forEach(a => {
+            const w = wasAc.get(String(a.id));
+            if (w && String(w.text || '') !== String(a.text || ''))
+              out.push({ so: so, story: s.id, ac: a.id, was: w.text, now: a.text, kind: 'reworded' });
+            if (!w) out.push({ so: so, story: s.id, ac: a.id, was: null, now: a.text, kind: 'added' });
+          });
+          wasAc.forEach((w, id) => {
+            if (!(s.ac || []).some(a => String(a.id) === id))
+              out.push({ so: so, story: s.id, ac: id, was: w.text, now: null, kind: 'removed' });
+          });
+        });
+      });
+      return out;
+    }
+
+    /* ── THE ACCEPTANCE PANEL ────────────────────────────────────────────────
+       The number worth leading with is not "how many passed". It is how many
+       criteria are ACCEPTED, because that is the one the invoice rests on, and
+       the two differ by everything the old model could not express: criteria
+       with no test at all, tests finished but never run, tests that failed and
+       were quietly re-run until they did not.
+
+       Drift sits at the top when it exists, above the counts, because a criterion
+       that moved after somebody signed for it is not a statistic — it is a
+       conversation to have before the next invoice, and burying it under a
+       coverage percentage is how it gets found by a client instead. */
+    function acceptanceRowHtml() {
+      const a = acceptanceSummary();
+      if (!a.stories) return '';
+      const drift = signoffDrift();
+      const acRows = [];
+      ((reqs && reqs.stories) || []).forEach(s => (s.ac || []).forEach(x => acRows.push(acAcceptance(x.id))));
+      const testable = acRows.filter(r => r.state !== 'no-criteria');
+      const accepted = acRows.filter(r => r.state === 'accepted').length;
+      const failed = acRows.filter(r => r.state === 'failed').length;
+      const noCase = acRows.filter(r => r.state === 'no-cases').length;
+      const pct = testable.length ? Math.round(100 * accepted / testable.length) : null;
+      const badge = (st, n) => n ? '<span class="badge ' + (ACC_STATE[st] || {}).cls + '" style="margin-right:.3rem">'
+        + n + ' ' + escapeHtml((ACC_STATE[st] || {}).lbl.toLowerCase()) + '</span>' : '';
+      const soRows = signoffs.slice().reverse().map(so => '<tr>'
+        + '<td style="font-size:0.75rem;white-space:nowrap">#' + so.no + '</td>'
+        + '<td style="font-size:0.75rem;white-space:nowrap">' + escapeHtml(fmtNice(new Date(so.at + 'T00:00:00'))) + '</td>'
+        + '<td style="font-size:0.78rem">' + escapeHtml(so.scope === 'project' ? 'Whole engagement' : so.ref) + '</td>'
+        + '<td style="font-size:0.78rem">' + escapeHtml(so.by || '—') + '</td>'
+        + '<td style="font-size:0.75rem;white-space:nowrap" title="The criteria as they stood when this was signed. Everything compared against this version rather than against a date, so a later rewording is visible instead of silent.">v' + so.v + '</td>'
+        + '</tr>').join('');
+      const driftHtml = drift.length
+        ? '<div class="conflict-card" style="border-left-color:var(--critical);background:var(--critical-bg);margin:0 0 .7rem">'
+          + '<strong>⚑ ' + drift.length + ' acceptance criteri' + (drift.length === 1 ? 'on has' : 'a have')
+          + ' changed since they were signed for.</strong> '
+          + '<span class="help-text" style="display:block;margin-top:.25rem">Signed acceptance is against a '
+          + 'specific wording. These moved afterwards, so what the client agreed to and what the plan now says '
+          + 'are different documents — raise it as a change order or restore the wording.</span>'
+          + '<ul style="margin:.4rem 0 0;padding-left:1.1rem;font-size:0.78rem">'
+          + drift.slice(0, 6).map(d => '<li>' + ekMark('ac', { xs: true }) + escapeHtml(d.ac) + ' — '
+              + escapeHtml(d.kind) + (d.kind === 'reworded'
+                ? ': “' + String(d.was || '').slice(0, 70) + '” → “' + String(d.now || '').slice(0, 70) + '”' : '')
+              + ' <span class="help-text">(signed #' + d.so.no + ')</span></li>').join('')
+          + '</ul>' + (drift.length > 6 ? '<p class="help-text" style="margin:.3rem 0 0">and '
+              + (drift.length - 6) + ' more</p>' : '') + '</div>'
+        : '';
+      return `<details class="refx-row" id="acceptancePanel"><summary class="refx-line">
+          <span class="refx-ico" aria-hidden="true">🤝</span>
+          <span class="refx-tt">Acceptance</span>
+          <span class="refx-count">${pct == null ? '—' : pct + '%'}</span>
+          <span class="refx-sub">${accepted} of ${testable.length} criteria accepted${failed ? ' · ' + failed + ' failed' : ''}${drift.length ? ' · ⚑ ' + drift.length + ' changed after sign-off' : ''}</span>
+          <span class="refx-chev" aria-hidden="true">›</span></summary>
+        <div class="refx-body">
+          ${driftHtml}
+          <p class="help-text" style="margin:0 0 .5rem">A criterion is <b>accepted</b> only when it has at least
+            one test case and every one of them passed. Not "most passed", not "the last run passed" — one failing
+            case is one piece of the criterion that does not work. A criterion with no case at all is
+            <b>untested</b>, never accepted, which is the whole reason coverage is worth counting.</p>
+          <div style="margin-bottom:.55rem">${badge('accepted', accepted)}${badge('failed', failed)}${badge('no-cases', noCase)}${badge('untested', acRows.filter(r => r.state === 'untested').length)}${badge('blocked', acRows.filter(r => r.state === 'blocked').length)}</div>
+          <p class="help-text" style="margin:0 0 .6rem">${a.cases} test case(s): <b>${a.run}</b> run, ${a.pass} passed, ${a.fail} failed${a.retests ? ', ' + a.retests + ' re-test(s)' : ''}.${a.doneUnrun ? ` <b style="color:var(--warn)">${a.doneUnrun} marked 100% complete with no result recorded</b> — somebody spent the time and nothing says whether it passed.` : ''}</p>
+          <h4 style="font-size:0.85rem;margin:.6rem 0 .3rem">Sign-off record</h4>
+          ${signoffs.length
+            ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Date</th><th>What</th><th>Accepted by</th><th title="The plan version the criteria were in at the moment of signing">Against</th></tr></thead><tbody>${soRows}</tbody></table></div>`
+            : '<p class="help-text" style="margin:0">Nothing signed off yet. Recording a sign-off freezes the criteria as they stand, so a later rewording shows up as drift instead of turning into an invoice argument.</p>'}
+          <div style="margin-top:.6rem"><button class="btn-sm btn-secondary no-print" onclick="promptSignoff()" title="Record who accepted what, when — against the criteria as they stand right now">✍ Record a sign-off</button></div>
+        </div>
+      </details>`;
+    }
+    function promptSignoff() {
+      const stories = ((reqs && reqs.stories) || []);
+      const ref = prompt('Sign-off for which story id? Leave blank for the whole engagement.'
+        + (stories.length ? '\n\nStories: ' + stories.map(s => s.id).join(', ') : ''), '');
+      if (ref === null) return;
+      const id = String(ref).trim();
+      if (id && !stories.some(s => String(s.id).toLowerCase() === id.toLowerCase())) {
+        alert('No story with id "' + id + '" — nothing recorded.\n\nA sign-off has to point at something that '
+          + 'exists, or the drift check has nothing to compare against later.');
+        return;
+      }
+      const by = prompt('Accepted by whom? (the client-side name that goes on the record)', '');
+      if (by === null) return;
+      const rec = recordSignoff(id ? 'story' : 'project',
+        id ? stories.find(s => String(s.id).toLowerCase() === id.toLowerCase()).id : '', by, '');
+      try { renderReqs(); } catch (e) {}
+      flashSaved('✓ Sign-off #' + rec.no + ' recorded against plan version v' + rec.v);
+    }
+
+    /* Three buttons and a state, not a dropdown. Recording a result is the
+       single most repeated gesture in a UAT window — a tester goes down the
+       sheet — and a select costs two clicks and a scan of four options for what
+       is really a one-tap decision. The current state is the pressed one. */
+    function tcResultCell(t) {
+      const cur = t.tcResult;
+      const runs = (t.tcRuns || []).length;
+      const btn = (k) => {
+        const d = TC_RESULTS[k], on = cur === k;
+        return '<button type="button" class="tc-r' + (on ? ' tc-r-on tc-r-' + d.tone : '') + '"'
+          + ' onclick="tcSetResult(' + t.id + ',' + (on ? 'null' : '\'' + k + '\'') + ')"'
+          + ' title="' + escapeHtml(on ? 'Recorded ' + d.lbl.toLowerCase()
+              + (t.tcResultAt ? ' on ' + fmtNice(new Date(t.tcResultAt + 'T00:00:00')) : '')
+              + (t.tcResultBy ? ' by ' + t.tcResultBy : '') + ' — click again to clear back to not run'
+              : 'Record ' + d.lbl.toLowerCase()) + '">' + d.icon + '</button>';
+      };
+      return '<span class="tc-rs">' + Object.keys(TC_RESULTS).map(btn).join('')
+        /* A re-test count is worth a mark of its own. "Passed" and "passed on
+           the third attempt" are the same cell otherwise, and the second one is
+           the fact that predicts the next engagement's estimate. */
+        + (runs > 1 ? '<span class="tc-rt" title="' + escapeHtml((t.tcRuns || [])
+            .map(r => r.at + ' ' + r.result + (r.by ? ' (' + r.by + ')' : '')).join('\n'))
+            + '">×' + runs + '</span>' : '')
+        + (!cur && (t.percentComplete || 0) >= 100
+            ? '<span class="tc-rt tc-rt-warn" title="Marked 100% complete with no result recorded. Somebody spent the time; nothing in the file says whether it passed, and the criterion it verifies is being counted as covered.">done, no result</span>' : '')
+        + '</span>';
+    }
+
     function testCasesForAC(acId) {
       if (!acId) return [];
       const needle = String(acId).trim().toLowerCase();
       if (!needle) return [];
+      /* An id trace beats a name parse. Cases created since `verifiesAc` shipped
+         are matched exactly; the scan below is what everything older has. */
+      const byId = tasks.filter(t => t.verifiesAc && String(t.verifiesAc).toLowerCase() === needle);
+      if (byId.length) return byId;
       return tasks.filter(t => {
         const n = t.name.trim().toLowerCase();
         if (!n.startsWith('tc ')) return false;
@@ -24938,32 +25310,242 @@ Professional, client-ready, no hype, no invented facts.`;
     // Snapshot the current plan as the contract baseline that change orders diff
     // against. Taken when the SOW is generated AND every time a CO is approved,
     // so each successive CO covers only the changes since the last approval.
-    function snapshotSowBaseline() {
+    /* ═══════════════════════════════════════════════════════════════════════
+       PLAN VERSIONS — WHAT A CHANGE ORDER IS ACTUALLY DIFFING
+
+       The contract baseline used to be four facts and a list of {name, te,
+       milestone}. Everything downstream inherited two flaws from that, and both
+       ended up on a document a client signs.
+
+       IDENTITY WAS THE NAME. A rename produced "removed X, added Y" — two line
+       items, a price impact on one of them, for a change that moved nothing.
+       Activities have carried a stable id since the first version of this file;
+       the snapshot threw it away and then tried to re-derive identity from a
+       string a user is invited to edit. The same mistake is in the test-case
+       trace, which parses the AC id back out of the activity NAME.
+
+       AND THE DIFF WAS THREE FIELDS. Rewire every dependency, move every owner,
+       pin every date, change fixed costs and allocations, and the change order
+       said "no differences vs the SOW baseline". Scope drift you cannot see is
+       not scope you did not sell.
+
+       So a version is the whole plan, keyed by id, and versions form a CHAIN:
+       each one names its parent, so the sequence is a history rather than a
+       single mutable "the baseline" that the last approval overwrote. That is
+       what makes "show me the plan as of CO-002", "diff CO-001 against CO-003"
+       and "what if they reject this one" answerable at all — and none of them
+       were, because there was only ever one snapshot and approving replaced it.
+
+       Deliberately NOT stored: anything derived. es/ef/ls/lf/slack/startDate/
+       finishDate/isCritical all fall out of the network and the calendar, so
+       storing them would let a version disagree with itself after a holiday
+       changed. The version holds INPUTS; the schedule is recomputed from them.
+       ═══════════════════════════════════════════════════════════════════════ */
+    let planVersions = [];        // [{ v, at, kind, label, parent, snap }] — oldest first
+    let nextVersionNo = 1;
+
+    function snapshotPlan() {
       return {
-        date: fmtISO(new Date()),
+        at: fmtISO(new Date()),
         finish: fmtISO(durationToDate(Math.max(0, ...leafTasks().map(t => t.ef), 0))),
         price: Math.round(pricingFigures().price || 0),
+        cost: Math.round(projectCost() || 0),
         // Stamped so a change order can tell a genuine price movement from the
         // change of formula. Snapshots taken before this carry no marker.
         priceBasis: 'sim-rev',
-        tasks: leafTasks().map(t => ({ name: t.name, te: +(t.te || 0).toFixed(2), milestone: !!t.milestone }))
+        pricing: { model: pricing.model, basis: pricing.basis, contractPrice: pricing.contractPrice || 0 },
+        /* Every leaf, every input field, by id. `name` is still here — it is
+           what a human reads on the change order — but it is now DATA about the
+           activity rather than the activity's identity. */
+        tasks: leafTasks().map(t => ({
+          id: t.id, name: t.name, te: +(t.te || 0).toFixed(2), milestone: !!t.milestone,
+          o: +(t.o || 0), m: +(t.m || 0), p: +(t.p || 0),
+          owner: String(t.owner || ''), units: Number(t.units) || 100,
+          attendees: (t.attendees || []).slice(),
+          parentId: (t.parentId == null ? null : t.parentId),
+          predecessors: (t.predecessors || []).map(normalizePred)
+            .map(p => ({ id: p.id, type: p.type, lag: p.lag })),
+          startNoEarlier: t.startNoEarlier || '', deadline: t.deadline || '',
+          fixedCost: Number(t.fixedCost) || 0,
+          audience: t.audience || null, taxonomy: t.taxonomy || null,
+          acceptance: t.acceptance || '', deliverable: t.deliverable || '',
+          /* BILLED value, not cost, and not the BASELINED cost.
+             A change order bills the client, so the number beside a line has to
+             be what that line is charged at — bill rate x effort plus fixed
+             cost, which is exactly how the plan arrives at its price. The first
+             version stored plannedCostOf(t, hasBaseline()), and on any plan with
+             a schedule baseline that returns the FROZEN baseCost: identical in
+             both snapshots, so every re-estimated line priced at zero and the
+             change order said "not priced" about work that had visibly grown. */
+          value: Math.round(taskBilledValue(t) || 0),
+          cost: Math.round(taskCost(t) || 0)
+        })),
+        /* The feature set at the same instant. reqsBaseline already froze this
+           for the scope row; a version holds the AC TEXT as well, because
+           "the criterion was reworded after sign-off" is the question
+           acceptance needs answered and an id list cannot answer it. */
+        stories: (((reqs && reqs.stories) || [])).map(s => ({
+          id: String(s.id), audience: storyAudience(s), verification: s.verification || '',
+          want: String(s.want || ''),
+          ac: (s.ac || []).map(a => ({ id: String(a.id), text: String(a.text || ''), type: a.type || '' }))
+        }))
       };
+    }
+
+    /* A version is only worth having if it is IMMUTABLE. The snapshot is built
+       from live objects and then deep-copied, because a stored reference to a
+       task array is not a record of the past — it is the present, wearing a
+       date. Cheap here (a few hundred small objects) and the alternative is a
+       history that silently rewrites itself. */
+    function pushVersion(kind, label) {
+      const prev = planVersions.length ? planVersions[planVersions.length - 1] : null;
+      const v = { v: nextVersionNo++, at: fmtISO(new Date()), kind: kind, label: String(label || ''),
+                  parent: prev ? prev.v : null, snap: JSON.parse(JSON.stringify(snapshotPlan())) };
+      planVersions.push(v);
+      return v;
+    }
+    function versionByNo(n) { return planVersions.find(x => x.v === n) || null; }
+    function latestVersion(kind) {
+      for (let i = planVersions.length - 1; i >= 0; i--)
+        if (!kind || planVersions[i].kind === kind) return planVersions[i];
+      return null;
+    }
+    /* The version the next change order diffs FROM: the most recent contract
+       commitment, whether that was the original SOW or the last approved CO.
+       One function, so "what are we measuring against" has one answer rather
+       than one per caller. */
+    function contractVersion() {
+      for (let i = planVersions.length - 1; i >= 0; i--)
+        if (planVersions[i].kind === 'sow' || planVersions[i].kind === 'co') return planVersions[i];
+      return null;
+    }
+
+    /* ── THE DIFF ──────────────────────────────────────────────────────────
+       Typed records, not prose. Each one names the id it is about, the field
+       that moved, and both values — so the change order can be RE-rendered,
+       re-priced, queried, and reversed, none of which a joined string like
+       "+ Name; ≈ Name 3.0→5.0" supports.
+
+       Rename is its own kind. That is the entire point of keying by id: under
+       the old diff a rename was an add and a remove, and the add carried a
+       price. `dayDelta` and `priceDelta` sit on the record so the total is the
+       SUM OF ITS LINES — the same property the budget reconciliation needed
+       repairing for, and for the same reason: a total nobody can add up is a
+       number a reader is asked to take on faith. */
+    const DIFF_KINDS = {
+      added:        { lbl: 'Added',            billable: true,  order: 1 },
+      removed:      { lbl: 'Removed',          billable: true,  order: 2 },
+      're-estimated': { lbl: 'Re-estimated',   billable: true,  order: 3 },
+      renamed:      { lbl: 'Renamed',          billable: false, order: 8 },
+      reassigned:   { lbl: 'Owner changed',    billable: false, order: 5 },
+      resequenced:  { lbl: 'Dependencies changed', billable: false, order: 6 },
+      'date-pinned': { lbl: 'Date constraint changed', billable: false, order: 7 },
+      repriced:     { lbl: 'Fixed cost changed', billable: true, order: 4 },
+      reallocated:  { lbl: 'Allocation changed', billable: false, order: 9 },
+      'ac-added':   { lbl: 'Criterion added',   billable: true,  order: 10 },
+      'ac-removed': { lbl: 'Criterion removed', billable: true,  order: 11 },
+      'ac-reworded': { lbl: 'Criterion reworded', billable: false, order: 12 },
+      'story-added': { lbl: 'Story added',      billable: true,  order: 13 },
+      'story-removed': { lbl: 'Story removed',  billable: true,  order: 14 }
+    };
+    function predKey(ps) {
+      return (ps || []).map(p => p.id + ':' + p.type + ':' + (p.lag || 0)).sort().join(',');
+    }
+    function planDiff(fromSnap, toSnap) {
+      const out = [];
+      if (!fromSnap || !toSnap) return out;
+      const A = new Map((fromSnap.tasks || []).map(t => [t.id, t]));
+      const B = new Map((toSnap.tasks || []).map(t => [t.id, t]));
+      const add = (kind, id, name, field, from, to, extra) =>
+        out.push(Object.assign({ kind: kind, id: id, name: name, field: field || '',
+                                 from: from, to: to, dayDelta: 0, priceDelta: 0 }, extra || {}));
+
+      B.forEach((b, id) => {
+        const a = A.get(id);
+        if (!a) { add('added', id, b.name, '', null, b.name, { priceDelta: b.value || 0, days: b.te }); return; }
+        if (a.name !== b.name) add('renamed', id, b.name, 'name', a.name, b.name);
+        if (Math.abs((a.te || 0) - (b.te || 0)) > 0.05)
+          add('re-estimated', id, b.name, 'effort', a.te, b.te,
+              { priceDelta: (b.value || 0) - (a.value || 0), days: (b.te || 0) - (a.te || 0) });
+        if (String(a.owner || '') !== String(b.owner || ''))
+          add('reassigned', id, b.name, 'owner', a.owner || '(nobody)', b.owner || '(nobody)');
+        if (predKey(a.predecessors) !== predKey(b.predecessors))
+          add('resequenced', id, b.name, 'predecessors',
+              (a.predecessors || []).length + ' link(s)', (b.predecessors || []).length + ' link(s)');
+        if ((a.startNoEarlier || '') !== (b.startNoEarlier || ''))
+          add('date-pinned', id, b.name, 'start no earlier than',
+              a.startNoEarlier || '(none)', b.startNoEarlier || '(none)');
+        if ((a.deadline || '') !== (b.deadline || ''))
+          add('date-pinned', id, b.name, 'deadline', a.deadline || '(none)', b.deadline || '(none)');
+        if (Math.abs((a.fixedCost || 0) - (b.fixedCost || 0)) > 0.5)
+          add('repriced', id, b.name, 'fixed cost', a.fixedCost || 0, b.fixedCost || 0,
+              { priceDelta: (b.fixedCost || 0) - (a.fixedCost || 0) });
+        if ((Number(a.units) || 100) !== (Number(b.units) || 100))
+          add('reallocated', id, b.name, 'units %', a.units, b.units);
+      });
+      A.forEach((a, id) => {
+        if (!B.has(id)) add('removed', id, a.name, '', a.name, null, { priceDelta: -(a.value || 0), days: -(a.te || 0) });
+      });
+
+      // ── the feature set, by story id and criterion id ──
+      const SA = new Map((fromSnap.stories || []).map(s => [s.id, s]));
+      const SB = new Map((toSnap.stories || []).map(s => [s.id, s]));
+      SB.forEach((b, id) => {
+        const a = SA.get(id);
+        if (!a) { add('story-added', id, b.want || id, '', null, id, { acs: (b.ac || []).length }); return; }
+        const aa = new Map((a.ac || []).map(x => [x.id, x]));
+        const bb = new Map((b.ac || []).map(x => [x.id, x]));
+        bb.forEach((x, acId) => {
+          const y = aa.get(acId);
+          if (!y) add('ac-added', id, acId, '', null, x.text);
+          else if (String(y.text || '') !== String(x.text || '')) add('ac-reworded', id, acId, '', y.text, x.text);
+        });
+        aa.forEach((x, acId) => { if (!bb.has(acId)) add('ac-removed', id, acId, '', x.text, null); });
+      });
+      SA.forEach((a, id) => { if (!SB.has(id)) add('story-removed', id, a.want || id, '', id, null, { acs: (a.ac || []).length }); });
+
+      out.sort((x, y) => (DIFF_KINDS[x.kind] || { order: 99 }).order - (DIFF_KINDS[y.kind] || { order: 99 }).order
+        || String(x.name).localeCompare(String(y.name)));
+      return out;
+    }
+
+    /* Kept as a thin wrapper so nothing that already called it has to change,
+       and so there is exactly one place that decides what a contract baseline
+       is. The legacy shape (name-keyed, three fields) is gone — anything
+       reading `.tasks[].name` still finds it, and now finds an id beside it. */
+    function snapshotSowBaseline() {
+      const v = pushVersion('sow', 'Contract baseline');
+      return Object.assign({ date: v.snap.at, v: v.v }, v.snap);
     }
 
     // ---- Change order: diff current plan vs the SOW baseline ----
     async function draftChangeOrder() {
       if (!sowBaseline) { alert('Generate the SOW first — that captures the contract baseline the change order diffs against.'); return; }
       if (!ensureCalc()) return;
-      const baseByName = {};
-      sowBaseline.tasks.forEach(t => baseByName[t.name.toLowerCase()] = t);
+      /* THE DIFF IS STRUCTURED NOW, AND KEYED BY ID.
+         What used to happen here: build a map of baseline tasks BY NAME, call
+         anything missing from it "added" and anything missing from the plan
+         "removed". Rename an activity and the client got two line items — a
+         removal and a priced addition — for a change that moved nothing. And
+         the only field compared was effort, so rewiring every dependency,
+         moving every owner and pinning every date all produced "no differences
+         vs the SOW baseline".
+
+         planDiff() answers by id, across every input field, and returns typed
+         records that carry their own money. `added`/`removed`/`changed` are
+         still derived below because the document body reads them, but they are
+         now views over one diff rather than three separate name comparisons
+         that could disagree with each other. */
+      const base = contractVersion();
+      const curSnap = snapshotPlan();
+      const diff = planDiff(base ? base.snap : sowBaseline, curSnap);
+      const byKind = k => diff.filter(d => d.kind === k);
       const curLeaves = leafTasks();
-      const curNames = new Set(curLeaves.map(t => t.name.toLowerCase()));
-      const added = curLeaves.filter(t => !baseByName[t.name.toLowerCase()]);
-      const removed = sowBaseline.tasks.filter(t => !curNames.has(t.name.toLowerCase()));
-      const changed = curLeaves.filter(t => {
-        const b = baseByName[t.name.toLowerCase()];
-        return b && Math.abs((t.te || 0) - b.te) > 0.05;
-      }).map(t => ({ t, from: baseByName[t.name.toLowerCase()].te, to: +(t.te || 0).toFixed(2) }));
+      const leafById = new Map(curLeaves.map(t => [t.id, t]));
+      const added = byKind('added').map(d => leafById.get(d.id)).filter(Boolean);
+      const removed = byKind('removed').map(d => ({ name: d.name, te: Math.abs(d.days || 0) }));
+      const changed = byKind('re-estimated').map(d => ({ t: leafById.get(d.id) || { name: d.name },
+        from: Number(d.from) || 0, to: Number(d.to) || 0 }));
       const curFinish = fmtISO(durationToDate(Math.max(0, ...curLeaves.map(t => t.ef), 0)));
       const finishDelta = calDaysBetween(new Date(sowBaseline.finish + 'T00:00:00'), new Date(curFinish + 'T00:00:00'));
       const curPrice = Math.round(pricingFigures().price || 0);
@@ -24972,8 +25554,14 @@ Professional, client-ready, no hype, no invented facts.`;
       // ratio, so part of any delta against it is the formula, not the scope. Say
       // so rather than letting a change order bill a methodology change.
       const legacyBasis = !sowBaseline.priceBasis;
-      if (!added.length && !removed.length && !changed.length && Math.abs(finishDelta) < 1 && Math.abs(priceDelta) < 1) {
-        alert('No differences vs the SOW baseline of ' + sowBaseline.date + ' — nothing to change-order.');
+      /* "Nothing to change-order" is now answered by the WHOLE diff, not by
+         three of its kinds. The old test asked about added, removed and
+         re-estimated only, so a plan where every dependency had been rewired
+         and every owner swapped reported no differences and offered nothing to
+         raise. Silence about a change is how it stops being billable. */
+      if (!diff.length && Math.abs(finishDelta) < 1 && Math.abs(priceDelta) < 1) {
+        alert('No differences vs the contract baseline of ' + (base ? base.snap.at : sowBaseline.date)
+          + ' — nothing to change-order.');
         return;
       }
       let rationale = '';
@@ -25000,12 +25588,41 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         ${(added.length && Math.abs(priceDelta) < 1) ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 12px;margin:10px 0;font-size:12.5px;color:#b91c1c"><b>⚠ Unpriced scope:</b> ${added.length} added item(s) totalling ${added.reduce((sx, t) => sx + (t.te || 0), 0).toFixed(1)} ${u} of effort carry <b>no price impact</b> in this change order. If that is intentional goodwill, say so explicitly below and cap it; otherwise set rates for the people doing the work (Resources tab) or a contract price (Pricing) and re-draft — silent free scope is how margins die.</div>` : ''}
         ${legacyBasis ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;margin:10px 0;font-size:12.5px;color:#92400e"><b>⚠ Baseline priced on the previous method:</b> this SOW baseline was captured before pricing was consolidated onto the simulated revenue percentile, so part of the price movement below is the change of method rather than a change of scope. Re-generate the SOW to re-baseline before issuing this change order, or state the scope-only delta explicitly.</div>` : ''}
         <h2 style="font-size:15px;margin:12px 0 6px">Scope changes</h2>
-        <table style="border-collapse:collapse"><tr><th style="${th}">Change</th><th style="${th}">Item</th><th style="${th}">Effort</th></tr>
-          ${added.map(t => `<tr><td style="${td};color:#15803d">Added</td><td style="${td}">${escapeHtml(t.name)}</td><td style="${td}">${(t.te || 0).toFixed(1)} ${u}</td></tr>`).join('')}
-          ${removed.map(t => `<tr><td style="${td};color:#b91c1c">Removed</td><td style="${td}">${escapeHtml(t.name)}</td><td style="${td}">−${t.te.toFixed(1)} ${u}</td></tr>`).join('')}
-          ${changed.map(c => `<tr><td style="${td};color:#b45309">Re-estimated</td><td style="${td}">${escapeHtml(c.t.name)}</td><td style="${td}">${c.from.toFixed(1)} → ${c.to.toFixed(1)} ${u}</td></tr>`).join('')}
-          ${!added.length && !removed.length && !changed.length ? `<tr><td style="${td}" colspan="3">No task-level scope changes (schedule/price only)</td></tr>` : ''}
+        <!-- EVERY line of the diff, with its own money, and a total that is the
+             sum of the lines. The old table showed three kinds and the price
+             impact was a single project-level subtraction printed further down,
+             so a reader could not attribute one dollar of it to one change —
+             which is exactly why "unpriced scope" had to be a warning rather
+             than a column. A change order a client cannot add up is a number
+             they are asked to take on faith. -->
+        <table style="border-collapse:collapse"><tr><th style="${th}">Change</th><th style="${th}">Item</th><th style="${th}">From → to</th><th style="${th}">Effort</th><th style="${th}">Price impact</th></tr>
+          ${diff.map(d => {
+            const k = DIFF_KINDS[d.kind] || { lbl: d.kind, billable: false };
+            const col = d.kind === 'added' ? '#15803d' : d.kind === 'removed' ? '#b91c1c'
+              : k.billable ? '#b45309' : '#475569';
+            const fromTo = (d.from == null && d.to == null) ? '—'
+              : d.kind === 'added' ? 'new'
+              : d.kind === 'removed' ? 'withdrawn'
+              : String(d.from == null ? '(none)' : d.from).slice(0, 60) + ' → ' + String(d.to == null ? '(none)' : d.to).slice(0, 60);
+            const eff = d.days ? (d.days > 0 ? '+' : '') + d.days.toFixed(1) + ' ' + u : '—';
+            const money = d.priceDelta
+              ? (d.priceDelta > 0 ? '+' : '−') + fmtMoney(Math.abs(Math.round(d.priceDelta))).replace('$', '$')
+              : (k.billable ? '<span style="color:#b91c1c">not priced</span>' : 'no price impact');
+            return `<tr><td style="${td};color:${col}">${escapeHtml(k.lbl)}</td><td style="${td}">${escapeHtml(String(d.name))}${d.field ? ` <span style="color:#94a3b8">(${escapeHtml(d.field)})</span>` : ''}</td><td style="${td};font-size:11.5px">${escapeHtml(fromTo)}</td><td style="${td}">${eff}</td><td style="${td}">${money}</td></tr>`;
+          }).join('')}
+          ${!diff.length ? `<tr><td style="${td}" colspan="5">No line-level changes (schedule/price only)</td></tr>` : ''}
+          ${diff.length ? `<tr><td style="${th}" colspan="4"><b>Sum of the lines above</b></td><td style="${th}"><b>${(() => { const t2 = diff.reduce((a2, d) => a2 + (d.priceDelta || 0), 0); return (t2 >= 0 ? '+' : '−') + fmtMoney(Math.abs(Math.round(t2))); })()}</b></td></tr>` : ''}
         </table>
+        ${(() => {
+          /* The two totals are printed TOGETHER when they disagree, because
+             they are allowed to: the plan price also moves with the pricing
+             basis, the rate card and the risk percentile, none of which are
+             scope. Saying so is the difference between a reconciliation and a
+             discrepancy nobody mentions. */
+          const lineSum = Math.round(diff.reduce((a2, d) => a2 + (d.priceDelta || 0), 0));
+          if (Math.abs(lineSum - priceDelta) < 1) return '';
+          return `<p style="font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;margin:8px 0"><b>The lines and the total differ by ${fmtMoney(Math.abs(priceDelta - lineSum))}.</b> The lines above price the SCOPE that moved. The project price also moves with the rate card, the pricing basis and the risk percentile, and none of those are scope changes the client agreed to. State which one this change order is billing.</p>`;
+        })()}
         <h2 style="font-size:15px;margin:12px 0 6px">Impact</h2>
         <table style="border-collapse:collapse">
           <tr><th style="${th}">Schedule</th><td style="${td}">${sowBaseline.finish} → ${curFinish} (${finishDelta >= 0 ? '+' : ''}${finishDelta} calendar days)</td></tr>
@@ -25020,8 +25637,28 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       // remember what this draft covers so approval can log it and roll the baseline
       draftChangeOrder._pending = {
         no: coNo,
-        scope: [added.length ? added.length + ' added' : '', removed.length ? removed.length + ' removed' : '', changed.length ? changed.length + ' re-estimated' : ''].filter(Boolean).join(', ') || 'schedule/price only',
-        detail: [...added.map(t => '+ ' + t.name), ...removed.map(t => '− ' + t.name), ...changed.map(c => '≈ ' + c.t.name + ' ' + c.from.toFixed(1) + '→' + c.to.toFixed(1))].join('; '),
+        /* Summarised from the DIFF, so the one-line description names every kind
+           of change the document contains. The old version counted three kinds
+           and called everything else "schedule/price only", which is how a change
+           order full of rewired dependencies got logged as if nothing had
+           happened to the plan. */
+        scope: (() => {
+          const by = {};
+          diff.forEach(d => { by[d.kind] = (by[d.kind] || 0) + 1; });
+          const parts = Object.keys(by).sort((a2, b2) => (DIFF_KINDS[a2] || {}).order - (DIFF_KINDS[b2] || {}).order)
+            .map(k => by[k] + ' ' + (DIFF_KINDS[k] || { lbl: k }).lbl.toLowerCase());
+          return parts.join(', ') || 'schedule/price only';
+        })(),
+        detail: diff.map(d => (DIFF_KINDS[d.kind] || { lbl: d.kind }).lbl + ': ' + d.name
+          + (d.field ? ' (' + d.field + ')' : '')
+          + (d.from != null && d.to != null ? ' ' + d.from + ' → ' + d.to : '')).join('; '),
+        /* The structured change set travels with the log entry. That is what
+           makes a change order re-renderable, re-pricable, queryable and
+           REVERSIBLE — none of which a joined string supports, and reversibility
+           is the whole answer to "what if the client rejects this one". */
+        diff: JSON.parse(JSON.stringify(diff)),
+        fromV: base ? base.v : null,
+        lineSum: Math.round(diff.reduce((a2, d) => a2 + (d.priceDelta || 0), 0)),
         finishDelta, priceDelta, newFinish: curFinish, newPrice: curPrice
       };
       document.getElementById('sowContainer').innerHTML = coDraft +
@@ -25034,32 +25671,84 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
     function approveChangeOrder() {
       const p = draftChangeOrder._pending;
       if (!p) { alert('Draft a change order first (Δ Change order).'); return; }
-      coLog.push({ no: p.no, date: fmtISO(new Date()), scope: p.scope, detail: p.detail, finishDelta: p.finishDelta, priceDelta: p.priceDelta, newFinish: p.newFinish, newPrice: p.newPrice });
-      sowBaseline = snapshotSowBaseline(); // next CO diffs from here
+      /* The approved version is pushed FIRST, so the log entry can name both
+         ends of what it changed. `fromV` and `toV` are what turn coLog from a
+         list of summaries into a chain: any two versions can be diffed, the plan
+         can be rendered as of any change order, and a rejected one can be
+         reversed — none of which was possible when approving simply overwrote
+         the single mutable baseline and threw the previous one away. */
+      const toV = pushVersion('co', p.no);
+      coLog.push({ no: p.no, date: fmtISO(new Date()), scope: p.scope, detail: p.detail,
+        finishDelta: p.finishDelta, priceDelta: p.priceDelta, newFinish: p.newFinish, newPrice: p.newPrice,
+        diff: p.diff || [], lineSum: p.lineSum || 0,
+        fromV: p.fromV, toV: toV.v, state: 'accepted' });
+      /* No second snapshot. snapshotSowBaseline() PUSHES a version, so calling
+         it here wrote a duplicate of the one taken two lines above — two
+         versions, same content, one of them parenting the other, and the chain
+         gained a step that represents nothing. sowBaseline now points at the
+         version just recorded. */
+      sowBaseline = Object.assign({ date: toV.snap.at, v: toV.v }, toV.snap);
       draftChangeOrder._pending = null;
       saveLocal();
       renderCoHistory();
       flashSaved('✓ ' + p.no + ' logged and baseline rolled — the next change order starts from today’s plan');
     }
+    /* ── THE CHAIN, ON SCREEN ────────────────────────────────────────────────
+       Without this the versions exist and nobody can see that they do, which is
+       the same failure as computing a panel and never appending it. Each row
+       names its parent, so the lineage reads as a lineage rather than a list of
+       dates, and the diff between any version and the plan as it stands is one
+       click — the question "what has moved since we agreed this" used to have no
+       answer at all once a change order had rolled the baseline over it. */
+    function versionChainHtml() {
+      if (!planVersions.length) return '';
+      const KIND = { sow: ['📄', 'Contract baseline'], co: ['📑', 'Change order'],
+                     signoff: ['✍', 'Sign-off'], draft: ['·', 'Working snapshot'] };
+      const rows = planVersions.slice().reverse().map(v => {
+        const k = KIND[v.kind] || ['·', v.kind];
+        const n = planDiff(v.snap, snapshotPlan()).length;
+        return '<tr>'
+          + '<td style="white-space:nowrap"><b>v' + v.v + '</b>'
+          + (v.parent ? ' <span class="help-text">← v' + v.parent + '</span>' : ' <span class="help-text">(root)</span>') + '</td>'
+          + '<td style="white-space:nowrap">' + k[0] + ' ' + escapeHtml(k[1]) + '</td>'
+          + '<td style="font-size:0.8rem">' + escapeHtml(v.label || '') + '</td>'
+          + '<td style="white-space:nowrap;font-size:0.78rem">' + escapeHtml(v.at) + '</td>'
+          + '<td style="white-space:nowrap;font-size:0.78rem">' + (v.snap.tasks || []).length + ' activities · '
+              + fmtMoney(v.snap.price || 0) + '</td>'
+          + '<td style="white-space:nowrap;font-size:0.78rem"' + (n ? '' : ' class="help-text"') + '>'
+              + (n ? n + ' change(s) since' : 'identical to now') + '</td>'
+          + '</tr>';
+      }).join('');
+      return `<details style="margin-bottom:0.75rem">
+        <summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)"><span class="ico" aria-hidden="true">🕓</span> Plan versions (${planVersions.length}) — every commitment, in order, each pointing at the one before it</summary>
+        <div class="table-wrap" style="margin-top:0.5rem"><table>
+          <thead><tr><th>Version</th><th>Kind</th><th>Label</th><th>Taken</th><th>Held</th><th title="Structured diff against the plan as it stands right now — by activity id, across every input field, so a rename is a rename rather than an add and a delete">vs today</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>
+        <p class="help-text" style="margin-top:0.4rem">A version is the whole plan keyed by activity <b>id</b>, not by name, and versions form a chain rather than one mutable baseline that each approval overwrote. That is what makes “show me the plan as we agreed it”, “diff any two” and “what if they reject this one” answerable.</p>
+      </details>`;
+    }
     function renderCoHistory() {
       const el = document.getElementById('coHistory');
       if (!el) return;
-      if (!coLog.length) { el.innerHTML = ''; return; }
+      if (!coLog.length && !planVersions.length) { el.innerHTML = ''; return; }
+      if (!coLog.length) { el.innerHTML = versionChainHtml(); return; }
       const cumSched = coLog.reduce((s, c) => s + (c.finishDelta || 0), 0);
       const cumPrice = coLog.reduce((s, c) => s + (c.priceDelta || 0), 0);
       el.innerHTML = `<details open style="margin-bottom:0.75rem">
         <summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)"><span class="ico" aria-hidden="true">📑</span> Change-order history (${coLog.length}) — cumulative: ${cumSched >= 0 ? '+' : ''}${cumSched} days, ${cumPrice >= 0 ? '+' : ''}${fmtMoney(Math.abs(cumPrice)).replace('$', cumPrice < 0 ? '−$' : '$')}</summary>
         <div class="table-wrap" style="margin-top:0.5rem"><table>
-          <thead><tr><th>CO</th><th>Approved</th><th>Scope</th><th>Schedule Δ</th><th>Price Δ</th><th>New finish</th></tr></thead>
+          <thead><tr><th>CO</th><th>Approved</th><th>Scope</th><th>Schedule Δ</th><th title="The project price movement this change order recorded">Price Δ</th><th title="What its own lines added up to. Where the two differ, part of the movement was the rate card or the pricing basis rather than scope.">Lines</th><th>New finish</th><th title="The plan version before and after — any two can be diffed">Versions</th></tr></thead>
           <tbody>${coLog.map(c => `<tr title="${escapeHtml(c.detail || '')}">
             <td><b>${escapeHtml(c.no)}</b></td><td style="white-space:nowrap">${escapeHtml(c.date)}</td>
             <td style="font-size:0.82rem">${escapeHtml(c.scope)}</td>
             <td>${c.finishDelta >= 0 ? '+' : ''}${c.finishDelta} d</td>
             <td>${c.priceDelta >= 0 ? '+' : ''}${fmtMoney(Math.abs(c.priceDelta)).replace('$', c.priceDelta < 0 ? '−$' : '$')}</td>
-            <td style="white-space:nowrap">${escapeHtml(c.newFinish || '')}</td></tr>`).join('')}</tbody>
+            <td${Math.abs((c.lineSum || 0) - (c.priceDelta || 0)) > 1 ? ' style="color:var(--warn)" title="The lines and the total disagree — some of this movement was not scope"' : ''}>${c.lineSum == null ? '—' : ((c.lineSum >= 0 ? '+' : '') + fmtMoney(Math.abs(c.lineSum)).replace('$', c.lineSum < 0 ? '−$' : '$'))}</td>
+            <td style="white-space:nowrap">${escapeHtml(c.newFinish || '')}</td>
+            <td style="white-space:nowrap;font-size:0.78rem">${c.fromV ? 'v' + c.fromV : '—'} → ${c.toV ? 'v' + c.toV : '—'}</td></tr>`).join('')}</tbody>
         </table></div>
-        <p class="help-text" style="margin-top:0.4rem">Running total per the change-control log — nobody gets surprised at the end. Hover a row for the task-level detail.</p>
-      </details>`;
+        <p class="help-text" style="margin-top:0.4rem">Running total per the change-control log — nobody gets surprised at the end. Hover a row for the line-level detail.</p>
+      </details>` + versionChainHtml();
     }
     async function copyCO() {
       if (!coDraft) { alert('Draft a change order first (Δ Change order).'); return; }
