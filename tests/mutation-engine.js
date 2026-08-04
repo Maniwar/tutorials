@@ -33,7 +33,7 @@ const ROOT = path.resolve(__dirname, '..');
 const SRC = fs.readFileSync(path.join(ROOT, 'pert-gantt-tracker.html'), 'utf8');
 const QUICK = process.argv.indexOf('--quick') >= 0;
 /* Positional substring filter, matched against `what`. Two hundred mutants is
-   twenty-six minutes, which is the right price for a release gate and the wrong
+   about twenty-five minutes, which is the right price for a release gate and the wrong
    price for "I just added one — is it caught?". Without this the honest options
    were to run the lot or to hand-edit the array, and hand-editing a probe to
    make it finish is how a probe quietly stops covering what it claims to.

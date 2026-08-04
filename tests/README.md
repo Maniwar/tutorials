@@ -309,7 +309,7 @@ want of a check, and listing it would report a permanent false hole.
 
 `node tests/mutation-engine.js <substring> [<substring> …]` keeps only the
 mutants whose description contains one of the substrings. Two hundred mutants is
-twenty-six minutes — the right price for a release gate and the wrong one for "I
+about twenty-five minutes — the right price for a release gate and the wrong one for "I
 just added one, is it caught?", where the honest alternatives were to run the lot
 or to hand-edit the array. Editing a probe so it finishes is exactly how a probe
 stops covering what it says it covers, so the filter is a first-class argument

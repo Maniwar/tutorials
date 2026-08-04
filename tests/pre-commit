@@ -114,12 +114,17 @@ rm -f /tmp/ptr-m.$$
 # the commitment log, the estimate bank's calibration, a wizard button that acts
 # on the wrong object, a caption that states a figure typed by hand, a render
 # boundary that swallows instead of reporting — and confirm something goes red.
-# A hundred and fourteen of them, about ten minutes on a four-core box — it runs
+# Two hundred and two of them, 24m26s on an idle four-core box — it runs
 # min(4, cores-2) lanes, so more cores is less wall-clock. Measure it on an IDLE
-# machine: a figure of twenty-five minutes sat here briefly, taken from a run
-# sharing four cores with the sweep suite, and a number that pessimistic makes
-# someone skip the check that exists to be run. Too much for every commit, worth
-# it before anything the user sees. FULL=1 git commit.
+# machine and say which: the ten minutes this line used to claim was true at a
+# hundred and fourteen mutants and stayed here while the set nearly doubled,
+# and before that a figure of twenty-five minutes sat here taken from a run
+# sharing four cores with the sweep suite. Both directions of wrong cost the
+# same thing — somebody plans around a number and skips the check. Too much for
+# every commit, worth it before anything the user sees. FULL=1 git commit.
+#
+# Adding mutants moves this number. If you add one, re-time the run on an idle
+# box and correct both this line and the "~25m" in the skipped message below.
 #
 # It fails on a SKIPPED mutant as well as a survivor, and the two mean different
 # things: a survivor says the product has an unguarded region, a skip says this
@@ -174,7 +179,7 @@ if [ -n "$FULL" ]; then
   fi
   rm -f /tmp/ptr-e.$$
 else
-  echo "  · mutation · engine    skipped (FULL=1 to run it, ~10m)"
+  echo "  · mutation · engine    skipped (FULL=1 to run it, ~25m)"
 fi
 
 if [ "$fail" -ne 0 ]; then
