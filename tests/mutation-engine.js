@@ -181,8 +181,8 @@ const MUTANTS = [
      stale rather than as a survivor, which is the distinction that made this a
      two-minute repair instead of a hunt. */
   { what: 'change order: the log records a price delta the client never approved',
-    find: "        finishDelta: p.finishDelta, priceDelta: p.priceDelta, newFinish: p.newFinish, newPrice: p.newPrice,\n        diff: p.diff || [], lineSum: p.lineSum || 0,\n        fromV: p.fromV, toV: toV.v, state: 'accepted', stateAt: fmtISO(new Date()) });",
-    with: "        finishDelta: p.finishDelta, priceDelta: (p.priceDelta || 0) + 500, newFinish: p.newFinish, newPrice: p.newPrice,\n        diff: p.diff || [], lineSum: p.lineSum || 0,\n        fromV: p.fromV, toV: toV.v, state: 'accepted', stateAt: fmtISO(new Date()) });" },
+    find: "        finishDelta: p.finishDelta, priceDelta: p.priceDelta, newFinish: p.newFinish, newPrice: p.newPrice,\n        diff: p.diff || [], lineSum: p.lineSum || 0, hidePrice: (p.hidePrice || []).slice(),\n        fromV: p.fromV, toV: toV.v, state: 'accepted', stateAt: fmtISO(new Date()) });",
+    with: "        finishDelta: p.finishDelta, priceDelta: (p.priceDelta || 0) + 500, newFinish: p.newFinish, newPrice: p.newPrice,\n        diff: p.diff || [], lineSum: p.lineSum || 0, hidePrice: (p.hidePrice || []).slice(),\n        fromV: p.fromV, toV: toV.v, state: 'accepted', stateAt: fmtISO(new Date()) });" },
 
   /* ── the dependency wizard: a button that acts on something else ───────────
      These three are not arithmetic. They are the shape of defect the user hit
@@ -337,7 +337,7 @@ const MUTANTS = [
     with: '        /* mutant: the gap is left unexplained */' },
 
   { what: 'baseline: a sign-off records a date instead of the version it signed',
-    find: "      const v = pushVersion('signoff', 'Accepted: ' + (ref || scope));",
+    find: "      const v = pushVersion('signoff', 'Accepted: ' + (signoffRefLabel(sc, ref) || sc));",
     with: '      const v = { v: null };' },
 
   /* Splitting a crowded tab into sections creates two failures the old scroll
@@ -1186,6 +1186,45 @@ const MUTANTS = [
   { what: 'navigation: the RAID kind chip says the word and drops the definition behind it',
     find: "        + escapeHtml(r.type + ' — ' + k.def) + '\">' + r.type + '</span>'",
     with: "        + escapeHtml(r.type) + '\">' + r.type + '</span>'" },
+
+  /* ── acceptance at the level a client actually signs, and the change-order
+        life somebody has to be able to steer ───────────────────────────────── */
+
+  { what: 'baseline history: a phase sign-off silently covers every story in the plan',
+    find: "      if (so.scope === 'story') return { rows: stories.filter(s => String(s.id) === so.ref), traced: true };",
+    with: "      if (so.scope === 'story') return { rows: stories, traced: true };" },
+
+  { what: 'baseline history: a story re-traced out of a signed phase leaves without a trace',
+    find: "          if (!live || !signoffCoversNow(so, live))",
+    with: "          if (false)" },
+
+  { what: 'baseline history: the sign-off record prints the id it stored instead of the name',
+    find: "        return t ? ((t.wbs ? t.wbs + ' ' : '') + t.name)",
+    with: "        return t ? String(ref)" },
+
+  { what: 'baseline history: superseded is a one-way door again',
+    find: "                   rejected: ['accepted'], superseded: ['accepted', 'rejected'] }[st] || [];",
+    with: "                   rejected: ['accepted'], superseded: [] }[st] || [];" },
+
+  { what: 'baseline history: withholding a line price also removes it from the total',
+    find: "      const lineSum = c.lineSum == null ? diff.reduce((s, x) => s + (x.priceDelta || 0), 0) : c.lineSum;",
+    with: "      const lineSum = shownSum;" },
+
+  { what: 'baseline history: the change-order history goes back to being unopenable rows',
+    find: "          <tbody>${coLog.map(c => `<tr class=\"co-row\" onclick=\"coOpen('${ekJs(c.no)}')\"",
+    with: "          <tbody>${coLog.map(c => `<tr" },
+
+  { what: 'baseline history: generating the SOW throws away the document it replaces',
+    find: "      sowPushVersion('regenerated from the plan');",
+    with: "      sowVersions = [];" },
+
+  { what: 'baseline history: trimming the SOW history drops the original instead of the middle',
+    find: "        sowVersions.splice(1, sowVersions.length - SOW_VERSION_CAP);",
+    with: "        sowVersions.splice(0, sowVersions.length - SOW_VERSION_CAP);" },
+
+  { what: 'baseline history: the two documents share one box with no way between them',
+    find: "      strip.innerHTML = tabs.length < 2 ? '' : '<span class=\"seg\">'",
+    with: "      strip.innerHTML = tabs.length < 99 ? '' : '<span class=\"seg\">'" },
 ];
 
 /* Filtered AFTER the array is written, never inside it, so the anchor audit and

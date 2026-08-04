@@ -774,6 +774,179 @@ const QA = JSON.parse(fs.readFileSync(
         if (!/out for signature/i.test(hdr))
           fail.push('nothing on the history says a change order is still out for signature, so the '
             + 'difference between asked-for and agreed is invisible on the surface people read');
+
+        /* NO STATE IS A ONE-WAY DOOR. superseded had an empty transition list,
+           so one mis-click was permanent and the only way back was editing
+           storage by hand. Reported by exactly that. Asserted over ALL FOUR
+           rather than for the one that was broken: the property is "every state
+           has a way out", and checking only the state that failed once is how
+           the next dead end ships. */
+        const stuck = Object.keys(CO_STATES).filter(k => {
+          const probe = { no: 'probe', state: k, diff: [] };
+          return !/→ /.test(coStateCell(probe));
+        });
+        out.deadEndStates = stuck;
+        if (stuck.length)
+          fail.push('the change-order state(s) ' + stuck.join(', ') + ' offer no transition at all — a state '
+            + 'reached by one click and unreachable from is a trap, and every one of these is reversible in '
+            + 'the real world');
+
+        /* THE LINE PRICES CAN BE WITHHELD AND THE TOTAL CANNOT MOVE. Hiding a
+           line's price is a commercial choice about what a client is shown; if
+           it also changed an arithmetic total it would be a way to send a
+           document that does not add up. */
+        const target = coLog[coLog.length - 1];
+        if ((target.diff || []).length) {
+          const sumBefore = target.lineSum;
+          const priceBefore = target.priceDelta;
+          /* Read what the DRILL-IN SAYS, not what the record stores. The first
+             version of this compared target.lineSum before and after, which the
+             withholding code never touches — so a build that recomputed the
+             displayed total from the SHOWN lines only passed it. The stored
+             figure was never the thing at risk; the printed one was, because
+             that is the number a client is handed. Located by its own label,
+             which is the right way to resolve a cell and survives a restyling. */
+          const statBy = lbl => {
+            const card = [...document.querySelectorAll('#coModalBody .stat-card')]
+              .find(c2 => ((c2.querySelector('.label') || {}).textContent || '').trim() === lbl);
+            return card ? ((card.querySelector('.value') || {}).textContent || '').trim() : null;
+          };
+          coOpen(target.no);
+          const shownSumBefore = statBy('Sum of its lines');
+          const shownPriceBefore = statBy('Price impact');
+          coSetAllPrices(0);
+          out.withheld = (target.hidePrice || []).length;
+          const shownSumAfter = statBy('Sum of its lines');
+          out.shownTotals = [shownSumBefore, shownSumAfter];
+          if (shownSumBefore == null)
+            fail.push('the change-order drill-in states no "Sum of its lines" at all, so what the client is '
+              + 'handed cannot be checked against what the record holds');
+          else if (shownSumBefore !== shownSumAfter)
+            fail.push('withholding the line prices changed the total the drill-in PRINTS (' + shownSumBefore
+              + ' → ' + shownSumAfter + ') — hiding decides what a client is shown and must never change the '
+              + 'arithmetic they are asked to accept');
+          if (shownPriceBefore != null && statBy('Price impact') !== shownPriceBefore)
+            fail.push('withholding the line prices moved the printed price impact');
+          out.totalsHeld = target.lineSum === sumBefore && target.priceDelta === priceBefore;
+          if (!out.withheld)
+            fail.push('withholding every line price on a change order with ' + target.diff.length
+              + ' lines recorded none as withheld — the control does nothing');
+          if (!out.totalsHeld)
+            fail.push('withholding the line prices moved the totals (' + sumBefore + ' → ' + target.lineSum
+              + ') — hiding decides what a client is SHOWN and must never change what is true');
+          const modal = (document.getElementById('coModalBody') || {}).textContent || '';
+          if (modal.indexOf(String(target.diff.length)) < 0)
+            fail.push('the drill-in does not state how many lines the change order carries');
+          if (!/withheld|aggregate/i.test(modal))
+            fail.push('every price is withheld and the drill-in does not say so anywhere');
+          coSetAllPrices(1);
+          out.restoredPrices = (target.hidePrice || []).length === 0;
+          if (!out.restoredPrices) fail.push('showing every price again left some withheld');
+          closeCoModal();
+        }
+
+        /* THE DRILL-IN EXISTS AND CARRIES THE RECORD. Everything below was
+           stored and reachable from nowhere: the narrative lived in a native
+           title tooltip on a <tr>, and the typed line set lived nowhere at all. */
+        renderCoHistory();
+        const rowsOpen = [...(document.getElementById('coHistory') || document.createElement('div'))
+          .querySelectorAll('tbody tr')].filter(tr => /coOpen/.test(tr.getAttribute('onclick') || '')).length;
+        out.openableRows = rowsOpen;
+        if (!rowsOpen)
+          fail.push('no row in the change-order history opens anything — the narrative and the typed line '
+            + 'set are both on the record and reachable from nowhere on the page');
+        coOpen(coLog[0].no);
+        const dtl = (document.getElementById('coModalBody') || {}).textContent || '';
+        out.drillInChars = dtl.length;
+        if (dtl.length < 150)
+          fail.push('the change-order drill-in draws almost nothing (' + dtl.length + ' chars) — opening it '
+            + 'is not the same as it saying anything');
+        if (coLog[0].detail && dtl.indexOf(String(coLog[0].detail).slice(0, 30)) < 0)
+          fail.push('the drill-in does not show the change order’s own narrative');
+        closeCoModal();
+      }
+
+      /* ── 3i-b. TWO DOCUMENTS, ONE BOX, AND A WAY BETWEEN THEM ───────────
+         The SOW and the change order shared one container and the last one
+         drawn won. Getting back to the other meant regenerating it — which on
+         the SOW side also re-rolls the contract baseline, so the only route
+         back to a document was an action with a side effect on the contract.
+         Reported by use: "how can i go between viewing the change order and the
+         SOW that was there before ect?" */
+      {
+        await generateSOW();
+        const sowLen = String(sowDraft || '').length;
+        const g3 = leafTasks().find(t2 => !t2.milestone && (t2.te || 0) > 0);
+        g3.m = (Number(g3.m) || 1) + 3; calculate();
+        await draftChangeOrder();
+        const box = () => (document.getElementById('sowContainer') || {}).innerHTML || '';
+        /* NOT /Change Order/. The SOW contains a change-CONTROL clause that
+           says the words "change order" in prose, so matching on them is true
+           of both documents and the check would pass on a build with no switch
+           at all. The discriminator is the change order's own ACTION STRIP —
+           approveChangeOrder is drawn with that document and with nothing else
+           on this page. Anchored on a control rather than on wording for the
+           same reason this directory has a whole probe about it. */
+        const isCo = () => /approveChangeOrder/.test(box());
+        out.docTabs = [...document.querySelectorAll('#docSwitch button')].map(b2 => b2.textContent.trim());
+        if (out.docTabs.length < 2)
+          fail.push('with both a SOW and a change-order draft in hand the page offers ' + out.docTabs.length
+            + ' way(s) to choose between them — one box, two documents, and no switch');
+        if (!isCo())
+          fail.push('drafting a change order did not put it in the document box');
+        if (String(sowDraft || '').length !== sowLen)
+          fail.push('drafting a change order changed the stored SOW — the two documents are sharing state, '
+            + 'not just a container');
+        setDocView('sow');
+        out.backToSowWithoutRegenerating = !isCo() && box().length > 400;
+        if (!out.backToSowWithoutRegenerating)
+          fail.push('switching back to the SOW did not bring it back, so the only route to it is '
+            + 'regenerating — an action that also re-rolls the contract baseline');
+        setDocView('co');
+        if (!isCo())
+          fail.push('switching back to the change order did not bring it back');
+      }
+
+      /* ── 3i-c. THE SOW HAS A HISTORY AND THE ORIGINAL SURVIVES ──────────
+         It was one mutable string: generating overwrote it, editing overwrote
+         it, and the version a client was sent existed nowhere afterwards. */
+      {
+        const original = String(sowDraft || '');
+        out.sowVersionsAfterGenerate = sowVersions.length;
+        if (!sowVersions.length)
+          fail.push('generating the SOW kept no version of it, so the document a client was sent is gone the '
+            + 'moment the next one is generated');
+        sowDraft = original + '<p>a hand edit</p>';
+        sowPushVersion('edited by hand');
+        await generateSOW();                       // the overwrite that used to be final
+        out.editSurvivedRegeneration = sowVersions.some(v2 => /a hand edit/.test(v2.html));
+        if (!out.editSurvivedRegeneration)
+          fail.push('regenerating the SOW destroyed the edited version — the confirm() warns that edits will '
+            + 'be replaced and then leaves them nowhere, which is a warning about data loss rather than a '
+            + 'history');
+        out.originalReachable = sowVersions.some(v2 => v2.html === original);
+        if (!out.originalReachable)
+          fail.push('the ORIGINAL generated SOW is no longer among the kept versions — "go back to the '
+            + 'original" is the request this history exists for');
+        const edited = sowVersions.find(v2 => /a hand edit/.test(v2.html));
+        if (edited) {
+          sowRestoreVersion(edited.n);
+          out.restored = /a hand edit/.test(String(sowDraft || ''));
+          if (!out.restored) fail.push('restoring a SOW version did not put it back');
+          out.currentStillKept = sowVersions.length >= 3;
+          if (!out.currentStillKept)
+            fail.push('restoring did not keep the draft it replaced, so a restore cannot be undone');
+        }
+        // the cap must never drop the first
+        const firstHtml = sowVersions[0].html;
+        for (let i = 0; i < SOW_VERSION_CAP + 8; i++) { sowDraft = 'filler ' + i; sowPushVersion('filler'); }
+        out.cappedAt = sowVersions.length;
+        out.firstSurvivedTrim = sowVersions[0].html === firstHtml;
+        if (sowVersions.length > SOW_VERSION_CAP)
+          fail.push('the SOW history grew past its own cap (' + sowVersions.length + ')');
+        if (!out.firstSurvivedTrim)
+          fail.push('trimming the SOW history dropped the FIRST version — the one version that must survive '
+            + 'any trim is the original, because that is what the history is for');
       }
 
       /* ── 3h. A VERSION CAN BE OPENED, AND GONE BACK TO ────────────────
@@ -966,6 +1139,78 @@ const QA = JSON.parse(fs.readFileSync(
       if (!drift.length)
         fail.push('an acceptance criterion was reworded AFTER it was signed for and nothing noticed — the '
           + 'client agreed to different words from the ones the plan now holds');
+
+      /* ── 5. A CLIENT SIGNS A PHASE, NOT FOURTEEN STORIES ────────────────
+         The record held one story or the whole engagement, and neither is the
+         unit anybody accepts: a SOW is written in deliverables, an invoice
+         follows them, and expressing "Design is done" as fourteen story
+         sign-offs is fourteen records of something else.
+
+         Four properties, and the last is the one a naive implementation
+         misses. A phase sign-off has to notice a story RE-TRACED OUT of it —
+         the drift loop walks what is in the plan now, so a story that left the
+         signed phase simply stops being visited and takes its criteria out of
+         the signed set in silence. That is the easiest way to quietly shrink
+         what was accepted, which makes it worth its own assertion. */
+      s0.ac[0].text = String(s0.ac[0].text || '').replace(' AND exports to PDF', '');
+      signoffs.length = 0;
+      const phase = tasks.filter(t => tasks.some(x => x.parentId === t.id))
+        .map(t => ({ t: t, n: ((reqs && reqs.stories) || []).filter(s2 => {
+          const ids = new Set([t.id].concat(allDescendants(t.id).map(x => x.id)));
+          return storyWbsIds(s2).some(id => ids.has(id));
+        }).length }))
+        .filter(x => x.n > 0).sort((a2, b2) => b2.n - a2.n)[0];
+      if (!phase) { out.wbsSignoff = 'SKIPPED-no-phase-carries-a-story'; }
+      else {
+        const soW = recordSignoff('wbs', String(phase.t.id), 'Client sponsor', 'phase gate');
+        out.wbsSignoff = { phase: phase.t.name, stories: phase.n, v: soW.v };
+        if (soW.scope !== 'wbs')
+          fail.push('a sign-off recorded against a WBS element came back as scope "' + soW.scope
+            + '" — the level a client actually signs is not being stored as itself');
+        const lbl = signoffRefLabel('wbs', soW.ref);
+        out.wbsLabel = lbl;
+        if (!lbl || /^\d+$/.test(lbl) || /no longer in the plan/.test(lbl))
+          fail.push('the sign-off record renders as "' + lbl + '" — an id on a printed acceptance record '
+            + 'is not a record of anything');
+        const cov = signoffCoverage(soW);
+        out.wbsCoverage = cov;
+        if (!cov.stories)
+          fail.push('a phase carrying ' + phase.n + ' traced stories rolled up to ZERO stories at sign-off, '
+            + 'so the record covers nothing it claims to');
+        if (signoffDrift().length)
+          fail.push('a phase sign-off reported drift the instant it was taken');
+        // reword INSIDE the phase → drift
+        const inside = ((reqs && reqs.stories) || []).find(s2 => {
+          const ids = new Set([phase.t.id].concat(allDescendants(phase.t.id).map(x => x.id)));
+          return storyWbsIds(s2).some(id => ids.has(id)) && (s2.ac || []).length;
+        });
+        if (inside) {
+          const was = inside.ac[0].text;
+          inside.ac[0].text = String(was) + ' AND a second thing';
+          out.wbsDriftOnReword = signoffDrift().length;
+          if (!out.wbsDriftOnReword)
+            fail.push('a criterion inside a signed PHASE was reworded and nothing noticed — the phase sign-off '
+              + 'is recording a name and a date and measuring nothing');
+          inside.ac[0].text = was;
+          // and re-trace it OUT of the phase
+          const links = storyWbsIds(inside).slice();
+          setStoryLinks(inside, []);
+          const outDrift = signoffDrift();
+          out.wbsDriftOnRetrace = outDrift.map(d2 => d2.kind);
+          if (!outDrift.some(d2 => /moved out|deleted/.test(d2.kind)))
+            fail.push('a story was re-traced OUT of a signed phase and the sign-off did not notice — its '
+              + 'criteria left the accepted set silently, which is the quietest way to shrink what a client '
+              + 'agreed to');
+          setStoryLinks(inside, links);
+        }
+        // a PROJECT sign-off must never report a move-out: nothing can leave it
+        signoffs.length = 0;
+        recordSignoff('project', '', 'Client', '');
+        const pd = signoffDrift().filter(d2 => /moved out/.test(d2.kind)).length;
+        if (pd)
+          fail.push('a whole-engagement sign-off reported ' + pd + ' stories as having moved out of its '
+            + 'scope — there is nowhere outside it for anything to move to');
+      }
       return { fail, out };
     });
     (r.fail || []).forEach(say);

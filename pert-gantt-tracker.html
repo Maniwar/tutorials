@@ -300,6 +300,14 @@
     .export-panel .grp { font-size: var(--t-sm); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 0.4rem 0.6rem 0.15rem; font-weight: 600; }
     .risk-tag { display:inline-block; padding: 0.1rem 0.45rem; border-radius: 6px; font-size: var(--t-sm); font-weight:600; }
     .raid-dash { color: var(--muted); cursor: help; }
+    /* A row that opens something has to look like one. The chevron is the
+       cheapest honest signal and it prints as nothing. */
+    .doc-switch { margin-bottom: 0.6rem; }
+    .doc-switch .seg button.doc-on { background: var(--primary); color: #fff; }
+    .co-row { cursor: pointer; }
+    .co-row:hover { background: #f1f5f9; }
+    .co-open { color: var(--muted); font-weight: 700; }
+    .co-row:hover .co-open { color: var(--primary); }
     /* THE FIVE KINDS, TOLD APART. Colour carries what the entry asks of the
        reader, not how bad it is: red is costing you now, amber might, blue is a
        bet nobody is working, green is settled, slate is a line you drew. The
@@ -1879,12 +1887,23 @@
        that carry the meaning had no rules anywhere in the stylesheet at all. A
        link that had gone dangling and one that was still accurate rendered
        identically, which is precisely what the marker exists to prevent. */
+    /* WHITE-SPACE IS THE WHOLE BUG. .chip-edit's chip carries `nowrap` and this
+       one did not, so a two-word activity name broke across lines INSIDE the
+       pill: a 999px radius wrapped around two lines of text is a lozenge, it
+       made the row twice as tall as its neighbours, and the column jumped every
+       time a name got longer. `text-overflow: ellipsis` was already here and did
+       nothing at all without it — a rule that cannot fire is not a rule.
+       Reported by use: "the task pills do not look good here". */
     .rdg .chip, #raidContainer .chip, #rLinks .chip {
       display: inline-flex; align-items: center; gap: 0.2rem; margin: 0 0.2rem 0.2rem 0;
       background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a;
       border-radius: 999px; padding: 0.1rem 0.2rem 0.1rem 0.55rem;
-      font-size: 0.78rem; line-height: 1.5; max-width: 100%; }
-    #raidContainer .chip-lbl, #rLinks .chip-lbl { overflow: hidden; text-overflow: ellipsis; }
+      font-size: 0.78rem; line-height: 1.5; max-width: 100%; white-space: nowrap; }
+    /* The cap is on the LABEL rather than the chip so the ✕ and the kind mark
+       are never the things that get cut — they are the two parts a truncated
+       chip still has to be usable through. */
+    #raidContainer .chip-lbl, #rLinks .chip-lbl {
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 14rem; min-width: 0; }
     #raidContainer .chip-go, #rLinks .chip-go { border: none; background: transparent; color: inherit;
       font: inherit; cursor: pointer; padding: 0; text-align: left; }
     #raidContainer .chip-go:hover, #rLinks .chip-go:hover { text-decoration: underline; }
@@ -2837,6 +2856,57 @@
         <div class="modal-body" id="wlModalBody"></div>
       </div>
     </div>
+    <!-- SIGN-OFF. Was three chained prompt() boxes asking for a story id typed
+         from memory, with the list of valid ids pasted into the prompt text
+         because there was nowhere else to put it. A dialog can show what is
+         being signed, what state it is actually in, and refuse the combination
+         that makes no sense — none of which a prompt chain can do. -->
+    <div class="modal-overlay" id="signoffModal" style="z-index:132">
+      <div class="modal" style="max-width:620px" role="dialog" aria-modal="true" aria-labelledby="signoffModalTitle">
+        <div class="modal-header"><h3 id="signoffModalTitle">Record a sign-off</h3>
+          <button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeSignoffModal()" aria-label="Close dialog">✕</button></div>
+        <div class="modal-body">
+          <p class="help-text" style="margin:0 0 .7rem">A sign-off freezes the acceptance criteria exactly as
+            they read at this moment, as a numbered plan version. Anything reworded, added or removed
+            afterwards shows up as drift against that version instead of turning into an argument over an
+            invoice.</p>
+          <div class="form-group">
+            <span class="fg-head"><label for="soScope">What is being accepted</label></span>
+            <select id="soScope" onchange="signoffScopeSync()"></select>
+          </div>
+          <div class="form-group" id="soRefRow">
+            <span class="fg-head"><label for="soRef">Which one</label></span>
+            <select id="soRef" onchange="signoffScopeSync()"></select>
+          </div>
+          <div id="soState" class="conflict-card" style="margin:0 0 .8rem;font-size:0.82rem"></div>
+          <div class="form-group">
+            <span class="fg-head"><label for="soBy">Accepted by</label></span>
+            <input id="soBy" type="text" placeholder="the client-side name that goes on the record" />
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <span class="fg-head"><label for="soNote">Note (optional)</label></span>
+            <input id="soNote" type="text" placeholder="e.g. accepted at the phase gate review, minuted" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="closeSignoffModal()">Cancel</button>
+          <button class="btn-primary" onclick="saveSignoff()">✍ Record sign-off</button>
+        </div>
+      </div>
+    </div>
+    <!-- CHANGE-ORDER DRILL-IN. The history table's only route to the narrative
+         was a native title tooltip on a <tr>, and its typed line records — the
+         structured change set the whole log is built on — were reachable from
+         nowhere at all. Reported by use: "I also need to be able to see the
+         details of the change order by drilling into it i mean every detail and
+         what changed". -->
+    <div class="modal-overlay" id="coModal" style="z-index:134">
+      <div class="modal" style="max-width:1100px" role="dialog" aria-modal="true" aria-labelledby="coModalTitle">
+        <div class="modal-header"><h3 id="coModalTitle">Change order</h3>
+          <button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeCoModal()" aria-label="Close dialog">✕</button></div>
+        <div class="modal-body" id="coModalBody"></div>
+      </div>
+    </div>
     <div class="modal-overlay" id="storyModal" style="z-index:130">
       <div class="modal" style="max-width:940px" role="dialog" aria-modal="true" aria-labelledby="storyModalTitle">
         <div class="modal-header"><h3 id="storyModalTitle">Edit user story</h3><button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeStoryModal()" aria-label="Close dialog">✕</button></div>
@@ -3255,9 +3325,21 @@ Or say what you want, in your own words:
         <div class="card-body">
           <p class="help-text" style="margin-bottom:0.75rem">Assembled from the plan itself: scope &amp; deliverables from the WBS dictionary, milestones, team &amp; rates, pricing from the Monte-Carlo basis above, assumptions/exclusions from the RAID log. With an API key the narrative sections are drafted by AI; without one you get the structured skeleton to edit.</p>
           <div id="coHistory"></div>
+          <!-- ONE BOX, TWO DOCUMENTS, AND NO SWITCH. Drafting a change order
+               wrote it into this container over the SOW, and generating the SOW
+               wrote it back over the change order — so the only way to see the
+               one you were not looking at was to regenerate it, which on the
+               SOW side also re-rolled the contract baseline. Reported by use:
+               "how can i go between viewing the change order and the SOW that
+               was there before ect? I don't see a obvious way to switch". -->
+          <div id="docSwitch" class="doc-switch no-print"></div>
           <div id="sowContainer" style="border:1px solid var(--border);border-radius:10px;padding:1rem;max-height:560px;overflow:auto;background:white">
             <div class="empty-state"><h3>No SOW draft yet</h3><p>Click <strong>Generate SOW draft</strong> — the plan, dictionary, milestones, pricing and RAID entries become a client-ready starting document.</p></div>
           </div>
+          <details class="help-details" style="margin-top:0.75rem">
+            <summary>SOW version history — every draft, back to the original</summary>
+            <div id="sowHistory" style="margin-top:0.5rem"></div>
+          </details>
         </div>
       </div>
     </div>
@@ -3334,7 +3416,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.04.2041</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.04.2253</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3937,7 +4019,7 @@ Or say what you want, in your own words:
       resetUndo();
       if (!fromCurrent) {
         tasks = []; nextId = 1; resources = {}; raid = []; nextRaidId = 1; statusHistory = [];
-        sowDraft = ''; statusNarrative = null; projectBudget = 0;
+        sowDraft = ''; statusNarrative = null; projectBudget = 0; sowVersions = []; nextSowNo = 1;
         reserves = { contingency: { value: 0, unit: 'percent' }, management: { value: 0, unit: 'percent' } };
         pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 }; cashTerms = { kind: 'none', days: 0 }; revTerms = { kind: 'none', days: 0, deposit: 0 };
         baselineDate = ''; baselineLog = []; collapsedIds = new Set(); levelMode = 'none';
@@ -4440,6 +4522,7 @@ Or say what you want, in your own words:
         resources, reserves, baselineDate, baselineLog, levelMode, projectBudget,
         raid, nextRaidId, statusHistory, sowDraft, statusNarrative, pricing, cashTerms, revTerms, reqsBaseline,
         clientSafeReports, sowBaseline, reqs, sowUserEdited, coLog,
+        sowVersions, nextSowNo,
         // the version chain travels with the plan. A history that lives only in
         // one browser session is not a history — the whole point of parenting
         // versions is that a later reader can walk back through them.
@@ -4594,6 +4677,14 @@ Or say what you want, in your own words:
       clientSafeReports = !!data.clientSafeReports;
       sowBaseline = (data.sowBaseline && Array.isArray(data.sowBaseline.tasks)) ? data.sowBaseline : null;
       sowUserEdited = !!data.sowUserEdited;
+      sowVersions = (Array.isArray(data.sowVersions) ? data.sowVersions : [])
+        .filter(v => v && typeof v.html === 'string' && Number.isFinite(+v.n))
+        .map(v => ({ n: +v.n, at: String(v.at || ''), ts: String(v.ts || ''), label: String(v.label || ''),
+                     html: v.html, chars: v.html.length, trimmed: +v.trimmed || 0 }));
+      // ahead of every number in the list, for the same reason the plan chain
+      // derives its counter rather than trusting the stored one
+      nextSowNo = Math.max(1, ...sowVersions.map(v => v.n + 1),
+        Number.isFinite(+data.nextSowNo) ? +data.nextSowNo : 1);
       reqs = (data.reqs && Array.isArray(data.reqs.stories)) ? {
         personas: Array.isArray(data.reqs.personas) ? data.reqs.personas : [],
         epics: Array.isArray(data.reqs.epics) ? data.reqs.epics : [],
@@ -4606,6 +4697,9 @@ Or say what you want, in your own words:
       coLog = (Array.isArray(data.coLog) ? data.coLog : []).map(c => Object.assign({}, c, {
         state: CO_STATES[c && c.state] ? c.state : 'accepted',
         stateAt: (c && c.stateAt) || '', reversedAt: (c && c.reversedAt) || '',
+        // which line prices were withheld from the document this one was sent
+        // as — part of what the client was shown, so it round-trips
+        hidePrice: Array.isArray(c && c.hidePrice) ? c.hidePrice.map(String) : [],
         diff: Array.isArray(c && c.diff) ? c.diff : [] }));
       /* The chain, and a counter that must be AHEAD of every number in it.
          Deriving nextVersionNo from max+1 rather than trusting the stored
@@ -5108,7 +5202,9 @@ Or say what you want, in your own words:
       if (name === 'raid') {
         guardRender('renderRaid', renderRaid);
         guardRender('renderCoHistory', renderCoHistory);
-        if (sowDraft && !draftChangeOrder._pending) document.getElementById('sowContainer').innerHTML = sowDraft;
+        // both documents survive a tab switch; the strip decides which shows
+        guardRender('paintDocView', paintDocView);
+        guardRender('renderSowHistory', renderSowHistory);
         const sd = document.getElementById('sowDepth'); if (sd && pricing.sowDepth) sd.value = pricing.sowDepth;
         const sm = document.getElementById('sowStoriesMode'); if (sm && pricing.sowStoriesMode) sm.value = pricing.sowStoriesMode;
       }
@@ -16806,9 +16902,31 @@ Or say what you want, in your own words:
        surprise in a later invoice dispute. */
     let signoffs = [];
     let nextSignoffNo = 1;
+    /* ── WHAT A CLIENT ACTUALLY SIGNS ────────────────────────────────────────
+       This record held two scopes: one story, or the whole engagement. Neither
+       is the thing anybody signs. A client accepts "Phase 2 — Design", or a
+       named deliverable; the SOW is written in those units and the invoice
+       follows them. Signing fourteen stories one at a time to express "Design is
+       done" is not a record of what happened, it is fourteen records of
+       something else, and signing the whole engagement to express it is a lie
+       about the other three phases.
+
+       So a sign-off can now name a WBS element, and everything underneath it
+       comes with it — a phase, a work package or a single activity, since they
+       are the same kind of object and drawing a line between them would only
+       mean deciding which levels are allowed to be accepted. */
+    const SIGNOFF_SCOPES = {
+      project: { lbl: 'The whole engagement',
+                 tip: 'Final acceptance. Every criterion in the plan is frozen at this version.' },
+      wbs:     { lbl: 'A phase or deliverable',
+                 tip: 'A WBS element and everything under it — the unit a client actually signs and an invoice follows.' },
+      story:   { lbl: 'A single story',
+                 tip: 'One user story and its criteria. The finest grain, useful for an incremental acceptance.' }
+    };
     function recordSignoff(scope, ref, by, note) {
-      const v = pushVersion('signoff', 'Accepted: ' + (ref || scope));
-      const rec = { no: nextSignoffNo++, at: fmtISO(new Date()), scope: scope, ref: String(ref || ''),
+      const sc = SIGNOFF_SCOPES[scope] ? scope : 'project';
+      const v = pushVersion('signoff', 'Accepted: ' + (signoffRefLabel(sc, ref) || sc));
+      const rec = { no: nextSignoffNo++, at: fmtISO(new Date()), scope: sc, ref: String(ref || ''),
                     by: String(by || ''), note: String(note || ''), v: v.v };
       signoffs.push(rec);
       saveLocal();
@@ -16817,6 +16935,69 @@ Or say what you want, in your own words:
     function signoffFor(scope, ref) {
       const r = signoffs.filter(x => x.scope === scope && x.ref === String(ref));
       return r.length ? r[r.length - 1] : null;
+    }
+    // What the record POINTS AT, in words a reader recognises. A WBS sign-off
+    // stores an id, and an id on a printed acceptance record is not a record.
+    function signoffRefLabel(scope, ref) {
+      if (scope === 'project') return 'Whole engagement';
+      if (scope === 'wbs') {
+        const t = tasks.find(x => String(x.id) === String(ref));
+        return t ? ((t.wbs ? t.wbs + ' ' : '') + t.name)
+                 : 'WBS element ' + ref + ' (no longer in the plan)';
+      }
+      return String(ref || '');
+    }
+    /* The stories a sign-off covers, read from a SNAPSHOT rather than from the
+       plan, so "what did they sign for" survives every later re-trace. Falls
+       back to the live trace for versions taken before wbsIds travelled, and
+       the caller is told which of the two it got — a fallback that cannot
+       announce itself is how an approximation gets quoted as a fact. */
+    function signoffStories(so, snap) {
+      const stories = (snap && snap.stories) || [];
+      if (so.scope === 'project') return { rows: stories, traced: true };
+      if (so.scope === 'story') return { rows: stories.filter(s => String(s.id) === so.ref), traced: true };
+      // wbs: the element itself plus everything under it, per the tree AS IT IS
+      // NOW — a snapshot stores leaves with parentId, so the subtree is
+      // reconstructible, but an element that has since been re-parented is a
+      // question about today's plan and today's answer is the right one.
+      const ids = new Set([Number(so.ref)].concat(allDescendants(Number(so.ref)).map(t => t.id)));
+      const haveTrace = stories.some(s => Array.isArray(s.wbsIds));
+      const rows = stories.filter(s => {
+        const linked = haveTrace && Array.isArray(s.wbsIds) ? s.wbsIds
+          : storyWbsIds(((reqs && reqs.stories) || []).find(x => String(x.id) === String(s.id)) || {});
+        return (linked || []).some(id => ids.has(id));
+      });
+      return { rows: rows, traced: haveTrace };
+    }
+    // Does this sign-off still cover this story, per the trace as it stands
+    // today? The counterpart to signoffStories, which answers the same question
+    // about the moment of signing — the two disagreeing IS the finding.
+    function signoffCoversNow(so, story) {
+      if (so.scope === 'project') return true;
+      if (so.scope === 'story') return String(story.id) === so.ref;
+      const ids = new Set([Number(so.ref)].concat(allDescendants(Number(so.ref)).map(t => t.id)));
+      return storyWbsIds(story).some(id => ids.has(id));
+    }
+    /* Acceptance rolled up over whatever the sign-off named, so the panel can
+       say "Phase 2 is 11 of 14 accepted" instead of only ever counting the
+       whole plan. Reads the LIVE criteria — this is the state of the work, not
+       the state of the agreement. */
+    function signoffCoverage(so) {
+      const v = versionByNo(so.v);
+      const scoped = signoffStories(so, v && v.snap);
+      const live = ((reqs && reqs.stories) || []);
+      const rows = [];
+      scoped.rows.forEach(s => {
+        const now = live.find(x => String(x.id) === String(s.id));
+        if (!now) return;
+        (now.ac || []).forEach(a => rows.push(acAcceptance(a.id)));
+      });
+      const testable = rows.filter(r => r.state !== 'no-criteria');
+      const accepted = rows.filter(r => r.state === 'accepted').length;
+      return { stories: scoped.rows.length, criteria: testable.length, accepted: accepted,
+               failed: rows.filter(r => r.state === 'failed').length,
+               pct: testable.length ? Math.round(100 * accepted / testable.length) : null,
+               traced: scoped.traced };
     }
     /* THE FINDING THIS EXISTS FOR: criteria that moved after somebody signed
        for them. Compared against the snapshot taken AT sign-off, so it survives
@@ -16828,9 +17009,26 @@ Or say what you want, in your own words:
         const v = versionByNo(so.v);
         if (!v) return;
         const then = new Map((v.snap.stories || []).map(s => [s.id, s]));
+        const scoped = signoffStories(so, v.snap);
+        const inScope = new Set(scoped.rows.map(s => String(s.id)));
         const nowStories = ((reqs && reqs.stories) || []);
+        /* A STORY THAT LEFT IS A KIND OF DRIFT, and the only kind the loop
+           below structurally cannot see: it walks what is in the plan NOW and
+           asks how it changed, so a story re-traced out of a signed phase — or
+           deleted outright — simply stops being visited and its criteria leave
+           the signed set in silence. On a phase sign-off that is the easiest
+           way to quietly shrink what was accepted, which makes it the first
+           thing worth reporting rather than an afterthought. */
+        inScope.forEach(sid => {
+          const live = nowStories.find(x => String(x.id) === sid);
+          const was = then.get(sid);
+          if (!was) return;
+          if (!live || !signoffCoversNow(so, live))
+            out.push({ so: so, story: sid, ac: sid, was: was.want || sid, now: null,
+                       kind: live ? 'moved out of the signed scope' : 'deleted from the plan' });
+        });
         nowStories.forEach(s => {
-          if (so.scope === 'story' && String(s.id) !== so.ref) return;
+          if (!inScope.has(String(s.id))) return;
           const was = then.get(String(s.id));
           if (!was) return;
           const wasAc = new Map((was.ac || []).map(a => [a.id, a]));
@@ -16873,13 +17071,35 @@ Or say what you want, in your own words:
       const pct = testable.length ? Math.round(100 * accepted / testable.length) : null;
       const badge = (st, n) => n ? '<span class="badge ' + (ACC_STATE[st] || {}).cls + '" style="margin-right:.3rem">'
         + n + ' ' + escapeHtml((ACC_STATE[st] || {}).lbl.toLowerCase()) + '</span>' : '';
-      const soRows = signoffs.slice().reverse().map(so => '<tr>'
-        + '<td style="font-size:0.75rem;white-space:nowrap">#' + so.no + '</td>'
-        + '<td style="font-size:0.75rem;white-space:nowrap">' + escapeHtml(fmtNice(new Date(so.at + 'T00:00:00'))) + '</td>'
-        + '<td style="font-size:0.78rem">' + escapeHtml(so.scope === 'project' ? 'Whole engagement' : so.ref) + '</td>'
-        + '<td style="font-size:0.78rem">' + escapeHtml(so.by || '—') + '</td>'
-        + '<td style="font-size:0.75rem;white-space:nowrap" title="The criteria as they stood when this was signed. Everything compared against this version rather than against a date, so a later rewording is visible instead of silent.">v' + so.v + '</td>'
-        + '</tr>').join('');
+      /* The record now says WHAT LEVEL was signed and HOW THAT SCOPE IS DOING,
+         because a list of names and dates cannot answer the question anybody
+         opens it with: is the thing we signed for actually finished. The
+         coverage is read live and deliberately so — the version froze the
+         AGREEMENT, not the state of the work. */
+      const soRows = signoffs.slice().reverse().map(so => {
+        const cov = signoffCoverage(so);
+        const kind = (SIGNOFF_SCOPES[so.scope] || {}).lbl || so.scope;
+        const cell = cov.criteria
+          ? '<span class="badge ' + (cov.failed ? 'badge-blocked' : cov.pct === 100 ? 'badge-ok' : 'badge-warn')
+            + '" title="' + escapeHtml('Acceptance as it stands TODAY across everything this sign-off covers. '
+              + 'The version beside it froze the wording, not the progress.') + '">'
+            + cov.accepted + '/' + cov.criteria + (cov.failed ? ' · ' + cov.failed + ' failing' : '') + '</span>'
+          : '<span class="help-text">no criteria</span>';
+        return '<tr>'
+          + '<td style="font-size:0.75rem;white-space:nowrap">#' + so.no + '</td>'
+          + '<td style="font-size:0.75rem;white-space:nowrap">' + escapeHtml(fmtNice(new Date(so.at + 'T00:00:00'))) + '</td>'
+          + '<td style="font-size:0.78rem"><span class="help-text" style="display:block">' + escapeHtml(kind) + '</span>'
+            + escapeHtml(signoffRefLabel(so.scope, so.ref))
+            + (so.note ? '<span class="help-text" style="display:block">' + escapeHtml(so.note) + '</span>' : '') + '</td>'
+          + '<td style="font-size:0.78rem">' + escapeHtml(so.by || '—') + '</td>'
+          + '<td>' + cell + '</td>'
+          + '<td style="font-size:0.75rem;white-space:nowrap"><button class="btn-sm btn-secondary no-print" '
+            + 'onclick="versionView(' + so.v + ')" title="'
+            + escapeHtml('Open the plan exactly as it read when this was signed. Everything compared against '
+              + 'this version rather than against a date, so a later rewording is visible instead of silent.')
+            + '">v' + so.v + '</button></td>'
+          + '</tr>';
+      }).join('');
       const driftHtml = drift.length
         ? '<div class="conflict-card" style="border-left-color:var(--critical);background:var(--critical-bg);margin:0 0 .7rem">'
           + '<strong>⚑ ' + drift.length + ' acceptance criteri' + (drift.length === 1 ? 'on has' : 'a have')
@@ -16911,29 +17131,111 @@ Or say what you want, in your own words:
           <p class="help-text" style="margin:0 0 .6rem">${a.cases} test case(s): <b>${a.run}</b> run, ${a.pass} passed, ${a.fail} failed${a.retests ? ', ' + a.retests + ' re-test(s)' : ''}.${a.doneUnrun ? ` <b style="color:var(--warn)">${a.doneUnrun} marked 100% complete with no result recorded</b> — somebody spent the time and nothing says whether it passed.` : ''}</p>
           <h4 style="font-size:0.85rem;margin:.6rem 0 .3rem">Sign-off record</h4>
           ${signoffs.length
-            ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Date</th><th>What</th><th>Accepted by</th><th title="The plan version the criteria were in at the moment of signing">Against</th></tr></thead><tbody>${soRows}</tbody></table></div>`
+            ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Date</th><th>What was accepted</th><th>Accepted by</th><th title="Acceptance across everything this sign-off covers, as it stands today">State now</th><th title="The plan version the criteria were in at the moment of signing — click to open the plan as it read then">Against</th></tr></thead><tbody>${soRows}</tbody></table></div>`
             : '<p class="help-text" style="margin:0">Nothing signed off yet. Recording a sign-off freezes the criteria as they stand, so a later rewording shows up as drift instead of turning into an invoice argument.</p>'}
-          <div style="margin-top:.6rem"><button class="btn-sm btn-secondary no-print" onclick="promptSignoff()" title="Record who accepted what, when — against the criteria as they stand right now">✍ Record a sign-off</button></div>
+          <div style="margin-top:.6rem"><button class="btn-sm btn-secondary no-print" onclick="promptSignoff()" title="Record who accepted what, when — a phase, a deliverable, a single story or the whole engagement, against the criteria as they stand right now">✍ Record a sign-off</button></div>
         </div>
       </details>`;
     }
-    function promptSignoff() {
-      const stories = ((reqs && reqs.stories) || []);
-      const ref = prompt('Sign-off for which story id? Leave blank for the whole engagement.'
-        + (stories.length ? '\n\nStories: ' + stories.map(s => s.id).join(', ') : ''), '');
-      if (ref === null) return;
-      const id = String(ref).trim();
-      if (id && !stories.some(s => String(s.id).toLowerCase() === id.toLowerCase())) {
-        alert('No story with id "' + id + '" — nothing recorded.\n\nA sign-off has to point at something that '
-          + 'exists, or the drift check has nothing to compare against later.');
+    function promptSignoff(scope, ref) {
+      const sel = document.getElementById('soScope');
+      if (!sel) return;
+      sel.innerHTML = Object.keys(SIGNOFF_SCOPES).map(k => '<option value="' + k + '">'
+        + escapeHtml(SIGNOFF_SCOPES[k].lbl) + '</option>').join('');
+      sel.value = SIGNOFF_SCOPES[scope] ? scope : 'wbs';
+      signoffScopeSync(ref);
+      document.getElementById('soBy').value = '';
+      document.getElementById('soNote').value = '';
+      openOverlay(document.getElementById('signoffModal'));
+      setTimeout(() => { const b = document.getElementById('soBy'); if (b) b.focus(); }, 60);
+    }
+    function closeSignoffModal() { closeOverlay('signoffModal'); }
+    /* The second select is rebuilt from the first, and the STATE of whatever is
+       picked is shown before anything is signed. Signing a phase whose criteria
+       are half untested is a legitimate thing to do — a client can accept work
+       on other evidence — but it should be a decision somebody made with the
+       number in front of them rather than one they made blind. */
+    function signoffScopeSync(preselect) {
+      const scope = document.getElementById('soScope').value;
+      const row = document.getElementById('soRefRow');
+      const ref = document.getElementById('soRef');
+      const stateEl = document.getElementById('soState');
+      document.getElementById('soScope').title = (SIGNOFF_SCOPES[scope] || {}).tip || '';
+      if (scope === 'project') {
+        row.style.display = 'none';
+      } else {
+        row.style.display = '';
+        const opts = scope === 'wbs'
+          // every element that HAS something under it, plus the leaves — a
+          // deliverable is often a single activity, and refusing to sign one
+          // would just push people back to signing the whole phase
+          ? tasksInWbsOrder().map(({ task, depth }) => ({
+              v: String(task.id),
+              lbl: ' '.repeat(depth * 2) + (task.wbs ? task.wbs + ' ' : '') + task.name
+                 + (isSummaryId(task.id) ? ' (' + leafDescendants(task.id).length + ' under it)' : '') }))
+          : ((reqs && reqs.stories) || []).map(s => ({
+              v: String(s.id), lbl: s.id + ' — ' + String(s.want || '').slice(0, 60) }));
+        ref.innerHTML = opts.length
+          ? opts.map(o => '<option value="' + escapeHtml(o.v) + '">' + escapeHtml(o.lbl) + '</option>').join('')
+          : '<option value="">(nothing to sign off at this level yet)</option>';
+        if (preselect != null && opts.some(o => o.v === String(preselect))) ref.value = String(preselect);
+      }
+      // the live picture of what is about to be signed
+      const probe = { scope: scope, ref: scope === 'project' ? '' : ref.value, v: 0 };
+      const cov = signoffCoverageLive(probe);
+      const prior = signoffFor(scope, probe.ref);
+      stateEl.innerHTML = !cov
+        ? '<span class="help-text">Pick something to see what state it is in.</span>'
+        : '<b>' + escapeHtml(signoffRefLabel(scope, probe.ref)) + '</b> — '
+          + (cov.criteria
+            ? cov.accepted + ' of ' + cov.criteria + ' criteria accepted'
+              + (cov.pct != null ? ' (' + cov.pct + '%)' : '')
+              + (cov.failed ? ' · <b style="color:var(--critical)">' + cov.failed + ' failing</b>' : '')
+              + '<span class="help-text" style="display:block;margin-top:.25rem">'
+              + (cov.pct === 100
+                ? 'Every criterion under this has passed its tests.'
+                : 'Signing this accepts criteria that have not all passed. That is yours to decide — a client '
+                  + 'can accept on a demo or a document — but the record will show it, which is the point.')
+              + '</span>'
+            : 'no acceptance criteria traced to it, so this sign-off records the agreement and nothing '
+              + 'measurable underneath it')
+          + (prior ? '<div class="help-text" style="margin-top:.3rem">⚠ Already signed off as #' + prior.no
+              + ' on ' + escapeHtml(prior.at) + ' against v' + prior.v
+              + '. Recording another adds a second acceptance rather than replacing the first.</div>' : '');
+    }
+    // the same rollup signoffCoverage does, for something not yet recorded —
+    // there is no version to read, so the live trace is the only trace there is
+    function signoffCoverageLive(so) {
+      if (so.scope !== 'project' && !so.ref) return null;
+      const live = ((reqs && reqs.stories) || []);
+      const rows = [];
+      live.forEach(s => { if (signoffCoversNow(so, s)) (s.ac || []).forEach(a => rows.push(acAcceptance(a.id))); });
+      const testable = rows.filter(r => r.state !== 'no-criteria');
+      const accepted = rows.filter(r => r.state === 'accepted').length;
+      return { criteria: testable.length, accepted: accepted,
+               failed: rows.filter(r => r.state === 'failed').length,
+               pct: testable.length ? Math.round(100 * accepted / testable.length) : null };
+    }
+    function saveSignoff() {
+      const scope = document.getElementById('soScope').value;
+      const ref = scope === 'project' ? '' : document.getElementById('soRef').value;
+      if (scope !== 'project' && !ref) {
+        alert('Nothing selected to sign off.\n\nA sign-off has to point at something that exists, or the drift '
+          + 'check has nothing to compare against later.');
         return;
       }
-      const by = prompt('Accepted by whom? (the client-side name that goes on the record)', '');
-      if (by === null) return;
-      const rec = recordSignoff(id ? 'story' : 'project',
-        id ? stories.find(s => String(s.id).toLowerCase() === id.toLowerCase()).id : '', by, '');
+      const by = document.getElementById('soBy').value.trim();
+      if (!by) {
+        alert('Who accepted it?\n\nAn acceptance with no name on it is not a record — it is a note. The name is '
+          + 'the whole reason this survives an argument.');
+        document.getElementById('soBy').focus();
+        return;
+      }
+      const rec = recordSignoff(scope, ref, by, document.getElementById('soNote').value.trim());
+      closeSignoffModal();
       try { renderReqs(); } catch (e) {}
-      flashSaved('✓ Sign-off #' + rec.no + ' recorded against plan version v' + rec.v);
+      flashSaved('✓ Sign-off #' + rec.no + ' recorded — ' + signoffRefLabel(scope, ref)
+        + ', frozen at plan version v' + rec.v);
     }
 
     /* ── THE EVIDENCE FIELD, WHICH NOBODY COULD FILL ────────────────────────
@@ -20500,7 +20802,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         if (st.length) t.audience = st.some(s => s.audience === 'client') ? 'client' : 'internal';
         else if (!tasks.some(c => c.parentId === t.id) && !t.milestone) t.audience = 'internal';  // storyless leaf = process work
       });
-      statusHistory = []; sowDraft = ''; statusNarrative = null; healthFindings = null; coLog = []; sowBaseline = null; coDraft = '';
+      statusHistory = []; sowDraft = ''; statusNarrative = null; healthFindings = null; coLog = []; sowBaseline = null; coDraft = ''; sowVersions = []; nextSowNo = 1;
       reqsBaseline = null;
       pricing = { model: 'fixed', basis: 'p80', contractPrice: 0 }; cashTerms = { kind: 'none', days: 0 }; revTerms = { kind: 'none', days: 0, deposit: 0 };
       reserves = { contingency: { value: 10, unit: 'percent' }, management: { value: 5, unit: 'percent' } };
@@ -23973,7 +24275,12 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
             + '</span>';
         }
         const mark = g.kind ? ekTok(g.kind, '', '', { xs: true }) : '';
-        return '<span class="chip' + (g.stale ? ' chip-stale' : '') + '" title="' + escapeHtml(kindName + (g.stale
+        /* The label is capped in CSS now, so the tooltip has to carry it in
+           full — a chip reading "1.1 Kick-off & Disco…" whose only tooltip said
+           "Activity" put the truncated half nowhere on the page. Truncation is
+           only honest when the whole string is one hover away. */
+        return '<span class="chip' + (g.stale ? ' chip-stale' : '') + '" title="'
+          + escapeHtml(kindName + ' · ' + g.label + (g.stale
             ? ' — the wording changed since this was linked. It read "' + l.was + '".' : '')) + '">'
           + mark + '<button type="button" class="chip-lbl chip-go" onclick="' + g.open + '">' + escapeHtml(g.label) + '</button>'
           + (editable ? '<button type="button" class="chip-x" onclick="raidUnlink(' + i + ')" aria-label="Unlink">✕</button>' : '')
@@ -25763,10 +26070,18 @@ Professional, client-ready, no hype, no invented facts.`;
           Object.keys(narrative || {}).forEach(k => { narrative[k] = escapeHtml(String(narrative[k] || '')); });
         } catch (e) { alert('AI narrative failed (' + (e.message || e) + ') — generating the structured skeleton instead.'); }
       }
+      /* The OUTGOING document is kept before the new one lands. Regenerating
+         used to be a one-way overwrite: the confirm() above warned that manual
+         edits would be replaced and then replaced them, with the previous
+         wording existing nowhere afterwards. A document a client may already
+         have been sent is not a thing to hold in one mutable string. */
+      sowPushVersion('regenerated from the plan');
       sowDraft = sowAssembleHtml(d, narrative);
+      sowPushVersion(narrative ? 'generated with AI narrative' : 'generated (structured skeleton)');
       sowBaseline = snapshotSowBaseline(); // baseline for change-order diffs
       saveLocal();
-      document.getElementById('sowContainer').innerHTML = sowDraft;
+      setDocView('sow');
+      renderSowHistory();
       flashSaved('✓ SOW draft ready — review, then Copy or Download (baseline captured for change orders)');
     }
     // In-place SOW editing: toggle contentEditable on the preview, save back to
@@ -25787,13 +26102,171 @@ Professional, client-ready, no hype, no invented facts.`;
       } else {
         btn.textContent = '✎ Edit';
         btn.classList.remove('btn-primary'); btn.classList.add('btn-secondary');
+        sowPushVersion('before this edit');
         sowDraft = cont.innerHTML;
         sowUserEdited = true;
+        sowPushVersion('edited by hand');
         saveLocal();
-        flashSaved('💾 SOW edits saved — Copy / Download now carry them');
+        renderSowHistory();
+        flashSaved('💾 SOW edits saved — the previous wording is kept in the history below');
       }
     }
     let sowUserEdited = false;
+    /* ── THE SOW HAS A HISTORY ───────────────────────────────────────────────
+       It was one mutable string. Generating overwrote it, editing overwrote it,
+       and the original — the version a client was actually sent, the one an
+       argument is about — existed nowhere afterwards. The plan behind the SOW
+       has had a versioned chain for a while; the DOCUMENT did not, which is the
+       wrong way round, because the document is the thing with a signature on
+       it. Reported by use: "I also need to be able to have a history of the SOW
+       so I can go back to the orginial anytime and through all the verisons".
+
+       Deliberately a separate list from planVersions. A plan version is the
+       state of the WORK; a SOW version is the state of a DOCUMENT, and the two
+       move for different reasons — editing a sentence changes the SOW and not
+       the plan, re-estimating changes the plan and not the SOW. Conflating them
+       would make every re-estimate look like a contract amendment. */
+    /* ── WHICH DOCUMENT IS IN THE BOX ────────────────────────────────────────
+       'sow' | 'co' | a SOW version number. Held in a variable rather than
+       inferred from what happens to be in the container, because the container
+       is innerHTML — asking it what it is showing means parsing a document to
+       recover a fact that was known when it was written. */
+    let docView = 'sow';
+    function docCoDraftNo() {
+      return (draftChangeOrder._pending && draftChangeOrder._pending.no) || null;
+    }
+    function setDocView(v) { docView = v; paintDocView(); }
+    function paintDocView() {
+      const strip = document.getElementById('docSwitch');
+      const cont = document.getElementById('sowContainer');
+      if (!cont) return;
+      const coNo = docCoDraftNo();
+      const past = (typeof docView === 'number') ? sowVersionByNo(docView) : null;
+      if (past) cont.innerHTML = sowVersionBannerHtml(past) + past.html;
+      else if (docView === 'co' && coDraft) cont.innerHTML = coDraft + coDraftActionsHtml();
+      else if (sowDraft) cont.innerHTML = sowDraft;
+      else cont.innerHTML = '<div class="empty-state"><h3>No SOW draft yet</h3><p>Click '
+        + '<strong>Generate SOW draft</strong> — the plan, dictionary, milestones, pricing and RAID entries '
+        + 'become a client-ready starting document.</p></div>';
+      if (!strip) return;
+      /* The strip is drawn only when there is a choice to make. A single tab
+         labelled "SOW draft" beside nothing else is chrome that teaches the
+         reader there is a switch and then does not switch anything. */
+      const tabs = [];
+      if (sowDraft) tabs.push({ k: 'sow', lbl: '📄 SOW draft',
+        tip: 'The statement of work as it currently stands.' });
+      if (coDraft && coNo) tabs.push({ k: 'co', lbl: 'Δ ' + coNo + ' draft',
+        tip: 'The change order drafted against the contract baseline. Both documents stay here; this switches which one is shown.' });
+      if (past) tabs.push({ k: docView, lbl: '🕓 SOW v' + past.n,
+        tip: 'A past version of the SOW, opened from the history below.' });
+      strip.innerHTML = tabs.length < 2 ? '' : '<span class="seg">'
+        + tabs.map(t => '<button class="btn-sm' + (docView === t.k ? ' doc-on' : '') + '" onclick="setDocView('
+            + (typeof t.k === 'number' ? t.k : '\'' + t.k + '\'') + ')" title="' + escapeHtml(t.tip) + '">'
+            + t.lbl + '</button>').join('') + '</span>';
+    }
+    function coDraftActionsHtml() {
+      const p = draftChangeOrder._pending;
+      if (!p) return '';
+      const n = (p.hidePrice || []).length;
+      return `<div class="no-print" style="margin-top:0.75rem;padding:0.7rem 0.9rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap">
+          <button class="btn-sm btn-secondary" onclick="issueChangeOrder()" title="Log ${p.no} as SENT and awaiting signature. Nothing is agreed and the baseline does not roll — this is how the log tells apart what you have asked for from what you have been given.">📤 Mark ${p.no} issued</button>
+          <button class="btn-sm btn-success" onclick="approveChangeOrder()" title="Logs ${p.no} in the change history and rolls the contract baseline to today's plan — the NEXT change order will diff only changes made after this one">✅ Mark ${p.no} accepted &amp; roll baseline</button>
+          <button class="btn-sm btn-secondary" onclick="coOpen('__draft__')" title="Open every line of ${p.no} and choose which ones show their price on the document. The totals never move.">$ Line pricing${n ? ' (' + n + ' withheld)' : ''}</button>
+          <span class="help-text" style="margin:0">issue it when you send it, accept it when they sign — an issued change order is a request, and counting one as revenue is how a forecast goes wrong quietly</span>
+        </div>`;
+    }
+    function sowVersionBannerHtml(v) {
+      return '<div class="conflict-card no-print" style="border-left-color:var(--warn);margin:0 0 .8rem">'
+        + '<b>Viewing SOW version ' + v.n + '</b> — ' + escapeHtml(v.label || 'saved') + ', '
+        + escapeHtml(v.at) + ' ' + escapeHtml(v.ts) + '. This is a past document, not the live draft. '
+        + '<button class="btn-sm btn-secondary" onclick="setDocView(\'sow\')">Back to the current draft</button> '
+        + '<button class="btn-sm btn-primary" onclick="sowRestoreVersion(' + v.n + ')">Restore this version</button>'
+        + '</div>';
+    }
+    let sowVersions = [];
+    let nextSowNo = 1;
+    /* 25 documents, and a SOW is a few tens of KB. The FIRST is never dropped —
+       "go back to the original" is the request this exists for, so the one
+       version that must survive any trim is the one at the bottom. */
+    const SOW_VERSION_CAP = 25;
+    function sowPushVersion(label) {
+      const html = String(sowDraft || '');
+      if (!html) return null;                       // nothing to keep
+      const last = sowVersions[sowVersions.length - 1];
+      // Identical content is not a version. Generate-then-save with no edit in
+      // between would otherwise stack duplicates that a reader has to compare
+      // by eye to discover are the same.
+      if (last && last.html === html) return last;
+      const v = { n: nextSowNo++, at: fmtISO(new Date()),
+                  ts: new Date().toISOString().slice(11, 16),
+                  label: String(label || ''), html: html, chars: html.length };
+      sowVersions.push(v);
+      if (sowVersions.length > SOW_VERSION_CAP) {
+        // drop from the SECOND entry, never the first
+        sowVersions.splice(1, sowVersions.length - SOW_VERSION_CAP);
+        sowVersions[0].trimmed = (sowVersions[0].trimmed || 0) + 1;
+      }
+      return v;
+    }
+    function sowVersionByNo(n) { return sowVersions.find(v => v.n === Number(n)) || null; }
+    /* A past version is a third document the box can hold, so it goes through
+       the same switch as the other two rather than writing the container
+       directly — the banner it carries says what it is, but the tab strip is
+       what makes it possible to leave. */
+    function sowViewVersion(n) {
+      if (!sowVersionByNo(n)) return;
+      setDocView(Number(n));
+      renderSowHistory();
+    }
+    function sowShowLive() { setDocView('sow'); renderSowHistory(); }
+    /* Restoring keeps the document it replaced, so restoring is itself
+       reversible — the same rule the plan restore follows, and for the same
+       reason: the commonest thing after a restore is discovering it was the
+       wrong one. */
+    function sowRestoreVersion(n) {
+      const v = sowVersionByNo(n);
+      if (!v) return;
+      if (!confirm('Restore SOW version ' + v.n + '?\n\nThe current draft is kept in the history first, so '
+        + 'this is reversible. The plan itself is NOT touched — only the document.')) return;
+      sowPushVersion('replaced by a restore of v' + v.n);
+      sowDraft = v.html;
+      sowUserEdited = true;
+      sowPushVersion('restored from v' + v.n);
+      saveLocal();
+      sowShowLive();
+      flashSaved('↩ SOW restored to version ' + v.n + ' — the draft it replaced is still in the history');
+    }
+    function sowHistoryHtml() {
+      if (!sowVersions.length)
+        return '<p class="help-text" style="margin:0">No versions yet. One is kept every time the SOW is '
+          + 'generated and every time an edit is saved, so the wording a client was sent stays reachable '
+          + 'after the next regeneration replaces it.</p>';
+      const live = sowVersions[sowVersions.length - 1];
+      const rows = sowVersions.slice().reverse().map(v => '<tr>'
+        + '<td style="white-space:nowrap"><b>v' + v.n + '</b>'
+          + (v.html === sowDraft ? ' <span class="badge badge-ok">current</span>' : '') + '</td>'
+        + '<td style="font-size:0.78rem;white-space:nowrap">' + escapeHtml(v.at) + ' ' + escapeHtml(v.ts) + '</td>'
+        + '<td style="font-size:0.8rem">' + escapeHtml(v.label || '') + '</td>'
+        + '<td style="font-size:0.78rem;white-space:nowrap">' + Math.round(v.chars / 1024 * 10) / 10 + ' KB</td>'
+        + '<td style="white-space:nowrap"><button class="btn-sm btn-secondary no-print" onclick="sowViewVersion('
+          + v.n + ')">View</button> <button class="btn-sm btn-secondary no-print" onclick="sowRestoreVersion('
+          + v.n + ')"' + (v.html === sowDraft ? ' disabled title="This is the current draft"' : '') + '>Restore</button></td>'
+        + '</tr>').join('');
+      return '<div class="table-wrap"><table><thead><tr><th>Version</th><th>Saved</th><th>What happened</th>'
+        + '<th>Size</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        + (sowVersions[0].trimmed
+            ? '<p class="help-text" style="margin:.35rem 0 0">' + sowVersions[0].trimmed + ' intermediate '
+              + 'version(s) dropped to stay under ' + SOW_VERSION_CAP + '. The first and the latest are never '
+              + 'dropped, so the original and the current one are always both here.</p>'
+            : '')
+        + '<p class="help-text" style="margin:.35rem 0 0">Restoring replaces the DOCUMENT only. The plan, the '
+          + 'baseline and the change-order chain are untouched — a SOW is a statement about the work, not the '
+          + 'work.</p>';
+    }
+    function renderSowHistory() {
+      const el = document.getElementById('sowHistory');
+      if (el) { try { el.innerHTML = sowHistoryHtml(); } catch (e) {} }
+    }
     async function copySOW() {
       if (!sowDraft) { alert('Generate the SOW draft first.'); return; }
       const plain = sowDraft.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#?\w{2,8};/g, ' ').replace(/\s+/g, ' ').trim();
@@ -25887,9 +26360,16 @@ Professional, client-ready, no hype, no invented facts.`;
            for the scope row; a version holds the AC TEXT as well, because
            "the criterion was reworded after sign-off" is the question
            acceptance needs answered and an id list cannot answer it. */
+        /* wbsIds travels too, because a sign-off can now name a PHASE, and
+           "which stories were inside that phase" is a question about the trace
+           at the moment of signing rather than about the trace today. Without
+           it the only answer available is the current one, and a story quietly
+           re-traced out of a signed phase would take its criteria with it and
+           leave no trace of having gone — which is precisely the class of
+           silent scope movement this whole chain exists to make loud. */
         stories: (((reqs && reqs.stories) || [])).map(s => ({
           id: String(s.id), audience: storyAudience(s), verification: s.verification || '',
-          want: String(s.want || ''),
+          want: String(s.want || ''), wbsIds: storyWbsIds(s).slice(),
           ac: (s.ac || []).map(a => ({ id: String(a.id), text: String(a.text || ''), type: a.type || '' }))
         }))
       };
@@ -26125,6 +26605,58 @@ Professional, client-ready, no hype, no invented facts.`;
        from, and because the split that matters is billable against not: an
        owner change and an added deliverable are different conversations. */
     let cmpFrom = null, cmpTo = NOW_V;
+    const diffMoney = v => (v > 0 ? '+' : '\u2212') + fmtMoney(Math.abs(Math.round(v)));
+    /* ONE RENDERER, TWO SURFACES. The compare view and the change-order
+       drill-in show the same typed records and must agree about them down to
+       the wording — a change order whose lines read differently from the
+       version diff they were BUILT from is two documents about one event, and
+       the client has both. Extracted rather than copied for that reason.
+
+       `hide` is the set of row keys whose price is withheld from this
+       rendering. It suppresses the FIGURE and nothing else: the row stays, the
+       grouping stays, and every total is computed from the unhidden data, so
+       hiding can change what a reader is shown and never what is true. */
+    function diffRowKey(d) { return String(d.kind) + '|' + String(d.id) + '|' + String(d.field || ''); }
+    function diffRowsHtml(diff, opts) {
+      const o = opts || {};
+      const hide = o.hide instanceof Set ? o.hide : new Set();
+      const groups = {};
+      (diff || []).forEach(d => { (groups[d.kind] = groups[d.kind] || []).push(d); });
+      return Object.keys(groups)
+        .sort((a, b) => (DIFF_KINDS[a] || { order: 99 }).order - (DIFF_KINDS[b] || { order: 99 }).order)
+        .map(k => {
+          const g = groups[k], meta = DIFF_KINDS[k] || { lbl: k, billable: false };
+          const sum = g.reduce((s, d) => s + (d.priceDelta || 0), 0);
+          const rows = g.map(d => {
+            const t = tasks.find(x => x.id === d.id);
+            const open = t ? ' onclick="openEditModal(' + t.id + ', true)" style="cursor:pointer"' : '';
+            const key = diffRowKey(d);
+            const off = hide.has(key);
+            const priceCell = off
+              ? '<span class="help-text" title="' + escapeHtml('Withheld from this document. The figure is '
+                  + 'unchanged underneath and still counted in the total.') + '">withheld</span>'
+              : (d.priceDelta ? diffMoney(d.priceDelta) : '<span class="help-text">no price impact</span>');
+            return '<tr' + open + (t ? ' title="Open this activity"' : '') + '>'
+              + (o.pick ? '<td style="width:1px" onclick="event.stopPropagation()"><input type="checkbox" '
+                  + (off ? '' : 'checked ') + 'onchange="' + o.pick + '(\'' + ekJs(key) + '\')" title="'
+                  + escapeHtml('Untick to withhold this line\u2019s price from the document. The total does not move.')
+                  + '" /></td>' : '')
+              + '<td style="font-size:0.8rem">' + escapeHtml(String(d.name)) + '</td>'
+              + '<td style="font-size:0.75rem;color:var(--muted);white-space:nowrap">' + escapeHtml(d.field || '') + '</td>'
+              + '<td style="font-size:0.78rem">' + (d.from == null ? '<span class="help-text">\u2014 not present \u2014</span>' : escapeHtml(String(d.from)).slice(0, 120)) + '</td>'
+              + '<td style="font-size:0.78rem">' + (d.to == null ? '<span class="help-text">\u2014 withdrawn \u2014</span>' : escapeHtml(String(d.to)).slice(0, 120)) + '</td>'
+              + '<td style="white-space:nowrap;font-size:0.78rem">' + (d.days ? (d.days > 0 ? '+' : '') + d.days.toFixed(1) + ' ' + unitLabel() : '\u2014') + '</td>'
+              + '<td style="white-space:nowrap;font-size:0.78rem' + (!off && d.priceDelta > 0 ? ';color:var(--critical)' : !off && d.priceDelta < 0 ? ';color:var(--success)' : '') + '">'
+                + priceCell + '</td>'
+              + '</tr>';
+          }).join('');
+          const nOff = g.filter(d => hide.has(diffRowKey(d))).length;
+          return '<tr class="vc-grp"><td colspan="' + (o.pick ? 7 : 6) + '"><b>' + escapeHtml(meta.lbl) + '</b> <span class="help-text">'
+            + g.length + (meta.billable ? ' \u00b7 normally billable' : ' \u00b7 no price of its own')
+            + (Math.abs(sum) >= 1 ? ' \u00b7 ' + diffMoney(sum) : '')
+            + (nOff ? ' \u00b7 ' + nOff + ' priced in aggregate' : '') + '</span></td></tr>' + rows;
+        }).join('');
+    }
     function versionCompareHtml() {
       if (!planVersions.length)
         return '<p class="help-text">No versions yet. One is taken every time you set a baseline, generate the '
@@ -26141,31 +26673,8 @@ Professional, client-ready, no hype, no invented facts.`;
           + escapeHtml(versionLabelOf(NOW_V)) + '</option>';
       const A = versionSnapOf(cmpFrom), B = versionSnapOf(cmpTo);
       const diff = (A && B) ? planDiff(A, B) : [];
-      const groups = {};
-      diff.forEach(d => { (groups[d.kind] = groups[d.kind] || []).push(d); });
-      const money = v => (v > 0 ? '+' : '−') + fmtMoney(Math.abs(Math.round(v)));
-      const body = Object.keys(groups)
-        .sort((a, b) => (DIFF_KINDS[a] || { order: 99 }).order - (DIFF_KINDS[b] || { order: 99 }).order)
-        .map(k => {
-          const g = groups[k], meta = DIFF_KINDS[k] || { lbl: k, billable: false };
-          const sum = g.reduce((s, d) => s + (d.priceDelta || 0), 0);
-          const rows = g.map(d => {
-            const t = tasks.find(x => x.id === d.id);
-            const open = t ? ' onclick="openEditModal(' + t.id + ', true)" style="cursor:pointer"' : '';
-            return '<tr' + open + (t ? ' title="Open this activity"' : '') + '>'
-              + '<td style="font-size:0.8rem">' + escapeHtml(String(d.name)) + '</td>'
-              + '<td style="font-size:0.75rem;color:var(--muted);white-space:nowrap">' + escapeHtml(d.field || '') + '</td>'
-              + '<td style="font-size:0.78rem">' + (d.from == null ? '<span class="help-text">— not present —</span>' : escapeHtml(String(d.from)).slice(0, 120)) + '</td>'
-              + '<td style="font-size:0.78rem">' + (d.to == null ? '<span class="help-text">— withdrawn —</span>' : escapeHtml(String(d.to)).slice(0, 120)) + '</td>'
-              + '<td style="white-space:nowrap;font-size:0.78rem">' + (d.days ? (d.days > 0 ? '+' : '') + d.days.toFixed(1) + ' ' + unitLabel() : '—') + '</td>'
-              + '<td style="white-space:nowrap;font-size:0.78rem' + (d.priceDelta > 0 ? ';color:var(--critical)' : d.priceDelta < 0 ? ';color:var(--success)' : '') + '">'
-                + (d.priceDelta ? money(d.priceDelta) : '<span class="help-text">no price impact</span>') + '</td>'
-              + '</tr>';
-          }).join('');
-          return '<tr class="vc-grp"><td colspan="6"><b>' + escapeHtml(meta.lbl) + '</b> <span class="help-text">'
-            + g.length + (meta.billable ? ' · normally billable' : ' · no price of its own')
-            + (Math.abs(sum) >= 1 ? ' · ' + money(sum) : '') + '</span></td></tr>' + rows;
-        }).join('');
+      const body = diffRowsHtml(diff);
+      const money = diffMoney;
       const total = diff.reduce((s, d) => s + (d.priceDelta || 0), 0);
       return '<div class="vc-bar">'
         + '<label class="help-text" style="margin:0">From <select class="mini-inp" style="width:auto" onchange="cmpSet(\'from\', this.value)">' + opts(cmpFrom) + '</select></label>'
@@ -26416,7 +26925,13 @@ Professional, client-ready, no hype, no invented facts.`;
     }
 
     // ---- Change order: diff current plan vs the SOW baseline ----
-    async function draftChangeOrder() {
+    /* `opts.keepNarrative` re-draws the document without going back to the AI.
+       A redraw triggered by ticking a price checkbox must not spend a call and
+       must not replace the rationale somebody has already read and approved —
+       re-rolling the prose because a checkbox moved would be a different
+       document arriving for a reason nobody asked for. */
+    async function draftChangeOrder(opts) {
+      const keep = !!(opts && opts.keepNarrative) && draftChangeOrder._rationale != null;
       if (!sowBaseline) { alert('Generate the SOW first — that captures the contract baseline the change order diffs against.'); return; }
       if (!ensureCalc()) return;
       /* THE DIFF IS STRUCTURED NOW, AND KEYED BY ID.
@@ -26461,8 +26976,8 @@ Professional, client-ready, no hype, no invented facts.`;
           + ' — nothing to change-order.');
         return;
       }
-      let rationale = '';
-      if (document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE)) {
+      let rationale = keep ? draftChangeOrder._rationale : '';
+      if (!keep && (document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) {
         const onDelta = streamShow('Drafting change-order rationale');
         try {
           flashSaved('⏳ Drafting change-order rationale…');
@@ -26473,10 +26988,16 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
           streamHide(true);
         } catch (e) { streamHide(false); /* skeleton without narrative */ }
       }
+      draftChangeOrder._rationale = rationale;
       const td = 'padding:5px 9px;border:1px solid #cbd5e1;font-size:12.5px;';
       const th = td + 'background:#f1f5f9;font-weight:700;text-align:left;';
       const u = unitLabel();
       const coNo = 'CO-' + String(coLog.length + 1).padStart(3, '0');
+      /* Carried across a re-draft. Re-generating the document after choosing
+         which lines to price should not silently put every price back on the
+         page a client is about to be sent. */
+      const coHidden = new Set((draftChangeOrder._pending && draftChangeOrder._pending.no === coNo
+        && draftChangeOrder._pending.hidePrice) || []);
       /* ACCEPTED ones only. "As previously amended by CO-002" about a change
          order the client rejected is a claim on the face of a contract document
          that the contract was amended by something nobody signed. The lint
@@ -26498,6 +27019,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
              which is exactly why "unpriced scope" had to be a warning rather
              than a column. A change order a client cannot add up is a number
              they are asked to take on faith. -->
+        ${coHidden.size ? `<p style="font-size:12px;color:#475569;margin:6px 0">${coHidden.size} of these ${diff.length} lines ${coHidden.size === 1 ? 'is' : 'are'} <b>priced in aggregate</b> rather than individually. The total below is the full figure for every line, priced or aggregated.</p>` : ''}
         <table style="border-collapse:collapse"><tr><th style="${th}">Change</th><th style="${th}">Item</th><th style="${th}">From → to</th><th style="${th}">Effort</th><th style="${th}">Price impact</th></tr>
           ${diff.map(d => {
             const k = DIFF_KINDS[d.kind] || { lbl: d.kind, billable: false };
@@ -26508,7 +27030,15 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
               : d.kind === 'removed' ? 'withdrawn'
               : String(d.from == null ? '(none)' : d.from).slice(0, 60) + ' → ' + String(d.to == null ? '(none)' : d.to).slice(0, 60);
             const eff = d.days ? (d.days > 0 ? '+' : '') + d.days.toFixed(1) + ' ' + u : '—';
-            const money = d.priceDelta
+            /* WITHHELD IS NOT ZERO, and the document must not let the two be
+               confused. A withheld line still carries its money into the total
+               below; it simply does not print the figure beside itself. Saying
+               "priced in aggregate" rather than leaving the cell blank is the
+               whole difference between a commercial choice and a document that
+               does not add up. */
+            const money = coHidden.has(diffRowKey(d))
+              ? '<span style="color:#64748b">priced in aggregate</span>'
+              : d.priceDelta
               ? (d.priceDelta > 0 ? '+' : '−') + fmtMoney(Math.abs(Math.round(d.priceDelta))).replace('$', '$')
               : (k.billable ? '<span style="color:#b91c1c">not priced</span>' : 'no price impact');
             return `<tr><td style="${td};color:${col}">${escapeHtml(k.lbl)}</td><td style="${td}">${escapeHtml(String(d.name))}${d.field ? ` <span style="color:#94a3b8">(${escapeHtml(d.field)})</span>` : ''}</td><td style="${td};font-size:11.5px">${escapeHtml(fromTo)}</td><td style="${td}">${eff}</td><td style="${td}">${money}</td></tr>`;
@@ -26562,15 +27092,12 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         diff: JSON.parse(JSON.stringify(diff)),
         fromV: base ? base.v : null,
         lineSum: Math.round(diff.reduce((a2, d) => a2 + (d.priceDelta || 0), 0)),
+        hidePrice: [...coHidden],
         finishDelta, priceDelta, newFinish: curFinish, newPrice: curPrice
       };
-      document.getElementById('sowContainer').innerHTML = coDraft +
-        `<div class="no-print" style="margin-top:0.75rem;padding:0.7rem 0.9rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap">
-          <button class="btn-sm btn-secondary" onclick="issueChangeOrder()" title="Log ${coNo} as SENT and awaiting signature. Nothing is agreed and the baseline does not roll — this is how the log tells apart what you have asked for from what you have been given.">📤 Mark ${coNo} issued</button>
-          <button class="btn-sm btn-success" onclick="approveChangeOrder()" title="Logs ${coNo} in the change history and rolls the contract baseline to today's plan — the NEXT change order will diff only changes made after this one">✅ Mark ${coNo} accepted &amp; roll baseline</button>
-          <span class="help-text" style="margin:0">issue it when you send it, accept it when they sign — an issued change order is a request, and counting one as revenue is how a forecast goes wrong quietly</span>
-        </div>`;
-      flashSaved('✓ ' + coNo + ' drafted — review, 📋 Copy CO, then mark approved once signed');
+      setDocView('co');
+      flashSaved('✓ ' + coNo + ' drafted — review, 📋 Copy CO, then mark approved once signed. The SOW is still '
+        + 'here: switch between the two documents above the box.');
     }
     /* ISSUED does NOT roll the baseline, and that is the point of having it.
        Rolling would tell the next change order that this scope is already
@@ -26583,7 +27110,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       if ((coLog || []).some(c => c.no === p.no)) { alert(p.no + ' is already in the log.'); return; }
       coLog.push({ no: p.no, date: fmtISO(new Date()), scope: p.scope, detail: p.detail,
         finishDelta: p.finishDelta, priceDelta: p.priceDelta, newFinish: p.newFinish, newPrice: p.newPrice,
-        diff: p.diff || [], lineSum: p.lineSum || 0,
+        diff: p.diff || [], lineSum: p.lineSum || 0, hidePrice: (p.hidePrice || []).slice(),
         fromV: p.fromV, toV: null, state: 'issued', stateAt: fmtISO(new Date()) });
       saveLocal();
       renderCoHistory();
@@ -26617,7 +27144,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       const toV = pushVersion('co', p.no);
       coLog.push({ no: p.no, date: fmtISO(new Date()), scope: p.scope, detail: p.detail,
         finishDelta: p.finishDelta, priceDelta: p.priceDelta, newFinish: p.newFinish, newPrice: p.newPrice,
-        diff: p.diff || [], lineSum: p.lineSum || 0,
+        diff: p.diff || [], lineSum: p.lineSum || 0, hidePrice: (p.hidePrice || []).slice(),
         fromV: p.fromV, toV: toV.v, state: 'accepted', stateAt: fmtISO(new Date()) });
       /* No second snapshot. snapshotSowBaseline() PUSHES a version, so calling
          it here wrote a duplicate of the one taken two lines above — two
@@ -26665,11 +27192,24 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
        because clients change their minds. */
     function coStateCell(c) {
       const st = coState(c), d = CO_STATES[st];
+      /* SUPERSEDED USED TO BE A ONE-WAY DOOR — an empty transition list, so a
+         mis-click was permanent and the only way back was editing storage by
+         hand. Reported by exactly that: "i clicked superceded once on accident
+         can't go back also".
+         There was never a reason for it. Every other state here is reversible
+         because the underlying facts are reversible — clients change their
+         minds, and a person clicks the wrong button. Superseding is a piece of
+         BOOKKEEPING about which change order replaced which; it moves no money
+         and touches no plan, so it is the LEAST dangerous of the four to undo
+         and it was the only one that could not be. */
       const to = { issued: ['accepted', 'rejected'], accepted: ['rejected', 'superseded'],
-                   rejected: ['accepted'], superseded: [] }[st] || [];
+                   rejected: ['accepted'], superseded: ['accepted', 'rejected'] }[st] || [];
       return '<span class="badge ' + d.cls + '" title="' + escapeHtml(d.tip) + '">' + escapeHtml(d.lbl) + '</span>'
         + (c.reversedAt ? ' <span class="help-text" title="Its changes were put back into the plan on this day">↩ reversed</span>' : '')
-        + to.map(k => ' <button class="btn-sm btn-secondary no-print" onclick="setCoState(\'' + ekJs(c.no)
+        // stopPropagation: the history row OPENS the change order now, and a
+        // state button that also opened it would leave a modal over the change
+        // the reader just made
+        + to.map(k => ' <button class="btn-sm btn-secondary no-print" onclick="event.stopPropagation();setCoState(\'' + ekJs(c.no)
             + '\',\'' + k + '\')" title="' + escapeHtml(CO_STATES[k].tip) + '">→ '
             + escapeHtml(CO_STATES[k].lbl.toLowerCase()) + '</button>').join('');
     }
@@ -26829,8 +27369,8 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         <summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)"><span class="ico" aria-hidden="true">📑</span> Change-order history (${coLog.length}) — <b>agreed</b>: ${cumSched >= 0 ? '+' : ''}${cumSched} days, ${cumPrice >= 0 ? '+' : ''}${fmtMoney(Math.abs(cumPrice)).replace('$', cumPrice < 0 ? '−$' : '$')}${pending.length ? ` · <span style="color:var(--warn)">${pending.length} still out for signature worth ${pendPrice >= 0 ? '+' : ''}${fmtMoney(Math.abs(pendPrice))}</span>` : ''}</summary>
         <div class="table-wrap" style="margin-top:0.5rem"><table>
           <thead><tr><th>CO</th><th title="Only accepted scope is agreed scope. An issued change order is a request; a rejected one is work you may have done and cannot bill.">State</th><th>Raised</th><th>Scope</th><th>Schedule Δ</th><th title="The project price movement this change order recorded">Price Δ</th><th title="What its own lines added up to. Where the two differ, part of the movement was the rate card or the pricing basis rather than scope.">Lines</th><th>New finish</th><th title="The plan version before and after — any two can be diffed">Versions</th></tr></thead>
-          <tbody>${coLog.map(c => `<tr title="${escapeHtml(c.detail || '')}">
-            <td><b>${escapeHtml(c.no)}</b></td>
+          <tbody>${coLog.map(c => `<tr class="co-row" onclick="coOpen('${ekJs(c.no)}')" title="${escapeHtml('Open ' + c.no + ' — the narrative, every typed line, both plan versions and its state history')}">
+            <td><b>${escapeHtml(c.no)}</b> <span class="co-open" aria-hidden="true">›</span></td>
             <td style="white-space:nowrap">${coStateCell(c)}</td>
             <td style="white-space:nowrap">${escapeHtml(c.date)}</td>
             <td style="font-size:0.82rem">${escapeHtml(c.scope)}</td>
@@ -26842,6 +27382,158 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         </table></div>
         <p class="help-text" style="margin-top:0.4rem">Running total per the change-control log — nobody gets surprised at the end. Hover a row for the line-level detail.</p>
       </details>` + versionChainHtml();
+    }
+    /* ── EVERY DETAIL OF ONE CHANGE ORDER ────────────────────────────────────
+       What was on the record and unreachable: the narrative, the typed line
+       set, both plan versions, the state history, and the arithmetic that
+       reconciles its line sum to the price movement it claimed. All of it was
+       stored; none of it could be looked at.
+
+       The lines are re-rendered from the STORED diff, never recomputed from
+       today's plan. A change order is a statement about a moment, and rebuilding
+       its lines from the current plan would quietly rewrite history every time
+       somebody edited an estimate. */
+    let coOpenNo = null;
+    /* '__draft__' resolves to the UNLOGGED pending change order, so the same
+       drill-in serves both. The choice of which lines to price is made before
+       the document is sent, which is before there is a log entry to hang it on
+       — a picker that only worked on history would be a picker you could only
+       reach after it was too late to use. */
+    const DRAFT_CO = '__draft__';
+    function coRecord() {
+      if (coOpenNo === DRAFT_CO) return draftChangeOrder._pending || null;
+      return (coLog || []).find(x => String(x.no) === coOpenNo) || null;
+    }
+    function coOpen(no) {
+      const c = String(no) === DRAFT_CO ? draftChangeOrder._pending
+              : (coLog || []).find(x => String(x.no) === String(no));
+      if (!c) return;
+      coOpenNo = String(no) === DRAFT_CO ? DRAFT_CO : String(c.no);
+      document.getElementById('coModalTitle').textContent =
+        (coOpenNo === DRAFT_CO ? 'Draft change order ' : 'Change order ') + c.no;
+      coPaint();
+      openOverlay(document.getElementById('coModal'));
+    }
+    function closeCoModal() { coOpenNo = null; closeOverlay('coModal'); }
+    function coPaint() {
+      const el = document.getElementById('coModalBody');
+      const c = coRecord();
+      if (!el || !c) return;
+      const draft = coOpenNo === DRAFT_CO;
+      const st = draft ? null : coState(c), d = (st && CO_STATES[st]) || {};
+      const hide = new Set(c.hidePrice || []);
+      const diff = c.diff || [];
+      const shown = diff.filter(x => !hide.has(diffRowKey(x)));
+      const shownSum = shown.reduce((s, x) => s + (x.priceDelta || 0), 0);
+      const lineSum = c.lineSum == null ? diff.reduce((s, x) => s + (x.priceDelta || 0), 0) : c.lineSum;
+      const gap = (c.priceDelta || 0) - lineSum;
+      const stat = (lbl, val, tip) => '<div class="stat-card" style="padding:.5rem .6rem"'
+        + (tip ? ' title="' + escapeHtml(tip) + '"' : '') + '><div class="value" style="font-size:1.05rem">'
+        + val + '</div><div class="label">' + escapeHtml(lbl) + '</div></div>';
+      const vBtn = (n, lbl) => n
+        ? '<button class="btn-sm btn-secondary no-print" onclick="versionView(' + n + ')" title="'
+          + escapeHtml('Open the whole plan exactly as it read at v' + n) + '">' + lbl + ' v' + n + '</button>'
+        : '<span class="help-text">' + lbl + ' — none recorded</span>';
+      el.innerHTML =
+        '<div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.6rem">'
+          + (draft ? '<span class="badge badge-slack" title="' + escapeHtml('Not in the log yet. Issue it or '
+              + 'accept it from the draft below and it becomes a numbered entry with a state.')
+              + '">Not yet logged</span>' : coStateCell(c))
+          + '<span class="help-text" style="margin-left:auto">raised ' + escapeHtml(c.date || 'today, unlogged')
+          + (c.stateAt ? ' · state set ' + escapeHtml(c.stateAt) : '')
+          + (c.reversedAt ? ' · reversed ' + escapeHtml(c.reversedAt) : '') + '</span></div>'
+        + (!draft && st !== 'accepted'
+            ? '<div class="conflict-card" style="margin:0 0 .7rem;font-size:0.82rem">This change order is <b>'
+              + escapeHtml((d.lbl || st).toLowerCase()) + '</b>, so none of the money below counts as agreed. '
+              + escapeHtml(d.tip || '') + '</div>'
+            : '')
+        + '<p style="margin:0 0 .7rem;font-size:0.88rem;line-height:1.5">'
+          + (c.detail ? escapeHtml(c.detail) : '<span class="help-text">No narrative was recorded with this one.</span>')
+          + '</p>'
+        + '<div class="stat-grid" style="margin-bottom:.7rem">'
+          + stat('Scope', escapeHtml(String(c.scope || '—')).slice(0, 60))
+          + stat('Schedule', ((c.finishDelta || 0) >= 0 ? '+' : '') + (c.finishDelta || 0) + ' d',
+                 'Movement in the forecast finish date this change order recorded.')
+          + stat('Price impact', diffMoney(c.priceDelta || 0),
+                 'The project price movement recorded against this change order.')
+          + stat('Sum of its lines', diffMoney(lineSum),
+                 'What the typed lines below add up to. Where this differs from the price impact, part of the '
+                 + 'movement was the rate card or the pricing basis rather than scope.')
+          + stat('New finish', escapeHtml(c.newFinish || '—'))
+        + '</div>'
+        + (Math.abs(gap) > 1
+            ? '<div class="conflict-card" style="border-left-color:var(--warn);margin:0 0 .7rem;font-size:0.82rem">'
+              + '<b>' + diffMoney(gap) + ' of the price movement is not in these lines.</b> The lines add to '
+              + diffMoney(lineSum) + ' and the change order recorded ' + diffMoney(c.priceDelta || 0)
+              + '. The difference came from something other than scope — a rate change, a different pricing '
+              + 'basis, or a discount — and a client reading only the lines will not find it.</div>'
+            : '')
+        + '<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-bottom:.6rem">'
+          + vBtn(c.fromV, 'Before') + '<span aria-hidden="true" style="color:var(--muted)">→</span>'
+          + vBtn(c.toV, 'After')
+          + (c.fromV && c.toV
+              ? '<button class="btn-sm btn-secondary no-print" onclick="coCompare(\'' + ekJs(c.no) + '\')" title="'
+                + escapeHtml('Load these two into the compare view and recompute the difference from the '
+                  + 'snapshots — the independent check on the lines listed here') + '">⇄ Diff these two</button>'
+              : '')
+        + '</div>'
+        + '<h4 style="font-size:0.85rem;margin:.2rem 0 .35rem">What changed — ' + diff.length + ' line'
+          + (diff.length === 1 ? '' : 's') + '</h4>'
+        + '<p class="help-text" style="margin:0 0 .4rem">Untick a line to withhold its price from the change-order '
+          + 'document. It stays in the list and stays in every total — withholding decides what the client is '
+          + 'shown, never what the figure is.'
+          + (hide.size ? ' <b>' + hide.size + ' withheld</b>, worth ' + diffMoney(lineSum - shownSum)
+             + ' of the ' + diffMoney(lineSum) + ' total.' : '') + '</p>'
+        + (diff.length
+            ? '<div class="table-wrap"><table class="vc-t"><thead><tr><th title="Ticked lines show their price on the document">$</th>'
+              + '<th>Item</th><th>Field</th><th>Was</th><th>Now</th><th>Effort</th><th>Price impact</th>'
+              + '</tr></thead><tbody>' + diffRowsHtml(diff, { pick: 'coTogglePrice', hide: hide })
+              + '</tbody></table></div>'
+            : '<p class="help-text">No typed lines were stored with this change order — it was logged before the '
+              + 'structured change set existed, so only the totals above can be relied on. It also cannot be '
+              + 'reversed, for the same reason.</p>')
+        + '<div style="margin-top:.7rem;display:flex;gap:.4rem;flex-wrap:wrap">'
+          + '<button class="btn-sm btn-secondary no-print" onclick="coSetAllPrices(1)">Show every price</button>'
+          + '<button class="btn-sm btn-secondary no-print" onclick="coSetAllPrices(0)">Withhold every price</button>'
+        + '</div>';
+    }
+    /* Stored on the change order, not held in a variable: which prices a client
+       was shown is part of what was sent, and a decision that evaporates on
+       reload is not a record of anything. */
+    function coTogglePrice(key) {
+      const c = coRecord();
+      if (!c) return;
+      const set = new Set(c.hidePrice || []);
+      if (set.has(key)) set.delete(key); else set.add(key);
+      c.hidePrice = [...set];
+      saveLocal(); coPaint(); coAfterPriceChange();
+    }
+    function coSetAllPrices(show) {
+      const c = coRecord();
+      if (!c) return;
+      c.hidePrice = show ? [] : (c.diff || []).map(diffRowKey);
+      saveLocal(); coPaint(); coAfterPriceChange();
+    }
+    /* The DOCUMENT is what the choice is for, so redraw it. Without this the
+       picker would look like it worked and the page a client is about to be
+       sent would still carry every figure — the change would live only in a
+       modal nobody sends. */
+    function coAfterPriceChange() {
+      try { renderCoHistory(); } catch (e) {}
+      if (coOpenNo === DRAFT_CO) { try { draftChangeOrder({ keepNarrative: true }); } catch (e) {} }
+      try { paintDocView(); } catch (e) {}
+    }
+    // Loads the change order's two ends into the compare view, which recomputes
+    // the difference from the SNAPSHOTS. Two routes to one answer: if they ever
+    // disagree, the stored lines are wrong and that is worth being able to see.
+    function coCompare(no) {
+      const c = (coLog || []).find(x => String(x.no) === String(no));
+      if (!c || !c.fromV || !c.toV) return;
+      cmpFrom = c.fromV; cmpTo = c.toV;
+      closeCoModal();
+      paintVersionCompare();
+      const el = document.getElementById('versionCompare') || document.getElementById('versionCompareBl');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
     async function copyCO() {
       if (!coDraft) { alert('Draft a change order first (Δ Change order).'); return; }
