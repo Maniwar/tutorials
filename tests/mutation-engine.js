@@ -313,6 +313,22 @@ const MUTANTS = [
     find: '        t.predecessors = (t.predecessors || []).filter(pr => live.has(pr.id));',
     with: '        t.predecessors = (t.predecessors || []);' },
 
+  { what: 'baseline: a restore puts the activities back and leaves the criteria drifted',
+    find: '        st.ac = (was.ac || []).map(a => ({ id: String(a.id), text: String(a.text || \'\'),\n                                           type: a.type || \'\' }));',
+    with: '        /* mutant: the criteria are left as they now stand */' },
+
+  { what: 'baseline: the version chain grows without bound',
+    find: '      if (planVersions.length <= VERSION_CAP) return 0;',
+    with: '      return 0;' },
+
+  { what: 'baseline: the trim takes a version a change order points at',
+    find: "      if (v.kind === 'sow' || v.kind === 'co' || v.kind === 'signoff') return true;",
+    with: '      return false;' },
+
+  { what: 'baseline: versions are dropped and nothing records that they were',
+    find: '        planVersions[0].trimmed = (planVersions[0].trimmed || 0) + dropped;',
+    with: '        /* mutant: the gap is left unexplained */' },
+
   { what: 'baseline: a sign-off records a date instead of the version it signed',
     find: "      const v = pushVersion('signoff', 'Accepted: ' + (ref || scope));",
     with: '      const v = { v: null };' },

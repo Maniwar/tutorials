@@ -873,6 +873,83 @@ const QA = JSON.parse(fs.readFileSync(
             + 'a schedule that will not compute');
       }
 
+      /* ── 3i. RESTORE PUTS THE CRITERIA BACK, NOT ONLY THE ACTIVITIES ────
+         The contradiction this closes: the tool raises a finding when a
+         criterion is reworded after somebody signed for it, and for one session
+         could not undo it. Detecting a problem you refuse to fix is worse than
+         not detecting it, because the reader assumes there is a way through.
+         The assertion is that the DRIFT CLEARS — not that some text matches —
+         because drift is the thing the finding is about. */
+      {
+        const vc = pushVersion('sow', 'criteria-probe');
+        const soC = recordSignoff('story', ((reqs && reqs.stories) || [])[0].id, 'Client', '');
+        const sc = ((reqs && reqs.stories) || [])[0];
+        const wasText = sc.ac[0].text, wasN = (sc.ac || []).length;
+        sc.ac[0].text = String(wasText) + ' AND exports to PDF';
+        sc.ac.push({ id: 'AC-PROBE.9', text: 'added after the contract', type: 'happy' });
+        out.driftBeforeRestore = signoffDrift().length;
+        if (!out.driftBeforeRestore)
+          fail.push('rewording a signed criterion raised no drift, so nothing below tested the repair');
+        versionRestore(vc.v);
+        const back = ((reqs && reqs.stories) || []).find(x => String(x.id) === String(sc.id));
+        out.driftAfterRestore = signoffDrift().length;
+        out.acTextBack = back && back.ac[0].text === wasText;
+        out.acCountBack = back && (back.ac || []).length === wasN;
+        if (out.driftAfterRestore)
+          fail.push('restoring the version the sign-off was taken against left ' + out.driftAfterRestore
+            + ' criteri(on) still drifted — the plan went back and the wording did not, so the tool raises a '
+            + 'finding it cannot act on');
+        if (!out.acTextBack) fail.push('a reworded acceptance criterion was not restored to its agreed wording');
+        if (!out.acCountBack)
+          fail.push('a criterion added after the version survived a restore to it, so the agreed set is not '
+            + 'what comes back');
+      }
+
+      /* ── 3j. THE HISTORY IS BOUNDED, AND NOTHING LOAD-BEARING IS DROPPED ─
+         A version is a full copy of the plan — measured at 23 KB against a plan
+         of 388 KB — and one is taken on every commitment. Unbounded, that is a
+         save that quietly stops working, which is the failure shape this
+         codebase refuses everywhere else. But a cap that drops the wrong thing
+         is worse than none: a change order or a sign-off pointing at a version
+         that is not in the file breaks the comparison AND the drift check, and
+         both would fail silently. */
+      {
+        const beforeN = planVersions.length;
+        for (let i = 0; i < VERSION_CAP + 20; i++) setBaseline();
+        out.versionsAfterFlood = planVersions.length;
+        out.versionCap = VERSION_CAP;
+        if (planVersions.length > VERSION_CAP + 5)
+          fail.push('after ' + (VERSION_CAP + 20) + ' commitments the chain holds '
+            + planVersions.length + ' versions against a cap of ' + VERSION_CAP
+            + ' — each one is a full copy of the plan, so this grows the file without bound');
+        const dangling = (coLog || []).filter(c => (c.fromV && !versionByNo(c.fromV))
+                                               || (c.toV && !versionByNo(c.toV))).length
+          + (signoffs || []).filter(so2 => so2.v && !versionByNo(so2.v)).length;
+        out.danglingPointers = dangling;
+        if (dangling)
+          fail.push(dangling + ' change order(s) or sign-off(s) point at a version the trim dropped — the '
+            + 'comparison and the drift check both go silently blind, which is worse than a bigger file');
+        if (!planVersions.some(v2 => v2.kind === 'sow'))
+          fail.push('the contract baseline was trimmed out of the history');
+        if (!planVersions.some(v2 => v2.kind === 'signoff'))
+          fail.push('a version a sign-off was taken against was trimmed out of the history');
+        out.trimmedCount = planVersions[0] && planVersions[0].trimmed;
+        if (beforeN + VERSION_CAP + 20 > planVersions.length && !out.trimmedCount)
+          fail.push('versions were dropped and nothing records how many, so the gaps in the numbering are '
+            + 'unexplained and the history reads as if it were complete');
+        // and the commitment history must not offer a button into a trimmed one
+        switchTab('baseline'); renderBaseline();
+        const blh = document.getElementById('view-baseline');
+        const dead = [...blh.querySelectorAll('button')]
+          .filter(b2 => /what moved/i.test(b2.textContent || ''))
+          .filter(b2 => { const m2 = (b2.getAttribute('onclick') || '').match(/compareFromVersion\((\d+)/);
+                          return m2 && !versionByNo(Number(m2[1])); }).length;
+        out.deadCompareButtons = dead;
+        if (dead)
+          fail.push(dead + ' commitment row(s) offer to show what moved since a version that has been '
+            + 'trimmed — a dead control reads as a broken comparison rather than as a bounded history');
+      }
+
       /* ── 4. SIGN-OFF IS AGAINST A VERSION, NOT A DATE ───────────────────
          Otherwise a criterion reworded the day after signing is invisible. */
       const s0 = ((reqs && reqs.stories) || [])[0];
