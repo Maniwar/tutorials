@@ -1159,6 +1159,11 @@
     .ptr-drv-v-bad { color: var(--critical); }
     .ptr-drv-v-good { color: var(--success); }
     .ptr-drv-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
+    /* One line, ellipsed at the real width rather than at a character count.
+       The token is inline-flex, so the NAME span is what has to be clamped —
+       clamping the token itself just moves the overflow inside it. */
+    .ptr-drv-main > .ek { max-width: 100%; }
+    .ptr-drv-main > .ek .ek-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
     .ptr-drv-sub {
       font-size: var(--t-xs); font-weight: 500; color: var(--muted);
       line-height: 1.35; white-space: normal;
@@ -3147,14 +3152,17 @@ Or say what you want, in your own words:
               <button type="button" class="btn-sm btn-secondary" onclick="raidAddOptionRow()">+ Add an option</button>
               <p class="help-text" id="rOptionsHint" style="margin:0.3rem 0 0"></p>
             </div>
-            <!-- FIVE WHYS. "Say why" used to open a form with one description
-                 box, and a description box collects the FIRST answer — which is
-                 almost never the cause. "The build slipped" is a restatement of
-                 the miss, not a reason for it. -->
-            <div class="form-group" id="rWhyRow">
-              <span class="fg-head"><label>Why did it happen?</label><button type="button" class="info-icon" aria-label="About five whys" data-help="One question at a time, each built from your last answer. The first answer to why is usually a restatement of the symptom, and the fix that follows it is a patch — you address what you can see and the same thing happens again next quarter under a different name. Keep asking and the chain usually turns from an event into a condition somewhere around the third or fourth step: not the client was slow to review but nobody is named as the approver in the contract. The last line is the one worth fixing, and it is what this stores as the root cause. Five is a ceiling, not a quota — end it the moment it bottoms out.">i</button></span>
-              <div id="rWhys"></div>
-            </div>
+            <!-- ORDER IS THE LOGIC. "Why did it happen?" used to sit ABOVE
+                 "Did it hold?", so the form asked for the cause of an event it
+                 had not yet established had occurred — on an assumption still
+                 marked "not recorded yet", every one of those five whys is
+                 answering a question about something that may never have gone
+                 wrong. Reported from the screen: the presumption is in the
+                 sequence, not in any single field.
+                 Outcome first, and the whys appear only once the answer is one
+                 that means it TURNED. The model already knew which those are —
+                 RAID_OUTCOMES marks them `explains` — and the form simply was
+                 not asking in that order. -->
             <div class="form-group" id="rOutcomeRow" style="display:none">
               <span class="fg-head"><label for="rOutcome">Did it happen?</label><button type="button" class="info-icon" aria-label="About outcomes" data-help="Status tracks how much attention an entry still needs. This tracks how it TURNED OUT, which is a different fact recorded on a different day. It matters because only an entry that turned explains a number: a risk that materialised, or an assumption that did not hold, is a cause and is shown in red beside the variance it caused. One that is still pending, was avoided, or is holding is being watched, not blamed, and is shown in grey so it never stands in for a reason. Leaving this blank is itself reported — on an activity that is finished or overdue, nobody having said whether a linked risk turned is a gap the health check will name.">i</button></span>
               <div style="display:grid;grid-template-columns:1fr 2fr;gap:0.75rem">
@@ -3163,6 +3171,15 @@ Or say what you want, in your own words:
               </div>
               <p class="help-text" id="rOutcomeHint" style="margin:0.3rem 0 0"></p>
             </div>
+            <!-- FIVE WHYS. "Say why" used to open a form with one description
+                 box, and a description box collects the FIRST answer — which is
+                 almost never the cause. "The build slipped" is a restatement of
+                 the miss, not a reason for it. -->
+            <div class="form-group" id="rWhyRow" style="display:none">
+              <span class="fg-head"><label>Why did it happen?</label><button type="button" class="info-icon" aria-label="About five whys" data-help="One question at a time, each built from your last answer. The first answer to why is usually a restatement of the symptom, and the fix that follows it is a patch — you address what you can see and the same thing happens again next quarter under a different name. Keep asking and the chain usually turns from an event into a condition somewhere around the third or fourth step: not the client was slow to review but nobody is named as the approver in the contract. The last line is the one worth fixing, and it is what this stores as the root cause. Five is a ceiling, not a quota — end it the moment it bottoms out.">i</button></span>
+              <div id="rWhys"></div>
+            </div>
+            <p class="help-text" id="rWhyGate" style="display:none;margin:-0.4rem 0 0.9rem"></p>
             <div class="form-group"><label for="rDesc">Description / context</label><textarea id="rDesc" rows="2" placeholder="What is actually going on — the detail you would want six months from now"></textarea></div>
             <div class="form-group"><label for="rMitigation">Mitigation / response / detail</label><textarea id="rMitigation" rows="2"></textarea></div>
             <div style="display:flex;gap:0.5rem;justify-content:flex-end">
@@ -3287,7 +3304,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.04.1633</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.04.1644</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -11436,7 +11453,40 @@ Or say what you want, in your own words:
               ? ' <b>The effort did not move and the feature set did</b> — those criteria were absorbed into '
                 + 'estimates that were written before they existed, which is the least visible way to give work away.'
               : '')
-          + (scp.unpriced ? ' <b>No change order has ever been raised</b> — this is scope you are building for free.' : '');
+          + (scp.unpriced ? ' <b>No change order has ever been raised</b> — this is scope you are building for free.' : '')
+          /* WHICH AGREEMENT IS THIS MEASURED AGAINST. Three references live in
+             this file and only one of them feeds this row. setBaseline freezes
+             the dates, the money AND the feature set at one instant, and that
+             frozen feature set is what "scope drift" is measured from.
+             Approving a change order does something different: it takes a plan
+             VERSION and rolls the contract baseline, so the NEXT change order
+             lists only what happened after it. It deliberately does not touch
+             the baseline this row reads.
+
+             The consequence is one a reader will find on their own and mistrust
+             the panel for: sign a change order, and the scope it agreed keeps
+             being reported here as drift, because the reference predates it.
+             Both numbers are correct about different questions. What was
+             missing was anything saying so — and rolling the feature set
+             silently on approval would be worse, because a change order
+             approved without re-baselining is exactly the case where real
+             drift must stay visible. So it is stated, with the one action that
+             reconciles them. */
+          + (() => {
+            if (!fs2.hb) return '';
+            const since = (typeof coAccepted === 'function' ? coAccepted() : [])
+              .filter(c => String(c.date || '') > String(fs2.at || baselineDate || ''));
+            if (!since.length) return '';
+            return ' <b>' + since.length + ' change order' + (since.length === 1 ? '' : 's')
+              + ' (' + since.map(c => escapeHtml(c.no)).join(', ') + ') '
+              + (since.length === 1 ? 'was' : 'were') + ' accepted after this baseline was taken</b>, and this '
+              + 'row measures against the baseline — so scope those change orders agreed is still counted here '
+              + 'as drift. Both figures are right about different questions: the change-order log says what the '
+              + 'client has signed, this row says what has moved since the plan was last frozen. '
+              + '<button class="btn-sm btn-secondary no-print" onclick="setBaseline()" title="Freeze the dates, '
+              + 'the money and the feature set as they now stand, so this row measures against the plan that '
+              + 'includes the agreed change orders">Re-baseline to include them</button>';
+          })();
         // scope grown in EITHER currency with nothing raised is unpriced work
         if (!scp.unpriced && fs2.hb && fs2.netAcs > 0 && !(Array.isArray(coLog) && coLog.length)) {
           scp.unpriced = true;
@@ -11908,7 +11958,17 @@ Or say what you want, in your own words:
       const rows = r.drivers.map(d =>
         '<li class="ptr-drv-li"><button type="button" class="ptr-drv-row" onclick="openEditModal(' + d.id + ', true)" '
         + 'title="Open ' + escapeHtml(d.name) + '">'
-        + '<span class="ptr-drv-main">' + ekTok(d.kind, d.wbs, d.name, { xs: true })
+        /* NO HARD CUT HERE. ekTok slices a name at 22 characters by default,
+           which is right for a chip squeezed into a table cell and wrong in a
+           drill-in list that has a whole row to itself: on the Scope row, whose
+           drivers are generated test cases, every single entry came out as
+           "TC AC-11.3 — edge: mo…" with two thirds of the line empty beside it.
+           A fixed character count cannot know how much room there is.
+           So the cut is lifted out of the way and the LAYOUT decides, with
+           .ptr-drv-main clamping to one line and ellipsing at whatever width
+           the panel actually has. The full name stays in the tooltip either
+           way, and the row still opens the activity. */
+        + '<span class="ptr-drv-main">' + ekTok(d.kind, d.wbs, d.name, { xs: true, max: 400 })
         + (d.sub ? '<span class="ptr-drv-sub">' + d.sub + '</span>' : '')
         + '</span>'
         /* ONE COLOUR, ONE MEANING. .ptr-drv-crit paints the whole figure red for
@@ -24063,6 +24123,50 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
       row.style.display = isDec ? '' : 'none';
       if (isDec) raidOptionsHint();
     }
+    /* ── THE WHYS ARE GATED ON THE OUTCOME ─────────────────────────────────
+       Asking "why did it happen" before anything has said that it DID is a
+       presumption, and on an assumption still marked "not recorded yet" every
+       answer in the chain is about an event that may never occur. The rule is
+       already in the data: an outcome carries `explains`, which is precisely
+       "this turned, so it can be the reason a number moved".
+
+       Issue and Decision are always open, and for different reasons. An issue
+       is by definition something that has happened — that is what makes it an
+       issue rather than a risk. A decision was taken, and asking why it was
+       taken is a real question whether it went on to stand or be reversed.
+       raidExplains already returns true for both unconditionally; this is the
+       same rule, one line earlier, on the form.
+
+       Hidden with a SENTENCE rather than silently. A form control that vanishes
+       with no explanation reads as a bug; one that says what would bring it
+       back reads as a sequence. */
+    function raidWhyGateOk(type, outcome) {
+      if (type === 'Issue' || type === 'Decision') return true;
+      const opts = raidOutcomeOpts(type);
+      if (!opts) return true;                       // a type with no outcomes has nothing to gate on
+      const o = opts.find(x => x.v === outcome);
+      return !!(o && o.explains);
+    }
+    function raidWhyFormSync() {
+      const row = document.getElementById('rWhyRow');
+      if (!row) return;
+      const type = (document.getElementById('rType') || {}).value || '';
+      const sel = document.getElementById('rOutcome');
+      const outcome = sel ? String(sel.dataset.want != null ? sel.dataset.want : sel.value || '') : '';
+      const ok = raidWhyGateOk(type, outcome);
+      row.style.display = ok ? '' : 'none';
+      const note = document.getElementById('rWhyGate');
+      if (!note) return;
+      if (ok) { note.style.display = 'none'; note.textContent = ''; return; }
+      const opts = raidOutcomeOpts(type) || [];
+      const turned = opts.filter(o => o.explains).map(o => '“' + o.lbl + '”').join(' or ');
+      note.style.display = '';
+      note.textContent = 'Asked once ' + (type === 'Assumption' ? 'this assumption' : 'this') + ' has actually '
+        + 'turned. Answer ' + (raidOutcomeQuestion(type) || 'the question above').replace(/\?$/, '')
+        + ' with ' + (turned || 'an outcome that means it happened')
+        + ' and the five whys open here. Asking for a cause before anything says there was an effect is how a '
+        + 'log fills up with reasons for things that never happened.';
+    }
     function raidOutcomeFormSync() {
       raidOptionsFormSync();
       const row = document.getElementById('rOutcomeRow');
@@ -24075,6 +24179,7 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
         row.style.display = 'none';
         // remember nothing across a type it does not apply to
         sel.innerHTML = ''; sel.dataset.want = '';
+        raidWhyFormSync();
         return;
       }
       row.style.display = '';
@@ -24090,6 +24195,7 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
             + escapeHtml(o.lbl) + '</option>').join('');
       sel.value = keep;
       sel.dataset.want = keep;
+      raidWhyFormSync();
       const cur = opts.find(o => o.v === keep);
       /* THE HINT HAS TO BE TRUE OF THIS TYPE, and for a Decision it was not.
          It read "until this is answered the entry is shown as something being
