@@ -299,6 +299,22 @@
     .export-panel button:hover { background: #f1f5f9; }
     .export-panel .grp { font-size: var(--t-sm); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 0.4rem 0.6rem 0.15rem; font-weight: 600; }
     .risk-tag { display:inline-block; padding: 0.1rem 0.45rem; border-radius: 6px; font-size: var(--t-sm); font-weight:600; }
+    .raid-dash { color: var(--muted); cursor: help; }
+    /* THE FIVE KINDS, TOLD APART. Colour carries what the entry asks of the
+       reader, not how bad it is: red is costing you now, amber might, blue is a
+       bet nobody is working, green is settled, slate is a line you drew. The
+       1px inset rule on the left is the same weight on all five, so the column
+       reads as one family and not as five loose pills. */
+    .raid-kind-cell { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+    .raid-kind { cursor: help; border-radius: 5px; padding: 0.13rem 0.45rem;
+      box-shadow: inset 3px 0 0 currentColor; letter-spacing: .015em; }
+    .raid-kind-sub { font-size: 0.66rem; color: var(--muted); letter-spacing: .02em; padding-left: 0.1rem; }
+    .raid-k-risk  { background: #fef3c7; color: #b45309; }
+    .raid-k-issue { background: #fee2e2; color: #b91c1c; }
+    .raid-k-assum { background: #e0e7ff; color: #4338ca; }
+    .raid-k-dec   { background: #dcfce7; color: #15803d; }
+    .raid-k-excl  { background: #e2e8f0; color: #475569; }
+    .raid-k-unk   { background: #fee2e2; color: #b91c1c; box-shadow: inset 3px 0 0 currentColor; }
     /* light chip buttons for inside tinted info panels (stories/impact) —
        dark pill buttons read as heavy blobs mid-sentence there */
     .btn-lite { background:#fff; border:1px solid #93c5fd; color:#1d4ed8; border-radius:6px; padding:0.16rem 0.55rem; font-size:var(--t-sm); font-weight:600; cursor:pointer; white-space:nowrap; line-height:1.3; }
@@ -1322,6 +1338,14 @@
       cursor: pointer; text-align: left; box-shadow: none; }
     .ptr-sc-rbtn:hover:not(:disabled), .ptr-sc-rbtn:active:not(:disabled) {
       border-color: var(--primary); transform: none; box-shadow: none; }
+    /* Dashed, because it is the one control in the row that does not open an
+       activity — it changes what the row shows. Same height as its neighbours so
+       the line does not step. */
+    .ptr-sc-rmore { min-height: 24px; padding: 1px 0.45rem; border: 1px dashed var(--border);
+      border-radius: 5px; background: transparent; color: var(--muted); font: inherit;
+      font-size: var(--t-xs); font-variant-numeric: tabular-nums; cursor: pointer; box-shadow: none; }
+    .ptr-sc-rmore:hover, .ptr-sc-rmore:active {
+      border-color: var(--primary); color: var(--primary); transform: none; box-shadow: none; }
     .ptr-sc-rv { font-weight: 700; font-variant-numeric: tabular-nums; }
     .ptr-sc-rv-bad { color: var(--critical); }
     .ptr-sc-rv-good { color: var(--success); }
@@ -2672,6 +2696,12 @@
         <div class="card-header">
           <h2>Activity list — 3-point estimates &amp; progress</h2>
           <div class="toolbar" id="taskToolbar">
+            <!-- Collapsing one phase at a time is fine at five activities and
+                 unusable at thirty-three, which is the size a real engagement
+                 reaches by week two. Same three levels the Gantt and the WBS
+                 already offer, over the same collapsedIds set, so the three
+                 surfaces never disagree about what is open. -->
+            <span class="seg" id="taskCollapseSeg"><button class="btn-sm" onclick="setCollapseLevel(0)" title="Collapse to phases only — every summary shut, top level visible">Phases</button><button class="btn-sm" onclick="setCollapseLevel(1)" title="Phases and work packages — one level down">L2</button><button class="btn-sm" onclick="setCollapseLevel(Infinity)" title="Expand everything — every activity visible">Expand all</button></span>
             <button class="btn-secondary btn-sm" onclick="scanAndRepair()" title="Find gaps — missing estimates, owners, rates, or story links — and fix each one."><span class="ico" aria-hidden="true">🩺</span> Scan &amp; repair</button>
             <button class="btn-secondary btn-sm" onclick="copyUpdateRequest()" title="Copy an email-ready status table, one row per owner. Paste the filled reply into the AI box (Update progress) to apply it."><span class="ico" aria-hidden="true">📮</span> Copy update request</button>
             <button class="btn-secondary btn-sm" onclick="copyEstimateRequest()" title="Copy an estimate-review table, one row per owner. Paste the filled reply into the AI box to apply corrections."><span class="ico" aria-hidden="true">📐</span> Copy estimate request</button>
@@ -3304,7 +3334,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.04.1644</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.04.1949</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3352,6 +3382,10 @@ Or say what you want, in your own words:
           <div class="form-group">
             <span class="fg-head"><label for="mUnits">Units %</label><button type="button" class="info-icon" aria-label="About Units %" data-help="How much of the resource this task consumes while active. 100 = full-time. Two 100% tasks at once for one person = over-allocated.">i</button></span>
             <input id="mUnits" type="number" min="0" step="5" value="100" oninput="refreshAutoActualCost()" />
+          </div>
+          <div class="form-group">
+            <span class="fg-head"><label for="mCurve">Spend shape</label><button type="button" class="info-icon" aria-label="About spend shape" data-help="WHEN inside this activity's window the money is expected, not how much. The total is identical under every shape — this moves the spend curve's path, and with it what the plan says should have been spent BY TODAY, which is the figure the Budget bar is measured against. Flat is the default and is wrong in the two places money concentrates: mobilisation is front-loaded, integration is back-loaded, and a flat curve is early on one and late on the other. It changes no total, no margin and no variance against the envelope.">i</button></span>
+            <select id="mCurve"></select>
           </div>
           <div class="form-group">
             <span class="fg-head"><label for="mFixedCost">Fixed cost $</label><button type="button" class="info-icon" aria-label="About Fixed cost $" data-help="One-off cost (licences, travel, vendor fee). Labor cost comes from the owner's day rate on the Resources tab.">i</button></span>
@@ -3720,6 +3754,9 @@ Or say what you want, in your own words:
            silently broke it — the same name-as-identity flaw the change orders
            had. The regex survives as a fallback for plans written before this. */
         tcResult: null, tcResultAt: '', tcResultBy: '', tcEvidence: '', tcRuns: [], verifiesAc: '',
+        // how the spend is distributed across this activity's window. 'even' is
+        // the default and is a real answer, not an absence.
+        curve: 'even',
         baseStart: null, baseFinish: null, baseTe: null, baseCost: null,
         te: 0, variance: 0, es: 0, ef: 0, ls: 0, lf: 0, slack: 0, wbs: '', isSummary: false,
         isCritical: false, criticality: 0, startDate: null, finishDate: null, overallocated: false
@@ -4418,6 +4455,7 @@ Or say what you want, in your own words:
           actualStartInferred: !!t.actualStartInferred,
           invoiced: t.invoiced == null ? null : Number(t.invoiced), invoicedDate: t.invoicedDate || '',
           paid: t.paid == null ? null : Number(t.paid), paidDate: t.paidDate || '',
+          curve: CURVE_SHAPES[t.curve] ? t.curve : 'even',
           tcResult: TC_RESULTS[t.tcResult] ? t.tcResult : null,
           tcResultAt: t.tcResultAt || '', tcResultBy: t.tcResultBy || '',
           tcEvidence: t.tcEvidence || '', verifiesAc: t.verifiesAc || '',
@@ -4479,6 +4517,10 @@ Or say what you want, in your own words:
         /* Coerced against the known set, not trusted. An unknown string here
            would sit in the file behaving like a fourth result nobody wrote a
            rule for, and the rollup would quietly treat it as "not run". */
+        // coerced against the known set: an unknown shape would fall through
+        // curveOf to 'even' at render time while sitting in the file looking
+        // like a setting somebody chose
+        curve: CURVE_SHAPES[t.curve] ? t.curve : 'even',
         tcResult: TC_RESULTS[t.tcResult] ? t.tcResult : null,
         tcResultAt: /^\d{4}-\d{2}-\d{2}$/.test(t.tcResultAt || '') ? t.tcResultAt : '',
         tcResultBy: String(t.tcResultBy || ''), tcEvidence: String(t.tcEvidence || ''),
@@ -5088,13 +5130,21 @@ Or say what you want, in your own words:
        the quote, the Monte Carlo, the SOW and the billing CSV — with the number
        still sitting in the box when the user came back to check. */
     function applySummaryLock(isSum) {
-      ['mO', 'mM', 'mP', 'mOwner', 'mUnits', 'mPct', 'mMilestone', 'mFixedCost'].forEach(k => {
+      /* mCurve joins it for the same reason mFixedCost did. pvSpread walks
+         LEAVES, so a shape set on a phase is read by nothing — it would be a
+         dropdown that changes the picture not at all, saved and round-tripped
+         and quietly ignored, which is the shape of defect this lock exists for.
+         Shape the activities underneath instead; a phase whose children are all
+         back-loaded already draws a back-loaded phase. */
+      ['mO', 'mM', 'mP', 'mOwner', 'mUnits', 'mPct', 'mMilestone', 'mFixedCost', 'mCurve'].forEach(k => {
         const el = document.getElementById(k);
         if (!el) return;
         el.disabled = !!isSum;
         el.style.background = isSum ? '#f1f5f9' : '';
         el.title = isSum ? (k === 'mFixedCost'
           ? 'A phase carries no money of its own — every total in this app is summed from the leaves. Put the fee on an activity underneath it.'
+          : k === 'mCurve'
+          ? 'A phase has no spend of its own to shape — the curve is drawn from the activities underneath it. Shape those instead.'
           : 'Rolled up from the children — edit the child activities instead') : '';
       });
       const ag = document.getElementById('attGroup'); if (ag) ag.style.display = isSum ? 'none' : '';
@@ -5476,6 +5526,7 @@ Or say what you want, in your own words:
       document.getElementById('mUnits').value = 100;
       document.getElementById('mPct').value = 0;
       document.getElementById('mFixedCost').value = 0;
+      curveSelFill('even');
       document.getElementById('mMilestone').checked = !!isMilestone;
       document.getElementById('modalError').style.display = 'none';
       document.querySelectorAll('#depRows .dep-id-input, #attRows .att-name').forEach(i => { if (i._suggestPop) i._suggestPop.remove(); });
@@ -5599,6 +5650,7 @@ Or say what you want, in your own words:
       document.getElementById('mUnits').value = (t.units == null ? 100 : t.units);
       document.getElementById('mPct').value = t.percentComplete || 0;
       document.getElementById('mFixedCost').value = t.fixedCost || 0;
+      curveSelFill(curveOf(t));
       document.getElementById('mMilestone').checked = !!t.milestone;
       document.getElementById('modalError').style.display = 'none';
       // drop orphaned predecessor popups before their inputs are destroyed
@@ -5989,6 +6041,7 @@ Or say what you want, in your own words:
       let units = parseFloat(document.getElementById('mUnits').value);
       if (isNaN(units) || units < 0) units = 100;
       const fixedCost = Math.max(0, parseFloat(document.getElementById('mFixedCost').value) || 0);
+      const curve = (v => CURVE_SHAPES[v] ? v : 'even')(document.getElementById('mCurve').value);
       const parentText = document.getElementById('mParent').value;
       let parentId = null;
       if (parentText.trim()) {
@@ -6039,7 +6092,7 @@ Or say what you want, in your own words:
       }
       const finalPreds = Object.values(seen).filter(pr => pr.id !== editingId);
 
-      const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, actualCost, actualEffort, autoActualCost: !mActualCostManual, audience: (v => (v === 'client' || v === 'internal') ? v : null)(document.getElementById('mAudience').value), taxonomy: taxCoerce(document.getElementById('mTaxonomy').value), taxSrc: null, percentComplete: pct, predecessors: finalPreds, jira: document.getElementById('mJira').value.trim(),
+      const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, curve, actualCost, actualEffort, autoActualCost: !mActualCostManual, audience: (v => (v === 'client' || v === 'internal') ? v : null)(document.getElementById('mAudience').value), taxonomy: taxCoerce(document.getElementById('mTaxonomy').value), taxSrc: null, percentComplete: pct, predecessors: finalPreds, jira: document.getElementById('mJira').value.trim(),
         parentId, description, deliverable, acceptance, actualStart, actualFinish,
         /* An EMPTY box stays null. parseFloat('') is NaN and `|| 0` would turn
            every activity nobody has invoiced into one invoiced for nothing —
@@ -9526,6 +9579,77 @@ Or say what you want, in your own words:
                    three steps, which is what actually happens.
        Calendar days, not working days: contracts say "net 30" and mean thirty
        days, and a payment run does not care that a Saturday is not a work day. */
+    /* ═══ THE SHAPE OF THE SPEND, WITHIN AN ACTIVITY'S WINDOW ══════════════
+       Every activity's cost was spread flat across its window. That is one
+       assumption applied to everything, and it is wrong in the two places money
+       usually concentrates: mobilisation is front-loaded — the kit, the
+       licences, the whole team learning the domain in week one — and
+       integration is back-loaded, because nothing is spent until the pieces
+       exist to connect. A flat curve puts the money in the middle of both and
+       is therefore early on one and late on the other.
+
+       Reported as "I do not see where I can adjust this spending curve", and
+       the honest answer was that you could not: the only lever on the shape was
+       payment terms, which move when money LEAVES rather than when it is
+       earned.
+
+       Four shapes, expressed as weights over four equal quarters of the window.
+       Quarters rather than a continuous function on purpose: accrualAt already
+       integrates a segment linearly, so a piecewise-linear curve needs no new
+       maths anywhere else, and four numbers are something a reader can check
+       against the picture. The weights NORMALISE, so the total is untouched —
+       shaping moves when money is expected, never how much. Budget at
+       completion, margin, the envelope and every variance against them are
+       unchanged by definition. */
+    const CURVE_SHAPES = {
+      even:  { lbl: 'Even', w: [1, 1, 1, 1],
+               tip: 'The same spend every day of the window. The right default and often just wrong: it puts '
+                  + 'mobilisation money in the middle of the phase and integration money too early.' },
+      front: { lbl: 'Front-loaded', w: [4, 3, 2, 1],
+               tip: 'Most of it early — mobilisation, licences, kit, the whole team on the domain in week one. '
+                  + '40/30/20/10 across the window.' },
+      back:  { lbl: 'Back-loaded', w: [1, 2, 3, 4],
+               tip: 'Most of it late — integration and hardening spend nothing until the pieces exist to '
+                  + 'connect. 10/20/30/40 across the window.' },
+      bell:  { lbl: 'Ramp up, peak, ramp down', w: [1, 3, 3, 1],
+               tip: 'Slow start, heavy middle, tail off. The commonest real shape for build work: people join, '
+                  + 'the work peaks, then it is finishing touches. 12.5/37.5/37.5/12.5.' }
+    };
+    function curveOf(t) { return (t && CURVE_SHAPES[t.curve]) ? t.curve : 'even'; }
+    /* Rebuilt on every open rather than once at load: the option TEXT carries
+       the weights, so a shape added to the table above appears in the form with
+       nothing else touched, and the shipped file has one place naming them. */
+    function curveSelFill(cur) {
+      const sel = document.getElementById('mCurve');
+      if (!sel) return;
+      const pick = CURVE_SHAPES[cur] ? cur : 'even';
+      sel.innerHTML = Object.keys(CURVE_SHAPES).map(k => {
+        const d = CURVE_SHAPES[k], tot = d.w.reduce((a, x) => a + x, 0);
+        const pcts = d.w.map(x => Math.round(x / tot * 1000) / 10 + '%').join(' · ');
+        return `<option value="${k}"${k === pick ? ' selected' : ''}>${escapeHtml(d.lbl)} — ${pcts}</option>`;
+      }).join('');
+      sel.value = pick;
+    }
+    /* Splits one window into weighted sub-windows. `even` returns the original
+       untouched rather than four identical quarters — same curve either way, and
+       four segments where one will do is four times the work on every render of
+       a panel that already walks every activity. */
+    function shapeSpans(s, f, c, shape) {
+      const def = CURVE_SHAPES[shape];
+      if (!def || shape === 'even' || !(f > s) || !(c > 0)) return [{ s: s, f: f, c: c }];
+      const w = def.w, n = w.length, tot = w.reduce((a, x) => a + x, 0);
+      const span = f - s, out = [];
+      let cur = s;
+      for (let i = 0; i < n; i++) {
+        // the last edge is f exactly, never s + span * n/n, so floating point
+        // cannot leave a sliver of the window uncovered at the end
+        const end = (i === n - 1) ? f : s + span * (i + 1) / n;
+        if (end > cur) out.push({ s: cur, f: end, c: c * w[i] / tot });
+        cur = end;
+      }
+      return out.length ? out : [{ s: s, f: f, c: c }];
+    }
+
     function cashPhaseSeg(s, f, c, terms) {
       const T = cashTermsNorm(terms);
       const DAY = 86400000;
@@ -9889,7 +10013,13 @@ Or say what you want, in your own words:
           if (c1 > 0) { out.offN++; out.offCash += c1; }
           return;
         }
-        cashPhaseSeg(s, f, c1, cash ? cashTermsFor(t) : null).forEach(g => out.segs.push(g));
+        /* Shaped first, then phased. The order matters: the shape says when the
+           money is EARNED inside the window, and the terms say how long after
+           that it moves. Phasing a flat window and then trying to reshape the
+           payments would spread one invoice across a curve, which is not a
+           thing that happens. */
+        shapeSpans(s, f, c1, curveOf(t)).forEach(sp =>
+          cashPhaseSeg(sp.s, sp.f, sp.c, cash ? cashTermsFor(t) : null).forEach(g => out.segs.push(g)));
         out.phased += c1;
       });
       return out;
@@ -12940,6 +13070,12 @@ Or say what you want, in your own words:
       if (!document.getElementById('ptrScPlot')) { ptrScState = null; return; }
       if (st.on && st.lastMs === ms) return;             // one repaint per day crossed, not per pixel
       st.on = true; st.lastMs = ms;
+      /* Leaving the day ends the expansion, and it does not come back when the
+         crosshair wanders past again. Keyed by date rather than reset by hand so
+         there is one rule and no path that forgets it — ptrScShowRest sets the
+         flag TO this date, so re-entering here for the same date leaves it
+         alone and every other date clears it. */
+      if (ptrScAllMs != null && ptrScAllMs !== ms) ptrScAllMs = null;
       const money = v => st.safe ? '•••' : fmtMoney(v);
       const bookMs = Math.min(ms, st.endToday);
       const plan = accrualAt(st.segs, ms);
@@ -13015,15 +13151,45 @@ Or say what you want, in your own words:
           ? 'The plan spends nothing at all between today and then.'
           : 'No single activity is off the plan at this date by as much as a dollar.') + '</span></div>';
       }
-      const top = rows.slice(0, 3);
-      const rest = rows.slice(3);
+      /* THREE IS A SUMMARY, NOT A CEILING. The tail used to be a dead sentence
+         — "+3 more, $2,950" — naming a number the reader could not act on, in a
+         panel whose whole promise is that every figure gets you to the activity
+         behind it. Three still leads, because a list of eleven answers nothing
+         at a glance; the rest are now one click away instead of nowhere. */
+      const cut = (ptrScAllMs != null && ptrScAllMs === ms) ? rows.length : 3;
+      const top = rows.slice(0, cut);
+      const rest = rows.slice(cut);
       const restSum = rest.reduce((a, r) => a + r.v, 0);
       const lab = future ? 'The plan spends this between today and then'
         : gap >= 0 ? 'Coming from' : 'The shortfall is on';
       return '<div class="ptr-sc-rrow"><span>' + lab + ':</span>'
         + top.map(r => ptrScDriverBtn(r.p, r.v, money)).join('')
-        + (rest.length ? '<span class="ptr-sc-rd">+' + rest.length + ' more, '
-            + escapeHtml(money(Math.abs(restSum))) + '</span>' : '') + '</div>';
+        + (rest.length ? '<button type="button" class="ptr-sc-rmore" onclick="ptrScShowRest()" title="'
+            + escapeHtml('Show all ' + rows.length + ' activities behind this reading')
+            + '">+' + rest.length + ' more, ' + escapeHtml(money(Math.abs(restSum))) + ' — show</button>' : '')
+        + (cut > 3 && rows.length > 3
+            ? '<button type="button" class="ptr-sc-rmore" onclick="ptrScShowRest(1)">show fewer</button>' : '')
+        + '</div>';
+    }
+
+    /* EXPANDED FOR ONE DATE, NOT FOR THE PANEL. The flag holds the date it was
+       expanded at, so moving the crosshair to a different day collapses the list
+       without a reset anywhere — a list expanded for July 14 is not an answer
+       about July 20, and a stale expansion reads as one.
+
+       Re-enters the paint rather than appending to the DOM: the readout is
+       rebuilt from scratch on every day crossed, so anything appended here would
+       vanish on the next pixel of movement. lastMs is cleared first because the
+       paint refuses to redraw a date it has already drawn. */
+    let ptrScAllMs = null;
+    function ptrScShowRest(collapse) {
+      const st = ptrScState;
+      if (!st || st.lastMs == null) return;
+      const ms = st.lastMs;
+      ptrScAllMs = collapse ? null : ms;
+      ptrScCancelClear();
+      st.lastMs = null;
+      ptrScPaint(ms);
     }
 
     // Name, number, and the two things you would do next: open the activity, or
@@ -24376,10 +24542,51 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
     // kept so nothing calling the old name breaks
     function raidChipFor(taskId) { return raidCauseChipFor(taskId) + raidWatchChipFor(taskId); }
     function raidScoreBadge(r) {
-      if (r.type !== 'Risk' && r.type !== 'Issue') return '—';
-      const score = (r.probability || 3) * (r.impact || 3);
+      if (r.type !== 'Risk' && r.type !== 'Issue') {
+        return '<span class="raid-dash" title="' + escapeHtml('Probability × impact only scores things that might cost you something. '
+          + 'An assumption, a decision and an exclusion are not scored — a decision is not more or less likely, it was taken.')
+          + '">—</span>';
+      }
+      const p = r.probability || 3, i = r.impact || 3, score = p * i;
       const col = score >= 15 ? ['#fee2e2', '#b91c1c'] : score >= 8 ? ['#fef3c7', '#b45309'] : ['#dcfce7', '#15803d'];
-      return `<span class="risk-tag" style="background:${col[0]};color:${col[1]}">${score}</span>`;
+      // 12 on its own is a number out of nowhere. The two factors and the band
+      // are what make it an ORDER the reader can argue with.
+      const band = score >= 15 ? 'top of the log — act now' : score >= 8 ? 'worth a written mitigation' : 'watch it';
+      return `<span class="risk-tag" style="background:${col[0]};color:${col[1]}" title="${escapeHtml(
+        'Probability ' + p + ' × impact ' + i + ' = ' + score + ' (max 25) — ' + band + '. Both are 1–5; edit them on this entry.')}">${score}</span>`;
+    }
+    /* WHAT THE WORD MEANS, IN THE ROW. Five identical grey pills were a legend
+       nobody had: the definitions lived in the column header's tooltip, which is
+       exactly where a client reading the log will not look, and the five kinds
+       demand completely different things of a reader. Colour by what it ASKS —
+       red is costing you now, amber might, blue is a bet you are carrying, green
+       is settled, slate is a boundary you drew on purpose — and one quiet line
+       of tense underneath, because "Assumption" and "Decision" are the two words
+       every client uses to mean each other.
+       Deliberately NOT the outcome: "did it turn" has its own column, and saying
+       it twice in one row is how two cells start disagreeing. */
+    const RAID_KINDS = {
+      Risk:       { cls: 'raid-k-risk', sub: 'might happen',
+                    def: 'Something that has NOT happened and would cost you if it did. Scored probability × impact, and it wants a mitigation written down while there is still time to act.' },
+      Issue:      { cls: 'raid-k-issue', sub: 'happening now',
+                    def: 'Something that HAS happened and is costing you now. It is not a forecast — it explains a number on this plan, and it wants an owner and a next step today.' },
+      Assumption: { cls: 'raid-k-assum', sub: 'relied on',
+                    def: 'Something you are planning as though it were true, without proof. Nobody is working it; you are exposed if it breaks. It belongs in the SOW as a client obligation where one applies.' },
+      Decision:   { cls: 'raid-k-dec', sub: 'settled',
+                    def: 'A choice already taken that shapes the work. It is a cause, not a problem — it explains why the plan looks the way it does, and reversing it later is a change, not a correction.' },
+      Exclusion:  { cls: 'raid-k-excl', sub: 'out of scope',
+                    def: 'Work deliberately NOT in scope, written down so it cannot be assumed in. It feeds the SOW exclusions, and anything here arriving later is a change order.' }
+    };
+    function raidTypeChip(r) {
+      const k = RAID_KINDS[r && r.type];
+      if (!k) {
+        return '<span class="badge raid-kind raid-k-unk" title="' + escapeHtml('Stored type is “'
+          + String((r && r.type) || '') + '”, which this log does not recognise — reopen the entry and pick one of the five.')
+          + '">' + escapeHtml(String((r && r.type) || '(none)')) + '</span>';
+      }
+      return '<span class="raid-kind-cell"><span class="badge raid-kind ' + k.cls + '" title="'
+        + escapeHtml(r.type + ' — ' + k.def) + '">' + r.type + '</span>'
+        + '<span class="raid-kind-sub">' + k.sub + '</span></span>';
     }
     // The three the log understands. Anything else is not silently coerced —
     // the caller says so and leaves the entry as it was.
@@ -24537,7 +24744,7 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
         const t = r.taskId ? tasks.find(x => x.id === r.taskId) : null;
         const closed = r.status === 'Closed';
         return `<tr style="${closed ? 'opacity:0.55' : ''}">
-          <td><span class="badge badge-slack">${r.type}</span></td>
+          <td>${raidTypeChip(r)}</td>
           <td style="font-weight:600">${escapeHtml(r.title)}${raidTitleSubHtml(r)}</td>
           <td>${raidScoreBadge(r)}</td>
           <td style="font-size:0.8rem">${escapeHtml(r.owner || '—') + roleSub(r.owner)}</td>
@@ -25663,7 +25870,7 @@ Professional, client-ready, no hype, no invented facts.`;
             .map(p => ({ id: p.id, type: p.type, lag: p.lag })),
           startNoEarlier: t.startNoEarlier || '', deadline: t.deadline || '',
           fixedCost: Number(t.fixedCost) || 0,
-          audience: t.audience || null, taxonomy: t.taxonomy || null,
+          audience: t.audience || null, taxonomy: t.taxonomy || null, curve: curveOf(t),
           acceptance: t.acceptance || '', deliverable: t.deliverable || '',
           /* BILLED value, not cost, and not the BASELINED cost.
              A change order bills the client, so the number beside a line has to
@@ -25820,6 +26027,9 @@ Professional, client-ready, no hype, no invented facts.`;
       'date-pinned': { lbl: 'Date constraint changed', billable: false, order: 7 },
       repriced:     { lbl: 'Fixed cost changed', billable: true, order: 4 },
       reallocated:  { lbl: 'Allocation changed', billable: false, order: 9 },
+      /* Not billable. Reshaping moves WHEN money is expected and not how much,
+         so a change order that priced it would be charging for a redrawn line. */
+      reshaped:     { lbl: 'Spend shape changed', billable: false, order: 9.5 },
       'ac-added':   { lbl: 'Criterion added',   billable: true,  order: 10 },
       'ac-removed': { lbl: 'Criterion removed', billable: true,  order: 11 },
       'ac-reworded': { lbl: 'Criterion reworded', billable: false, order: 12 },
@@ -25868,6 +26078,10 @@ Professional, client-ready, no hype, no invented facts.`;
               { priceDelta: (b.fixedCost || 0) - (a.fixedCost || 0) });
         if ((Number(a.units) || 100) !== (Number(b.units) || 100))
           add('reallocated', id, b.name, 'units %', a.units, b.units);
+        if ((a.curve || 'even') !== (b.curve || 'even'))
+          add('reshaped', id, b.name, 'spend shape',
+              (CURVE_SHAPES[a.curve] || CURVE_SHAPES.even).lbl,
+              (CURVE_SHAPES[b.curve] || CURVE_SHAPES.even).lbl);
       });
       A.forEach((a, id) => {
         if (!B.has(id)) add('removed', id, a.name, '', a.name, null, { priceDelta: -(a.value || 0), days: -(a.te || 0) });
@@ -26136,6 +26350,7 @@ Professional, client-ready, no hype, no invented facts.`;
         t.startNoEarlier = s2.startNoEarlier || ''; t.deadline = s2.deadline || '';
         t.fixedCost = Number(s2.fixedCost) || 0;
         t.audience = s2.audience || null; t.taxonomy = s2.taxonomy || null;
+        t.curve = CURVE_SHAPES[s2.curve] ? s2.curve : 'even';
         if (s2.acceptance != null) t.acceptance = s2.acceptance;
         if (s2.deliverable != null) t.deliverable = s2.deliverable;
         restored++;

@@ -696,6 +696,61 @@ const FIELD = JSON.parse(fs.readFileSync(
         say('tone', 'finished work costing more than it was budgeted does NOT wear the warning badge ('
           + tones.over.cls + ') — the one case the amber exists for');
     }
+
+    /* ── 3. SHAPING MOVES WHEN, NEVER HOW MUCH ─────────────────────────────
+       The spend shape says where inside an activity's own window the money is
+       expected. Every reading of the envelope, the margin and the variance
+       against them assumes the total is untouched by that choice — the weights
+       normalise, and if they ever stopped normalising the Budget bar would move
+       because somebody picked a dropdown, which is the single worst thing this
+       control could do.
+
+       Both halves are asserted, and the second is the one that matters. A
+       shaping implementation that quietly did NOTHING would satisfy "the total
+       is unchanged" perfectly, and the check would be green on a dead feature —
+       so the curve is also required to actually MOVE, measured a quarter of the
+       way into the reshaped activity's window where front and back must differ
+       by construction. No fixture carries a shaped activity, so one is built. */
+    await page.evaluate(d => { hydrate(d); calculate(); }, CRM);
+    await page.waitForTimeout(400);
+    const shaped = await page.evaluate(() => {
+      const hb = hasBaseline();
+      const t0 = leafTasks().filter(t => !t.milestone && taskCost(t) > 0)
+        .sort((a, b) => taskCost(b) - taskCost(a))[0];
+      if (!t0 || !t0.startDate || !t0.finishDate) return null;
+      const s = stripTime(t0.startDate).getTime(), f = stripTime(t0.finishDate).getTime() + 86400000;
+      const q = s + (f - s) / 4;                       // inside the reshaped window
+      const read = () => { const sp = pvSpread(hb, leafTasks());
+        return { tot: Math.round(sp.segs.reduce((a, g) => a + g.c, 0) * 100) / 100,
+                 phased: Math.round(sp.phased * 100) / 100,
+                 atQ: Math.round(accrualAt(sp.segs, q) * 100) / 100 }; };
+      const out = { name: t0.name, cost: Math.round(taskCost(t0)) };
+      ['even', 'front', 'back', 'bell'].forEach(k => { t0.curve = k; out[k] = read(); });
+      t0.curve = 'even';
+      return out;
+    });
+    if (!shaped) note.shaping = 'SKIPPED-no-costed-dated-leaf';
+    else {
+      note.shaping = shaped;
+      ['front', 'back', 'bell'].forEach(k => {
+        if (Math.abs(shaped[k].tot - shaped.even.tot) > 0.5)
+          say('spend shape', 'setting an activity to "' + k + '" changed the TOTAL planned spend from '
+            + shaped.even.tot + ' to ' + shaped[k].tot + ' — a shape is meant to move when the money '
+            + 'lands, not how much there is, and every envelope and margin figure on this page reads '
+            + 'that total');
+        if (Math.abs(shaped[k].phased - shaped.even.phased) > 0.5)
+          say('spend shape', '"' + k + '" changed the phased total (' + shaped.even.phased + ' → '
+            + shaped[k].phased + '), so the chart and its own "of which datable" figure disagree');
+      });
+      if (Math.abs(shaped.front.atQ - shaped.back.atQ) < 1)
+        say('spend shape', 'front-loaded and back-loaded draw the SAME curve a quarter of the way into '
+          + '"' + shaped.name + '" (' + shaped.front.atQ + ' vs ' + shaped.back.atQ + ') — the control '
+          + 'is wired to nothing and every check above it passes on a feature that does not exist');
+      if (!(shaped.front.atQ > shaped.even.atQ) || !(shaped.back.atQ < shaped.even.atQ))
+        say('spend shape', 'front-loaded is not ahead of flat, or back-loaded is not behind it, at the '
+          + 'first quarter of the window (front ' + shaped.front.atQ + ' · even ' + shaped.even.atQ
+          + ' · back ' + shaped.back.atQ + ') — the two shapes are the wrong way round');
+    }
     return { contradictions: bad, counts: note };
   })();
 

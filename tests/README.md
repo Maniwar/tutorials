@@ -305,6 +305,20 @@ wording — on crm-rollout the finish is held, so both take their other branch a
 there is nothing to disagree about. It survives for want of a fixture, not for
 want of a check, and listing it would report a permanent false hole.
 
+### Running one mutant
+
+`node tests/mutation-engine.js <substring> [<substring> …]` keeps only the
+mutants whose description contains one of the substrings. Two hundred mutants is
+twenty-six minutes — the right price for a release gate and the wrong one for "I
+just added one, is it caught?", where the honest alternatives were to run the lot
+or to hand-edit the array. Editing a probe so it finishes is exactly how a probe
+stops covering what it says it covers, so the filter is a first-class argument
+and a filtered run announces itself in its own summary rather than reading as a
+clean full pass. A filter matching nothing exits 2 and says nothing was proven.
+
+The filter is applied AFTER the array is built, so the anchor audit and the
+"n of m" arithmetic both describe the run that actually happened.
+
 ## The checks, checked
 
 `harness-meta.js` is the only file here that does not look at the product. It

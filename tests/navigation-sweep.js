@@ -250,6 +250,166 @@ const { chromium } = requirePlaywright();
     }
   }
 
+  /* ═══ 1d. "+3 MORE" IS NOT AN ANSWER ═════════════════════════════════════
+     The same defect section 4 exists for, in a different panel: the spend
+     curve's readout names its top three activities and then said "+3 more,
+     $2,950" — a figure with nothing behind it, in a panel whose entire promise
+     is that every number gets you to the activity causing it. Reported by use:
+     "i noticed this says and 3 more but no way to see them?"
+
+     Driven through ptrScPaint rather than the mouse because this is about the
+     CONTENT of the readout, not about pointer travel — 1b above already owns
+     the travel. Four properties, and the last two are the ones a lazy fix
+     fails: expanding must actually draw the missing rows, collapsing must put
+     them back, and moving to a different day must NOT carry the expansion with
+     it, because a list expanded for one date is not an answer about another. */
+  const more = await page.evaluate(() => {
+    const st = (typeof ptrScState !== 'undefined') ? ptrScState : null;
+    if (!st) return { skip: 'no spend-curve state' };
+    const el = document.getElementById('ptrScRead');
+    if (!el) return { skip: 'no readout' };
+    const at = ms => { st.lastMs = null; ptrScPaint(ms); };
+    const nBtn = () => el.querySelectorAll('.ptr-sc-rbtn').length;
+    const moreEl = () => el.querySelector('.ptr-sc-rmore');
+    // find a day whose reading actually holds back rows; without one there is
+    // nothing to test and the check says so rather than passing quietly
+    let day = null, txt = '';
+    for (let ms = st.x0; ms <= st.x0 + st.spanDays * 86400000; ms += 86400000) {
+      at(ms);
+      if (moreEl()) { day = ms; txt = moreEl().textContent; break; }
+    }
+    if (day == null) return { skip: 'no date on this plan holds any driver back' };
+    const o = { day: new Date(day).toISOString().slice(0, 10), label: txt.replace(/\s+/g, ' ') };
+    o.capped = nBtn();
+    moreEl().click();
+    o.expanded = nBtn();
+    const fewer = moreEl();
+    o.offersCollapse = !!(fewer && /fewer/i.test(fewer.textContent));
+    if (fewer) fewer.click();
+    o.collapsedAgain = nBtn();
+    // expand, then walk to the next day: the expansion must not follow
+    at(day); moreEl().click();
+    o.expandedAgain = nBtn();
+    at(day + 86400000);
+    o.nextDay = nBtn();
+    at(day);
+    o.backToThatDay = nBtn();
+    return o;
+  });
+  note.curveMore = more;
+  if (more.skip) note.curveMore = 'SKIPPED-' + more.skip;
+  else {
+    if (!/show/i.test(more.label))
+      say('Spend curve', 'the readout says "' + more.label + '" and offers no way to see those rows — '
+        + 'a total with no activities behind it, in the one panel whose job is naming the cause');
+    if (more.expanded <= more.capped)
+      say('Spend curve', 'clicking the "+n more" control drew no additional activities ('
+        + more.capped + ' → ' + more.expanded + ') — it is decorative');
+    if (!more.offersCollapse)
+      say('Spend curve', 'the expanded list offers no way back to the short one, so opening it is '
+        + 'a one-way trip on a readout that is meant to be scanned');
+    if (more.collapsedAgain !== more.capped)
+      say('Spend curve', 'collapsing did not restore the short list (' + more.capped + ' → '
+        + more.collapsedAgain + ')');
+    if (more.nextDay !== more.capped)
+      say('Spend curve', 'the expansion followed the crosshair to the next day (' + more.nextDay
+        + ' rows drawn where the default is ' + more.capped + ') — a list expanded for '
+        + more.day + ' is being presented as the answer for a different date');
+    if (more.backToThatDay !== more.capped)
+      say('Spend curve', 'returning to ' + more.day + ' did not come back collapsed, so the readout '
+        + 'remembers an expansion the reader has moved away from');
+  }
+
+  /* ═══ 1e. THIRTY-THREE ACTIVITIES OPEN ONE TWISTY AT A TIME ═══════════════
+     The Gantt and the WBS both offer collapse-to-a-level; the activity list,
+     which is where the plan is actually edited and the longest of the three,
+     offered only per-row twisties. At the size a real engagement reaches by
+     week two that is not a control, it is a chore. Reported by use: "also
+     noticed there is no way to expand or collapse all".
+
+     Asserted on the drawn ROW COUNT, not on the buttons existing: three
+     buttons wired to nothing would pass an existence test, and this file has
+     been caught by exactly that before. */
+  const coll = await page.evaluate(() => {
+    switchTab('tasks');
+    const seg = document.getElementById('taskCollapseSeg');
+    if (!seg) return { missing: true };
+    const rows = () => document.querySelectorAll('#taskTable tbody tr').length;
+    const labels = [...seg.querySelectorAll('button')].map(b => b.textContent.trim());
+    const before = rows();
+    seg.querySelectorAll('button').forEach(b => { /* keep them addressable */ });
+    const byText = t => [...seg.querySelectorAll('button')].find(b => new RegExp(t, 'i').test(b.textContent));
+    const all = byText('expand'); if (all) all.click();
+    const expanded = rows();
+    const ph = byText('phase'); if (ph) ph.click();
+    const phases = rows();
+    if (all) all.click();
+    const reExpanded = rows();
+    const summaries = tasks.filter(t => tasks.some(x => x.parentId === t.id)).length;
+    return { labels: labels, before: before, expanded: expanded, phases: phases,
+             reExpanded: reExpanded, summaries: summaries, total: tasks.length };
+  });
+  note.collapseAll = coll;
+  if (coll.missing)
+    say('Activity list', 'there is no collapse-to-a-level control at all — a thirty-activity plan can '
+      + 'only be opened and shut one phase at a time, while the Gantt and the WBS both offer one');
+  else {
+    if (!coll.summaries) note.collapseAll = 'SKIPPED-flat-plan';
+    else {
+      if (coll.expanded <= coll.phases)
+        say('Activity list', 'collapsing to phases drew ' + coll.phases + ' rows against ' + coll.expanded
+          + ' expanded — the control changes nothing on a plan with ' + coll.summaries + ' summaries');
+      if (coll.reExpanded !== coll.expanded)
+        say('Activity list', 'expand-all after a collapse drew ' + coll.reExpanded + ' rows, not the '
+          + coll.expanded + ' it drew before — the two directions do not agree');
+      if (coll.phases >= coll.total)
+        say('Activity list', '"phases" left every one of the ' + coll.total + ' activities drawn, so it '
+          + 'is collapsing nothing');
+    }
+  }
+
+  /* ═══ 1f. FIVE KINDS, FIVE PILLS, ONE COLOUR ═════════════════════════════
+     A RAID log's whole value is that a risk, an issue, an assumption, a
+     decision and an exclusion are five DIFFERENT statements — and every one of
+     them was drawn as the same grey pill, with the definitions parked in a
+     column-header tooltip no client will find. Reported by use: "i also noticed
+     these pills don't look good and aren't informative enough".
+
+     The property is that the kinds are told apart and each says what it means.
+     Deliberately not "Risk is amber": naming the colour would fail a redesign
+     and pass a build where all five went amber together. */
+  const kinds = await page.evaluate(() => {
+    switchTab('raid'); renderRaid();
+    const chips = [...document.querySelectorAll('#raidContainer .raid-kind')];
+    if (!chips.length) return { missing: true };
+    const seen = {};
+    chips.forEach(c => {
+      const w = c.textContent.trim();
+      if (!seen[w]) seen[w] = { cls: c.className, tip: (c.title || '').length,
+        sub: ((c.parentElement || {}).querySelector ? (c.parentElement.querySelector('.raid-kind-sub') || {}).textContent : '') || '' };
+    });
+    return { seen: seen, n: chips.length,
+             types: [...new Set((typeof raid !== 'undefined' ? raid : []).map(r => r.type))] };
+  });
+  note.raidKinds = kinds;
+  if (kinds.missing) say('RAID', 'the type column draws no kind chip at all');
+  else {
+    const words = Object.keys(kinds.seen);
+    const classes = new Set(words.map(w => kinds.seen[w].cls));
+    if (words.length > 1 && classes.size < words.length)
+      say('RAID', words.length + ' different kinds (' + words.join(', ') + ') share only '
+        + classes.size + ' treatment(s) — a decision and an issue are the two things a client most '
+        + 'often confuses, and the log draws them identically');
+    words.forEach(w => {
+      if (kinds.seen[w].tip < 40)
+        say('RAID', 'the "' + w + '" chip carries no definition (' + kinds.seen[w].tip + ' chars of '
+          + 'title) — the reader is expected to already know the RAID vocabulary');
+      if (!kinds.seen[w].sub.trim())
+        say('RAID', 'the "' + w + '" chip says the word and nothing else — no tense, so nothing on the '
+          + 'row distinguishes something that might happen from something that already has');
+    });
+  }
+
   // ═══ 2. THE WORKLIST SAYS ENOUGH TO ACT ON ═══════════════════════════════
   const W = await page.evaluate(() => {
     const bad2 = [], out = {};

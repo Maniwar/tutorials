@@ -32,6 +32,13 @@ const { spawn } = require('child_process');
 const ROOT = path.resolve(__dirname, '..');
 const SRC = fs.readFileSync(path.join(ROOT, 'pert-gantt-tracker.html'), 'utf8');
 const QUICK = process.argv.indexOf('--quick') >= 0;
+/* Positional substring filter, matched against `what`. Two hundred mutants is
+   twenty-six minutes, which is the right price for a release gate and the wrong
+   price for "I just added one — is it caught?". Without this the honest options
+   were to run the lot or to hand-edit the array, and hand-editing a probe to
+   make it finish is how a probe quietly stops covering what it claims to.
+   Same shape as anchor-check.js takes, deliberately: one convention. */
+const ONLY = process.argv.slice(2).filter(a => !a.startsWith('-'));
 
 /* Each mutant names the identity it breaks and what should notice. `find` must
    match exactly once in the file — a mutant that silently fails to apply is a
@@ -1139,7 +1146,55 @@ const MUTANTS = [
   { what: 'boundary: a panel that has since drawn correctly keeps saying it could not be drawn',
     find: '      try { renderFailClear(label); } catch (e2) {}\n      return true;',
     with: '      try { void 0; } catch (e2) {}\n      return true;' },
+
+  /* ── the four surfaces added after a reader used them ───────────────────── */
+
+  { what: 'accrual: the spend shape moves the TOTAL, not only when it lands',
+    find: '        if (end > cur) out.push({ s: cur, f: end, c: c * w[i] / tot });',
+    with: '        if (end > cur) out.push({ s: cur, f: end, c: c * w[i] / (tot - 1) });' },
+
+  { what: 'accrual: the spend shape is accepted, stored, and then ignored by the curve',
+    find: '        shapeSpans(s, f, c1, curveOf(t)).forEach(sp =>',
+    with: "        shapeSpans(s, f, c1, 'even').forEach(sp =>" },
+
+  { what: "accrual: back-loaded and front-loaded are the same curve, drawn the wrong way round",
+    find: "      back:  { lbl: 'Back-loaded', w: [1, 2, 3, 4],",
+    with: "      back:  { lbl: 'Back-loaded', w: [4, 3, 2, 1]," },
+
+  { what: 'curve: the readout names three activities and hides the rest with no way to reach them',
+    find: '      const cut = (ptrScAllMs != null && ptrScAllMs === ms) ? rows.length : 3;',
+    with: '      const cut = 3;' },
+
+  { what: 'curve: an expansion made at one date is presented as the answer at every later one',
+    find: '      if (ptrScAllMs != null && ptrScAllMs !== ms) ptrScAllMs = null;',
+    with: '      if (false) ptrScAllMs = null;' },
+
+  { what: 'navigation: collapse-to-a-level on the activity list is drawn but wired to nothing',
+    find: '<span class="seg" id="taskCollapseSeg"><button class="btn-sm" onclick="setCollapseLevel(0)"',
+    with: '<span class="seg" id="taskCollapseSeg"><button class="btn-sm" onclick="void 0"' },
+
+  /* Decision, not Issue. No fixture in this repo carries an Issue entry, so a
+     mutant that collapsed Issue into Risk would SURVIVE and be reported as a
+     hole in the sweep that isn't one — the fixture-cannot-reach-the-branch
+     failure this directory has a whole probe for. Decision and Assumption are
+     both present, and they are also the two words clients most often use to
+     mean each other, which is the pair the colours exist to separate. */
+  { what: 'navigation: two RAID kinds that mean opposite things are drawn identically',
+    find: "      Decision:   { cls: 'raid-k-dec', sub: 'settled',",
+    with: "      Decision:   { cls: 'raid-k-assum', sub: 'relied on'," },
+
+  { what: 'navigation: the RAID kind chip says the word and drops the definition behind it',
+    find: "        + escapeHtml(r.type + ' — ' + k.def) + '\">' + r.type + '</span>'",
+    with: "        + escapeHtml(r.type) + '\">' + r.type + '</span>'" },
 ];
+
+/* Filtered AFTER the array is written, never inside it, so the anchor audit and
+   the "N of M" arithmetic below both speak about the run that actually
+   happened. A filtered run says so in its own summary rather than reading as a
+   clean full pass. */
+const SELECTED = ONLY.length
+  ? MUTANTS.filter(m => ONLY.some(o => m.what.toLowerCase().indexOf(o.toLowerCase()) >= 0))
+  : MUTANTS;
 
 /* harness-meta.js is deliberately NOT in this list. It reads the CHECK files and
    resolves the names they call against the loaded app, so a mutant that changes
@@ -1238,15 +1293,19 @@ async function judge(m, i) {
      purpose: each one launches a browser, and oversubscribing turns a fast run
      into a slow one that also reports flaky timeouts as holes. */
   const LANES = Math.max(1, Math.min(4, (os.cpus() || []).length - 2 || 2));
-  const results = new Array(MUTANTS.length);
+  if (ONLY.length && !SELECTED.length) {
+    console.log('no mutant matches ' + JSON.stringify(ONLY) + ' — nothing was run, and nothing is proven');
+    process.exitCode = 2; return;
+  }
+  const results = new Array(SELECTED.length);
   let next = 0, done = 0;
   const lane = async () => {
     while (true) {
       const i = next++;
-      if (i >= MUTANTS.length) return;
-      results[i] = await judge(MUTANTS[i], i);
+      if (i >= SELECTED.length) return;
+      results[i] = await judge(SELECTED[i], i);
       done++;
-      if (process.stderr.isTTY) process.stderr.write('\r  ' + done + '/' + MUTANTS.length + ' judged   ');
+      if (process.stderr.isTTY) process.stderr.write('\r  ' + done + '/' + SELECTED.length + ' judged   ');
     }
   };
   await Promise.all(Array.from({ length: LANES }, lane));
@@ -1270,11 +1329,13 @@ async function judge(m, i) {
 
   fs.rmSync(tmp, { recursive: true, force: true });
   const parts = [];
-  if (survived) parts.push(survived + ' of ' + MUTANTS.length
+  if (survived) parts.push(survived + ' of ' + SELECTED.length
     + ' mutants SURVIVED — those regions of the product are unguarded');
   if (skipped) parts.push(skipped + ' mutant(s) could not be applied — this FILE is stale, not the suite: '
     + 'the anchor was edited out of the product. Repair the anchor; it is proving nothing until you do');
-  console.log(parts.length ? '\n' + parts.join('.\n') + '.'
-    : '\nall ' + MUTANTS.length + ' mutants were caught.');
+  const scope = ONLY.length ? SELECTED.length + ' of ' + MUTANTS.length + ' mutants (filtered by '
+    + JSON.stringify(ONLY) + ' — this is NOT a full run)' : 'all ' + MUTANTS.length + ' mutants';
+  console.log(parts.length ? '\n' + parts.join('.\n') + '.' + (ONLY.length ? '\nRan ' + scope + '.' : '')
+    : '\n' + scope + ' were caught.');
   process.exitCode = (survived || skipped) ? 1 : 0;
 })();
