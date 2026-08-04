@@ -33,7 +33,7 @@ const ROOT = path.resolve(__dirname, '..');
 const SRC = fs.readFileSync(path.join(ROOT, 'pert-gantt-tracker.html'), 'utf8');
 const QUICK = process.argv.indexOf('--quick') >= 0;
 /* Positional substring filter, matched against `what`. Two hundred mutants is
-   about twenty-five minutes, which is the right price for a release gate and the wrong
+   about half an hour, which is the right price for a release gate and the wrong
    price for "I just added one — is it caught?". Without this the honest options
    were to run the lot or to hand-edit the array, and hand-editing a probe to
    make it finish is how a probe quietly stops covering what it claims to.
@@ -1238,7 +1238,7 @@ const SELECTED = ONLY.length
 /* harness-meta.js is deliberately NOT in this list. It reads the CHECK files and
    resolves the names they call against the loaded app, so a mutant that changes
    an identity in the product tells it nothing — it would add five seconds to
-   each of two hundred runs and never once be the one to go red. Its
+   each of two hundred-odd runs and never once be the one to go red. Its
    own ability to fail is proven differently and better: it plants both defects
    it hunts into synthetic files on every run and requires itself to name them,
    so that proof happens on every commit rather than only under FULL=1. */

@@ -15,9 +15,9 @@
 #
 #   2. Refuse the commit if any check is red. Every commit to this file lands
 #      on a public demo, so a red suite is a shipped defect. The hand-derived
-#      plan, twenty-one sweeps and the drawing mutation check take about five
+#      plan, twenty-one sweeps and the drawing mutation check take about ten
 #      minutes — the price of this one file being the release. The
-#      engine mutation check is another ten and is opt-in via FULL=1;
+#      engine mutation check is another half hour and is opt-in via FULL=1;
 #      run it before anything the user will look at.
 #
 #      Measured, not estimated. If you add a check, re-time it and correct this
@@ -114,7 +114,7 @@ rm -f /tmp/ptr-m.$$
 # the commitment log, the estimate bank's calibration, a wizard button that acts
 # on the wrong object, a caption that states a figure typed by hand, a render
 # boundary that swallows instead of reporting — and confirm something goes red.
-# Two hundred and two of them, 24m26s on an idle four-core box — it runs
+# Two hundred and eleven of them, 32m51s on an idle four-core box — it runs
 # min(4, cores-2) lanes, so more cores is less wall-clock. Measure it on an IDLE
 # machine and say which: the ten minutes this line used to claim was true at a
 # hundred and fourteen mutants and stayed here while the set nearly doubled,
@@ -124,7 +124,7 @@ rm -f /tmp/ptr-m.$$
 # every commit, worth it before anything the user sees. FULL=1 git commit.
 #
 # Adding mutants moves this number. If you add one, re-time the run on an idle
-# box and correct both this line and the "~25m" in the skipped message below.
+# box and correct both this line and the "~33m" in the skipped message below.
 #
 # It fails on a SKIPPED mutant as well as a survivor, and the two mean different
 # things: a survivor says the product has an unguarded region, a skip says this
@@ -179,7 +179,7 @@ if [ -n "$FULL" ]; then
   fi
   rm -f /tmp/ptr-e.$$
 else
-  echo "  · mutation · engine    skipped (FULL=1 to run it, ~25m)"
+  echo "  · mutation · engine    skipped (FULL=1 to run it, ~33m)"
 fi
 
 if [ "$fail" -ne 0 ]; then

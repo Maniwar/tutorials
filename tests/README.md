@@ -294,7 +294,7 @@ every plan there has ever been. A build that rendered every Budget card critical
 passed it. The delta is now identified by what it says rather than by its
 position, and a null colour is itself a finding.
 
-The result: 202 mutants, all caught, and every one of the 22 checks now appears
+The result: 211 mutants, all caught, and every one of the 22 checks now appears
 as the catcher at least once. That is the property worth stating plainly —
 there is no longer a check in this directory that has only ever been green.
 
@@ -309,7 +309,7 @@ want of a check, and listing it would report a permanent false hole.
 
 `node tests/mutation-engine.js <substring> [<substring> …]` keeps only the
 mutants whose description contains one of the substrings. Two hundred mutants is
-about twenty-five minutes — the right price for a release gate and the wrong one for "I
+about half an hour — the right price for a release gate and the wrong one for "I
 just added one, is it caught?", where the honest alternatives were to run the lot
 or to hand-edit the array. Editing a probe so it finishes is exactly how a probe
 stops covering what it says it covers, so the filter is a first-class argument
