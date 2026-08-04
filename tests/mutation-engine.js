@@ -1199,7 +1199,7 @@ const SELECTED = ONLY.length
 /* harness-meta.js is deliberately NOT in this list. It reads the CHECK files and
    resolves the names they call against the loaded app, so a mutant that changes
    an identity in the product tells it nothing — it would add five seconds to
-   each of a hundred and fourteen runs and never once be the one to go red. Its
+   each of two hundred runs and never once be the one to go red. Its
    own ability to fail is proven differently and better: it plants both defects
    it hunts into synthetic files on every run and requires itself to name them,
    so that proof happens on every commit rather than only under FULL=1. */

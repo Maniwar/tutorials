@@ -294,7 +294,7 @@ every plan there has ever been. A build that rendered every Budget card critical
 passed it. The delta is now identified by what it says rather than by its
 position, and a null colour is itself a finding.
 
-The result: 114 mutants, all caught, and every one of the 22 checks now appears
+The result: 202 mutants, all caught, and every one of the 22 checks now appears
 as the catcher at least once. That is the property worth stating plainly —
 there is no longer a check in this directory that has only ever been green.
 
