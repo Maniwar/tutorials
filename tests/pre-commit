@@ -17,12 +17,14 @@
 #      on a public demo, so a red suite is a shipped defect. The hand-derived
 #      plan, twenty-one sweeps and the drawing mutation check take about ten
 #      minutes — the price of this one file being the release. The
-#      engine mutation check is another half hour and is opt-in via FULL=1;
+#      engine mutation check is another 26-40 minutes and is opt-in via FULL=1;
 #      run it before anything the user will look at.
 #
-#      Measured, not estimated. If you add a check, re-time it and correct this
-#      line: a stale number here is the same class of thing the suite exists to
-#      catch, and someone deciding whether they have time to commit reads it.
+#      Measured, not estimated, and stated as a RANGE on purpose — see the long
+#      note above that check for why a single figure here has been wrong three
+#      times. If you add a check, re-time it and correct this line: a stale
+#      number is the same class of thing the suite exists to catch, and someone
+#      deciding whether they have time to commit reads it.
 #
 # Escape hatches: SKIP_TESTS=1 git commit, or git commit --no-verify.
 #
@@ -114,17 +116,29 @@ rm -f /tmp/ptr-m.$$
 # the commitment log, the estimate bank's calibration, a wizard button that acts
 # on the wrong object, a caption that states a figure typed by hand, a render
 # boundary that swallows instead of reporting — and confirm something goes red.
-# Two hundred and eleven of them, 32m51s on an idle four-core box — it runs
-# min(4, cores-2) lanes, so more cores is less wall-clock. Measure it on an IDLE
-# machine and say which: the ten minutes this line used to claim was true at a
-# hundred and fourteen mutants and stayed here while the set nearly doubled,
-# and before that a figure of twenty-five minutes sat here taken from a run
-# sharing four cores with the sweep suite. Both directions of wrong cost the
-# same thing — somebody plans around a number and skips the check. Too much for
-# every commit, worth it before anything the user sees. FULL=1 git commit.
+# Two hundred and seventeen of them, and the honest figure is a RANGE: four
+# consecutive full runs on this four-core box took 26, 33, 37 and 40 minutes.
+# It runs min(4, cores-2) lanes, so more cores is less wall-clock.
 #
-# Adding mutants moves this number. If you add one, re-time the run on an idle
-# box and correct both this line and the "~33m" in the skipped message below.
+# Do not read that spread as noise to be averaged away. The dominant term is not
+# machine load — the FASTEST of the four ran while the sweep suite was competing
+# for the same cores. It is WHICH CHECK CATCHES EACH MUTANT: the runner stops at
+# the first check that goes red, so a mutant caught by the first of twenty-two
+# costs a fraction of one caught by the last, and LIKELY (below) only orders the
+# attempts, it does not guarantee them. Add a mutant, or add assertions to a
+# check that sits early in the order, and every mutant behind it repays the
+# difference.
+#
+# So a single measurement here is a weak estimate wearing a precise number, and
+# this line has carried three of those. It claimed ten minutes, which was true
+# at a hundred and fourteen mutants and stayed while the set nearly doubled;
+# then twenty-five, taken from a run sharing cores; then 32m51s, quoted to the
+# second off ONE run. All three were wrong in the way that costs something —
+# somebody plans around the number and skips the check. A range with its cause
+# named is more useful than a figure with a false decimal place.
+#
+# If you add mutants, re-run it a couple of times and widen the range rather
+# than replacing it, and correct the "~26-40m" in the skipped message below.
 #
 # It fails on a SKIPPED mutant as well as a survivor, and the two mean different
 # things: a survivor says the product has an unguarded region, a skip says this
@@ -179,7 +193,7 @@ if [ -n "$FULL" ]; then
   fi
   rm -f /tmp/ptr-e.$$
 else
-  echo "  · mutation · engine    skipped (FULL=1 to run it, ~33m)"
+  echo "  · mutation · engine    skipped (FULL=1 to run it, ~26-40m)"
 fi
 
 if [ "$fail" -ne 0 ]; then
