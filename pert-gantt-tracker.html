@@ -341,6 +341,21 @@
     @media (max-width: 640px) { .co-mrow { grid-template-columns: 1fr; gap: .15rem; } }
     .doc-switch { margin-bottom: 0.6rem; }
     .doc-switch .seg button.doc-on { background: var(--primary); color: #fff; }
+    /* One chip per change order that names this activity, coloured by the
+       state, because "agreed" and "somebody is asking for this" are the two
+       things a reader is separating and the number alone says neither. */
+    .co-task-chip { display: inline-flex; align-items: center; gap: .3rem; margin: 0 .3rem .3rem 0;
+      padding: .2rem .5rem; border-radius: 999px; border: 1px solid var(--border);
+      background: var(--card); font: inherit; font-size: var(--t-xs); cursor: pointer;
+      box-shadow: none; max-width: 100%; white-space: nowrap; }
+    .co-task-chip:hover { border-color: var(--primary); transform: none; box-shadow: none; }
+    .co-ts-accepted   { background: #dcfce7; border-color: #bbf7d0; color: #15803d; }
+    .co-ts-issued     { background: #fef3c7; border-color: #fde68a; color: #b45309; }
+    .co-ts-rejected   { background: #fee2e2; border-color: #fecaca; color: #b91c1c; }
+    .co-ts-superseded { background: #e2e8f0; border-color: #cbd5e1; color: #475569; }
+    .co-ts-w { opacity: .8; overflow: hidden; text-overflow: ellipsis; max-width: 16rem; }
+    .co-ts-m { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .co-ts-k { font-weight: 700; color: var(--critical); }
     .co-row { cursor: pointer; }
     .co-row:hover { background: #f1f5f9; }
     .co-open { color: var(--muted); font-weight: 700; }
@@ -3460,7 +3475,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.05.1544</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.05.1739</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3663,6 +3678,16 @@ Or say what you want, in your own words:
               <div id="mTcResultBtns" style="margin-bottom:0.4rem"></div>
               <input id="mTcEvidence" type="text" placeholder="06-Acceptance/AC-5.1_mapping-spec-approval.pdf — or a defect reference" />
               <div class="help-text" id="mTcRuns" style="margin-top:0.3rem"></div>
+            </div>
+            <!-- WHICH CHANGE ORDERS TOUCHED THIS ONE. The join ran one way
+                 only: a change order could name its activities and an activity
+                 could say nothing about the orders that made it what it is.
+                 That is the question asked when somebody queries a line on an
+                 invoice, or asks why an estimate is what it is — and the answer
+                 was on the record, keyed by id, reachable from nowhere. -->
+            <div class="form-group" id="mCoRow" style="display:none;margin-bottom:0">
+              <span class="fg-head"><label>Change orders that touched this</label><button type="button" class="info-icon" aria-label="About change orders on this activity" data-help="Every change order whose typed line set names this activity, in the order they were raised, with what each one changed about it. An ACCEPTED one is agreed scope and its money is in the price; an issued one is a request nobody has signed; a rejected one either had its change put back or left the work here unbilled. This is the same record the change-order log holds, read from the activity's end.">i</button></span>
+              <div id="mCoChips"></div>
             </div>
             <div class="form-group" style="margin-bottom:0">
               <label for="mJira">Jira / evidence link</label><button type="button" class="info-icon" aria-label="About Jira / evidence link" data-help="The build team's ticket for this work — or, on a test case, the link that EVIDENCES the result (the Jira where the run/defect lives). Renders as a 🔗 chip in the test-case views, survives the editable-workbook round trip, and lets the ⬆ Jira export UPDATE the linked ticket instead of creating a duplicate.">i</button>
@@ -5692,6 +5717,7 @@ Or say what you want, in your own words:
       document.getElementById('mDeliverable').value = '';
       document.getElementById('mAcceptance').value = '';
       tcRowFill(null);
+      coRowFill(null);
       document.getElementById('mActualStart').value = '';
       document.getElementById('mActualFinish').value = '';
       document.getElementById('mActualEffort').value = '';
@@ -5823,6 +5849,7 @@ Or say what you want, in your own words:
       document.getElementById('mDeliverable').value = t.deliverable || '';
       document.getElementById('mAcceptance').value = t.acceptance || '';
       tcRowFill(t);
+      coRowFill(t);
       document.getElementById('mActualStart').value = t.actualStart || '';
       document.getElementById('mActualFinish').value = t.actualFinish || '';
       // null → empty box. Writing 0 here would turn "nobody has said" into
@@ -27957,6 +27984,51 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       try { renderCoHistory(); } catch (e) {}
       if (coOpenNo === DRAFT_CO) { try { draftChangeOrder({ keepNarrative: true }); } catch (e) {} }
       try { paintDocView(); } catch (e) {}
+    }
+    /* ── THE JOIN, READ FROM THE ACTIVITY'S END ──────────────────────────────
+       coLog stores a typed line set keyed by activity id, so "which change
+       orders touched this activity" has always been answerable and was never
+       asked. It is the question behind a queried invoice line and behind "why
+       is this estimate what it is", and the answer sat one filter away.
+
+       EVERY state, not only accepted. An issued order that wants to re-estimate
+       this activity is exactly as worth knowing as one that already did — it is
+       the difference between work that is paid for and work somebody is hoping
+       will be — so the state travels with each chip rather than the list being
+       quietly filtered to the agreed ones. */
+    function coForTask(taskId) {
+      const id = Number(taskId);
+      return (coLog || []).map(c => {
+        const lines = (c.diff || []).filter(d => Number(d.id) === id);
+        return lines.length ? { c: c, lines: lines } : null;
+      }).filter(Boolean);
+    }
+    function coTaskChipsHtml(taskId) {
+      const hits = coForTask(taskId);
+      if (!hits.length) return '';
+      return hits.map(h => {
+        const st = coState(h.c), meta = CO_STATES[st] || {};
+        const money = h.lines.reduce((s2, d) => s2 + (d.priceDelta || 0), 0);
+        const what = h.lines.map(d => (DIFF_KINDS[d.kind] || { lbl: d.kind }).lbl.toLowerCase()).join(', ');
+        return '<button type="button" class="co-task-chip co-ts-' + st + '" onclick="closeModal();coOpen(\''
+          + ekJs(h.c.no) + '\')" title="' + escapeHtml(h.c.no + ' — ' + meta.lbl + '. ' + (meta.tip || '')
+            + ' It changed ' + what + ' on this activity'
+            + (Math.abs(money) >= 1 ? ', worth ' + diffMoney(money) : ', with no price of its own')
+            + '. Click to open the whole change order.') + '">'
+          + '<b>' + escapeHtml(h.c.no) + '</b> <span class="co-ts-w">' + escapeHtml(what) + '</span>'
+          + (Math.abs(money) >= 1 ? ' <span class="co-ts-m">' + diffMoney(money) + '</span>' : '')
+          + (h.c.scopeKept ? ' <span class="co-ts-k" title="' + escapeHtml('Declined by the client and the '
+              + 'work kept — this change is in the plan and nothing pays for it.') + '">⚑ unbilled</span>' : '')
+          + '</button>';
+      }).join('');
+    }
+    function coRowFill(t) {
+      const row = document.getElementById('mCoRow');
+      const host = document.getElementById('mCoChips');
+      if (!row || !host) return;
+      const html = t ? coTaskChipsHtml(t.id) : '';
+      row.style.display = html ? '' : 'none';
+      host.innerHTML = html;
     }
     /* REVERSING LATER. Declining the reversal at the moment of rejection was a
        decision about that moment — the work may have been half-built, or the

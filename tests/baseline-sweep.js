@@ -1029,6 +1029,91 @@ const QA = JSON.parse(fs.readFileSync(
         }
       }
 
+      /* ── 3i-a4. THE JOIN, READ FROM THE ACTIVITY'S END ──────────────────
+         coLog stores its lines keyed by activity id, so "which change orders
+         touched this activity" was always answerable and never asked. It is
+         the question behind a queried invoice line, and the answer sat one
+         filter away from a panel that did not have it.
+
+         Three properties. It finds the orders that touched the activity; it
+         does NOT find orders that touched a different one (a lookup returning
+         everything answers nothing, and is what a missing filter looks like);
+         and it reports EVERY state rather than quietly showing only the agreed
+         ones — an issued order that wants to re-estimate this activity is the
+         difference between work that is paid for and work somebody hopes will
+         be. */
+      {
+        calculate();
+        const L6 = leafTasks().filter(t2 => !t2.milestone && (t2.te || 0) > 0);
+        if (L6.length < 2) { out.reverseLookup = 'SKIPPED-too-few-activities'; }
+        else {
+          const tgt = L6[0], oth = L6[1];
+          tgt.m = (Number(tgt.m) || 1) + 4; calculate();
+          await draftChangeOrder(); approveChangeOrder();
+          const acc = coLog[coLog.length - 1];
+          tgt.owner = 'A Different Person'; calculate();
+          draftChangeOrder._pending = null;
+          await draftChangeOrder(); issueChangeOrder();
+          const iss = coLog[coLog.length - 1];
+          const hits = coForTask(tgt.id);
+          out.reverseLookup = { onTarget: hits.map(h => h.c.no), lines: hits.map(h => h.lines.length) };
+          if (!hits.some(h => h.c.no === acc.no))
+            fail.push('an activity that an ACCEPTED change order re-estimated does not list it — the line set '
+              + 'is keyed by activity id, so this answer was always one filter away');
+          if (!hits.some(h => h.c.no === iss.no))
+            fail.push('the lookup hides change orders that are not yet accepted, so an activity somebody has '
+              + 'ASKED to change looks identical to one nobody has — that is the difference between work that '
+              + 'is paid for and work somebody hopes will be');
+          /* An activity NO change order names. Derived from the whole log, not
+             from the two orders this block happens to have made: by the time
+             this runs the earlier blocks have logged seven, and the first
+             version of this check excluded only its own two — so it picked an
+             activity an earlier order had already touched and reported the
+             product for answering correctly.
+             Re-derived from coLog rather than by calling coForTask, because
+             selecting the negative case with the function under test would
+             make the assertion agree with itself by construction. */
+          const touched = new Set();
+          (coLog || []).forEach(c2 => (c2.diff || []).forEach(d2 => touched.add(Number(d2.id))));
+          const clean = L6.find(t2 => t2.id !== tgt.id && !touched.has(t2.id));
+          if (!clean) out.reverseLookupNegative = 'SKIPPED-every-activity-was-touched';
+          else {
+            out.reverseLookupNegative = coForTask(clean.id).length;
+            if (out.reverseLookupNegative)
+              fail.push('an activity no change order names comes back with ' + out.reverseLookupNegative
+                + ' of them — a lookup that answers everything answers nothing, and that is exactly what a '
+                + 'missing filter looks like');
+          }
+          // and it has to reach the SCREEN, not only the console
+          switchTab('tasks');
+          openEditModal(tgt.id, true);
+          const rowOn = (document.getElementById('mCoRow') || {}).style;
+          const chips = [...document.querySelectorAll('#mCoChips .co-task-chip')];
+          out.reverseChips = chips.map(c2 => c2.textContent.trim().slice(0, 40));
+          if (!rowOn || rowOn.display === 'none')
+            fail.push('the activity editor hides the change-order row on an activity two change orders '
+              + 'touched — the join is computed and unreachable, which is where it started');
+          if (chips.length < 2)
+            fail.push('the editor draws ' + chips.length + ' change-order chip(s) where the lookup finds '
+              + hits.length);
+          if (!chips.some(c2 => /co-ts-issued/.test(c2.className))
+              || !chips.some(c2 => /co-ts-accepted/.test(c2.className)))
+            fail.push('an accepted change order and an issued one are drawn identically on the activity, so '
+              + 'the row cannot answer whether this scope is agreed');
+          closeModal();
+          const cleanId = clean && clean.id;
+          if (cleanId != null) {
+            openEditModal(cleanId, true);
+            const st6 = (document.getElementById('mCoRow') || {}).style;
+            if (st6 && st6.display !== 'none')
+              fail.push('the change-order row is shown on an activity no change order touched — an empty '
+                + 'labelled section reads as "none recorded" rather than "nothing to record"');
+            closeModal();
+          }
+          switchTab('raid');
+        }
+      }
+
       /* ── 3i-b. TWO DOCUMENTS, ONE BOX, AND A WAY BETWEEN THEM ───────────
          The SOW and the change order shared one container and the last one
          drawn won. Getting back to the other meant regenerating it — which on

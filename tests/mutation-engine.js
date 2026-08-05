@@ -1238,6 +1238,18 @@ const MUTANTS = [
     find: "      const v = sowVersionNorm({ n: nextSowNo++, at: fmtISO(new Date()),",
     with: "      const v = ({ n: nextSowNo++, at: fmtISO(new Date())," },
 
+  { what: 'change order: the activity lookup returns every order regardless of which it touched',
+    find: '        const lines = (c.diff || []).filter(d => Number(d.id) === id);',
+    with: '        const lines = (c.diff || []);' },
+
+  { what: 'change order: the activity lookup quietly hides everything not yet accepted',
+    find: '      return (coLog || []).map(c => {',
+    with: "      return (coLog || []).filter(c => coState(c) === 'accepted').map(c => {" },
+
+  { what: 'change order: the activity editor computes the change-order row and never shows it',
+    find: "      row.style.display = html ? '' : 'none';\n      host.innerHTML = html;",
+    with: "      row.style.display = 'none';\n      host.innerHTML = html;" },
+
   { what: 'change order: rejected-and-kept is stored the same as never-rejected again',
     find: '          c.scopeKept = true;',
     with: '          c.scopeKept = false;' },
