@@ -302,6 +302,43 @@
     .raid-dash { color: var(--muted); cursor: help; }
     /* A row that opens something has to look like one. The chevron is the
        cheapest honest signal and it prints as nothing. */
+    /* ── THE CHANGE-ORDER DRILL-IN ──────────────────────────────────────────
+       A change order is opened with three questions and they are answered in
+       this order: what kind of change is this, where did the money go, and do
+       the lines agree with the total. Each gets a picture, because each is a
+       comparison and a comparison is what a number is worst at. */
+    .co-h { font-size: 0.78rem; text-transform: uppercase; letter-spacing: .06em;
+      color: var(--muted); margin: 1rem 0 .4rem; font-weight: 700; }
+    .co-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: .5rem; margin-bottom: .3rem; }
+    .co-tile { background: var(--card); border: 1px solid var(--border); border-radius: 9px;
+      padding: .55rem .6rem; text-align: center; }
+    .co-tv { font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+    .co-tl { font-size: 0.7rem; color: var(--muted); margin-top: .15rem; }
+    /* One bar, a segment per kind, widths proportional to the line count. The
+       count is printed inside a segment only when it fits — a numeral spilling
+       out of its own block is worse than no numeral, and the tooltip and the
+       key underneath both carry it anyway. */
+    .co-bar { display: flex; height: 26px; border-radius: 7px; overflow: hidden;
+      border: 1px solid var(--border); background: var(--card); }
+    .co-seg { display: flex; align-items: center; justify-content: center; min-width: 3px;
+      color: #fff; font-size: 0.72rem; font-weight: 700; cursor: help; }
+    .co-key { display: flex; flex-wrap: wrap; gap: .3rem .8rem; margin-top: .45rem; font-size: 0.76rem; }
+    .co-k { display: inline-flex; align-items: center; gap: .3rem; }
+    .co-k i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
+    .co-km { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .co-km-0 { font-style: italic; }
+    .co-money { border: 1px solid var(--border); border-radius: 9px; padding: .6rem .7rem; background: var(--card); }
+    .co-mrow { display: grid; grid-template-columns: 12rem 1fr auto; align-items: center;
+      gap: .5rem; margin-bottom: .4rem; }
+    .co-ml { font-size: 0.78rem; color: var(--muted); }
+    .co-mt { background: #e2e8f0; border-radius: 4px; height: 12px; overflow: hidden; }
+    .co-mt i { display: block; height: 100%; border-radius: 4px; }
+    .co-mv { font-variant-numeric: tabular-nums; font-size: 0.85rem; white-space: nowrap; }
+    .co-gap { font-size: 0.78rem; background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
+      border-radius: 7px; padding: .45rem .6rem; margin-top: .5rem; line-height: 1.5; }
+    .co-agree { font-size: 0.78rem; color: var(--success); margin-top: .35rem; }
+    @media (max-width: 640px) { .co-mrow { grid-template-columns: 1fr; gap: .15rem; } }
     .doc-switch { margin-bottom: 0.6rem; }
     .doc-switch .seg button.doc-on { background: var(--primary); color: #fff; }
     .co-row { cursor: pointer; }
@@ -3423,7 +3460,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.05.0245</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.05.0309</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -26352,27 +26389,61 @@ Professional, client-ready, no hype, no invented facts.`;
           + 'baseline and the change-order chain are untouched — a SOW is a statement about the work, not the '
           + 'work.</p>';
     }
-    /* Which change orders a given SOW already contains, and the honest answer
-       when the version predates the stamp: "not recorded" rather than "none",
-       because those are different facts and only one of them is knowable. */
+    /* WHICH CHANGE ORDERS ARE IN THIS DOCUMENT, answered two ways because
+       there are two kinds of version and only one of them was stamped.
+
+       STAMPED — written since the history started recording — is a record: the
+       state of the log at the moment the document was made.
+
+       UNSTAMPED is every version a real project already had, and "not recorded"
+       was a true answer that helped nobody. There is a second source and it is
+       the better one anyway: the DOCUMENT ITSELF. A generated SOW names the
+       change orders it incorporates, so searching its text for each number is
+       evidence out of the artefact rather than an inference about it — and it
+       is exactly what a client reading the document would see. Weaker than the
+       stamp (a document could mention a change order in prose without
+       incorporating it) so it is labelled as what it is: what the text says,
+       not what the file recorded. */
+    function sowVersionCoRead(v) {
+      if (Array.isArray(v.cos))
+        return { stamped: true, nos: v.cos.filter(c => c.state === 'accepted').map(c => c.no),
+                 onLog: v.cos.length };
+      const nos = (coLog || []).map(c => String(c.no))
+        .filter(no => no && String(v.html || '').indexOf(no) >= 0);
+      return { stamped: false, nos: nos, onLog: (coLog || []).length };
+    }
     function sowVersionCoCell(v) {
-      if (!Array.isArray(v.cos))
-        return '<span class="help-text" title="' + escapeHtml('This version was written before the SOW '
-          + 'history recorded change-order state, so what it incorporated is not on file. Reading it off '
-          + 'today\u2019s log would be a guess dressed as a record.') + '">not recorded</span>';
-      const acc = v.cos.filter(c => c.state === 'accepted');
-      if (!acc.length)
-        return '<span class="help-text">' + (v.cos.length
-          ? 'none — ' + v.cos.length + ' on the log, none accepted at the time'
+      const r = sowVersionCoRead(v);
+      const btns = r.nos.map(no => '<button type="button" class="ptr-sc-rmore" onclick="coOpen(\'' + ekJs(no)
+        + '\')" title="' + escapeHtml(r.stamped
+            ? 'Open ' + no + '. This document was written while it was accepted, so its scope and price are '
+              + 'already inside.'
+            : 'Open ' + no + '. This version predates the stamp, so this is read from the document TEXT — '
+              + 'it names ' + no + '. Weaker than a record, and it is what a client reading it would see.')
+        + '">' + escapeHtml(no) + '</button>').join(' ');
+      if (r.stamped) {
+        return r.nos.length ? btns : '<span class="help-text">' + (r.onLog
+          ? 'none — ' + r.onLog + ' on the log, none accepted at the time'
           : 'none — no change orders existed yet') + '</span>';
-      return acc.map(c => '<button type="button" class="ptr-sc-rmore" onclick="coOpen(\'' + ekJs(c.no)
-        + '\')" title="' + escapeHtml('Open ' + c.no + '. This document was written while it was accepted, '
-          + 'so its scope and price are already inside.') + '">' + escapeHtml(c.no) + '</button>').join(' ');
+      }
+      if (r.nos.length)
+        return btns + ' <span class="help-text" title="' + escapeHtml('Read from the document text rather '
+          + 'than from a record. This version was written before the history stamped what it contained.')
+          + '">per the text</span>';
+      return '<span class="help-text" title="' + escapeHtml('Written before the history recorded '
+        + 'change-order state, so nothing is on file — and the document text names none of the '
+        + (r.onLog || 0) + ' change order(s) on the log either. Generate the SOW again and it will be '
+        + 'recorded from then on.') + '">not recorded' + (r.onLog ? ', none named in the text' : '') + '</span>';
     }
     // The same join read the other way, for the change-order drill-in.
     function sowVersionsWith(no) {
-      return sowVersions.filter(v => Array.isArray(v.cos)
-        && v.cos.some(c => c.no === String(no) && c.state === 'accepted'));
+      return sowVersions.filter(v => sowVersionCoRead(v).nos.some(x => String(x) === String(no)));
+    }
+    // …and how each of them knows, since a stamp and a text match are not the
+    // same strength of claim and a panel that merged them would be overstating.
+    function sowVersionsWithStamped(no) {
+      return sowVersions.filter(v => { const r = sowVersionCoRead(v);
+        return r.stamped && r.nos.some(x => String(x) === String(no)); });
     }
     function renderSowHistory() {
       const el = document.getElementById('sowHistory');
@@ -27553,9 +27624,55 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       const shownSum = shown.reduce((s, x) => s + (x.priceDelta || 0), 0);
       const lineSum = c.lineSum == null ? diff.reduce((s, x) => s + (x.priceDelta || 0), 0) : c.lineSum;
       const gap = (c.priceDelta || 0) - lineSum;
-      const stat = (lbl, val, tip) => '<div class="stat-card" style="padding:.5rem .6rem"'
-        + (tip ? ' title="' + escapeHtml(tip) + '"' : '') + '><div class="value" style="font-size:1.05rem">'
-        + val + '</div><div class="label">' + escapeHtml(lbl) + '</div></div>';
+      /* ── DRAWN, NOT LISTED ────────────────────────────────────────────────
+         This panel opened as a wall of prose: `c.detail` is every line joined
+         with semicolons — fifty lines of "Added: X; Added: Y" — printed above a
+         TABLE containing the same information properly. The one thing a reader
+         wants first is the shape of the change, and the shape was the only
+         thing not shown. Reported by use: "make this section real easy to
+         understand and read using graphics too".
+
+         Three pictures, each answering one question a change order is opened
+         with: what KIND of change is this, where did the MONEY go, and do the
+         lines and the total agree. The prose moves behind a disclosure — it is
+         the same content as the table and belongs where it can be reached
+         rather than where it has to be scrolled past. */
+      const kinds = {};
+      diff.forEach(x => { const k = kinds[x.kind] = kinds[x.kind] || { n: 0, money: 0 };
+                          k.n++; k.money += (x.priceDelta || 0); });
+      const kindOrder = Object.keys(kinds)
+        .sort((a2, b2) => (DIFF_KINDS[a2] || { order: 99 }).order - (DIFF_KINDS[b2] || { order: 99 }).order);
+      const KIND_COL = { added: '#16a34a', removed: '#dc2626', 're-estimated': '#d97706',
+                         repriced: '#7c3aed', renamed: '#64748b', reassigned: '#0891b2',
+                         resequenced: '#2563eb', 'date-pinned': '#be185d', reallocated: '#0d9488',
+                         reshaped: '#a16207', 'ac-added': '#15803d', 'ac-removed': '#b91c1c',
+                         'ac-reworded': '#475569', 'story-added': '#166534', 'story-removed': '#991b1b' };
+      const kcol = k => KIND_COL[k] || '#94a3b8';
+      // 1. the SHAPE of the change: one bar, a segment per kind, sized by count
+      const shapeBar = diff.length
+        ? '<div class="co-bar">' + kindOrder.map(k => {
+            const pct = kinds[k].n / diff.length * 100;
+            return '<span class="co-seg" style="width:' + pct.toFixed(2) + '%;background:' + kcol(k) + '" '
+              + 'title="' + escapeHtml((DIFF_KINDS[k] || { lbl: k }).lbl + ' — ' + kinds[k].n + ' of '
+                + diff.length + ' lines' + (Math.abs(kinds[k].money) >= 1 ? ', ' + diffMoney(kinds[k].money) : ''))
+              + '">' + (pct > 9 ? kinds[k].n : '') + '</span>';
+          }).join('') + '</div>'
+          + '<div class="co-key">' + kindOrder.map(k => '<span class="co-k">'
+              + '<i style="background:' + kcol(k) + '"></i>'
+              + escapeHtml((DIFF_KINDS[k] || { lbl: k }).lbl) + ' <b>' + kinds[k].n + '</b>'
+              + (Math.abs(kinds[k].money) >= 1
+                  ? ' <span class="co-km">' + diffMoney(kinds[k].money) + '</span>'
+                  : ' <span class="co-km co-km-0">no price</span>') + '</span>').join('') + '</div>'
+        : '';
+      // 2. the two money figures, drawn against each other so a gap is visible
+      //    rather than something you notice by comparing two numerals
+      const mx = Math.max(Math.abs(lineSum), Math.abs(c.priceDelta || 0), 1);
+      const moneyBar = (lbl, val, col, tip) =>
+        '<div class="co-mrow" title="' + escapeHtml(tip) + '"><span class="co-ml">' + escapeHtml(lbl) + '</span>'
+        + '<span class="co-mt"><i style="width:' + (Math.abs(val) / mx * 100).toFixed(1) + '%;background:' + col + '"></i></span>'
+        + '<b class="co-mv">' + diffMoney(val) + '</b></div>';
+      const stat = (lbl, val, tip) => '<div class="co-tile"' + (tip ? ' title="' + escapeHtml(tip) + '"' : '')
+        + '><div class="co-tv">' + val + '</div><div class="co-tl">' + escapeHtml(lbl) + '</div></div>';
       const vBtn = (n, lbl) => n
         ? '<button class="btn-sm btn-secondary no-print" onclick="versionView(' + n + ')" title="'
           + escapeHtml('Open the whole plan exactly as it read at v' + n) + '">' + lbl + ' v' + n + '</button>'
@@ -27573,54 +27690,54 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
               + escapeHtml((d.lbl || st).toLowerCase()) + '</b>, so none of the money below counts as agreed. '
               + escapeHtml(d.tip || '') + '</div>'
             : '')
-        + '<p style="margin:0 0 .7rem;font-size:0.88rem;line-height:1.5">'
-          + (c.detail ? escapeHtml(c.detail) : '<span class="help-text">No narrative was recorded with this one.</span>')
-          + '</p>'
-        + '<div class="stat-grid" style="margin-bottom:.7rem">'
-          + stat('Scope', escapeHtml(String(c.scope || '—')).slice(0, 60))
+        + '<div class="co-tiles">'
+          + stat('Lines changed', String(diff.length),
+                 'How many individual changes this order carries. Each is listed below with both values.')
           + stat('Schedule', ((c.finishDelta || 0) >= 0 ? '+' : '') + (c.finishDelta || 0) + ' d',
                  'Movement in the forecast finish date this change order recorded.')
           + stat('Price impact', diffMoney(c.priceDelta || 0),
                  'The project price movement recorded against this change order.')
-          + stat('Sum of its lines', diffMoney(lineSum),
-                 'What the typed lines below add up to. Where this differs from the price impact, part of the '
-                 + 'movement was the rate card or the pricing basis rather than scope.')
-          + stat('New finish', escapeHtml(c.newFinish || '—'))
+          + stat('New finish', escapeHtml(c.newFinish || '—'), 'The forecast finish once this is applied.')
         + '</div>'
-        + (Math.abs(gap) > 1
-            ? '<div class="conflict-card" style="border-left-color:var(--warn);margin:0 0 .7rem;font-size:0.82rem">'
-              + '<b>' + diffMoney(gap) + ' of the price movement is not in these lines.</b> The lines add to '
-              + diffMoney(lineSum) + ' and the change order recorded ' + diffMoney(c.priceDelta || 0)
-              + '. The difference came from something other than scope — a rate change, a different pricing '
-              + 'basis, or a discount — and a client reading only the lines will not find it.</div>'
+        + (diff.length
+            ? '<h4 class="co-h">What kind of change is this</h4>' + shapeBar
             : '')
-        /* WHICH DOCUMENTS ALREADY CONTAIN THIS. The question a change order is
-           actually asked — "was this applied to the SOW we sent?" — had no
-           answer anywhere: the SOW history and the change-order log were two
-           chains with nothing joining them, so the only method was to read the
-           document and guess. */
+        + '<h4 class="co-h">Where the money is</h4>'
+        + '<div class="co-money">'
+          + moneyBar('Sum of its lines', lineSum, '#2563eb',
+              'What the individual changes below add up to — the part attributable to SCOPE.')
+          + moneyBar('Price impact recorded', c.priceDelta || 0, (c.priceDelta || 0) >= 0 ? '#dc2626' : '#16a34a',
+              'The project price movement this change order recorded. It also moves with the rate card and '
+              + 'the pricing basis, neither of which is scope.')
+          + (Math.abs(gap) > 1
+              ? '<div class="co-gap"><b>' + diffMoney(gap) + ' of the movement is not in these lines.</b> '
+                + 'The lines price the SCOPE that moved; the project price also moves with the rate card, the '
+                + 'pricing basis and the risk percentile. A client reading only the lines will not find this '
+                + 'difference — say which of the two this change order is billing.</div>'
+              : '<div class="co-agree">The lines and the total agree, so every dollar of this change order is '
+                + 'attributable to a change listed below.</div>')
+        + '</div>'
         + (() => {
             if (draft) return '';
             const inV = sowVersionsWith(c.no);
             const anyStamped = sowVersions.some(v2 => Array.isArray(v2.cos));
-            return '<div class="conflict-card" style="margin:0 0 .7rem;font-size:0.82rem'
+            return '<h4 class="co-h">Is it in the statement of work</h4>'
+              + '<div class="conflict-card" style="margin:0 0 .7rem;font-size:0.82rem'
               + (inV.length ? '' : ';border-left-color:var(--warn)') + '">'
               + (inV.length
-                  ? '<b>In the statement of work.</b> ' + inV.length + ' SOW version'
-                    + (inV.length === 1 ? '' : 's') + ' were written while this was accepted, so they already '
-                    + 'reflect it: '
+                  ? '<b>Yes — in ' + inV.length + ' SOW version' + (inV.length === 1 ? '' : 's') + '.</b> '
                     + inV.map(v2 => '<button type="button" class="ptr-sc-rmore" onclick="closeCoModal();'
                         + 'sowViewVersion(' + v2.n + ')" title="' + escapeHtml('Open SOW v' + v2.n)
                         + '">v' + v2.n + '</button>').join(' ')
                   : anyStamped
-                    ? '<b>Not in any statement of work yet.</b> No SOW version on file was written while this '
-                      + 'change order was accepted, so every one of them predates it — the scope it carries is '
-                      + 'agreed and not yet written into the document a client reads.'
-                    : '<b>Not recorded.</b> The SOW versions on file predate the point where they started '
-                      + 'stamping which change orders they contained, so whether they include this one is not '
-                      + 'on file. Generating the SOW again will record it.')
+                    ? '<b>Not yet.</b> No SOW version on file reflects this, so the scope it carries is agreed '
+                      + 'and not written into the document a client reads. Generate the SOW again to fold it in.'
+                    : '<b>Not recorded.</b> Every SOW version on file predates the point where they recorded '
+                      + 'which change orders they contained, and none of their text names this one. Generate '
+                      + 'the SOW again and it will be recorded from then on.')
               + '</div>';
           })()
+        + '<h4 class="co-h">Versions of the plan</h4>'
         + '<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-bottom:.6rem">'
           + vBtn(c.fromV, 'Before') + '<span aria-hidden="true" style="color:var(--muted)">→</span>'
           + vBtn(c.toV, 'After')
@@ -27630,6 +27747,11 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
                   + 'snapshots — the independent check on the lines listed here') + '">⇄ Diff these two</button>'
               : '')
         + '</div>'
+        + (c.detail
+            ? '<details class="help-details" style="margin:0 0 .7rem"><summary>The written description</summary>'
+              + '<p class="help-text" style="margin:.4rem 0 0;line-height:1.55">' + escapeHtml(c.detail)
+              + '</p></details>'
+            : '')
         + '<h4 style="font-size:0.85rem;margin:.2rem 0 .35rem">What changed — ' + diff.length + ' line'
           + (diff.length === 1 ? '' : 's') + '</h4>'
         + '<p class="help-text" style="margin:0 0 .4rem">Untick a line to withhold its price from the change-order '

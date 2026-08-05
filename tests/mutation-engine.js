@@ -1253,7 +1253,7 @@ const MUTANTS = [
      "which SOW versions contain this change order" from today's log rather than
      from what each version recorded. */
   { what: 'baseline history: a past SOW claims every change order accepted since it was written',
-    find: "      return sowVersions.filter(v => Array.isArray(v.cos)\n        && v.cos.some(c => c.no === String(no) && c.state === 'accepted'));",
+    find: "      return sowVersions.filter(v => sowVersionCoRead(v).nos.some(x => String(x) === String(no)));",
     with: "      return sowVersions.filter(() => coAccepted().some(c => String(c.no) === String(no)));" },
 
   { what: 'baseline history: the SOW never says which change orders it already incorporates',

@@ -806,10 +806,28 @@ const QA = JSON.parse(fs.readFileSync(
              figure was never the thing at risk; the printed one was, because
              that is the number a client is handed. Located by its own label,
              which is the right way to resolve a cell and survives a restyling. */
+          /* Located by its LABEL, walking up from wherever the label sits to
+             whatever holds the figure beside it. The first version reached for
+             `.stat-card .value`, which was the markup of the day; the panel was
+             later redrawn — the tiles became one shape and this figure moved
+             into a bar row — and the check went red on a build where nothing
+             was wrong. That is the check working (it refused to pass a panel it
+             could no longer read) and it is also a check that has to be edited
+             every time the panel is, which is the cost of naming a container.
+             A label is the stable thing here: the figure has to be beside its
+             own name in any design worth shipping. */
           const statBy = lbl => {
-            const card = [...document.querySelectorAll('#coModalBody .stat-card')]
-              .find(c2 => ((c2.querySelector('.label') || {}).textContent || '').trim() === lbl);
-            return card ? ((card.querySelector('.value') || {}).textContent || '').trim() : null;
+            const host = document.getElementById('coModalBody');
+            if (!host) return null;
+            const leaf = [...host.querySelectorAll('*')]
+              .find(e => !e.children.length && (e.textContent || '').trim() === lbl);
+            if (!leaf) return null;
+            for (let a2 = leaf.parentElement, hops = 0; a2 && hops < 3; a2 = a2.parentElement, hops++) {
+              const txt = (a2.textContent || '').replace(lbl, '');
+              const m2 = txt.match(/[−+-]?\$[\d,]+(?:\.\d+)?/);
+              if (m2) return m2[0];
+            }
+            return null;
           };
           coOpen(target.no);
           const shownSumBefore = statBy('Sum of its lines');
@@ -1106,6 +1124,41 @@ const QA = JSON.parse(fs.readFileSync(
         out.historyStatesIncorporation = /Incorporates/.test(h3);
         if (!out.historyStatesIncorporation)
           fail.push('the SOW history has no column saying which change orders each version incorporates');
+        /* AN UNSTAMPED VERSION IS NOT A DEAD END. Every version a real project
+           already had predates the stamp, so "not recorded" was true of all of
+           them and helped nobody. The document itself is a second source and a
+           better one for this question: a generated SOW NAMES what it
+           incorporates, so a text match is evidence out of the artefact rather
+           than an inference about it. Weaker than the stamp and labelled as
+           such — asserted here so the fallback cannot quietly disappear. */
+        {
+          const stamped = sowVersions[sowVersions.length - 1];
+          const faux = sowVersionNorm({ n: 9999, at: '2026-01-01', ts: '', label: 'pre-stamp',
+            html: '<h1>Statement of Work</h1><p>Incorporates ' + co.no + '.</p>' });
+          faux.cos = null;                       // exactly what an old file loads as
+          sowVersions.push(faux);
+          const read = sowVersionCoRead(faux);
+          out.unstampedRead = { stamped: read.stamped, nos: read.nos };
+          if (read.stamped)
+            fail.push('a version with no stamp is being reported as stamped');
+          if (!read.nos.some(x => String(x) === String(co.no)))
+            fail.push('a pre-stamp SOW whose own text names ' + co.no + ' answers nothing about it — the '
+              + 'document is the one source that still exists for every version a project already had');
+          if (!sowVersionsWith(co.no).some(v2 => v2.n === 9999))
+            fail.push('the reverse lookup ignores the document text, so an unstamped version can never be '
+              + 'the answer to "which SOW has this change order"');
+          if (sowVersionsWithStamped(co.no).some(v2 => v2.n === 9999))
+            fail.push('a text match is being counted as a stamped record — those are different strengths of '
+              + 'claim and merging them overstates the weaker one');
+          renderSowHistory();
+          const cell = (document.getElementById('sowHistory') || {}).textContent || '';
+          if (cell.indexOf('per the text') < 0)
+            fail.push('the history does not distinguish a change order read from the document text from one '
+              + 'recorded when the document was written');
+          sowVersions.pop();
+          if (stamped) { /* leave the real chain as it was */ }
+        }
+
         coOpen(co.no);
         const cm = (document.getElementById('coModalBody') || {}).textContent || '';
         out.drillNamesSow = /statement of work/i.test(cm);
