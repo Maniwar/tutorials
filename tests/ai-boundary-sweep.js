@@ -372,6 +372,64 @@ const DATA = FIXTURE();
         + 'saved file and every export');
   }
 
+  /* ═══ 4c. FACTS THE NOTES STATED, TAKEN AND REFUSED ═══════════════════════
+     The roster loop read capacity, kind and role and dropped the rest, so a
+     rate and an employer stated in the notes reached the JSON and were thrown
+     away on arrival — leaving somebody to retype by hand what they had already
+     typed. Taking them is easy; the three rules around taking them are what
+     this checks, because each one is a way to lose money quietly. */
+  const facts = await page.evaluate(() => {
+    const out = {};
+    resources['Prior Rate'] = { capacity: 100, kind: 'internal', billRate: 300, rateUnit: 'hour' };
+    applyAIPlan({
+      projectName: 'Facts probe',
+      tasks: [
+        { name: 'P' },
+        { name: 'A', parent: 'P', optimistic: 1, mostLikely: 2, pessimistic: 3, owner: 'Rated Person', units: 40 },
+        { name: 'B', parent: 'P', optimistic: 1, mostLikely: 2, pessimistic: 3, owner: 'Prior Rate', units: 100 },
+        { name: 'C', parent: 'P', optimistic: 1, mostLikely: 2, pessimistic: 3, owner: 'No Unit', units: 100 },
+        { name: 'D', parent: 'P', optimistic: 1, mostLikely: 2, pessimistic: 3, owner: 'Same Firm', units: 100 }
+      ],
+      resources: [
+        { name: 'Rated Person', capacityPercent: 40, kind: 'internal', billRate: 180, costRate: 90,
+          rateUnit: 'hour', company: 'Northwind Consulting' },
+        { name: 'Prior Rate', capacityPercent: 100, kind: 'internal', billRate: 999, rateUnit: 'hour' },
+        { name: 'No Unit', capacityPercent: 100, kind: 'internal', billRate: 250 },
+        { name: 'Same Firm', capacityPercent: 100, kind: 'internal', company: 'northwind consulting' }
+      ]
+    }, 'create');
+    out.applied = { bill: rawBillRate('Rated Person'), cost: rawRate('Rated Person'),
+                    unit: resRateUnit('Rated Person'), org: (resources['Rated Person'] || {}).org };
+    out.priorKept = rawBillRate('Prior Rate');
+    out.noUnit = rawBillRate('No Unit');
+    out.orgIdsMatch = !!(resources['Rated Person'] || {}).orgId
+      && (resources['Rated Person'] || {}).orgId === (resources['Same Firm'] || {}).orgId;
+    out.orgRows = loadOrgLib().filter(o => /northwind/i.test(o.name)).length;
+    return out;
+  });
+  R.resourceFacts = facts;
+  // a rate stated in the notes has to arrive, or the notes were pointless
+  if (facts.applied.bill !== 180 || facts.applied.cost !== 90 || facts.applied.unit !== 'hour')
+    R.contradictions.push('AI boundary :: a bill rate and cost rate stated in the plan did not reach the roster: '
+      + JSON.stringify(facts.applied));
+  if (!facts.applied.org)
+    R.contradictions.push('AI boundary :: a company stated in the plan did not reach the roster');
+  // an unqualified number is REFUSED — /hr and /day differ eightfold, and a
+  // silent factor of eight on a rate is the most expensive defect available
+  if (facts.noUnit !== 0)
+    R.contradictions.push('AI boundary :: a rate given with no per-hour/per-day unit was applied anyway as '
+      + facts.noUnit + ' — the app guessed at a number that differs eightfold either way');
+  // a rate somebody typed is a decision; a regenerated plan restating one is not
+  if (facts.priorKept !== 300)
+    R.contradictions.push('AI boundary :: a rate already set in the roster was overwritten by the plan ('
+      + facts.priorKept + ' replaced 300) — regenerating a plan must not undo hand-tuning');
+  // the company is a JOIN KEY: the same firm typed two ways must be one firm,
+  // or the payment terms attached to one of them go missing
+  if (!facts.orgIdsMatch || facts.orgRows !== 1)
+    R.contradictions.push('AI boundary :: "Northwind Consulting" and "northwind consulting" produced '
+      + facts.orgRows + ' company record(s) and ' + (facts.orgIdsMatch ? 'one' : 'two') + ' id(s) — a firm '
+      + 'typed two ways is two firms, and company payment terms then apply to only one of them');
+
   // ═══ 5. NOTHING LEFT THE BROWSER ════════════════════════════════════════
   // Every check above is meant to run with no key and make no call. If a
   // request went out, the sweep is not what it claims to be.

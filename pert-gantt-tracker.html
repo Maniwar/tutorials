@@ -2710,8 +2710,9 @@
               <div>
                 <label for="aiModel">Model</label>
                 <select id="aiModel">
+                  <option value="claude-opus-5">Opus 5 (highest quality)</option>
                   <option value="claude-sonnet-5">Sonnet 5 (recommended)</option>
-                  <option value="claude-opus-4-8">Opus 4.8 (highest quality)</option>
+                  <option value="claude-opus-4-8">Opus 4.8</option>
                   <option value="claude-haiku-4-5-20251001">Haiku 4.5 (fastest)</option>
                 </select>
               </div>
@@ -3495,7 +3496,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.05.2109</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.05.2211</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -9422,6 +9423,75 @@ Or say what you want, in your own words:
     function resRateUnit(name) { return ((resources[name] || {}).rateUnit === 'hour') ? 'hour' : 'day'; }
     function rawRate(name) { const r = resources[name]; return (r && Number.isFinite(+r.rate)) ? +r.rate : 0; }
     function rawBillRate(name) { const r = resources[name]; return (r && Number.isFinite(+r.billRate)) ? +r.billRate : 0; }
+    /* ═══ FACTS THE NOTES ALREADY STATED ══════════════════════════════════════
+       The roster loop in applyAIPlan read capacity, kind and role, and dropped
+       everything else on the floor. So "my rate is 180 an hour and we are both
+       at Northwind" was understood well enough to reach the JSON and then
+       discarded on arrival, leaving somebody to retype by hand a fact they had
+       already typed into the box above. Rates and companies are now taken.
+
+       TAKEN, NEVER INVENTED, AND NEVER OVER THE TOP OF A DECISION:
+
+       1. A rate arrives only when the model was given one. The schema says so
+          in as many words, because a plausible invented day-rate is worse than
+          a blank — a blank is visibly missing and gets filled, and an invented
+          one gets quoted to a client.
+       2. AN UNQUALIFIED NUMBER IS REFUSED, not guessed at. "180" is $180/hr or
+          $180/day depending on a word that may not be there, and those differ
+          by a factor of eight. A silently wrong factor of eight on a rate is
+          the most expensive single defect this file could ship, so the rate is
+          declined and the person is named in the report instead.
+       3. An existing non-zero rate is never overwritten. Somebody typing a rate
+          into the roster is a decision; a regenerated plan restating it is not,
+          and a delta update must not quietly undo hand-tuning.
+
+       Everything applied and everything refused is reported to the caller, so
+       the flash after a plan lands can say what it took and what it would not. */
+    function aiApplyResourceFacts(r, nm, rep) {
+      const res = resources[nm];
+      if (!res || !r || !rep) return;
+      const num = v => { const n = Number(v); return (Number.isFinite(n) && n > 0) ? n : null; };
+      const bill = num(r.billRate), cost = num(r.costRate != null ? r.costRate : r.rate);
+      if (bill || cost) {
+        const unit = (r.rateUnit === 'hour' || r.rateUnit === 'day') ? r.rateUnit : null;
+        if (!unit) rep.rateNoUnit.push(nm);
+        else if (rawBillRate(nm) > 0 || rawRate(nm) > 0) rep.rateKept.push(nm);
+        else {
+          res.rateUnit = unit;
+          if (bill) res.billRate = bill;
+          if (cost) res.rate = cost;
+          rep.rateSet.push(nm + ' ' + fmtMoney(bill || cost) + (unit === 'hour' ? '/hr' : '/day'));
+        }
+      }
+      // the company is a join key across engagements, so it is REGISTERED rather
+      // than written as loose text — otherwise the same firm typed two ways is
+      // two firms, and the payment terms attached to one of them go missing
+      const org = String((r.company != null ? r.company : r.org) || '').trim();
+      if (org && !res.orgId && !String(res.org || '').trim()) {
+        const reg = orgRegister(org);
+        res.org = org;
+        res.orgId = (reg && reg.id) || '';
+        rep.orgSet.push(nm + ' → ' + org);
+      }
+    }
+    // carries the roster report from the resource loop out to the flash at the
+    // end of applyAIPlan, which runs long after the loop and cannot see into it
+    let aiFactsNote = [];
+    function aiResourceFactsReport() { return { rateSet: [], rateKept: [], rateNoUnit: [], orgSet: [] }; }
+    function aiResourceFactsSay(rep) {
+      if (!rep) return [];
+      const out = [];
+      if (rep.rateSet.length) out.push('rates set from the notes: ' + rep.rateSet.slice(0, 4).join(', ')
+        + (rep.rateSet.length > 4 ? ' +' + (rep.rateSet.length - 4) : ''));
+      if (rep.orgSet.length) out.push('companies set: ' + rep.orgSet.slice(0, 3).join(', ')
+        + (rep.orgSet.length > 3 ? ' +' + (rep.orgSet.length - 3) : ''));
+      if (rep.rateKept.length) out.push(rep.rateKept.length + ' rate'
+        + (rep.rateKept.length === 1 ? '' : 's') + ' already set in the roster were left alone ('
+        + rep.rateKept.slice(0, 3).join(', ') + ')');
+      if (rep.rateNoUnit.length) out.push('⚠ a rate for ' + rep.rateNoUnit.slice(0, 3).join(', ')
+        + ' did not say per hour or per day, so it was NOT applied — set it in the roster');
+      return out;
+    }
     function rateUnitSuffix(name) { return resRateUnit(name) === 'hour' ? '/hr' : '/day'; }
     function setRateUnit(name, val) {
       if (!resources[name]) resources[name] = { capacity: 100 };
@@ -22544,7 +22614,8 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
     }
   ],
   "resources": [
-    { "name": "person/role/team name", "capacityPercent": 100, "kind": "internal", "role": "their job on the engagement, e.g. Solution Consultant / Platform Developer / Data Analyst / Client Program Lead" }  // kind "client" for CLIENT-side people (they do work but are never billed/costed)
+    { "name": "person/role/team name", "capacityPercent": 100, "kind": "internal", "role": "their job on the engagement, e.g. Solution Consultant / Platform Developer / Data Analyst / Client Program Lead",
+      "billRate": 180, "costRate": 110, "rateUnit": "hour", "company": "Northwind Consulting" }  // kind "client" for CLIENT-side people (they do work but are never billed/costed)
   ]
 }
 Rules:
@@ -22561,7 +22632,7 @@ ${uatStylePref() === 'bigbang'
 - Assign owners only when named or clearly implied. Default units to 100 unless the notes say a task is part-time or shared.
 - Draft the FULL WBS dictionary: every task (including phases and milestones) gets a concise deliverable, description, and acceptance — never leave them blank.
 - Allocation and capacity are DIFFERENT NUMBERS and must agree. "capacityPercent" is how much of the person exists; "units" on an activity is how much of them that activity takes. Units above their capacity is an over-allocation on every day the activity runs, and the app will draw it red. A client SME at 20% gets activities at units 20. Where the notes give somebody a percentage, use it for BOTH.
-- In "resources", list each distinct owner once. Give teams a capacityPercent > 100 (e.g. a 3-developer team = 300); individuals default to 100. Mark client-side participants (SMEs, approvers, data stewards) with kind "client". ALWAYS carry each person's role/title from the notes into "role" ("Marcus Webb — CRM Platform Developer" → role "CRM Platform Developer") — the roster shows bare names, and the role is how anyone reading the plan later knows who does what job. Omit "resources" only if no owners are assigned.
+- In "resources", list each distinct owner once. Give teams a capacityPercent > 100 (e.g. a 3-developer team = 300); individuals default to 100. Mark client-side participants (SMEs, approvers, data stewards) with kind "client". ALWAYS carry each person's role/title from the notes into "role" ("Marcus Webb — CRM Platform Developer" → role "CRM Platform Developer") — the roster shows bare names, and the role is how anyone reading the plan later knows who does what job. Omit "resources" only if no owners are assigned. Give "billRate" (and "costRate" if the notes state a cost) ONLY when the notes actually state a figure — never estimate or infer one, because an invented rate gets quoted to a client. When you give a rate you MUST also give "rateUnit": "hour" or "day"; a bare number is refused by the app, since $180/hr and $180/day differ eightfold. Put the person's employer in "company" when the notes name one.
 - For workshops/sessions with several people at once, set one owner and put the rest in "attendees".`;
     }
 
@@ -22590,6 +22661,7 @@ ${uatStylePref() === 'bigbang'
     }
     const MODEL_CAPS = [
       { p: 'claude-haiku-4-5', max: 64000 },
+      { p: 'claude-opus-5',    max: 128000 },
       { p: 'claude-sonnet-5',  max: 128000 },
       { p: 'claude-opus-4-8',  max: 128000 },
       { p: 'claude-opus-4-7',  max: 128000 },
@@ -22636,7 +22708,7 @@ ${uatStylePref() === 'bigbang'
       "was": "current name ONLY when renaming this task" }
   ],
   "removeTasks": ["exact names of tasks to delete"],
-  "resources": [ { "name": "person/role/team", "capacityPercent": 100, "kind": "internal", "role": "their job, e.g. Platform Developer" } ]
+  "resources": [ { "name": "person/role/team", "capacityPercent": 100, "kind": "internal", "role": "their job, e.g. Platform Developer", "billRate": 180, "rateUnit": "hour", "company": "Northwind Consulting" } ]
 }
 Rules:
 - changedTasks holds ONLY new tasks and tasks where a field genuinely changes. Fill every field for each task you include (its stored planning fields are overwritten; % complete, actual dates and story/test-case links are preserved automatically).
@@ -24085,6 +24157,7 @@ ${aiSchemaHint()}`];
       // without assigning them work, which used to leave idle roster clutter.
       if (Array.isArray(plan.resources)) {
         const brandNew = new Set();
+        const rep = aiResourceFactsReport();
         plan.resources.forEach(r => {
           let nm = String((r && r.name) || '').trim(); if (!nm) return;
           const exKey = Object.keys(resources).find(k => k.toLowerCase() === nm.toLowerCase());
@@ -24096,7 +24169,9 @@ ${aiSchemaHint()}`];
             kind: r.kind === 'client' ? 'client' : (old.kind || 'internal'),
             role: String(r.role || '').trim() || old.role || ''
           });
+          aiApplyResourceFacts(r, nm, rep);
         });
+        aiFactsNote = aiResourceFactsSay(rep);
         if (brandNew.size) {
           const used = new Set();
           tasks.forEach(t => taskParticipants(t).forEach(pr => used.add(pr.name.toLowerCase())));
@@ -24216,6 +24291,7 @@ ${aiSchemaHint()}`];
       const ownerByLower = {};
       built.forEach(t => { const o = (t.owner || '').trim(); if (o) ownerByLower[o.toLowerCase()] = o; });
       if (Array.isArray(plan.resources)) {
+        const rep = aiResourceFactsReport();
         plan.resources.forEach(r => {
           let nm = String((r && r.name) || '').trim();
           if (!nm) return;
@@ -24227,7 +24303,9 @@ ${aiSchemaHint()}`];
             kind: r.kind === 'client' ? 'client' : (old.kind || 'internal'), // AI can flag client, never silently demote one
             role: String(r.role || '').trim() || old.role || ''
           });
+          aiApplyResourceFacts(r, nm, rep);
         });
+        aiFactsNote = aiResourceFactsSay(rep);
       }
       syncResources();
       /* ── ALLOCATION AGAINST CAPACITY ────────────────────────────────────────
@@ -24272,6 +24350,11 @@ ${aiSchemaHint()}`];
           + (alloc.keptOver ? (alloc.lowered ? ' ' : '') + alloc.keptOver + ' allocation(s) the plan asked for '
             + 'explicitly are ABOVE capacity and were left alone — check the workload heatmap.' : '')), 400);
       }
+      // what was taken from the notes, and what was declined — the refusals are
+      // the half worth showing, since a rate that did not apply looks identical
+      // to one that was never mentioned
+      if (aiFactsNote && aiFactsNote.length)
+        setTimeout(() => flashSaved('💷 ' + aiFactsNote.join(' · ')), 900);
       // final safety net: anyone who existed before under the same name gets their
       // rate / bill rate / PTO / role back if the pass above lost them
       for (const nm in resources) {
