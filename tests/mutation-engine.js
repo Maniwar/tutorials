@@ -1242,9 +1242,19 @@ const MUTANTS = [
     find: '        if (sowVersions[i].html === sowDraft) { curIdx = i; break; }',
     with: '        if (sowVersions[i].html === sowDraft) { curIdx = i; }' },
 
+  /* A MUTANT CAN GO STALE IN MEANING, NOT ONLY IN ITS ANCHOR, and the engine
+     reports both as SURVIVED. This one used to plant a getter in the object
+     literal so `cos` read the live log; a later refactor put a normaliser
+     between that literal and the stored record, and the normaliser COPIES the
+     array — so the getter fired once, froze into a plain array, and the mutant
+     stopped expressing anything. It survived because there was nothing to
+     catch, which reads identically to a hole in the suite and is the opposite.
+     Moved to the READER, where the defect it names actually lives: answering
+     "which SOW versions contain this change order" from today's log rather than
+     from what each version recorded. */
   { what: 'baseline history: a past SOW claims every change order accepted since it was written',
-    find: "                  cos: (coLog || []).map(c => ({ no: String(c.no), state: coState(c) })),",
-    with: "                  get cos() { return (coLog || []).map(c => ({ no: String(c.no), state: coState(c) })); }," },
+    find: "      return sowVersions.filter(v => Array.isArray(v.cos)\n        && v.cos.some(c => c.no === String(no) && c.state === 'accepted'));",
+    with: "      return sowVersions.filter(() => coAccepted().some(c => String(c.no) === String(no)));" },
 
   { what: 'baseline history: the SOW never says which change orders it already incorporates',
     find: "        ${(() => { const a = coAccepted(); return a.length",

@@ -305,6 +305,32 @@ wording — on crm-rollout the finish is held, so both take their other branch a
 there is nothing to disagree about. It survives for want of a fixture, not for
 want of a check, and listing it would report a permanent false hole.
 
+### A mutant can go stale in MEANING, not only in its anchor
+
+The engine already separates two verdicts: SURVIVED says a region of the product
+is unguarded, SKIPPED says this file is stale because the code its anchor pointed
+at was edited. There is a third case it cannot tell apart from the first, and it
+cost a full run to notice.
+
+A mutant planted a getter in an object literal so a stored field would read live
+state instead of a snapshot. Later, a normaliser was introduced between that
+literal and the stored record — and the normaliser COPIES the array. The getter
+fired once, froze into a plain array, and the mutant stopped expressing anything
+at all. It reported SURVIVED, which reads as "the suite has a hole here" and was
+the exact opposite: the refactor had made the defect unreachable, so there was
+nothing left to catch.
+
+The anchor still matched exactly once, so the staleness check said nothing. That
+check asks whether the mutant APPLIED; this is a mutant that applied cleanly and
+meant nothing afterwards. Nothing mechanical here distinguishes them, and the
+honest position is that a surviving mutant deserves the question "does this still
+break what its name says" before it is treated as a finding about the product.
+
+The repair is the general one: move the mutant to whichever side of the refactor
+still owns the behaviour. This one moved from the writer to the reader, where
+"answer from today's log rather than from what the version recorded" is still a
+single edit away.
+
 ### Running one mutant
 
 `node tests/mutation-engine.js <substring> [<substring> …]` keeps only the
