@@ -172,6 +172,47 @@ const DATA = FIXTURE();
           + mine.people + ' people on ' + mine.days + ' distinct dates');
     }
 
+    /* ── 6b. A ROLE YOU CANNOT READ ────────────────────────────────────────
+       The roster's role field borrowed `.mini-inp`, which is 64px because it
+       was built for a NUMBER, and holds things like "Principal Consultant and
+       Delivery Lead" — so every role on the team read as a truncated fragment
+       and two people with the same job family were indistinguishable. Reported
+       by use: "the role is not fully readable in here".
+
+       The property asserted is NOT a width. A width is a number that has to be
+       re-agreed every time the column layout moves, and it would fail a
+       redesign that solved the problem differently. What has to hold is that a
+       value the reader cannot see in full is one hover away — the same rule the
+       truncated chips elsewhere follow. A box wide enough for the text passes
+       trivially; a narrow one passes only if it says the whole thing somewhere.
+
+       CONSTRUCTED, because the fixture's roles are short enough that a 64px box
+       would still have been the only thing wrong and nothing here would have
+       clipped. Without this the check would pass on the build that prompted it. */
+    {
+      const names6 = Object.keys(resources || {});
+      if (!names6.length) { /* nothing to test on an empty roster */ }
+      else {
+        const wasRole = resources[names6[0]].role;
+        resources[names6[0]].role = 'Principal Consultant and Delivery Lead for the Programme';
+        if (typeof setResTab === 'function') setResTab('team');
+        renderResources();
+        const ins = [...document.querySelectorAll('.rl-role')];
+        if (!ins.length)
+          say('Roster', 'the role column draws no editable field at all, so the constructed long role was '
+            + 'never rendered and nothing below tested anything');
+        const bad6 = ins.filter(i => i.scrollWidth > i.clientWidth + 1)
+                        .filter(i => String(i.title || '').indexOf(i.value) !== 0);
+        if (bad6.length)
+          say('Roster', bad6.length + ' role(s) are cut off by their own input and the full text is nowhere '
+            + '— not in the title, not anywhere on the row. A truncation is only honest when the whole '
+            + 'value is one hover away; otherwise the reader is being shown a fragment and told nothing '
+            + 'about it. First: "' + String(bad6[0].value).slice(0, 40) + '"');
+        resources[names6[0]].role = wasRole;
+        renderResources();
+      }
+    }
+
     // ── 7. levelling must actually reduce the count, or say it cannot ─────
     const levelling = (() => {
       if (typeof autoLevel !== 'function') return null;

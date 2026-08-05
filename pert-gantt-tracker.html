@@ -136,6 +136,15 @@
     .progress-track { background: #e2e8f0; border-radius: 999px; height: 8px; overflow: hidden; min-width: 60px; }
     .progress-fill { background: var(--success); height: 100%; border-radius: 999px;  }
     .mini-inp { width: 64px; padding: 0.25rem 0.4rem; font-size: var(--t-md); }
+    /* .mini-inp is 64px because it was built for a NUMBER. The roster's role
+       field borrowed it and holds "Principal Consultant and Delivery Lead" —
+       four words in a box sized for three digits, so every role on the team
+       read as a truncated fragment and two people with the same job title were
+       indistinguishable. Reported by use: "the role is not fully readable in
+       here". The column is in a horizontally scrolling wrap, so the space costs
+       nothing that was not already scrollable. */
+    .rl-role { width: 100%; min-width: 17rem; }
+    @media (max-width: 900px) { .rl-role { min-width: 11rem; } }
     /* Gantt */
     .gantt-container { overflow-x: auto; padding-bottom: 1rem; }
     .gantt-chart { position: relative; min-width: 100%; }
@@ -3475,7 +3484,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.05.1844</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.05.1950</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -15018,7 +15027,7 @@ Or say what you want, in your own words:
           <td><select class="mini-inp rl-kind" data-ri="${ri}" style="width:auto" title="Client/external people carry no cost or billing — but their workload and PTO are still tracked">
             <option value="internal" ${!isClient ? 'selected' : ''}>Internal</option>
             <option value="client" ${isClient ? 'selected' : ''}>Client</option></select></td>
-          <td><input class="mini-inp rl-role" data-ri="${ri}" type="text" value="${escapeHtml((resources[name] || {}).role || '')}" placeholder="e.g. Platform Developer" title="What they do on this engagement — the AI captures it from your notes ('Marcus Webb — CRM Platform Developer'); applying a rate card also fills it. Shows on owner hovers so a roster of names still tells you who does what." style="width:150px" /></td>
+          <td><input class="mini-inp rl-role" data-ri="${ri}" type="text" value="${escapeHtml((resources[name] || {}).role || '')}" placeholder="e.g. Platform Developer" title="${escapeHtml((resources[name] || {}).role ? (resources[name] || {}).role + ' — ' : '')}What they do on this engagement — the AI captures it from your notes ('Marcus Webb — CRM Platform Developer'); applying a rate card also fills it. Shows on owner hovers so a roster of names still tells you who does what." style="width:150px" /></td>
           <td>${orgPickerHtml(name, ri)}</td>
           <td><input class="mini-inp rl-cap" data-ri="${ri}" type="number" min="1" step="10" value="${R.capacity}" title="Capacity % — 100 = 1 full-time person, 300 = a 3-person team" /></td>
           <td>${isClient ? '<span class="help-text">n/a</span>' : `<input class="mini-inp rl-rate" data-ri="${ri}" type="number" min="0" step="${resRateUnit(name) === 'hour' ? 5 : 50}" value="${rawRate(name)}" title="COST rate at 100%, in the unit on the right (feeds the budget layer — hourly × 8 = the daily figure the math uses)" />`}</td>

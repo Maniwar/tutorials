@@ -1248,6 +1248,17 @@ const MUTANTS = [
     find: "      const v = sowVersionNorm({ n: nextSowNo++, at: fmtISO(new Date()),",
     with: "      const v = ({ n: nextSowNo++, at: fmtISO(new Date())," },
 
+  /* The role field back at the width it was built for — a NUMBER — with the
+     value no longer in the title. Both halves, because either one alone leaves
+     the value readable: a narrow box whose title carries the text is honest,
+     and a wide box needs no title. It is the combination that shows a reader a
+     fragment and tells them nothing about it. */
+  { what: 'effort: a roster role is cut off by its own box with the full text nowhere',
+    find: ['    .rl-role { width: 100%; min-width: 17rem; }',
+           "title=\"${escapeHtml((resources[name] || {}).role ? (resources[name] || {}).role + ' — ' : '')}What they do on this engagement"],
+    with: ['    .rl-role { width: 64px; min-width: 64px; }',
+           'title="What they do on this engagement'] },
+
   { what: 'change order: the activity lookup returns every order regardless of which it touched',
     find: '        const lines = (c.diff || []).filter(d => Number(d.id) === id);',
     with: '        const lines = (c.diff || []);' },
