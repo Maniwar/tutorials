@@ -282,6 +282,61 @@ const { chromium } = requirePlaywright();
     }
     revTerms = JSON.parse(before);
 
+    /* ── 8b. A RETAINER IS OWED WHETHER OR NOT THE PERIOD WAS BUSY ──────────
+       Every other arrangement takes its shape from the plan and its total from
+       the fee. This one takes neither: the amount is contractual and the count
+       is calendar. The failure worth catching is it quietly behaving like the
+       others — scaling to the fee, skipping a quiet week, or reconciling the
+       difference away instead of reporting it. */
+    ran('8b·retainerIsFixed');
+    revTerms = { kind: 'retainer', days: 7, period: 'week', retainer: 5000, deposit: 0 };
+    const rp = retainerPeriods(false, lv);
+    if (!rp.length)
+      say('the fixture produces no retainer period, so every retainer check below reads an empty list');
+    else {
+      const rc = revSpread(false, lv, { cash: true });
+      const amounts = rc.segs.map(s => Math.round(s.c));
+      if (!amounts.length || !amounts.every(a => a === 5000))
+        say('a retainer curve places amounts ' + [...new Set(amounts)].slice(0, 4).join('/')
+          + ' rather than the contracted 5000 on every period — it is being scaled by the work');
+      if (Math.round(rc.placed) !== rp.length * 5000)
+        say('a retainer places ' + Math.round(rc.placed) + ' across ' + rp.length + ' periods instead of '
+          + (rp.length * 5000));
+      // a quiet period is still a period
+      const wk = 7 * 86400000;
+      const spanWeeks = Math.round((rp[rp.length - 1].start - rp[0].start) / wk) + 1;
+      if (rp.length !== spanWeeks)
+        say('the retainer bills ' + rp.length + ' weeks across a ' + spanWeeks + '-week engagement — a week '
+          + 'with no work in it is still retained');
+      // the ACCRUAL is the comparison and must still follow the work
+      const ra = revSpread(false, lv, { cash: false });
+      if (near(ra.placed, rc.placed, 0.01) && Math.abs(ra.total - rc.placed) > 1)
+        say('the accrual curve moved with the retainer, so there is nothing left to compare it against');
+      // and the SOW states the reconciliation rather than hiding it
+      const rplan = sowPaymentPlan();
+      if (rplan.rows.length !== rp.length)
+        say('the SOW payment schedule shows ' + rplan.rows.length + ' periods against ' + rp.length + ' retained');
+      if (Math.abs(rplan.retainerGap - (rp.length * 5000 - rplan.total)) > 1)
+        say('the SOW does not state the gap between the retainer total and the priced work');
+      if (rplan.total > 0 && Math.abs(rplan.retainerGap) > 1) {
+        const rd = sowSkeletonData(); rd.storiesAppendix = '';
+        const rh = String(sowAssembleHtml(rd, null)).replace(/<[^>]+>/g, ' ');
+        if (!/(shortfall of|margin of)/.test(rh))
+          say('the retainer and the priced work disagree by ' + Math.round(rplan.retainerGap)
+            + ' and the SOW says nothing about it');
+        if (!/whether or not the period is fully utilised/.test(rh))
+          say('the SOW describes a retainer without saying it is owed whether or not the period is used');
+      }
+      // no amount set must not read as a signed schedule of zeroes
+      revTerms = { kind: 'retainer', days: 7, period: 'week', retainer: 0, deposit: 0 };
+      const zplan = sowPaymentPlan();
+      if (zplan.rows.length && zplan.rows.every(r => !(r.amount > 0))
+          && Math.abs(zplan.retainerGap) < 1)
+        say('a retainer with no amount produces a schedule of zeroes that reconciles to nothing and '
+          + 'reports no gap');
+    }
+    revTerms = JSON.parse(before);
+
     /* ── 9. NONE OF IT TOUCHES EARNED VALUE ─────────────────────────────────
        CPI, SPI and EAC are defined on accrued cost. A receipt reaching them
        would produce a confident number that means nothing. */

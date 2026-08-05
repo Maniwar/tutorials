@@ -1253,11 +1253,119 @@ const MUTANTS = [
      the value readable: a narrow box whose title carries the text is honest,
      and a wide box needs no title. It is the combination that shows a reader a
      fragment and tells them nothing about it. */
+  /* The reported defect itself, and the over-correction that would replace it.
+     The second is the more interesting mutant: clamping EVERY allocation to
+     capacity looks like a fix and silently rewrites an instruction the plan
+     gave on purpose. */
+  { what: 'criteria: a part-time person is booked full time by the plan that states their capacity',
+    find: '          if (t._unitsAuto && t.units > cap) { t.units = cap; alloc.lowered++; alloc.people.add(own); }',
+    with: '          if (false) { t.units = cap; alloc.lowered++; alloc.people.add(own); }' },
+
+  { what: 'criteria: an allocation the plan asked for explicitly is clamped to capacity anyway',
+    find: '          if (t._unitsAuto && t.units > cap) { t.units = cap; alloc.lowered++; alloc.people.add(own); }\n          else if (!t._unitsAuto && t.units > cap) { alloc.keptOver++; alloc.people.add(own); }',
+    with: '          if (t.units > cap) { t.units = cap; alloc.lowered++; alloc.people.add(own); }' },
+
+  { what: 'criteria: attendee allocations are hard-coded past whatever the plan said',
+    find: '            return { name: an, units: given ? au : 100, _unitsAuto: !given };',
+    with: '            return { name: an, units: 100, _unitsAuto: true };' },
+
+  { what: 'resource load: a day somebody never works is treated as an ordinary working day',
+    find: '          const offToday = !resWorksOn(R.name, new Date(iso + \'T00:00:00\').getDay());',
+    with: '          const offToday = false;' },
+
+  { what: 'resource load: an unset working week means the person works NO days',
+    find: "      if (!Array.isArray(raw) || !raw.length) return null;      // follows the project",
+    with: '      if (!Array.isArray(raw)) return new Set();' },
+
+  /* NOT A MUTANT: breaking the hydrate coercion `r.workDays = w.length ? w :
+     null`. It survives everything, and correctly — resWorkDays guards the same
+     condition on the read side, so an empty array that reaches storage still
+     resolves to "follows the project". The mutant above proves the read-side
+     guard is load-bearing; the write-side one is belt and braces and there is
+     no observable defect to plant. Listing it anyway would report a permanent
+     hole that is not one, which is the failure mode this file learned about the
+     hard way. */
+
+  { what: 'heatmap: a day off and a day somebody never works are described identically',
+    find: "            : isOff ? 'does not work ' + ['Sundays','Mondays','Tuesdays','Wednesdays','Thursdays','Fridays','Saturdays'][dd.getDay()]",
+    with: "            : isOff ? 'PTO'" },
+
   { what: 'effort: a roster role is cut off by its own box with the full text nowhere',
     find: ['    .rl-role { width: 100%; min-width: 17rem; }',
            "title=\"${escapeHtml((resources[name] || {}).role ? (resources[name] || {}).role + ' — ' : '')}What they do on this engagement"],
     with: ['    .rl-role { width: 64px; min-width: 64px; }',
            'title="What they do on this engagement'] },
+
+  /* The four SOW-generation defects, each planted back. All four shipped in a
+     document a client had already been sent, and none of them were visible in
+     the skeleton DATA — they lived in the assembly, which is why the sweep that
+     checked the data caught nothing. */
+
+  /* The retainer. Its whole character is that the amount is contractual and the
+     count is calendar, so every mutant here is the same mistake in a different
+     place: letting the plan have a vote. */
+
+  { what: 'retainer: the fixed period amount is scaled by how busy the period was',
+    find: '          if (T.retainer > 0) { out.segs.push({ s: pay, f: pay + DAY, c: T.retainer }); out.placed += T.retainer; }',
+    with: '          if (T.retainer > 0) { const c9 = T.retainer * (fee / Math.max(1, pers.length * T.retainer)); out.segs.push({ s: pay, f: pay + DAY, c: c9 }); out.placed += c9; }' },
+
+  { what: 'retainer: a period with no work in it is not billed',
+    find: '        for (let cur = s0; cur <= fin && out.length < 600; cur += 7 * DAY) out.push({ start: cur, n: out.length + 1 });',
+    with: '        for (let cur = s0; cur <= fin && out.length < 600; cur += 7 * DAY) { if (lv.some(t => { const f2 = (ub ? t.baseFinish : t.finishDate) || t.finishDate; const s2 = (ub ? t.baseStart : t.startDate) || t.startDate; return s2 && f2 && stripTime(s2).getTime() <= cur + 6 * DAY && stripTime(f2).getTime() >= cur; })) out.push({ start: cur, n: out.length + 1 }); }' },
+
+  { what: 'retainer: the gap between what is retained and what the work is priced at is reconciled away',
+    find: '        out.retainerGap = out.scheduled - out.total;',
+    with: '        out.total = out.scheduled; out.retainerGap = 0;' },
+
+  { what: 'retainer: the contract does not say the period is owed whether or not it is used',
+    find: "        ? 'This engagement is retained. The amounts below are payable for each period whether or not the period is fully utilised, and reserve the team\\'s availability for it.'",
+    with: "        ? 'This engagement is retained.'" },
+
+  { what: 'SOW: the trace columns cite story ids the document never prints',
+    find: '      const kept = (ids || []).filter(id => printed.has(id));',
+    with: '      const kept = (ids || []);' },
+
+  { what: 'SOW: a story the contract relies on is left out of the appendix it points readers to',
+    find: '        if ((s.nfrs || []).some(x => String(x).trim())) out.add(s.id);',
+    with: '        if (false) out.add(s.id);' },
+
+  { what: 'SOW: the appendix goes back to printing client-facing stories alone',
+    find: '      return new Set(reqs.stories.filter(s => storyAudience(s) === \'client\' || ref.has(s.id)).map(s => s.id));',
+    with: "      return new Set(reqs.stories.filter(s => storyAudience(s) === 'client').map(s => s.id));" },
+
+  { what: 'SOW: a dependency traces to a delivery-side story the reader cannot look up',
+    find: "            out.push({ text: String(x).replace(/^D:\\s*/i, ''), ref: printedIds.has(s.id) ? s.id : '' });",
+    with: "            out.push({ text: String(x).replace(/^D:\\s*/i, ''), ref: s.id });" },
+
+  { what: 'SOW: milestone billing names the milestones and states no amount against any of them',
+    find: '          const amt = money.get(k) || 0;',
+    with: '          const amt = 0;' },
+
+  { what: 'SOW: the payment schedule totals less than the price the client is signing',
+    find: '      [...money.keys()].sort((a, b) => a - b).forEach(k => {',
+    with: '      [].forEach(k => {' },
+
+  { what: 'SOW: with no billing arrangement recorded the terms ship as a finished clause',
+    find: "      if (!pay || pay.kind === 'none' || !pay.rows.length) {",
+    with: '      if (false) {' },
+
+  { what: 'SOW: out of scope reads as a waiver rather than a limit',
+    find: '        `<p style="font-size:13px">Only the work itemised in {{sec:scope}} is included in this Statement of Work. Anything not expressly listed there is out of scope,',
+    with: '        `<p style="font-size:13px">No exclusions apply: all activities and deliverables are as defined in the scope table,' },
+
+  { what: 'SOW: section numbers skip whenever an optional section is empty',
+    find: '        `<h2 style="font-size:16px;margin:16px 0 6px">${i + 1}. ${s.title}</h2>${s.body}`).join(\'\');',
+    with: '        `<h2 style="font-size:16px;margin:16px 0 6px">${secs.length > 9 ? i + 1 : i + 2}. ${s.title}</h2>${s.body}`).join(\'\');' },
+
+  { what: 'SOW: a cross-reference points at a section number that does not exist',
+    find: '      secs.forEach((s, i) => { numOf[s.key] = i + 1; });',
+    with: '      secs.forEach((s, i) => { numOf[s.key] = i + 2; });' },
+
+  { what: 'SOW: the price and the payment schedule go back to the basement',
+    find: ["      add('commercial', 'Commercial Terms', d.price ? sowCommercialHtml(d, n, td, th) : '');",
+           "      add('change', 'Change Control',"],
+    with: ['      ;',
+           "      add('commercial', 'Commercial Terms', d.price ? sowCommercialHtml(d, n, td, th) : '');\n      add('change', 'Change Control',"] },
 
   { what: 'change order: the activity lookup returns every order regardless of which it touched',
     find: '        const lines = (c.diff || []).filter(d => Number(d.id) === id);',

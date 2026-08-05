@@ -303,6 +303,75 @@ const DATA = FIXTURE();
     return { contradictions: bad, catalogue: catOut, clientSafe: safeOut, readingCases: cases, capture, injection: inj, addCriteria: acOut };
   });
 
+  /* ═══ 4b. A PLAN THAT CONTRADICTS ITS OWN ROSTER ═══════════════════════════
+     The model is asked for two numbers about the same person: capacityPercent
+     (how much of them exists) and units (how much of them an activity takes).
+     It routinely gives the first correctly and leaves the second unsaid, and
+     the app filled the gap with 100 — so a client SME available 20% was booked
+     full time on every activity they touched and the workload heatmap lit up
+     red on arrival. Four of five people over-allocated on a real plan, before
+     anybody had edited anything.
+
+     Three properties, and the middle one is the one a blunt clamp would break:
+     an allocation the MODEL chose survives even above capacity, because a short
+     deliberate burst is a legitimate thing to plan and silently rewriting it
+     would make the app disagree with the instruction it was given. Only the
+     app's own default is corrected. */
+  {
+    const alloc = await page.evaluate(() => {
+      const plan = {
+        projectName: 'Allocation vs capacity',
+        tasks: [
+          { name: 'Phase 1' },
+          { name: 'Discovery', parent: 'Phase 1', optimistic: 2, mostLikely: 4, pessimistic: 6,
+            owner: 'Part Timer', attendees: ['Client SME'] },
+          { name: 'Build', parent: 'Phase 1', optimistic: 3, mostLikely: 5, pessimistic: 8,
+            owner: 'Full Timer', attendees: [{ name: 'Client SME' }] },
+          // deliberately ASKED for above capacity: must survive untouched
+          { name: 'Crunch', parent: 'Phase 1', optimistic: 1, mostLikely: 1, pessimistic: 2,
+            owner: 'Part Timer', units: 100 }
+        ],
+        resources: [
+          { name: 'Full Timer', capacityPercent: 100, kind: 'internal' },
+          { name: 'Part Timer', capacityPercent: 50, kind: 'internal' },
+          { name: 'Client SME', capacityPercent: 20, kind: 'client' }
+        ]
+      };
+      applyAIPlan(plan, 'create');
+      const find = nm => tasks.find(t => t.name === nm) || {};
+      return {
+        discoveryOwner: find('Discovery').units,
+        discoveryAttendee: (find('Discovery').attendees || [])[0] &&
+                           (find('Discovery').attendees || [])[0].units,
+        buildAttendee: (find('Build').attendees || [])[0] && (find('Build').attendees || [])[0].units,
+        crunchExplicit: find('Crunch').units,
+        caps: Object.fromEntries(Object.entries(resources).map(([k, v]) => [k, v.capacity])),
+        markersLeft: tasks.some(t => '_unitsAuto' in t
+          || (t.attendees || []).some(a => '_unitsAuto' in a))
+      };
+    });
+    R.allocationVsCapacity = alloc;
+    if (alloc.discoveryOwner > alloc.caps['Part Timer'])
+      R.contradictions.push('AI boundary :: a plan that states a person is available ' + alloc.caps['Part Timer']
+        + '% was accepted with their activity taking ' + alloc.discoveryOwner + '% of them. The app holds both '
+        + 'numbers at that moment and lets them contradict each other, so the plan is over-allocated on '
+        + 'arrival and the heatmap is red before anybody has edited anything');
+    if (alloc.discoveryAttendee > alloc.caps['Client SME'] || alloc.buildAttendee > alloc.caps['Client SME'])
+      R.contradictions.push('AI boundary :: an ATTENDEE on a plan is allocated '
+        + Math.max(alloc.discoveryAttendee, alloc.buildAttendee) + '% of a person with '
+        + alloc.caps['Client SME'] + '% capacity — attendee allocations were hard-coded past whatever the '
+        + 'model said, which discards an instruction rather than merely defaulting badly');
+    /* The one that stops this becoming a clamp. */
+    if (alloc.crunchExplicit !== 100)
+      R.contradictions.push('AI boundary :: the plan explicitly asked for 100% of a 50% person for one short '
+        + 'activity and the app quietly rewrote it to ' + alloc.crunchExplicit + '. A number the model chose '
+        + 'is a decision; only the app\'s own default may be corrected, or the plan stops meaning what it says');
+    if (alloc.markersLeft)
+      R.contradictions.push('AI boundary :: the internal marker that records whether an allocation was '
+        + 'defaulted is still on the tasks after the plan was applied, so it will be serialized into every '
+        + 'saved file and every export');
+  }
+
   // ═══ 5. NOTHING LEFT THE BROWSER ════════════════════════════════════════
   // Every check above is meant to run with no key and make no call. If a
   // request went out, the sweep is not what it claims to be.

@@ -348,6 +348,17 @@
       border-radius: 7px; padding: .45rem .6rem; margin-top: .5rem; line-height: 1.5; }
     .co-agree { font-size: 0.78rem; color: var(--success); margin-top: .35rem; }
     @media (max-width: 640px) { .co-mrow { grid-template-columns: 1fr; gap: .15rem; } }
+    /* Seven letters, on or off. Small because it sits inside a table cell that
+       already holds PTO chips, and because the whole control is only worth its
+       space when somebody's week is not the project's. */
+    .res-wk { display: inline-flex; gap: 1px; align-items: center; margin-bottom: 0.25rem; flex-wrap: wrap; }
+    .wk-mini { min-width: 18px; padding: 1px 3px; font-size: 0.68rem; font-weight: 700;
+      border: 1px solid var(--border); background: #eff6ff; color: #1e40af;
+      border-radius: 4px; cursor: pointer; box-shadow: none; line-height: 1.4; }
+    .wk-mini.off { background: #f1f5f9; color: #94a3b8; text-decoration: line-through; }
+    .wk-mini:hover { border-color: var(--primary); transform: none; box-shadow: none; }
+    .wk-custom { font-size: 0.62rem; color: var(--warn); font-weight: 700; margin-left: 0.25rem;
+      text-transform: uppercase; letter-spacing: .03em; cursor: help; }
     .doc-switch { margin-bottom: 0.6rem; }
     .doc-switch .seg button.doc-on { background: var(--primary); color: #fff; }
     /* One chip per change order that names this activity, coloured by the
@@ -3484,7 +3495,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.05.1950</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.05.2109</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4704,6 +4715,18 @@ Or say what you want, in your own words:
         missAck: !!t.missAck
       }));
       resources = (data.resources && typeof data.resources === 'object') ? data.resources : {};
+      /* workDays coerced on the way in. An absent or unusable value means
+         "follows the project week", and it has to stay ABSENT rather than
+         becoming an empty array: [] would read as "works no days at all" and
+         turn every scheduled day for that person into a conflict. */
+      Object.keys(resources).forEach(nm => {
+        const r = resources[nm];
+        if (!r || typeof r !== 'object') return;
+        const w = Array.isArray(r.workDays)
+          ? [...new Set(r.workDays.map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))].sort()
+          : [];
+        r.workDays = w.length ? w : null;
+      });
       /* A colleague's plan names companies by id. Adopt any this machine has
          never seen, keeping their id, or the roster shows "— none —" for a
          person whose employer the file states plainly — reproduced in a second
@@ -8854,7 +8877,13 @@ Or say what you want, in your own words:
         Object.keys(R.days).forEach(iso => {
           const day = R.days[iso];
           if (day.load > R.peak) R.peak = day.load;
-          const capToday = R.ptoSet.has(iso) ? 0 : R.capacity; // PTO day: any assigned work is a conflict
+          /* Three ways capacity can be zero today: they are on PTO, or it is a
+             day of the week they do not work, or both. Each is a real conflict
+             and the panel names which, because "resolve this" is a different
+             action for a holiday than for somebody who is never in on a
+             Friday. */
+          const offToday = !resWorksOn(R.name, new Date(iso + 'T00:00:00').getDay());
+          const capToday = (R.ptoSet.has(iso) || offToday) ? 0 : R.capacity;
           // conflicts where ALL the overlapping work is finished are history, not
           // action items — don't count them or offer mend buttons for them.
           // (Incomplete work stays flagged even if dated in the past: it is an
@@ -9272,6 +9301,54 @@ Or say what you want, in your own words:
 
     // ========================= PTO / RESOURCE CALENDARS =========================
     // resources[name].pto = "2026-08-03..2026-08-07, 2026-09-01" (dates & ranges)
+    /* ── PER-PERSON WORKING DAYS ─────────────────────────────────────────────
+       The working week was a PROJECT setting and the only per-person
+       availability was PTO — so a coordinator on Mon/Wed/Fri, a part-timer who
+       does not work Fridays, and a contractor who only works Tue to Thu were
+       all modelled as full-week people who happened to take a lot of holiday,
+       or not modelled at all. Their conflicts were invisible: work landing on a
+       day they never work read as a perfectly ordinary Tuesday.
+
+       Stored as the days they DO work, not the days they do not. An empty or
+       absent value means "follows the project calendar", which is the right
+       default and the one that keeps every existing plan behaving exactly as it
+       did — an absent field must never quietly mean "works no days".
+
+       WHAT THIS DOES NOT DO, and it matters. The schedule engine places work on
+       the PROJECT calendar: the forward pass, the critical path and every date
+       come from isWorkingDay(), which knows nothing about people. So narrowing
+       a person's week correctly turns work on their days off into a conflict,
+       and WIDENING it does not make the scheduler use the extra days — marking
+       somebody available on Saturday records a fact without moving a date.
+       Making CPM itself per-person means a separate calendar per resource
+       through the whole forward and backward pass, which is a different and
+       much larger change. Said here rather than discovered later. */
+    function resWorkDays(name) {
+      const raw = resources[name] && resources[name].workDays;
+      if (!Array.isArray(raw) || !raw.length) return null;      // follows the project
+      return new Set(raw.map(Number).filter(n => n >= 0 && n <= 6));
+    }
+    function resWorksOn(name, dow) {
+      const set = resWorkDays(name);
+      if (!set) return !weekendDays.has(dow);                   // the project's week
+      return set.has(dow);
+    }
+    // The project's own working weekdays, which is what an unset person follows
+    // and what the roster toggles start from.
+    function projectWorkDays() { return [0,1,2,3,4,5,6].filter(i => !weekendDays.has(i)); }
+    function toggleResWorkday(name, dow) {
+      if (!resources[name]) resources[name] = { capacity: 100 };
+      const cur = resWorkDays(name) || new Set(projectWorkDays());
+      if (cur.has(dow)) cur.delete(dow); else cur.add(dow);
+      const arr = [...cur].sort();
+      /* Back to exactly the project week means back to FOLLOWING it, not a
+         hard-coded copy of today's setting. Otherwise changing the project
+         weekend later would silently leave this person on the old one. */
+      const proj = projectWorkDays();
+      resources[name].workDays = (arr.join(',') === proj.join(',')) ? null : arr;
+      saveLocal();
+      if (calculated) { recompute(); refreshAll(); } else renderResources();
+    }
     function parsePtoSet(name) {
       const raw = (resources[name] && resources[name].pto) || '';
       const set = new Set();
@@ -9898,12 +9975,31 @@ Or say what you want, in your own words:
        invoice was disputed, that the client pays late by habit, or that a
        milestone was signed off three weeks after it completed. Every surface
        that draws it says so. */
-    const REV_KINDS = ['none', 'net', 'monthly', 'milestone'];
+    /* ═══ RETAINER ════════════════════════════════════════════════════════════
+       The other four arrangements all answer "when does the work you did become
+       payable" — they take their SHAPE from the plan and their TOTAL from the
+       fee. A retainer inverts both. It is a fixed sum per period bought in
+       advance to reserve capacity, and it is owed whether or not the period was
+       busy; that is the whole point of one, and it is why a consultancy can
+       staff for it. So the amount comes from the contract, the count comes from
+       the calendar, and the plan does not get a vote on either.
+
+       Which makes the reconciliation the interesting number rather than an
+       afterthought: retainer × periods and the priced fee are two independent
+       figures, and where they disagree somebody is about to be surprised. Every
+       surface that draws a retainer says which way, and by how much. */
+    const REV_KINDS = ['none', 'net', 'monthly', 'milestone', 'retainer'];
+    const RETAINER_PERIODS = { week: { label: 'week', days: 7 }, month: { label: 'month', days: 0 } };
     function revTermsNorm(x) {
       const k = x && REV_KINDS.indexOf(x.kind) >= 0 ? x.kind : 'none';
       const d = Math.max(0, Math.min(365, Math.round(Number(x && x.days) || 0)));
       const dep = Math.max(0, Math.min(100, Math.round(Number(x && x.deposit) || 0)));
-      return { kind: k, days: k === 'none' ? 0 : d, deposit: k === 'none' ? 0 : dep };
+      const amt = Math.max(0, Number(x && x.retainer) || 0);
+      const per = (x && RETAINER_PERIODS[x.period]) ? x.period : 'week';
+      return { kind: k, days: k === 'none' ? 0 : d, deposit: k === 'none' ? 0 : dep,
+               // carried on every shape so switching arrangement and back does
+               // not silently discard the figure somebody typed
+               retainer: k === 'retainer' ? amt : amt, period: per };
     }
     function revTermsLabel(x) {
       const t = revTermsNorm(x);
@@ -9911,7 +10007,34 @@ Or say what you want, in your own words:
       if (t.kind === 'none') return 'as the work is earned';
       if (t.kind === 'net') return dep + 'invoiced on delivery, net ' + t.days;
       if (t.kind === 'monthly') return dep + 'invoiced monthly, net ' + t.days;
+      if (t.kind === 'retainer') return dep + 'retained at ' + (t.retainer > 0 ? fmtMoney(t.retainer) : '(no amount set)')
+        + ' per ' + RETAINER_PERIODS[t.period].label + ', invoiced in advance, net ' + t.days;
       return dep + 'invoiced on milestones, net ' + t.days;
+    }
+    /* The periods a retainer runs for: one per week (or month) from the project
+       start to its finish, counting a part period as a whole one — a client
+       retains you for the week, not for the three days of it you were busy. */
+    function retainerPeriods(usingBaseline, leaves) {
+      const T = projectRevTerms();
+      const lv = leaves || leafTasks();
+      const ub = usingBaseline === undefined ? hasBaseline() : !!usingBaseline;
+      const st = projectStartDate();
+      const ends = lv.map(t => (ub ? t.baseFinish : t.finishDate) || t.finishDate)
+        .filter(d => d instanceof Date && !isNaN(d.getTime())).map(d => stripTime(d).getTime());
+      if (!(st instanceof Date) || isNaN(st.getTime()) || !ends.length) return [];
+      const DAY = 86400000;
+      const s0 = stripTime(st).getTime(), fin = Math.max(...ends);
+      const out = [];
+      if (T.period === 'month') {
+        let cur = new Date(s0);
+        while (stripTime(cur).getTime() <= fin && out.length < 600) {
+          out.push({ start: stripTime(cur).getTime(), n: out.length + 1 });
+          cur = new Date(cur.getFullYear(), cur.getMonth() + 1, cur.getDate());
+        }
+      } else {
+        for (let cur = s0; cur <= fin && out.length < 600; cur += 7 * DAY) out.push({ start: cur, n: out.length + 1 });
+      }
+      return out;
     }
     function projectRevTerms() { return revTermsNorm(revTerms); }
     function revAnyTerms() { return projectRevTerms().kind !== 'none'; }
@@ -9984,7 +10107,7 @@ Or say what you want, in your own words:
       const T = projectRevTerms();
       const lv = leaves || leafTasks();
       const out = { segs: [], placed: 0, undated: 0, total: 0, cash: cash,
-        deposit: 0, msUndated: 0, scale: 1, kind: T.kind };
+        deposit: 0, msUndated: 0, scale: 1, kind: T.kind, periods: 0, retainerTotal: null };
       const raw = lv.map(t => ({ t: t, v: taskBilledValue(t) }));
       const rawTotal = raw.reduce((s, r) => s + r.v, 0);
       const fee = revenueAtCompletion();
@@ -9998,13 +10121,32 @@ Or say what you want, in your own words:
       if (!(fee > 0)) return out;
       if (!(rawTotal > 0)) { out.undated = fee; return out; }
 
+      const DAY = 86400000;
+      /* A RETAINER IS NOT A SPREAD OF THE WORK. Every other arrangement takes
+         the per-activity earned curve and moves it; this one ignores it, because
+         what the client owes has nothing to do with how busy the week was.
+         The accrual (cash: false) still follows the work — that is what the
+         retainer is being compared AGAINST, and the gap between the two is the
+         thing worth looking at. */
+      if (cash && T.kind === 'retainer') {
+        const pers = retainerPeriods(ub, lv);
+        out.periods = pers.length;
+        out.retainerTotal = pers.length * T.retainer;
+        pers.forEach(p => {
+          const pay = p.start + T.days * DAY;
+          if (T.retainer > 0) { out.segs.push({ s: pay, f: pay + DAY, c: T.retainer }); out.placed += T.retainer; }
+        });
+        /* `total` stays the FEE, so every surface keeps comparing against one
+           number. The difference is reported, not reconciled away: a retainer
+           that does not add up to the price is a fact about the contract. */
+        return out;
+      }
       const msInfo = revMilestoneDates(ub, lv);
       out.msUndated = msInfo.undated;
       /* A milestone arrangement with NO dated milestone cannot bill on one. The
          honest answer is to say so and fall back to billing at the finish, which
          is what revPhaseSeg's tail already does — not to silently behave like a
          monthly. */
-      const DAY = 86400000;
       const dep = cash && T.deposit > 0 ? fee * (T.deposit / 100) : 0;
       const rest = 1 - (fee > 0 ? dep / fee : 0);
       out.deposit = dep;
@@ -15035,7 +15177,14 @@ Or say what you want, in your own words:
           <td>${isClient ? '' : `<select class="mini-inp rl-runit" data-ri="${ri}" style="width:auto" title="Enter this person's rates per day or per hour — one unit covers both columns. Hourly converts at 1 day = 8 h everywhere the math runs (billing, pricing, SOW).">
             <option value="day" ${resRateUnit(name) !== 'hour' ? 'selected' : ''}>$/day</option>
             <option value="hour" ${resRateUnit(name) === 'hour' ? 'selected' : ''}>$/hr</option></select>`}</td>
-          <td style="max-width:230px">
+          <td style="max-width:250px">
+            <div class="res-wk" title="${escapeHtml('The days of the week this person works. Work scheduled on a day they do not is flagged the same way work on a holiday is. Untouched means they follow the project week.')}">${
+              ['S','M','T','W','T','F','S'].map((lbl, dw) => {
+                const on = resWorksOn(name, dw);
+                const full = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dw];
+                return `<button type="button" class="wk-mini${on ? '' : ' off'}" data-reswk="${ri}:${dw}" aria-pressed="${on}" title="${escapeHtml(full + (on ? ' — works. Click to mark as a day off.' : ' — does not work. Click to mark as a working day.'))}">${lbl}</button>`;
+              }).join('')
+            }${resWorkDays(name) ? '<span class="wk-custom" title="' + escapeHtml('This person has their own week rather than the project default.') + '">own week</span>' : ''}</div>
             <span data-pto-cell="${ri}">${ptoParts(name).map((pt, pi) => `<span class="pto-chip" title="Unavailable — work scheduled on these days is flagged">${escapeHtml(ptoChipLabel(pt))}<button data-pto-del="${ri}:${pi}" title="Remove">×</button></span>`).join('')}
             <button class="btn-lite" data-pto-add="${ri}" title="Add vacation / unavailable dates with a date picker">+ PTO</button></span>
             <span data-pto-form="${ri}" style="display:none;white-space:nowrap">
@@ -15075,7 +15224,7 @@ Or say what you want, in your own words:
           <button class="btn-sm btn-primary no-print" onclick="addResourcePrompt()"><span class="ico" aria-hidden="true">➕</span> Add resource</button></span>
         </div>
         <div class="table-wrap" style="margin-bottom:1rem"><table class="roster-table">
-          <thead><tr><th title="Person, role or team">Resource</th><th title="Internal = yours (costed & billed). Client = their people: tracked for workload/PTO but never costed or billed">Type</th><th title="Job on the engagement — filled by the AI from your notes, editable, also set when a rate card is applied">Role</th><th title="The company they work for. &quot;Us&quot; for your own people, the client&#39;s name for theirs, and the actual firm for a subcontractor or integration partner. It is recorded on every archived activity, so the estimate bank can tell you how a given partner&#39;s work has historically run against estimate — a question a role or a person&#39;s name cannot answer.">Company</th><th title="100 = one full-time person; 300 = a 3-person team; 50 = someone available half-time">Capacity %</th><th title="What they cost YOU — in the unit chosen in the next column; drives the cost & EVM layer">Cost rate</th><th title="What you charge the client — drives pricing, margin and the SOW">Bill rate</th><th title="Rates entered per day or per hour (1 day = 8 h — hourly people convert automatically everywhere)">Unit</th><th title="Vacation / unavailable dates. Scheduled work on these days is flagged as a conflict">PTO / unavailable</th><th title="Tasks they participate in (incl. as attendee)">Tasks</th><th title="Total planned working days × their allocation">Planned effort</th><th title="Busiest single day as % of capacity">Peak load</th><th title="OK = within capacity every day; over ×N = N conflict days to resolve">Status</th><th></th></tr></thead>
+          <thead><tr><th title="Person, role or team">Resource</th><th title="Internal = yours (costed & billed). Client = their people: tracked for workload/PTO but never costed or billed">Type</th><th title="Job on the engagement — filled by the AI from your notes, editable, also set when a rate card is applied">Role</th><th title="The company they work for. &quot;Us&quot; for your own people, the client&#39;s name for theirs, and the actual firm for a subcontractor or integration partner. It is recorded on every archived activity, so the estimate bank can tell you how a given partner&#39;s work has historically run against estimate — a question a role or a person&#39;s name cannot answer.">Company</th><th title="100 = one full-time person; 300 = a 3-person team; 50 = someone available half-time">Capacity %</th><th title="What they cost YOU — in the unit chosen in the next column; drives the cost & EVM layer">Cost rate</th><th title="What you charge the client — drives pricing, margin and the SOW">Bill rate</th><th title="Rates entered per day or per hour (1 day = 8 h — hourly people convert automatically everywhere)">Unit</th><th title="Which days of the week this person works, and any vacation or unavailable dates. Work scheduled on a day they do not work, or on a day off, is flagged as a conflict. NOTE: narrowing somebody's week catches conflicts; widening it does not make the scheduler use the extra days, because the schedule itself runs on the project calendar.">Availability</th><th title="Tasks they participate in (incl. as attendee)">Tasks</th><th title="Total planned working days × their allocation">Planned effort</th><th title="Busiest single day as % of capacity">Peak load</th><th title="OK = within capacity every day; over ×N = N conflict days to resolve">Status</th><th></th></tr></thead>
           <tbody>${rosterRows}</tbody>
         </table></div>`;
       const holidays = getHolidaySet();
@@ -15124,18 +15273,28 @@ Or say what you want, in your own words:
           const day = R.days[iso];
           const load = day ? day.load : 0;
           const isPto = R.ptoSet && R.ptoSet.has(iso);
+          // a day of the week this person does not work reads like PTO on the
+          // heatmap, because it IS the same fact: no capacity, so any work on
+          // it is a collision. The tooltip tells them apart, since one is
+          // resolved by moving the work and the other by moving it or by
+          // changing what you believe about the person's week.
+          const isOff = !resWorksOn(name, dd.getDay());
+          const zeroDay = isPto || isOff;
           const ratio = R.capacity > 0 ? load / R.capacity : 0;
           const isOver = overSet.has(iso);
           // above capacity on paper, but every activity on it is finished
-          const settled = !isOver && load > (isPto ? 0 : R.capacity) + 1e-6;
+          const settled = !isOver && load > (zeroDay ? 0 : R.capacity) + 1e-6;
           let bg = '#f8fafc';
-          if (isPto) bg = load > 0 ? (isOver ? '#dc2626' : '#e9d5ff') : '#e9d5ff';
+          if (zeroDay) bg = load > 0 ? (isOver ? '#dc2626' : '#e9d5ff') : '#e9d5ff';
           else if (load > 0) bg = isOver ? '#dc2626'
             : `rgba(37,99,235,${(0.2 + 0.55 * Math.min(1, ratio)).toFixed(3)})`;
           // hover = the actual collision: every task on this person that day,
           // with units and size — the overlap IS the issue, so show it in place
           const dayTasks = day ? day.tasks.map(id => tasks.find(x => x.id === id)).filter(Boolean) : [];
-          const tip = `${name} — ${dd.toLocaleDateString()}: ${isPto ? 'PTO' + (load > 0 ? ' but ' + Math.round(load) + '% assigned!' : '') : Math.round(load) + '% of ' + R.capacity + '% capacity'}`
+          const offLabel = isPto ? 'PTO'
+            : isOff ? 'does not work ' + ['Sundays','Mondays','Tuesdays','Wednesdays','Thursdays','Fridays','Saturdays'][dd.getDay()]
+            : null;
+          const tip = `${name} — ${dd.toLocaleDateString()}: ${offLabel ? offLabel + (load > 0 ? ' but ' + Math.round(load) + '% assigned!' : '') : Math.round(load) + '% of ' + R.capacity + '% capacity'}`
             + (dayTasks.length > 1 ? `\n${dayTasks.length} tasks OVERLAP on this day:` : dayTasks.length === 1 ? '\nWorking on:' : '')
             + dayTasks.map(t => `\n• @${t.units || 100}%  ${t.name}  (${t.milestone ? '◆ milestone' : fmtDurText(t.te)})`).join('')
             + (dayTasks.length ? '\n\nClick to drill in — open any of these tasks.' : '')
@@ -15266,7 +15425,7 @@ Or say what you want, in your own words:
         <div class="legend" style="margin-top:0.5rem">
           <div class="legend-item"><div class="legend-swatch" style="background:rgba(37,99,235,0.4)"></div>Within capacity</div>
           <div class="legend-item"><div class="legend-swatch" style="background:rgba(37,99,235,0.75)"></div>Near capacity</div>
-          <div class="legend-item"><div class="legend-swatch" style="background:#dc2626"></div>Over capacity / work on PTO</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#dc2626"></div>Over capacity / work on a day they are not available</div>
           <div class="legend-item"><div class="legend-swatch" style="background:#e9d5ff"></div>PTO</div>
         </div>`;
 
@@ -15364,6 +15523,12 @@ Or say what you want, in your own words:
       cont.querySelectorAll('select.rl-runit').forEach(sel => {
         sel.addEventListener('change', () => setRateUnit(names[Number(sel.dataset.ri)], sel.value));
       });
+      // per-person working days: the day toggles beside the PTO chips
+      cont.querySelectorAll('[data-reswk]').forEach(btn => btn.addEventListener('click', () => {
+        const [ri, dw] = btn.dataset.reswk.split(':').map(Number);
+        const nm = names[ri];
+        if (nm != null) toggleResWorkday(nm, dw);
+      }));
       cont.querySelectorAll('[data-pto-add]').forEach(btn => btn.addEventListener('click', () => {
         cont.querySelector(`[data-pto-cell="${btn.dataset.ptoAdd}"]`).style.display = 'none';
         cont.querySelector(`[data-pto-form="${btn.dataset.ptoAdd}"]`).style.display = 'inline';
@@ -22368,7 +22533,7 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
       "pessimistic": number,  // worst-case duration in ${unit}
       "milestone": false,     // true for zero-duration checkpoints (go-live, sign-off, approvals)
       "owner": "person/role or empty string",
-      "units": 100,           // % of the owner this task consumes while active (100 = full-time; use less for part-time work)
+      "units": 100,           // % of the owner this task consumes while active (100 = full-time). MUST NOT EXCEED that person's capacityPercent below: booking a 20% person at 100 over-allocates them on every day the activity runs. If the notes say somebody is available 20%, their activities take units 20, not 100.
       "attendees": [],        // optional: other people also in this session/workshop (names; each loads their own calendar)
       "parent": "",           // optional: exact name of a phase/deliverable this task rolls up under (for WBS grouping)
       "deliverable": "",      // REQUIRED: the tangible output (one line)
@@ -22395,6 +22560,7 @@ ${uatStylePref() === 'bigbang'
 - Mark clear checkpoints (go-live, sign-off, approval, kickoff decision) as milestones with 0/0/0 durations.
 - Assign owners only when named or clearly implied. Default units to 100 unless the notes say a task is part-time or shared.
 - Draft the FULL WBS dictionary: every task (including phases and milestones) gets a concise deliverable, description, and acceptance — never leave them blank.
+- Allocation and capacity are DIFFERENT NUMBERS and must agree. "capacityPercent" is how much of the person exists; "units" on an activity is how much of them that activity takes. Units above their capacity is an over-allocation on every day the activity runs, and the app will draw it red. A client SME at 20% gets activities at units 20. Where the notes give somebody a percentage, use it for BOTH.
 - In "resources", list each distinct owner once. Give teams a capacityPercent > 100 (e.g. a 3-developer team = 300); individuals default to 100. Mark client-side participants (SMEs, approvers, data stewards) with kind "client". ALWAYS carry each person's role/title from the notes into "role" ("Marcus Webb — CRM Platform Developer" → role "CRM Platform Developer") — the roster shows bare names, and the role is how anyone reading the plan later knows who does what job. Omit "resources" only if no owners are assigned.
 - For workshops/sessions with several people at once, set one owner and put the rest in "attendees".`;
     }
@@ -23993,11 +24159,26 @@ ${aiSchemaHint()}`];
         }
         const id = idc++;
         nameToId[name.toLowerCase()] = id;
-        let units = Number(pt.units);
-        if (!Number.isFinite(units) || units < 0) units = 100;
+        /* Whether the MODEL chose this allocation or the app defaulted it. The
+           difference decides whether the capacity pass below may touch it: a
+           number somebody asked for is a decision, and 100 arrived at because
+           nothing was said is not. */
+        const rawUnits = Number(pt.units);
+        const unitsGiven = Number.isFinite(rawUnits) && rawUnits >= 0;
+        const units = unitsGiven ? rawUnits : 100;
         built.push(makeTask({ id, name, o, m, p, milestone: isMs,
           owner: String(pt.owner || '').trim(), units,
-          attendees: Array.isArray(pt.attendees) ? pt.attendees.map(a => ({ name: String(typeof a === 'string' ? a : (a && a.name) || '').trim(), units: 100 })).filter(a => a.name) : [],
+          /* Attendee units were HARD-CODED to 100 here, so a model that said
+             "Matan at 10%" had its answer thrown away before anything could
+             read it. That is worse than a bad default: it is discarding an
+             explicit instruction. */
+          attendees: Array.isArray(pt.attendees) ? pt.attendees.map(a => {
+            const an = String(typeof a === 'string' ? a : (a && a.name) || '').trim();
+            const au = Number(a && a.units);
+            const given = Number.isFinite(au) && au >= 0;
+            return { name: an, units: given ? au : 100, _unitsAuto: !given };
+          }).filter(a => a.name) : [],
+          _unitsAuto: !unitsGiven,
           deliverable: String(pt.deliverable || '').trim(), description: String(pt.description || '').trim(),
           acceptance: String(pt.acceptance || '').trim(),
           taxonomy: taxCoerce(pt.taxonomy), taxSrc: taxCoerce(pt.taxonomy) ? 'ai' : null,
@@ -24049,6 +24230,48 @@ ${aiSchemaHint()}`];
         });
       }
       syncResources();
+      /* ── ALLOCATION AGAINST CAPACITY ────────────────────────────────────────
+         The roster is built AFTER the tasks, so until this point the two facts
+         have never been in the same place. The result was a plan that
+         contradicted itself the moment it was drawn: capacities read correctly
+         off the notes — 50%, 20%, 10% — and every single activity assigned at
+         100%, so a fifth-of-a-person was booked full time on everything they
+         touched and the workload heatmap lit up red on every day they appeared.
+         Reported by use, from a plan where four of five people were over
+         allocated on arrival.
+
+         Only allocations the app itself defaulted are touched. A number the
+         model actually chose is a decision and survives, even above capacity —
+         somebody may genuinely intend a short burst — but it is COUNTED, and
+         the count is said out loud, because a plan quietly edited on the way in
+         is a plan nobody can reason about. */
+      const alloc = { lowered: 0, keptOver: 0, people: new Set() };
+      tasks.forEach(t => {
+        if (t.milestone) return;
+        const capOf = nm => { const c = +((resources[nm] || {}).capacity); return (Number.isFinite(c) && c > 0) ? c : 100; };
+        const own = String(t.owner || '').trim();
+        if (own) {
+          const cap = capOf(own);
+          if (t._unitsAuto && t.units > cap) { t.units = cap; alloc.lowered++; alloc.people.add(own); }
+          else if (!t._unitsAuto && t.units > cap) { alloc.keptOver++; alloc.people.add(own); }
+        }
+        (t.attendees || []).forEach(a => {
+          const cap = capOf(a.name);
+          if (a._unitsAuto && a.units > cap) { a.units = cap; alloc.lowered++; alloc.people.add(a.name); }
+          else if (!a._unitsAuto && a.units > cap) { alloc.keptOver++; alloc.people.add(a.name); }
+          delete a._unitsAuto;
+        });
+        delete t._unitsAuto;
+      });
+      if (alloc.lowered || alloc.keptOver) {
+        setTimeout(() => flashSaved((alloc.lowered
+          ? '⚖ ' + alloc.lowered + ' allocation(s) set to match capacity rather than the 100% default, for '
+            + [...alloc.people].slice(0, 3).join(', ') + (alloc.people.size > 3 ? ' and others' : '')
+            + '. A part-time person booked full time is over allocated on every day they appear.'
+          : '')
+          + (alloc.keptOver ? (alloc.lowered ? ' ' : '') + alloc.keptOver + ' allocation(s) the plan asked for '
+            + 'explicitly are ABOVE capacity and were left alone — check the workload heatmap.' : '')), 400);
+      }
       // final safety net: anyone who existed before under the same name gets their
       // rate / bill rate / PTO / role back if the pass above lost them
       for (const nm in resources) {
@@ -25891,12 +26114,180 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
     }
 
     // ========================= SOW GENERATOR =========================
+    /* ═══ THE PAYMENT SCHEDULE ════════════════════════════════════════════════
+       Commercial Terms used to be one line — the price — followed by whatever
+       payment sentence the AI had drafted, and the AI was told, in the prompt,
+       unconditionally, to "propose milestone-based payment". So a project
+       billed monthly at net 45 with a 10% deposit shipped a contract promising
+       milestone payments nobody intended to raise; and a project genuinely
+       billed on milestones shipped one that named no milestone, no date and no
+       amount. "Paid by milestone" without the milestones is not a payment
+       term, it is a placeholder wearing one. A client signs a schedule.
+
+       THE MONEY COMES FROM THE SAME CURVE the Money tab draws — revSpread with
+       cash: true, which already applies the arrangement, the deposit and the
+       net days. One computation, bucketed by the day it becomes payable, so a
+       contract and a cash-flow chart for one engagement cannot quote two
+       different sets of numbers. What this adds is the LABEL: the curve knows
+       which day each payment lands on and simply threw away what triggered it.
+
+       LIVE DATES, not baseline ones, because the Timeline section prints live
+       milestone dates and a schedule that bills a milestone on a date the same
+       document shows differently is worse than having no schedule at all.
+
+       WHAT COULD NOT BE PLACED IS REPORTED, never smeared. A milestone with no
+       date cannot carry an invoice, and putting an invented date on the face of
+       a contract is the one outcome worse than admitting the gap. */
+    function sowPaymentPlan() {
+      const T = projectRevTerms();
+      const out = { kind: T.kind, days: T.days, depositPct: T.deposit,
+                    label: revTermsLabel(T), rows: [], total: 0, scheduled: 0,
+                    unplaced: 0, msUndated: 0, retainerGap: 0 };
+      if (T.kind === 'none') return out;
+      const lv = leafTasks();
+      const r = revSpread(false, lv, { cash: true });
+      out.total = r.total;
+      out.msUndated = r.msUndated;
+      if (!(r.total > 0)) return out;
+      const DAY = 86400000;
+      /* The retainer's schedule is the calendar, so it is stated directly rather
+         than reverse-engineered out of buckets. Every period is a row whether or
+         not the plan had work in it — that is what "retained" means, and a
+         schedule that quietly skipped a quiet week would be describing a
+         different contract from the one being signed. */
+      if (T.kind === 'retainer') {
+        const per = RETAINER_PERIODS[T.period].label;
+        retainerPeriods(false, lv).forEach(p => {
+          const day = stripTime(new Date(p.start + T.days * DAY)).getTime();
+          out.rows.push({ day: day, when: fmtNice(new Date(day)),
+            event: (per === 'week' ? 'Week ' : 'Month ') + p.n + ' — commencing ' + fmtNice(new Date(p.start)),
+            note: 'retainer for the ' + per + ', invoiced in advance, net ' + T.days,
+            amount: T.retainer });
+        });
+        out.scheduled = out.rows.reduce((s, x) => s + x.amount, 0);
+        // two independently-arrived-at figures; where they disagree, say so
+        out.retainerGap = out.scheduled - out.total;
+        return out;
+      }
+      const dayKey = ms => stripTime(new Date(ms)).getTime();
+      const money = new Map();
+      r.segs.forEach(s => { const k = dayKey(s.s); money.set(k, (money.get(k) || 0) + s.c); });
+      out.unplaced = Math.max(0, r.total - r.placed);
+      const push = (day, event, note, amount) => out.rows.push({
+        day: day, when: fmtNice(new Date(day)), event: event, note: note, amount: amount });
+
+      /* The deposit. The curve places it at project start + terms; this names
+         that day rather than recomputing it, and takes its own amount out of
+         the bucket so a milestone falling on the same day is not swallowed. */
+      if (r.deposit > 0) {
+        const st = projectStartDate();
+        const k = dayKey((st ? stripTime(st).getTime() : Date.now()) + T.days * DAY);
+        push(k, 'On signature of this Statement of Work',
+             T.deposit + '% deposit, net ' + T.days, r.deposit);
+        const rest = (money.get(k) || 0) - r.deposit;
+        if (rest > 0.005) money.set(k, rest); else money.delete(k);
+      }
+
+      if (T.kind === 'net') {
+        /* One invoice on completion. The curve models net terms by shifting the
+           whole earning window, which is right for a chart and wrong for an
+           invoice — nobody raises one per working day. The arrangement
+           describes a single payment, so this states the single payment. */
+        const fin = durationToDate(Math.max(0, ...lv.map(t => t.ef), 0));
+        const base = (fin instanceof Date && !isNaN(fin.getTime())) ? stripTime(fin).getTime() : Date.now();
+        push(dayKey(base + T.days * DAY), 'On delivery and acceptance of the final deliverable',
+             'single invoice on completion, net ' + T.days, Math.max(0, r.total - r.deposit));
+        money.clear();
+      } else if (T.kind === 'milestone') {
+        /* One row per DATED milestone: everything earned since the previous
+           checkpoint becomes payable when this one completes. Two milestones
+           landing on one date share a row — splitting one invoice into two
+           lines nobody can reconcile helps no one. */
+        const byPay = new Map();
+        revMilestoneDates(false, lv).dates.forEach(m => {
+          const k = dayKey(m.ms + T.days * DAY);
+          if (!byPay.has(k)) byPay.set(k, []);
+          byPay.get(k).push(m.name);
+        });
+        [...byPay.keys()].sort((a, b) => a - b).forEach(k => {
+          const amt = money.get(k) || 0;
+          money.delete(k);
+          push(k, '◆ ' + byPay.get(k).join(' + '),
+               amt > 0.005 ? 'work completed up to this milestone, net ' + T.days
+                           : 'no billable work falls in this period',
+               amt);
+        });
+      }
+
+      /* Whatever the curve placed on a day no named event claimed. On milestone
+         terms that is the tail — work after the final checkpoint, which bills
+         when the work itself finishes. On monthly terms it is every month. */
+      [...money.keys()].sort((a, b) => a - b).forEach(k => {
+        const monthEnd = fmtNice(new Date(k - T.days * DAY));
+        push(k,
+          T.kind === 'monthly' ? 'Monthly invoice — work delivered to ' + monthEnd
+                               : 'On completion of all remaining work',
+          T.kind === 'monthly' ? 'invoiced ' + monthEnd + ', net ' + T.days
+                               : 'work completed after the final milestone, net ' + T.days,
+          money.get(k));
+      });
+      out.rows.sort((a, b) => a.day - b.day);
+      out.scheduled = out.rows.reduce((s, x) => s + x.amount, 0);
+      return out;
+    }
+
+    /* WHICH STORY IDS THIS DOCUMENT WILL ACTUALLY PRINT. The trace columns cite
+       story ids; the appendix prints client-facing stories only, and can be
+       switched off entirely. Those two facts were never introduced to each
+       other, so a SOW cited US-1 … US-12 in three places while printing one of
+       them — eleven references to nothing, in a contract. One function decides,
+       and both the appendix and every trace column ask it. */
+    function sowStoriesMode() {
+      const sel = document.getElementById('sowStoriesMode');
+      return (sel && sel.value) || pricing.sowStoriesMode || 'full';
+    }
+    /* Which stories this document TALKS ABOUT, as distinct from which it lists.
+       A story whose non-functional requirement, client dependency or pricing
+       assumption is quoted in the body is being relied on by the contract,
+       whatever the audience heuristic made of the story itself — and that
+       heuristic is `verification === 'artifact'`, which on a delivery-heavy
+       plan classified eleven of twelve stories internal on the strength of how
+       they are checked rather than who they are for.
+
+       So the fix is to PRINT them, not to blank the reference. The reader was
+       told a quality attribute binds US-3; the remedy for US-3 being absent is
+       US-3, not the silent deletion of the only thing that said so. */
+    function sowReferencedStoryIds() {
+      const out = new Set();
+      ((reqs && reqs.stories) || []).forEach(s => {
+        if ((s.nfrs || []).some(x => String(x).trim())) out.add(s.id);
+        (s.assumptions || []).forEach(x => {
+          if (/^D:/i.test(x)) out.add(s.id);
+          else if (/^A:/i.test(x) && !/no WBS activity covers this yet/i.test(String(x))) out.add(s.id);
+        });
+      });
+      return out;
+    }
+    function sowPrintedStoryIds() {
+      if (sowStoriesMode() === 'none' || !reqs || !Array.isArray(reqs.stories)) return new Set();
+      const ref = sowReferencedStoryIds();
+      return new Set(reqs.stories.filter(s => storyAudience(s) === 'client' || ref.has(s.id)).map(s => s.id));
+    }
+    /* Keep only the refs this document resolves. A row whose every reference is
+       dropped keeps its place — the requirement is real and belongs in the
+       contract — but stops pointing at a story the reader cannot find. */
+    function sowKeepRefs(ids, printed) {
+      const kept = (ids || []).filter(id => printed.has(id));
+      return { refs: kept, dropped: (ids || []).length - kept.length };
+    }
     function sowSkeletonData() {
       const u = unitLabel();
       const rv = computeReserves();
       const leaves = leafTasks();
       const finish = durationToDate(Math.max(0, ...leaves.map(t => t.ef), 0));
-      return {
+      const printedIds = sowPrintedStoryIds();
+      let dropped = 0;
+      const D = {
         name: projName(),
         start: fmtNice(projectStartDate()), finish: fmtNice(finish),
         committed: rv.contingencyUnits > 0 ? fmtNice(rv.committedDate) : null,
@@ -25930,6 +26321,13 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
                 : fmtDurText(t.te)
           }));
         })(),
+        /* Every story id printed anywhere in this document resolves to a story
+           printed in the same document. `printed` is the appendix's own answer,
+           and anything it does not contain is dropped from the trace columns
+           rather than left dangling — with `refsDropped` counting what went, so
+           the fact is reported to the drafter instead of vanishing. */
+        printedStoryIds: printedIds,
+        refsDropped: 0,
         // aggregated non-functional requirements across all stories (deduped, with story refs)
         nfrs: (() => {
           const map = new Map();
@@ -25937,12 +26335,20 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
             const k = String(nf).trim(); if (!k) return;
             const e = map.get(k) || []; e.push(s.id); map.set(k, e);
           }));
-          return [...map.entries()].map(([text, refs]) => ({ text, refs: refs.slice(0, 6).join(', ') + (refs.length > 6 ? '…' : '') }));
+          return [...map.entries()].map(([text, ids]) => {
+            const k = sowKeepRefs(ids, printedIds);
+            dropped += k.dropped;
+            return { text, refs: k.refs.slice(0, 6).join(', ') + (k.refs.length > 6 ? '…' : '') };
+          });
         })(),
         // client dependencies (story "D:") — each with its slip consequence baked in
         clientDeps: (() => {
           const out = [];
-          ((reqs && reqs.stories) || []).forEach(s => (s.assumptions || []).forEach(x => { if (/^D:/i.test(x)) out.push({ text: String(x).replace(/^D:\s*/i, ''), ref: s.id }); }));
+          ((reqs && reqs.stories) || []).forEach(s => (s.assumptions || []).forEach(x => {
+            if (!/^D:/i.test(x)) return;
+            if (!printedIds.has(s.id)) dropped++;
+            out.push({ text: String(x).replace(/^D:\s*/i, ''), ref: printedIds.has(s.id) ? s.id : '' });
+          }));
           return out;
         })(),
         // story-level assumptions ("A:") split into statement + impact-if-false
@@ -25953,7 +26359,8 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
             const body = String(x).replace(/^A:\s*/i, '').trim();
             if (/no WBS activity covers this yet/i.test(body)) return; // internal scope-gap marker — never client-facing
             const parts = body.split(/\s*[—-]\s*impact if false:\s*/i);
-            out.push({ text: parts[0], impact: parts[1] || '', ref: s.id });
+            if (!printedIds.has(s.id)) dropped++;
+            out.push({ text: parts[0], impact: parts[1] || '', ref: printedIds.has(s.id) ? s.id : '' });
           }));
           return out;
         })(),
@@ -25994,8 +26401,12 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           if (!(f.price > 0)) return null;
           return { model: f.isTM ? 'Time & materials' : 'Fixed price', amount: fmtMoney(f.price),
             basis: (f.basis || 'p80').toUpperCase(),
-            cap: (f.isTM && f.cap > f.price) ? fmtMoney(f.cap) : null }; })()
+            cap: (f.isTM && f.cap > f.price) ? fmtMoney(f.cap) : null }; })(),
+        // when each part of that price becomes payable, and on what event
+        payment: (() => { try { return sowPaymentPlan(); } catch (e) { return null; } })()
       };
+      D.refsDropped = dropped;
+      return D;
     }
     function sowAssembleHtml(d, narrative) {
       const td = 'padding:5px 9px;border:1px solid #cbd5e1;font-size:12.5px;vertical-align:top;';
@@ -26020,60 +26431,162 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         ${(() => { const a = coAccepted(); return a.length
           ? `<p style="font-size:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:7px 11px;margin:0 0 14px"><b>Incorporates ${a.length} accepted change order${a.length === 1 ? '' : 's'}:</b> ${a.map(c => h(c.no)).join(', ')}. The scope, schedule and price below already reflect ${a.length === 1 ? 'it' : 'them'}.</p>`
           : ''; })()}
-        <h2 style="font-size:16px;margin:16px 0 6px">1. Overview &amp; Objectives</h2><p style="font-size:13px">${n.overview || '<em>[Describe the business context and objectives of this engagement.]</em>'}</p>
-        <h2 style="font-size:16px;margin:16px 0 6px">2. Scope of Work &amp; Deliverables</h2>
-        <p style="font-size:13px">${n.scopeNarrative || ''}</p>
+        ${sowSections(d, narrative, td, th, showEffort, showRates, scopeRows)}
+        ${d.risks.length ? `<h2 style="font-size:16px;margin:16px 0 6px">Appendix — Key Delivery Risks</h2><ul style="font-size:13px">${d.risks.map(x => '<li>' + h(x) + '</li>').join('')}</ul>` : ''}
+        ${d.storiesAppendix ? d.storiesAppendix : ''}
+      </div>`;
+    }
+
+    /* ═══ THE NUMBERED BODY ═══════════════════════════════════════════════════
+       The sections used to carry their numbers as literal text, and two of them
+       — non-functional requirements and client dependencies — only appear when
+       there is something to put in them. A plan with no NFRs therefore shipped
+       a contract that went 5, 7, 8: two numbers missing with nothing to say
+       they had never existed, on a document whose whole job is to be referred
+       to by number. Cross-references were literal too, so "(§11)" meant change
+       control only as long as nobody moved anything.
+
+       So sections are built as a list and numbered by position, and references
+       are written as {{sec:key}} and resolved once at the end against where the
+       section actually landed. Reordering is now a matter of moving a line.
+
+       WHICH IS WHAT LET COMMERCIAL TERMS MOVE. It sat at §8, between the client
+       responsibilities table and the assumptions table — the two longest things
+       in the document — and the one question every reader of a SOW has is what
+       it costs and when they pay. It now follows the timeline, because the
+       payment schedule refers to the milestone dates immediately above it. */
+    function sowSections(d, narrative, td, th, showEffort, showRates, scopeRows) {
+      const h = x => escapeHtml(x || '');
+      const n = narrative || {};
+      const secs = [];
+      const add = (key, title, body) => { if (body) secs.push({ key, title, body }); };
+
+      add('overview', 'Overview &amp; Objectives',
+        `<p style="font-size:13px">${n.overview || '<em>[Describe the business context and objectives of this engagement.]</em>'}</p>`);
+
+      add('scope', 'Scope of Work &amp; Deliverables',
+        `<p style="font-size:13px">${n.scopeNarrative || ''}</p>
         <table style="border-collapse:collapse"><tr><th style="${th}">WBS</th><th style="${th}">Work item</th><th style="${th}">Deliverable</th><th style="${th}">Description</th><th style="${th}">Acceptance criteria</th><th style="${th}" title="Who performs the work — CLIENT rows are the client's obligations and are highlighted">Responsible</th>${showEffort ? `<th style="${th}">Effort</th>` : ''}</tr>${scopeRows}</table>
-        <p style="font-size:11.5px;color:#64748b;margin:4px 0 0">Effort is in working ${h((typeof unitLabel === 'function' ? unitLabel() : 'days'))}; phase rows show the rolled-up total of their contained work. Rows marked <b>CLIENT</b> (highlighted) are client responsibilities — their timely completion is a schedule dependency.</p>
-        <h2 style="font-size:16px;margin:16px 0 6px">3. Out of Scope</h2>
-        ${d.exclusions.length ? '<ul style="font-size:13px">' + d.exclusions.map(x => '<li>' + h(x) + '</li>').join('') + '</ul>' : `<p style="font-size:13px">${n.outOfScope || '<em>[List explicit exclusions.]</em>'}</p>`}
-        <h2 style="font-size:16px;margin:16px 0 6px">4. Timeline &amp; Milestones</h2>
-        ${d.ganttImg ? `<img src="${d.ganttImg}" alt="Project schedule Gantt chart" style="max-width:100%;border:1px solid #e2e8f0;border-radius:6px;margin:4px 0 10px"/>` : ''}
+        <p style="font-size:11.5px;color:#64748b;margin:4px 0 0">Effort is in working ${h((typeof unitLabel === 'function' ? unitLabel() : 'days'))}; phase rows show the rolled-up total of their contained work. Rows marked <b>CLIENT</b> (highlighted) are client responsibilities — their timely completion is a schedule dependency.</p>`);
+
+      /* OUT OF SCOPE LIMITS, IT NEVER WAIVES. With an empty RAID log this
+         section used to be handed to the AI, which was asked for "1-2 sentences
+         if exclusions are empty" and duly wrote that no exclusions had been
+         recorded and all deliverables were as defined in the scope table. On a
+         contract that is not a note about an empty log, it is an affirmative
+         statement that the engagement has no limits — the single most expensive
+         sentence this generator could produce. The boundary clause is now
+         deterministic and always present; recorded exclusions add to it, and
+         their absence is flagged to the drafter rather than papered over. */
+      add('outofscope', 'Out of Scope',
+        `<p style="font-size:13px">Only the work itemised in {{sec:scope}} is included in this Statement of Work. Anything not expressly listed there is out of scope, including work arising from a change to the assumptions in {{sec:assumptions}}; any such work is estimated, priced and agreed through the change-control process in {{sec:change}} before it is undertaken.</p>
+        ${d.exclusions.length
+          ? `<p style="font-size:13px;margin:8px 0 2px">The following are specifically excluded:</p><ul style="font-size:13px;margin-top:2px">${d.exclusions.map(x => '<li>' + h(x) + '</li>').join('')}</ul>`
+          : `<p style="font-size:12.5px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:7px 11px;margin:8px 0 0"><b>Before issuing:</b> no specific exclusions have been recorded for this engagement. The boundary clause above stands on its own, but naming the exclusions the client is most likely to assume are included — data migration, third-party licences, out-of-hours support, training beyond the sessions in {{sec:scope}} — is what prevents the argument. Add them to the RAID log as <i>Exclusion</i> entries and regenerate.</p>`}`);
+
+      add('timeline', 'Timeline &amp; Milestones',
+        `${d.ganttImg ? `<img src="${d.ganttImg}" alt="Project schedule Gantt chart" style="max-width:100%;border:1px solid #e2e8f0;border-radius:6px;margin:4px 0 10px"/>` : ''}
         <table style="border-collapse:collapse"><tr><th style="${th}">Milestone</th><th style="${th}">Target date</th></tr>
-        ${d.milestones.map(m => `<tr><td style="${td}">◆ ${h(m.name)}</td><td style="${td}">${h(m.date)}</td></tr>`).join('') || `<tr><td style="${td}" colspan="2"><em>No milestones defined</em></td></tr>`}</table>
-        <h2 style="font-size:16px;margin:16px 0 6px">5. Team &amp; Rates</h2>
-        <table style="border-collapse:collapse"><tr><th style="${th}">Role / resource</th><th style="${th}">Allocation</th>${showRates ? `<th style="${th}">Rate</th>` : ''}</tr>
+        ${d.milestones.map(m => `<tr><td style="${td}">◆ ${h(m.name)}</td><td style="${td}">${h(m.date)}</td></tr>`).join('') || `<tr><td style="${td}" colspan="2"><em>No milestones defined</em></td></tr>`}</table>`);
+
+      add('commercial', 'Commercial Terms', d.price ? sowCommercialHtml(d, n, td, th) : '');
+
+      add('team', 'Team &amp; Rates',
+        `<table style="border-collapse:collapse"><tr><th style="${th}">Role / resource</th><th style="${th}">Allocation</th>${showRates ? `<th style="${th}">Rate</th>` : ''}</tr>
         ${d.team.map(t => `<tr><td style="${td}">${h(t.role)}</td><td style="${td}">${t.capacity}%</td>${showRates ? `<td style="${td}">${t.billText || '—'}</td>` : ''}</tr>`).join('')}</table>
         ${d.clientSafe ? `<p style="font-size:11px;color:#94a3b8">Client-safe mode: per-task effort and rate columns omitted.</p>` : ''}
         ${d.clientTeam && d.clientTeam.length ? `<h3 style="font-size:14px;margin:10px 0 4px">Client team &amp; responsibilities</h3>
         <p style="font-size:12.5px;color:#475569">The client will make the following resources available; timely participation is a dependency of the schedule and pricing above.</p>
         <table style="border-collapse:collapse"><tr><th style="${th}">Client resource</th><th style="${th}">Participates in</th></tr>
-        ${d.clientTeam.map(c => `<tr><td style="${td}">${h(c.role)}</td><td style="${td}"><ul style="margin:0;padding-left:16px">${c.duties.map(x => `<li style="margin:0 0 2px">${h(x)}</li>`).join('')}</ul>${c.more ? `<p style="margin:3px 0 0;font-size:11.5px;color:#64748b">and ${c.more} further activit${c.more === 1 ? 'y' : 'ies'} — see §2.</p>` : ''}</td></tr>`).join('')}</table>` : ''}
-        ${d.nfrs && d.nfrs.length ? `<h2 style="font-size:16px;margin:16px 0 6px">6. Non-Functional Requirements</h2>
-        <p style="font-size:12.5px;color:#475569">Quality attributes the delivered solution must meet in addition to the functional acceptance criteria — each traces to the stories listed.</p>
+        ${d.clientTeam.map(c => `<tr><td style="${td}">${h(c.role)}</td><td style="${td}"><ul style="margin:0;padding-left:16px">${c.duties.map(x => `<li style="margin:0 0 2px">${h(x)}</li>`).join('')}</ul>${c.more ? `<p style="margin:3px 0 0;font-size:11.5px;color:#64748b">and ${c.more} further activit${c.more === 1 ? 'y' : 'ies'} — see {{sec:scope}}.</p>` : ''}</td></tr>`).join('')}</table>` : ''}`);
+
+      const traceNote = `<p style="font-size:11px;color:#64748b;margin:4px 0 0">A blank story reference means the requirement was captured against a delivery-side story tracked in the project plan rather than in the appendix; it applies to the solution as delivered either way.</p>`;
+      add('nfr', 'Non-Functional Requirements', (d.nfrs && d.nfrs.length)
+        ? `<p style="font-size:12.5px;color:#475569">Quality attributes the delivered solution must meet in addition to the functional acceptance criteria — each traces to the stories listed.</p>
         <table style="border-collapse:collapse;width:100%"><tr><th style="${th}">Requirement</th><th style="${th};width:140px">Applies to</th></tr>
-        ${d.nfrs.map(x => `<tr><td style="${td}">${h(x.text)}</td><td style="${td}">${h(x.refs)}</td></tr>`).join('')}</table>` : ''}
-        ${d.clientDeps && d.clientDeps.length ? `<h2 style="font-size:16px;margin:16px 0 6px">7. Client Responsibilities &amp; Dependencies</h2>
-        <p style="font-size:12.5px;color:#475569">The schedule and price assume the client meets each item below by the time the dependent work starts; each entry states the consequence of a slip. CLIENT-marked rows in §2 apply in addition.</p>
+        ${d.nfrs.map(x => `<tr><td style="${td}">${h(x.text)}</td><td style="${td}">${h(x.refs) || '—'}</td></tr>`).join('')}</table>
+        ${d.nfrs.some(x => !x.refs) ? traceNote : ''}` : '');
+
+      add('clientdeps', 'Client Responsibilities &amp; Dependencies', (d.clientDeps && d.clientDeps.length)
+        ? `<p style="font-size:12.5px;color:#475569">The schedule and price assume the client meets each item below by the time the dependent work starts; each entry states the consequence of a slip. CLIENT-marked rows in {{sec:scope}} apply in addition.</p>
         <table style="border-collapse:collapse;width:100%"><tr><th style="${th}">Dependency (with slip consequence)</th><th style="${th};width:80px">Story</th></tr>
-        ${d.clientDeps.map(x => `<tr><td style="${td}">${h(x.text)}</td><td style="${td}">${h(x.ref)}</td></tr>`).join('')}</table>` : ''}
-        ${d.price ? `<h2 style="font-size:16px;margin:16px 0 6px">8. Commercial Terms</h2>
-        <p style="font-size:13px"><b>${d.price.model}:</b> ${d.price.amount}${d.price.model === 'Fixed price' ? ' (risk-adjusted at ' + d.price.basis + ' effort basis)' : d.price.cap ? ' estimated, not to exceed <b>' + d.price.cap + '</b> (' + d.price.basis + ' of simulated billings)' : ''}. ${n.paymentTerms || '<em>[Payment schedule — e.g. per milestone above.]</em>'}</p>` : ''}
-        <h2 style="font-size:16px;margin:16px 0 6px">9. Assumptions</h2>
-        ${(d.assumptions.length || (d.storyAssumps && d.storyAssumps.length))
-          ? `<p style="font-size:12.5px;color:#475569">Pricing and schedule are based on the assumptions below. If one proves false, the stated impact applies and is handled through change control (§11).</p>
+        ${d.clientDeps.map(x => `<tr><td style="${td}">${h(x.text)}</td><td style="${td}">${h(x.ref) || '—'}</td></tr>`).join('')}</table>
+        ${d.clientDeps.some(x => !x.ref) ? traceNote : ''}` : '');
+
+      const assumpRows = d.assumptions.concat(d.storyAssumps || []);
+      add('assumptions', 'Assumptions', assumpRows.length
+        ? `<p style="font-size:12.5px;color:#475569">Pricing and schedule are based on the assumptions below. If one proves false, the stated impact applies and is handled through change control ({{sec:change}}).</p>
              <table style="border-collapse:collapse;width:100%"><tr><th style="${th}">Assumption</th><th style="${th}">Impact if false / validation</th><th style="${th};width:70px">Source</th></tr>
-             ${d.assumptions.map(a => `<tr><td style="${td}">${h(a.text)}</td><td style="${td}">${h(a.impact) || '—'}</td><td style="${td}">${h(a.ref)}</td></tr>`).join('')}
-             ${(d.storyAssumps || []).map(a => `<tr><td style="${td}">${h(a.text)}</td><td style="${td}">${h(a.impact) || '—'}</td><td style="${td}">${h(a.ref)}</td></tr>`).join('')}</table>`
-          : '<p style="font-size:13px"><em>[Add assumptions to the RAID log or to stories ("A:") and regenerate.]</em></p>'}
-        <h2 style="font-size:16px;margin:16px 0 6px">10. Acceptance Process &amp; Defect Severity</h2>
-        <p style="font-size:13px">${n.acceptanceProcess || 'Deliverables are accepted against the acceptance criteria in §2 and the story-level criteria in the appendix. The client has five (5) business days to review each deliverable; absent written feedback within that window the deliverable is deemed accepted.'}</p>
+             ${assumpRows.map(a => `<tr><td style="${td}">${h(a.text)}</td><td style="${td}">${h(a.impact) || '—'}</td><td style="${td}">${h(a.ref) || '—'}</td></tr>`).join('')}</table>
+             ${assumpRows.some(a => !a.ref) ? traceNote : ''}`
+        : '<p style="font-size:13px"><em>[Add assumptions to the RAID log or to stories ("A:") and regenerate.]</em></p>');
+
+      add('acceptance', 'Acceptance Process &amp; Defect Severity',
+        `<p style="font-size:13px">${n.acceptanceProcess || 'Deliverables are accepted against the acceptance criteria in {{sec:scope}} and the story-level criteria in the appendix. The client has five (5) business days to review each deliverable; absent written feedback within that window the deliverable is deemed accepted.'}</p>
         <table style="border-collapse:collapse;width:100%"><tr><th style="${th};width:90px">Severity</th><th style="${th}">Definition</th><th style="${th}">Acceptance gate</th></tr>
           <tr><td style="${td}"><b>S1 — Critical</b></td><td style="${td}">Blocks a primary flow or corrupts data; no workaround.</td><td style="${td}">Zero open S1 at acceptance.</td></tr>
           <tr><td style="${td}"><b>S2 — Major</b></td><td style="${td}">A committed criterion fails; workaround exists but is unreasonable for daily use.</td><td style="${td}">Accepted only with a written remediation date.</td></tr>
           <tr><td style="${td}"><b>S3 — Minor</b></td><td style="${td}">Cosmetic-plus: wrong text, layout, non-blocking validation gaps.</td><td style="${td}">Logged; scheduled into support/hypercare.</td></tr>
-          <tr><td style="${td}"><b>S4 — Cosmetic</b></td><td style="${td}">Trivial visual polish with no functional impact.</td><td style="${td}">Does not affect acceptance.</td></tr></table>
-        <h2 style="font-size:16px;margin:16px 0 6px">11. Change Control</h2><p style="font-size:13px">${n.changeControl || 'Changes to scope, schedule, or price require a written change order describing the impact, approved by both parties before work proceeds.'}</p>
-        ${d.risks.length ? `<h2 style="font-size:16px;margin:16px 0 6px">Appendix — Key Delivery Risks</h2><ul style="font-size:13px">${d.risks.map(x => '<li>' + h(x) + '</li>').join('')}</ul>` : ''}
-        ${d.storiesAppendix ? d.storiesAppendix : ''}
-      </div>`;
+          <tr><td style="${td}"><b>S4 — Cosmetic</b></td><td style="${td}">Trivial visual polish with no functional impact.</td><td style="${td}">Does not affect acceptance.</td></tr></table>`);
+
+      add('change', 'Change Control',
+        `<p style="font-size:13px">${n.changeControl || 'Changes to scope, schedule, or price require a written change order describing the impact, approved by both parties before work proceeds.'}</p>`);
+
+      const numOf = {};
+      secs.forEach((s, i) => { numOf[s.key] = i + 1; });
+      const html = secs.map((s, i) =>
+        `<h2 style="font-size:16px;margin:16px 0 6px">${i + 1}. ${s.title}</h2>${s.body}`).join('');
+      // a reference to a section this document does not contain degrades to a
+      // name rather than printing "§undefined" on a contract
+      const named = { scope: 'the scope table', assumptions: 'the assumptions', change: 'change control',
+                      commercial: 'the commercial terms', timeline: 'the timeline' };
+      return html.replace(/\{\{sec:(\w+)\}\}/g, (m, k) =>
+        numOf[k] ? '§' + numOf[k] : (named[k] || 'the relevant section'));
+    }
+
+    /* Commercial terms: the price, the arrangement it is billed under, and the
+       schedule of what becomes payable when. */
+    function sowCommercialHtml(d, n, td, th) {
+      const h = x => escapeHtml(x || '');
+      const p = d.price, pay = d.payment;
+      const head = `<p style="font-size:13px;margin:0 0 8px"><b>${h(p.model)}:</b> ${h(p.amount)}${
+        p.model === 'Fixed price' ? ' (risk-adjusted at ' + h(p.basis) + ' effort basis)'
+          : p.cap ? ' estimated, not to exceed <b>' + h(p.cap) + '</b> (' + h(p.basis) + ' of simulated billings)' : ''
+        }${pay && pay.kind !== 'none' ? ', billed ' + h(pay.label) + '.' : '.'}</p>`;
+      /* No arrangement recorded is a gap in the DRAFT, not licence to invent
+         one. The generator used to ask the AI for "one sentence proposing
+         milestone-based payment" whatever the project said, so this document
+         promised milestone billing to a client being invoiced monthly. */
+      if (!pay || pay.kind === 'none' || !pay.rows.length) {
+        return head + `<p style="font-size:12.5px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:7px 11px;margin:0"><b>Payment schedule not yet set.</b> ${
+          pay && pay.kind === 'none'
+            ? 'No billing arrangement has been recorded for this engagement, so no schedule can be stated here. Set one under <i>Money → billing terms</i> — deposit, arrangement and net days — and regenerate; the schedule below fills itself in from the plan.'
+            : 'The billing arrangement is recorded but no payment could be placed on a date — usually a plan with no priced work. Price the plan and regenerate.'}</p>`;
+      }
+      const gap = pay.kind === 'retainer' ? 0 : Math.abs(pay.total - pay.scheduled);
+      /* On a retainer the two totals are meant to be compared, not reconciled:
+         the schedule is what the client pays and the fee is what the work is
+         priced at, and the difference is the margin or the shortfall. Printing
+         it as "could not be placed" would describe it as a defect in the
+         document rather than a fact about the deal. */
+      const retNote = (pay.kind === 'retainer' && Math.abs(pay.retainerGap) > 1)
+        ? `<p style="font-size:12px;color:${pay.retainerGap < 0 ? '#b45309' : '#475569'};margin:4px 0 0">The retainer totals <b>${h(fmtMoney(pay.scheduled))}</b> across ${pay.rows.length} ${pay.rows.length === 1 ? 'period' : 'periods'} against a priced value of ${h(fmtMoney(pay.total))} for the work — ${pay.retainerGap < 0 ? 'a shortfall of <b>' + h(fmtMoney(-pay.retainerGap)) + '</b>. Either the retainer is too low for the scope or the scope is too large for the retainer; resolve it before issuing.' : 'a margin of ' + h(fmtMoney(pay.retainerGap)) + ' over the priced work.'}</p>`
+        : '';
+      return head + `<p style="font-size:12.5px;color:#475569;margin:0 0 4px">${pay.kind === 'retainer'
+        ? 'This engagement is retained. The amounts below are payable for each period whether or not the period is fully utilised, and reserve the team\'s availability for it.'
+        : 'The fee above becomes payable as set out below.'} Each invoice is issued on the stated event and is due ${pay.days} days from the date of invoice.</p>
+        <table style="border-collapse:collapse;width:100%"><tr><th style="${th};width:34px">#</th><th style="${th}">Payment event</th><th style="${th};width:120px">Invoice due</th><th style="${th};width:110px;text-align:right">Amount</th></tr>
+        ${pay.rows.map((r, i) => `<tr><td style="${td}">${i + 1}</td><td style="${td}">${h(r.event)}<div style="color:#64748b;font-size:11px">${h(r.note)}</div></td><td style="${td}">${h(r.when)}</td><td style="${td};text-align:right">${r.amount > 0.005 ? h(fmtMoney(r.amount)) : '—'}</td></tr>`).join('')}
+        <tr style="font-weight:700;background:#f8fafc"><td style="${td}" colspan="3">Total</td><td style="${td};text-align:right">${h(fmtMoney(pay.scheduled))}</td></tr></table>
+        ${gap > 1 ? `<p style="font-size:12px;color:#b45309;margin:4px 0 0"><b>${h(fmtMoney(gap))} of the fee could not be placed on a payment date</b> — the schedule above totals less than the contract price. Resolve before issuing.</p>` : ''}${retNote}
+        ${pay.msUndated ? `<p style="font-size:12px;color:#b45309;margin:4px 0 0"><b>${pay.msUndated} milestone${pay.msUndated === 1 ? ' has' : 's have'} no date</b> and therefore carr${pay.msUndated === 1 ? 'ies' : 'y'} no payment above. Date ${pay.msUndated === 1 ? 'it' : 'them'} in the plan and regenerate.</p>` : ''}
+        <p style="font-size:11px;color:#64748b;margin:4px 0 0">Dates are derived from the plan as it currently stands; invoice dates move with the schedule and are confirmed against the accepted milestone dates.</p>`;
     }
     // Appendix B: user stories & acceptance criteria (from the Requirements tab),
     // grouped by epic — the operative definition of "delivered" per deliverable.
     function sowStoriesAppendix() {
       if (!reqs || !Array.isArray(reqs.stories) || !reqs.stories.length) return '';
-      const modeSel = document.getElementById('sowStoriesMode');
-      const mode = (modeSel && modeSel.value) || pricing.sowStoriesMode || 'full';
+      const mode = sowStoriesMode();   // the same answer sowPrintedStoryIds gives
       if (mode === 'none') return '';
       const td = 'padding:5px 9px;border:1px solid #cbd5e1;font-size:12px;vertical-align:top;';
       const th = td + 'background:#f1f5f9;font-weight:700;text-align:left;';
@@ -26083,9 +26596,11 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         return `<h2 style="font-size:16px;margin:16px 0 6px">Appendix — User Stories (summary)</h2>
           <p style="font-size:12.5px;color:#475569">One line per story; the full Given/When/Then acceptance criteria live in the project's traceability matrix and are available on request (or regenerate this SOW with “Stories: full ACs”).</p>
           <table style="border-collapse:collapse;width:100%"><tr><th style="${th};width:60px">ID</th><th style="${th}">Story</th><th style="${th};width:60px">ACs</th><th style="${th};width:160px">WBS trace</th></tr>
-          ${reqs.stories.filter(s => storyAudience(s) === 'client').map(s => { const t = s.wbsId != null ? idToTask[s.wbsId] : null;
-            return `<tr><td style="${td}">${h(s.id)}</td><td style="${td}">As a <b>${h(s.persona)}</b>, I want to ${h(s.want)}, so that ${h(s.soThat)}.</td><td style="${td};text-align:center">${(s.ac || []).length}</td><td style="${td}">${t ? h(t.wbs + ' ' + t.name) : '—'}</td></tr>`; }).join('')}
-          </table>${reqs.stories.some(s => storyAudience(s) === 'internal') ? `<p style="font-size:11.5px;color:#64748b;margin:4px 0 0">Internal delivery-side stories are managed in the project plan and omitted from this client appendix.</p>` : ''}`;
+          ${(() => { const printed = sowPrintedStoryIds();
+            return reqs.stories.filter(s => printed.has(s.id)).map(s => { const t = s.wbsId != null ? idToTask[s.wbsId] : null;
+            return `<tr><td style="${td}">${h(s.id)}</td><td style="${td}">As a <b>${h(s.persona)}</b>, I want to ${h(s.want)}, so that ${h(s.soThat)}.</td><td style="${td};text-align:center">${(s.ac || []).length}</td><td style="${td}">${t ? h(t.wbs + ' ' + t.name) : '—'}</td></tr>`; }).join(''); })()}
+          </table>${(() => { const printed = sowPrintedStoryIds(); const n2 = reqs.stories.filter(s => !printed.has(s.id)).length;
+            return n2 ? `<p style="font-size:11.5px;color:#64748b;margin:4px 0 0">${n2} further internal delivery-side stor${n2 === 1 ? 'y is' : 'ies are'} managed in the project plan and not referred to in this document.</p>` : ''; })()}`;
       }
       let out = `<h2 style="font-size:16px;margin:16px 0 6px">Appendix — User Stories &amp; Acceptance Criteria</h2>
         <p style="font-size:12.5px;color:#475569">Each story is accepted when its acceptance criteria pass in the designated environment. Criteria marked <i>error</i>/<i>edge</i> define graceful failure behaviour and boundary handling and are part of the committed scope.</p>`;
@@ -26105,14 +26620,23 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           }).join('')}</table>`;
       };
       let body = '';
-      // client SOW = client-facing stories only; internal/delivery process stories
-      // stay in the plan, not this client document
-      const clientStories = reqs.stories.filter(s => storyAudience(s) === 'client');
-      const internalCount = reqs.stories.length - clientStories.length;
+      /* Client-facing stories, plus any delivery-side story the body of the SOW
+         actually relies on. The audience split still governs what LEADS the
+         appendix; what it can no longer do is leave a reference in the contract
+         pointing at a story the contract does not contain. */
+      const printed = sowPrintedStoryIds();
+      const shown = reqs.stories.filter(s => printed.has(s.id));
+      const clientStories = shown.filter(s => storyAudience(s) === 'client');
+      const carried = shown.filter(s => storyAudience(s) !== 'client');
+      const omitted = reqs.stories.length - shown.length;
       (reqs.epics || []).forEach(ep => { body += block(ep.id + ' — ' + (ep.title || ''), clientStories.filter(s => (s.epicId || '—') === ep.id)); });
       body += block('Other stories', clientStories.filter(s => !rendered.has(s.id)));
+      if (carried.length) {
+        body += `<p style="font-size:12.5px;color:#475569;margin:12px 0 0">The stories below are delivery-side — they describe how the team works rather than what the client operates — and appear here because the non-functional requirements, dependencies or assumptions elsewhere in this document trace to them.</p>`;
+        body += block('Referenced delivery stories', carried);
+      }
       const ids = clientStories.map(s => s.id);
-      body += `<p style="font-size:11.5px;color:#64748b;margin:8px 0 0">This appendix lists the <b>${clientStories.length}</b> client-facing user stories${ids.length ? ' (' + escapeHtml(ids[0] || '') + ' … ' + escapeHtml(ids[ids.length - 1] || '') + ')' : ''}, grouped by epic.${internalCount ? ' ' + internalCount + ' internal delivery-side stor' + (internalCount === 1 ? 'y is' : 'ies are') + ' tracked in the project plan and omitted here.' : ''}</p>`;
+      body += `<p style="font-size:11.5px;color:#64748b;margin:8px 0 0">This appendix lists the <b>${clientStories.length}</b> client-facing user stories${ids.length ? ' (' + escapeHtml(ids[0] || '') + ' … ' + escapeHtml(ids[ids.length - 1] || '') + ')' : ''}, grouped by epic${carried.length ? ', plus ' + carried.length + ' delivery-side stor' + (carried.length === 1 ? 'y' : 'ies') + ' this document refers to' : ''}.${omitted ? ' ' + omitted + ' further internal delivery-side stor' + (omitted === 1 ? 'y is' : 'ies are') + ' tracked in the project plan and are not referred to here.' : ''}</p>`;
       return body ? out + body : '';
     }
     async function svgMarkupToPngDataUrl(markup, scale) {
@@ -26169,8 +26693,9 @@ Project: ${d.name}. Timeline ${d.start} → ${d.finish}. Milestones: ${d.milesto
 Scope items: ${d.scope.filter(x => !x.summary).map(x => x.name + (x.deliverable ? ' → ' + x.deliverable : '')).join('; ')}.
 Assumptions: ${d.assumptions.join('; ') || 'none recorded'}. Exclusions: ${d.exclusions.join('; ') || 'none recorded'}.
 ${d.price ? 'Commercials: ' + d.price.model + ' ' + d.price.amount + '.' : ''}
-Return ONLY JSON: {"overview":"2-3 sentence engagement overview & objectives","scopeNarrative":"2-3 sentences framing the scope table","outOfScope":"1-2 sentences if exclusions are empty","paymentTerms":"one sentence proposing milestone-based payment","acceptanceProcess":"2-3 sentence acceptance clause","changeControl":"2-3 sentence change-control clause"}
-Professional, client-ready, no hype, no invented facts.`;
+Return ONLY JSON: {"overview":"2-3 sentence engagement overview & objectives","scopeNarrative":"2-3 sentences framing the scope table","acceptanceProcess":"2-3 sentence acceptance clause","changeControl":"2-3 sentence change-control clause"}
+Professional, client-ready, no hype, no invented facts.
+Do not write payment terms or exclusions — both are generated from the project's own settings, and a sentence proposing an arrangement the project is not billed under contradicts the schedule it sits above.`;
           narrative = parseAIJsonNoted(await callAnthropic(prompt, { onDelta: sowDelta, cachePrefix: [histPromptBlock() + bankPromptBlock()] }), 'the SOW narrative');
           Object.keys(narrative || {}).forEach(k => { narrative[k] = escapeHtml(String(narrative[k] || '')); });
         } catch (e) { alert('AI narrative failed (' + (e.message || e) + ') — generating the structured skeleton instead.'); }
@@ -26187,7 +26712,15 @@ Professional, client-ready, no hype, no invented facts.`;
       saveLocal();
       setDocView('sow');
       renderSowHistory();
-      flashSaved('✓ SOW draft ready — review, then Copy or Download (baseline captured for change orders)');
+      /* Two things the drafter has to be told, because the document itself
+         cannot say them without saying them to the client as well. */
+      const warn = [];
+      if (d.refsDropped) warn.push(d.refsDropped + ' story reference' + (d.refsDropped === 1 ? '' : 's') +
+        ' pointed at stories this SOW does not print (delivery-side, or the appendix is off) and were left blank rather than dangling');
+      if (d.payment && d.payment.kind === 'none') warn.push('no billing arrangement is set, so the commercial terms carry no payment schedule — set one under Money');
+      flashSaved(warn.length
+        ? '✓ SOW draft ready — ' + warn.join('; ')
+        : '✓ SOW draft ready — review, then Copy or Download (baseline captured for change orders)');
     }
     // In-place SOW editing: toggle contentEditable on the preview, save back to
     // sowDraft so Copy/Download carry the edits and they persist with the project.
@@ -28896,16 +29429,35 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         + opt('milestone', 14, 'on milestones, net 14')
         + opt('milestone', 30, 'on milestones, net 30')
         + opt('milestone', 45, 'on milestones, net 45')
+        // a retainer is a period and an amount, so the period lives here and the
+        // amount gets its own field — burying a figure in a dropdown label would
+        // make the one number that decides the whole schedule unchangeable
+        + '<option value="retainer:7" disabled style="font-size:0.7rem">— retained —</option>'
+        + optP('retainer', 7, 'week', 'weekly retainer, net 7')
+        + optP('retainer', 0, 'week', 'weekly retainer, due on issue')
+        + optP('retainer', 14, 'week', 'weekly retainer, net 14')
+        + optP('retainer', 30, 'month', 'monthly retainer, net 30')
         + '</select>';
+      function optP(k, d, period, lbl) {
+        return '<option value="' + k + ':' + d + ':' + period + '"'
+          + (T.kind === k && T.days === d && T.period === period ? ' selected' : '') + '>' + escapeHtml(lbl) + '</option>';
+      }
     }
     function setProjectRevTerms(v) {
       const p2 = String(v || 'none:0').split(':');
-      revTerms = revTermsNorm({ kind: p2[0], days: +p2[1], deposit: revTermsNorm(revTerms).deposit });
+      const prev = revTermsNorm(revTerms);
+      revTerms = revTermsNorm({ kind: p2[0], days: +p2[1], deposit: prev.deposit,
+                               retainer: prev.retainer, period: p2[2] || prev.period });
       saveLocal(); renderResources();
       if (calculated) renderAnalytics();
     }
     function setRevDeposit(v) {
       revTerms = revTermsNorm(Object.assign({}, revTermsNorm(revTerms), { deposit: parseFloat(v) || 0 }));
+      saveLocal(); renderResources();
+      if (calculated) renderAnalytics();
+    }
+    function setRevRetainer(v) {
+      revTerms = revTermsNorm(Object.assign({}, revTermsNorm(revTerms), { retainer: parseFloat(v) || 0 }));
       saveLocal(); renderResources();
       if (calculated) renderAnalytics();
     }
@@ -28955,6 +29507,26 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       const T = projectRevTerms();
       const ms = revMilestoneDates(hasBaseline(), leafTasks());
       const fee = revenueAtCompletion();
+      const rp = T.kind === 'retainer' ? retainerPeriods(hasBaseline(), leafTasks()) : [];
+      const retTot = rp.length * T.retainer;
+      const retWarn = T.kind !== 'retainer' ? ''
+        : !(T.retainer > 0)
+          ? '<p class="help-text" style="color:var(--critical);margin:0.3rem 0 0">⚠ Billing is set to a retainer and '
+            + '<b>no amount per ' + RETAINER_PERIODS[T.period].label + ' is set</b>, so the schedule bills nothing. '
+            + 'Put the figure in the box above.</p>'
+          : !rp.length
+            ? '<p class="help-text" style="color:var(--warn);margin:0.3rem 0 0">⚠ The plan has no dated work, so there '
+              + 'are no periods to retain against yet.</p>'
+            : '<p class="help-text" style="margin:0.3rem 0 0">' + rp.length + ' '
+              + RETAINER_PERIODS[T.period].label + (rp.length === 1 ? '' : 's') + ' × '
+              + fmtMoney(T.retainer) + ' = <b>' + fmtMoney(retTot) + '</b> retained'
+              + (fee > 0 ? ', against ' + fmtMoney(fee) + ' of priced work — '
+                  + (Math.abs(retTot - fee) <= 1 ? 'they agree'
+                     : retTot < fee ? '<span style="color:var(--critical)">a shortfall of ' + fmtMoney(fee - retTot)
+                        + '</span>, so the retainer does not cover the scope'
+                     : 'a margin of ' + fmtMoney(retTot - fee) + ' over the priced work') : '')
+              + '. The retainer is owed for every period whether or not it is used — that is what the client is '
+              + 'buying, and it is why the two figures are compared rather than reconciled.</p>';
       const warn = (T.kind === 'milestone' && !ms.dates.length)
         ? '<p class="help-text" style="color:var(--critical);margin:0.3rem 0 0">⚠ Billing is set to milestones and '
           + '<b>this plan has no dated milestone</b>, so there is nothing to invoice against. Everything falls to a '
@@ -28973,16 +29545,25 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         + 'Milestone billing is the case worth having: everything earned since the last checkpoint becomes '
         + 'payable the day the next one completes, and nothing in between.</p>'
         + '<div class="table-wrap"><table class="wl-t" style="font-size:var(--t-sm)">'
-        + '<thead><tr><th>Arrangement</th><th>Deposit</th><th>Invoicing against</th></tr></thead><tbody>'
+        + '<thead><tr><th>Arrangement</th><th>' + (T.kind === 'retainer' ? 'Per ' + RETAINER_PERIODS[T.period].label : 'Deposit')
+        + '</th><th>Invoicing against</th></tr></thead><tbody>'
         + '<tr><td class="wl-td">' + revTermsPickerHtml(revTerms, 'setProjectRevTerms(this.value)') + '</td>'
-        + '<td class="wl-td"><input class="mini-inp" type="number" min="0" max="100" step="5" style="width:5.5rem" '
-        + 'value="' + T.deposit + '" oninput="setRevDeposit(this.value)" title="Percent of the fee invoiced at '
-        + 'project start. Often the single biggest lever on the funding gap." aria-label="Deposit percent"> %</td>'
+        + '<td class="wl-td">' + (T.kind === 'retainer'
+            ? '$ <input class="mini-inp" type="number" min="0" step="100" style="width:7rem" value="'
+              + (T.retainer || '') + '" oninput="setRevRetainer(this.value)" title="The fixed amount invoiced every '
+              + RETAINER_PERIODS[T.period].label + ', owed whether or not the period is fully used. This is the '
+              + 'number the whole schedule is built from." aria-label="Retainer amount per period">'
+            : '<input class="mini-inp" type="number" min="0" max="100" step="5" style="width:5.5rem" '
+              + 'value="' + T.deposit + '" oninput="setRevDeposit(this.value)" title="Percent of the fee invoiced at '
+              + 'project start. Often the single biggest lever on the funding gap." aria-label="Deposit percent"> %')
+        + '</td>'
         + '<td class="wl-td wl-wait">' + (fee > 0 ? fmtMoney(fee) + ' — the fee you will actually invoice, not the '
             + 'rate-card sum' : '<span style="color:var(--warn)">no price set, so there is nothing to bill</span>')
         + (T.kind === 'milestone' ? ' · ' + ms.dates.length + ' dated milestone'
-            + (ms.dates.length === 1 ? '' : 's') : '') + '</td></tr>'
-        + '</tbody></table></div>' + warn
+            + (ms.dates.length === 1 ? '' : 's') : '')
+        + (T.kind === 'retainer' ? ' · ' + rp.length + ' ' + RETAINER_PERIODS[T.period].label
+            + (rp.length === 1 ? '' : 's') + ' retained' : '') + '</td></tr>'
+        + '</tbody></table></div>' + warn + retWarn
         + '<p class="help-text" style="margin:0.3rem 0 0">The shape comes from the work and the total is the '
         + '<b>fee</b>: on a fixed price you invoice the contract price, and bill rate × effort is how that price '
         + 'was arrived at, not what appears on the invoice. On T&amp;M the two are the same number. Like the '

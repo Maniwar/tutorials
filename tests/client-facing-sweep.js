@@ -128,6 +128,156 @@ const DATA = FIXTURE();
       }
     } catch (e) { say('SOW draft', 'threw: ' + e.message); }
 
+    /* ═══ 3b. THE ASSEMBLED DOCUMENT ═══════════════════════════════════════
+       Section 3 checks the SKELETON DATA — what went in. This checks the thing
+       a client is handed, because four defects lived entirely in the assembly:
+       a payment clause promising an arrangement the project was not billed
+       under, story ids cited in three places and printed in none, a boundary
+       section that waived the boundary, and section numbers that skipped when
+       an optional section was empty. None of them were visible in the data. */
+    let doc = null;
+    try {
+      const savedTerms = JSON.parse(JSON.stringify(revTerms));
+      const savedRaid = raid.slice();
+      const build = () => { const d = sowSkeletonData(); d.storiesAppendix = sowStoriesAppendix();
+                            return { d: d, html: sowAssembleHtml(d, null) }; };
+      const secNums = html => [...html.matchAll(/<h2[^>]*>(\d+)\./g)].map(m => +m[1]);
+
+      // ── the story ids printed must be the story ids cited ────────────────
+      const base = build();
+      const citedAll = [...new Set((strip(base.html).match(/\bUS-\d+\b/g) || []))];
+      const traceable = (base.d.nfrs || []).length + (base.d.clientDeps || []).length
+                      + (base.d.storyAssumps || []).length;
+      if (!traceable)
+        say('SOW document', 'the fixture produces no NFR, dependency or story-assumption row, so the '
+          + 'reference-integrity check below has nothing to read and would pass on any build');
+      else {
+        const dangling = citedAll.filter(id => !base.d.printedStoryIds.has(id));
+        if (dangling.length)
+          say('SOW document', dangling.length + ' story id(s) are cited in the SOW and printed nowhere in '
+            + 'it: ' + dangling.slice(0, 6).join(', ') + ' — a client cannot look them up');
+        /* The positive form, which the negative one cannot express: a story the
+           document RELIES on — its quality attribute, its dependency, its
+           pricing assumption is quoted in the body — has to be in the document.
+           Blanking the reference would satisfy the check above and still leave
+           the reader told that something binds a story they cannot read. */
+        const relied = [...sowReferencedStoryIds()];
+        if (!relied.length)
+          say('SOW document', 'no story in the fixture carries an NFR, a D: dependency or an A: assumption, '
+            + 'so the reliance check below reads an empty list and would pass on any build');
+        else {
+          const absent = relied.filter(id => !base.d.printedStoryIds.has(id));
+          if (absent.length)
+            say('SOW document', 'the SOW quotes requirements drawn from ' + absent.length + ' story/ies it '
+              + 'does not print: ' + absent.slice(0, 6).join(', '));
+          const appx = strip(base.d.storiesAppendix || '');
+          const notInAppendix = relied.filter(id => appx.indexOf(id) < 0);
+          if (notInAppendix.length)
+            say('SOW document', notInAppendix.length + ' relied-on story/ies are missing from the appendix '
+              + 'the document points readers to: ' + notInAppendix.slice(0, 6).join(', '));
+        }
+      }
+      // and with the appendix switched OFF, nothing may be cited at all
+      const sel = document.getElementById('sowStoriesMode');
+      const savedMode = sel ? sel.value : null;
+      if (sel) {
+        sel.value = 'none';
+        const off = build();
+        if (off.d.storiesAppendix !== '')
+          say('SOW document', 'stories set to "none" still printed a story appendix');
+        const citedOff = (strip(off.html).match(/\bUS-\d+\b/g) || []);
+        if (citedOff.length)
+          say('SOW document', 'with the story appendix switched off the document still cites '
+            + [...new Set(citedOff)].slice(0, 6).join(', '));
+        // the requirements themselves must SURVIVE — dropping the reference is
+        // not licence to drop the obligation
+        if ((base.d.nfrs || []).length && (off.d.nfrs || []).length !== (base.d.nfrs || []).length)
+          say('SOW document', 'switching the appendix off also dropped ' +
+            ((base.d.nfrs || []).length - (off.d.nfrs || []).length) + ' non-functional requirement(s) '
+            + 'from the contract — the reference goes, the requirement stays');
+        sel.value = savedMode;
+      }
+
+      // ── milestone billing names every milestone, with an amount ──────────
+      revTerms = { kind: 'milestone', days: 30, deposit: 20 };
+      const plan = sowPaymentPlan();
+      const datedMs = tasks.filter(t => t.milestone && t.finishDate instanceof Date
+                                        && !isNaN(t.finishDate.getTime()));
+      if (!datedMs.length)
+        say('SOW document', 'the fixture holds no dated milestone, so the milestone-billing check below '
+          + 'cannot distinguish a schedule from an empty table');
+      else {
+        const unnamed = datedMs.filter(t => !plan.rows.some(r => r.event.indexOf(t.name) >= 0));
+        if (unnamed.length)
+          say('SOW document', unnamed.length + ' dated milestone(s) carry no payment row under milestone '
+            + 'billing: ' + unnamed.map(t => t.name).slice(0, 3).join('; '));
+        if (plan.rows.every(r => !(r.amount > 0)))
+          say('SOW document', 'the milestone payment schedule states no amount on any row — "paid by '
+            + 'milestone" without the money is the defect it was built to fix');
+        if (Math.abs(plan.total - plan.scheduled) > 1)
+          say('SOW document', 'the payment schedule totals ' + Math.round(plan.scheduled)
+            + ' against a contract price of ' + Math.round(plan.total) + ' — a client signs the difference');
+        const msHtml = build().html;
+        if (!datedMs.every(t => msHtml.indexOf(t.name) >= 0))
+          say('SOW document', 'a milestone the payment plan bills does not appear in the document');
+      }
+      // ── an arrangement the project is not billed under is never proposed ─
+      revTerms = { kind: 'none', days: 0, deposit: 0 };
+      const noTerms = build().html;
+      if (base.d.price && !/Payment schedule not yet set/.test(noTerms))
+        say('SOW document', 'with no billing arrangement recorded the commercial terms say nothing about '
+          + 'the gap — it ships as a finished clause');
+      if (/milestone-based payment|paid by milestone|invoiced monthly/i.test(strip(noTerms)))
+        say('SOW document', 'with no billing arrangement recorded the document still proposes one');
+
+      // ── out of scope limits; it never waives ────────────────────────────
+      revTerms = savedTerms;
+      raid = raid.filter(x => x.type !== 'Exclusion');
+      const noExcl = build();
+      const oos = strip(noExcl.html);
+      const oosBody = oos.slice(oos.indexOf('Out of Scope'), oos.indexOf('Out of Scope') + 600);
+      if (oos.indexOf('Out of Scope') < 0)
+        say('SOW document', 'the document has no Out of Scope section at all');
+      else {
+        if (!/not expressly listed there is out of scope/i.test(oosBody))
+          say('SOW document', 'with no recorded exclusions the Out of Scope section states no boundary: '
+            + oosBody.slice(0, 140));
+        if (/all activities and deliverables are as defined|no exclusions apply/i.test(oosBody))
+          say('SOW document', 'the Out of Scope section reads as a waiver rather than a limit');
+      }
+      raid = savedRaid;
+
+      // ── numbering is contiguous and every reference resolves ────────────
+      const savedStories = reqs.stories;
+      let thin = null;
+      try { reqs.stories = []; thin = build(); } finally { reqs.stories = savedStories; }
+      [['full', base], ['no optional sections', thin]].forEach(([lbl, v]) => {
+        if (!v) return;
+        const ns = secNums(v.html);
+        if (!ns.length) { say('SOW document', lbl + ': the document is unnumbered'); return; }
+        if (!ns.every((x, i) => x === i + 1))
+          say('SOW document', lbl + ': section numbers run ' + ns.join(',') + ' — a contract referred to '
+            + 'by number cannot skip one');
+        if (/\{\{sec:|§undefined|§NaN/.test(v.html))
+          say('SOW document', lbl + ': an unresolved cross-reference reached the document');
+        const refs = [...new Set((strip(v.html).match(/§(\d+)/g) || []))].map(x => +x.slice(1));
+        const missing = refs.filter(x => x > ns.length);
+        if (missing.length)
+          say('SOW document', lbl + ': the document refers to §' + missing.join(', §')
+            + ' and has only ' + ns.length + ' sections');
+      });
+      // the reordering itself: what it costs and when they pay is not the
+      // eighth thing a reader finds
+      const order = [...base.html.matchAll(/<h2[^>]*>(\d+)\.\s([^<]+)</g)].map(m => m[2].trim());
+      const ci = order.findIndex(x => /Commercial Terms/.test(x));
+      if (base.d.price && ci < 0) say('SOW document', 'a priced engagement has no Commercial Terms section');
+      else if (ci > 5) say('SOW document', 'Commercial Terms is section ' + (ci + 1) + ' of ' + order.length
+        + ' — the price and the payment schedule are buried behind ' + ci + ' other sections');
+      doc = { sections: order.length, cited: citedAll.length, refsDropped: base.d.refsDropped,
+              commercialAt: ci + 1, msRows: plan.rows.length };
+      revTerms = savedTerms;
+    } catch (e) { say('SOW document', 'threw: ' + e.message); }
+
     // ═══ 4. EXPORTS RESTATE THE SAME FACTS ══════════════════════════════════
     const grab = fn => { let cap = null; const real = window.download;
       window.download = (n, body) => { cap = body; };
@@ -322,7 +472,7 @@ const DATA = FIXTURE();
                     earned: (rep.match(/earned value to date \$[\d,]+/i) || [])[0] || null,
                     booked: /booked|actual cost/i.test(rep),
                     baseline: (rep.match(/variance [^.]{0,24}/i) || [])[0] || null },
-      barSchedule: sch.delta, sow, safeReportMoneyFigures: leaked.length };
+      barSchedule: sch.delta, sow, doc, safeReportMoneyFigures: leaked.length };
   });
 
   R.pageErrors = errs.slice(0, 8);

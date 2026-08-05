@@ -213,6 +213,75 @@ const DATA = FIXTURE();
       }
     }
 
+    /* ── 6c. A WEEK THAT IS NOT THE PROJECT'S ──────────────────────────────
+       The working week was a PROJECT setting and the only per-person
+       availability was PTO, so somebody who works Mon/Wed/Fri was modelled as
+       a full-week person who takes a lot of holiday, or not modelled at all.
+       Work landing on a day they never work read as an ordinary Tuesday.
+
+       The SUBJECT has to be chosen carefully and the first attempt at this got
+       it wrong: days whose every task is finished are deliberately not counted
+       as conflicts, so the busiest person on this fixture — whose work is all
+       complete — cannot exhibit the condition at all, and removing a working
+       day from them changed nothing. Picked by live (unfinished) days now.
+       Same mistake as the negative case in baseline-sweep, one file over. */
+    {
+      const liveIsos = R2 => Object.keys(R2.days).filter(iso => R2.days[iso].tasks.some(id => {
+        const t2 = tasks.find(x => x.id === id); return t2 && (t2.percentComplete || 0) < 100; }));
+      const cand = Object.values((resourceLoad || computeResourceLoad()).perResource)
+        .map(R2 => ({ R: R2, live: liveIsos(R2) }))
+        .sort((a2, b2) => b2.live.length - a2.live.length)[0];
+      if (!cand || !cand.live.length) { /* nothing with unfinished dated work to test on */ }
+      else {
+        const who = cand.R.name;
+        const base = computeResourceLoad().overResourceDays;
+        const dow = new Date(cand.live[0] + 'T00:00:00').getDay();
+        // by default a person follows the project week and stores nothing
+        if (resWorkDays(who) !== null)
+          say('Availability', who + ' carries a stored working week before anyone set one — the default has '
+            + 'to be "follows the project", or every existing plan silently acquires a per-person calendar');
+        toggleResWorkday(who, dow);
+        const after = computeResourceLoad().overResourceDays;
+        if (after <= base)
+          say('Availability', 'taking a working day away from ' + who + ' — who has unfinished work on '
+            + cand.live.length + ' dated days, ' + (cand.live.filter(i2 =>
+                new Date(i2 + 'T00:00:00').getDay() === dow).length) + ' of them on that weekday — produced '
+            + 'no new conflict. Work scheduled on a day somebody does not work is the same fact as work '
+            + 'scheduled on their holiday, and it is being counted as an ordinary day');
+        /* AND THE PANEL HAS TO SAY WHICH. A holiday and a day somebody never
+           works both zero the capacity, but they are resolved differently —
+           one by moving the work, the other by moving it or by correcting what
+           you believe about the person. A heatmap that calls both "PTO" sends
+           the reader to change a holiday that does not exist. */
+        if (typeof setResTab === 'function') setResTab('workload');
+        renderResources();
+        const hm = (document.getElementById('resourcesContainer') || {}).innerHTML || '';
+        if (!/does not work \w+days/.test(hm))
+          say('Availability', 'the workload panel does not distinguish a day somebody never works from a day '
+            + 'they booked off — the reader is sent to cancel a holiday that was never taken');
+        // putting it back must restore BOTH the count and the unset state
+        toggleResWorkday(who, dow);
+        const restored = computeResourceLoad().overResourceDays;
+        if (restored !== base)
+          say('Availability', 'restoring the working day left ' + restored + ' conflicts '
+            + 'against a baseline of ' + base);
+        if (resWorkDays(who) !== null)
+          say('Availability', 'a person whose week matches the project again is still storing their own copy '
+            + 'of it, so changing the project weekend later would leave them on the old one');
+        /* An EMPTY array is the dangerous shape: it is what a hand-edited file
+           or a bad export produces, and read literally it means "works no days
+           at all", which turns every scheduled day for that person into a
+           conflict. It has to coerce back to "follows the project". */
+        resources[who].workDays = [];
+        hydrate(JSON.parse(JSON.stringify(serialize())));
+        calculate();
+        if (resWorkDays(who) !== null || computeResourceLoad().overResourceDays !== base)
+          say('Availability', 'an empty working-week list survived the load as "works no days", so every '
+            + 'scheduled day for that person became a conflict — absent and empty have to mean the same '
+            + 'thing here, and that thing is "follows the project"');
+      }
+    }
+
     // ── 7. levelling must actually reduce the count, or say it cannot ─────
     const levelling = (() => {
       if (typeof autoLevel !== 'function') return null;
