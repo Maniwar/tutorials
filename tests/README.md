@@ -412,6 +412,41 @@ Current run: 24 checks, 65 bodies, 340 calls resolved.
 Probes live in `tests/probes/` and are out of scope by design — they observe and
 never fail, which is stated in their own README.
 
+## Which ASSERTIONS have never fired
+
+`node tests/probes/assertion-coverage.js` — and it is a probe, not a check, for
+a reason given below.
+
+The mutation engine proves that a check FILE can go red. That was the right
+granularity when the worry was a whole sweep gone vacuous, and it is far too
+coarse now: `baseline-sweep` is fifteen hundred lines and catches most of the
+mutant set, so "baseline-sweep has been the catcher" says nothing whatever about
+the ninety-odd individual assertions inside it. An assertion nobody ever aimed a
+mutant at has no evidence behind it, and one session produced five defects that
+lived in precisely that gap — a negative case built on a subject an earlier block
+had already touched, an assertion on a derived list that also filtered on the
+condition under test, a filter on a derived field straight after a hydrate that
+selected nothing and passed, an assertion anchored to markup that was later
+redrawn, and a mutant neutered by a refactor. Every one was found by the engine
+or by printing an intermediate count. None was found by reading.
+
+So the engine now records the OUTPUT of each catching run instead of discarding
+it — that text was already being produced, twenty-eight minutes of it — and
+writes `tests/.mutation-journal.json`. The probe reads that against the assertion
+strings extracted from the check files and reports which sentences have never
+been the one that went red.
+
+It reports rather than failing because the two populations are not the same
+thing. An assertion with no mutant behind it is unproven, not wrong, and plenty
+of them guard conditions no mutant expresses; a gate that failed on those would
+be turned off within a week. The list is for reading, and the question to ask of
+each line is "could I write a mutant that makes this fire, and if not, why not".
+
+Two things it cannot say, both printed in its own output. An assertion that HAS
+fired is proven only against the mutants that fired it. And matching is by text,
+so a check whose message is built entirely from computed values has no stable
+identity here and is reported as never-fired while doing its job.
+
 ## Nothing to test is not a pass
 
 Every sweep now states it when its input cannot reach what it asserts. Sixteen

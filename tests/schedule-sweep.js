@@ -250,6 +250,22 @@ const DATA = FIXTURE();
       // the chain is continuous if cur starts no later than prev finishes
       if (cur.es > prev.ef + 1e-6) { broken++; }
     }
+    /* A PLAN WITH WORK HAS A CRITICAL PATH. Both assertions below are gated on
+       `crit.length &&`, so a build where NOTHING comes back critical satisfies
+       them by having nothing to check — a clean report and an empty one read
+       identically.
+
+       Said plainly about its own worth: a mutant that marks nothing critical is
+       caught by the per-activity assertion above ("zero slack and not marked
+       critical"), not by this. So this line closes no hole that is currently
+       open; it makes the GATE explicit, so the day the per-activity assertion
+       is loosened this does not silently become the last thing standing. It is
+       exactly the kind of assertion the coverage probe will list as never
+       having fired, and that listing will be correct. */
+    if (leaves().some(t => !t.milestone && (t.te || 0) > 0) && !crit.length)
+      say('Critical path', 'not one activity came back critical on a plan that has estimated work — every '
+        + 'assertion about the path below is gated on there being one, so a build that marks nothing '
+        + 'critical passes them all by having nothing to look at');
     if (crit.length && broken)
       say('Critical path', broken + ' gap' + (broken === 1 ? '' : 's') + ' in the chain of '
         + crit.length + ' zero-slack activities — it is presented as a path and is not continuous');

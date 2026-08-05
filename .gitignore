@@ -1,0 +1,7 @@
+# Written by tests/mutation-engine.js on every run and read by
+# tests/probes/assertion-coverage.js. Deliberately NOT committed: it is the
+# result of one ~30-minute run against one build, so a committed copy would be
+# stale within a commit and would answer "which assertions are proven" about a
+# version of the product that no longer exists. Anyone can regenerate it, and
+# the probe says so when it is missing.
+tests/.mutation-journal.json

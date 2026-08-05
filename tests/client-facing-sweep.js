@@ -249,6 +249,13 @@ const DATA = FIXTURE();
       {
         const tcs = tasks.filter(t => isTestCaseTask(t));
         aud.testCases = tcs.length;
+        /* The two counters below start at zero and are only ever incremented,
+           so an empty selection satisfies both by never entering the loop. The
+           fixture has ten test cases today; the day it does not, this block
+           would report a clean audience audit having audited nothing. */
+        if (!tcs.length)
+          say('Audience', 'the plan holds no test cases at all, so the audience audit below counted to zero '
+            + 'without examining anything — that is not a clean result, it is an absent one');
         let ignored = 0, guessedClient = 0;
         tcs.forEach(t => {
           const got = testCaseAudience(t);

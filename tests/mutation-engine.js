@@ -56,6 +56,16 @@ const MUTANTS = [
     find: 't.isCritical = Math.abs(t.slack) < 0.01;',
     with: 't.isCritical = Math.abs(t.slack) < 1.01;' },
 
+  /* THE OTHER DIRECTION. The mutant above makes MORE activities critical and
+     was the only one ever aimed here; nothing tested a build that marks NONE.
+     It turns out to be caught by the per-activity assertion — "zero slack and
+     not marked critical" — rather than by anything about the path, which is
+     worth knowing and is not what I expected when I wrote it. Named for what it
+     actually proves. */
+  { what: 'network: an activity with zero slack is not marked critical at all',
+    find: '        t.isCritical = Math.abs(t.slack) < 0.01;',
+    with: '        t.isCritical = false;' },
+
   { what: 'earned value: completed work is valued at its cost, not its budget',
     find: 'const evOf = t => plannedCostOf(t, hb) * ((t.percentComplete || 0) / 100);',
     with: 'const evOf = t => (actOf.get(t.id) || 0);' },
@@ -1392,9 +1402,31 @@ async function judge(m, i) {
   const file = path.join(tmp, 'mutant-' + i + '.html');
   fs.writeFileSync(file, src);
   for (const c of orderFor(m)) {
-    if (await runAsync(c, file)) return { m, by: c };
+    const out = await runAsync(c, file);
+    /* The failing OUTPUT, not only the fact of failure. Which check went red
+       says a file is guarding this identity; which ASSERTION went red says
+       which sentence in it is. Every one of these runs already produced the
+       text and it was being thrown away — the journal below turns 28 minutes
+       of work that was already happening into a map of what is actually
+       proven. */
+    if (out) return { m, by: c, findings: assertionsIn(out) };
   }
   return { m, survived: true };
+}
+/* The assertion TEXTS a red run printed. The sweeps report findings as strings
+   inside a JSON array, and every one of them is a sentence somebody wrote — so
+   the sentences are the identifiers. Truncated at a length that is still unique
+   in practice but short enough to survive a check appending a computed number
+   to its own message, which most of them do. */
+function assertionsIn(out) {
+  const hits = [];
+  const re = /"((?:[^"\\]|\\.){20,})"/g;
+  let m2;
+  while ((m2 = re.exec(out))) {
+    const t = m2[1].replace(/\\"/g, '"');
+    if (/ :: | — |^[A-Z][a-z]/.test(t)) hits.push(t.slice(0, 160));
+  }
+  return [...new Set(hits)];
 }
 
 (async () => {
@@ -1435,6 +1467,20 @@ async function judge(m, i) {
     else { survived++; console.log('SURVIVED ' + r.m.what
       + '\n         nothing in the suite noticed. This identity is unguarded.'); }
   });
+
+  /* Written on every run, filtered or not, because a partial journal that says
+     which run produced it is more useful than none — and the coverage probe
+     that reads it refuses to draw conclusions from a filtered one. */
+  try {
+    fs.writeFileSync(path.join(__dirname, '.mutation-journal.json'), JSON.stringify({
+      at: new Date().toISOString(),
+      full: !ONLY.length,
+      ran: SELECTED.length, of: MUTANTS.length,
+      rows: results.filter(Boolean).map(r => ({
+        what: r.m.what, by: r.by || null, survived: !!r.survived, skipped: !!r.skipped,
+        findings: r.findings || [] }))
+    }, null, 1));
+  } catch (e) { console.log('(could not write the mutation journal: ' + (e.message || e) + ')'); }
 
   fs.rmSync(tmp, { recursive: true, force: true });
   const parts = [];

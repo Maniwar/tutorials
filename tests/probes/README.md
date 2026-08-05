@@ -17,6 +17,16 @@ They are kept rather than deleted because they are still the fastest way to
 answer "what does the panel actually do in this state" — which is what they were
 written for, and what a check is bad at. Read their output; do not count them.
 
+`assertion-coverage.js` is the newest and the one that most needs the
+distinction. It reads the mutation engine's journal and reports which individual
+ASSERTIONS have never been the one that went red — the engine proves a check
+FILE can fail, which says nothing about the ninety assertions inside a
+fifteen-hundred-line sweep. It is a probe rather than a check because an
+assertion with no mutant behind it is UNPROVEN, not wrong: plenty guard
+conditions no mutant expresses, and a gate that failed on those would be
+switched off inside a week. Read the list; ask of each line whether a mutant
+could make it fire, and if not, why not.
+
 If something in here turns into a property worth holding, move the property into
 a sweep, where a violation costs somebody a commit.
 
