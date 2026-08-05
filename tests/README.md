@@ -447,6 +447,22 @@ fired is proven only against the mutants that fired it. And matching is by text,
 so a check whose message is built entirely from computed values has no stable
 identity here and is reported as never-fired while doing its job.
 
+**The first answer is 293 of 800 — 37%.** Just under two thirds of the
+assertions in this directory have never once been the thing that went red. That
+is not two thirds broken; it is two thirds unproven, and the difference matters.
+But it is also the honest size of what "the suite is green" is worth.
+
+And the extractor was wrong three times before that number settled — 39%, then
+28%, then 37%. It required the reporting call's first argument to be a quoted
+literal, so `say(t.name, '…')` was invisible. It matched only `'` and `"`, so
+golden-reference reported ZERO assertions and that read as a finding about
+golden-reference. And it scanned a fixed distance forward instead of matching
+brackets, so it ran off the end of a call and listed an XSS payload — data being
+fed to the app — as something a check says. Each was found by reading the output
+rather than the summary. The instrument built to measure unreliable checks was
+unreliable in precisely the ways it exists to find, which is worth keeping in
+view rather than quietly fixing.
+
 ## Nothing to test is not a pass
 
 Every sweep now states it when its input cannot reach what it asserts. Sixteen
