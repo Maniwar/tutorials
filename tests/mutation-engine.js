@@ -1296,6 +1296,34 @@ const MUTANTS = [
     with: ['    .rl-role { width: 64px; min-width: 64px; }',
            'title="What they do on this engagement'] },
 
+  /* The input/output map. Its whole value is that it is a VIEW of the plan
+     rather than a copy, and that it says which deliverables are too vague to be
+     accepted against. Each mutant takes one of those away. */
+
+  { what: 'io map: "Analysis" and "Documentation" pass as deliverables',
+    find: '      if (DELIV_CATEGORY.test(d))',
+    with: '      if (false)' },
+
+  { what: 'io map: a milestone is flagged for handing over no artefact',
+    find: "      if (t.milestone) return { level: 'na', why: '' };",
+    with: "      if (false) return { level: 'na', why: '' };" },
+
+  { what: 'io map: inputs are a copy of the predecessor NAME, not a view of its deliverable',
+    find: "        .forEach(p => out.push({ kind: 'upstream', text: String(p.deliverable || '').trim() || p.name, from: p }));",
+    with: "        .forEach(p => out.push({ kind: 'upstream', text: p.name, from: p }));" },
+
+  { what: 'io map: the predecessor link is read as a task and yields nothing',
+    find: '        .map(pd => tasks.find(x => Number(x.id) === Number(pd.id)))\n        .filter(p => p && !p.milestone)   // a milestone is a date; it hands over nothing',
+    with: '        .map(pd => pd)\n        .filter(p => p && !p.milestone)   // a milestone is a date; it hands over nothing' },
+
+  { what: 'io map: the dictionary computes the chain and never draws it',
+    find: '<th title="What this activity consumes: ↤ the deliverable of an activity it waits for, ◇ a client dependency from a story, · an input stated on the activity itself">Inputs</th>',
+    with: '<th>Consumes</th>' },
+
+  { what: 'io map: a stated input is dropped on save',
+    find: "          parentId: t.parentId, description: t.description, deliverable: t.deliverable, inputs: t.inputs || '',",
+    with: '          parentId: t.parentId, description: t.description, deliverable: t.deliverable,' },
+
   /* The four SOW-generation defects, each planted back. All four shipped in a
      document a client had already been sent, and none of them were visible in
      the skeleton DATA — they lived in the assembly, which is why the sweep that

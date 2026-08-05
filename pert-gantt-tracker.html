@@ -159,6 +159,9 @@
       display: flex; align-items: center; gap: 0.35rem;
     }
     .gantt-weekend-band { position: absolute; top: 0; bottom: 0; background: #f1f5f9; z-index: 0; }
+    .io-flag { background: #fef3c7; border-bottom: 1px dashed #b45309; color: #92400e; padding: 0 3px; border-radius: 3px; cursor: help; }
+    .io-findings { border: 1px solid #fde68a; background: #fffbeb; border-radius: 8px; padding: 0.5rem 0.75rem; margin-bottom: 0.6rem; }
+    .io-findings > summary { cursor: pointer; font-size: 0.85rem; }
     .gantt-milestone { position: absolute; top: 6px; width: 22px; height: 22px; transform: rotate(45deg); background: #7c3aed; z-index: 3; border-radius: 3px; box-shadow: 0 1px 2px rgb(0 0 0 /.3); }
     .gantt-ms-label { position: absolute; top: 9px; font-size: 0.68rem; font-weight: 600; color: #6d28d9; white-space: nowrap; z-index: 3; }
     .gantt-summary { position: absolute; top: 12px; height: 10px; background: #0f172a; z-index: 2; }
@@ -3496,7 +3499,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.05.2211</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.05.2220</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3682,8 +3685,12 @@ Or say what you want, in your own words:
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
               <div class="form-group">
-                <label>Deliverable / output</label>
+                <label>Deliverable / output</label><button type="button" class="info-icon" aria-label="About the deliverable" data-help="The ARTEFACT this activity hands over, named specifically enough that somebody could tell whether it exists. &quot;Ranked friction-theme table with ticket counts&quot; is a deliverable; &quot;Analysis&quot; is a category. The dictionary flags the vague ones, because an activity whose output nobody can identify cannot be accepted, invoiced or handed to the next activity.">i</button>
                 <textarea id="mDeliverable" rows="2" placeholder="e.g. Signed design doc"></textarea>
+              </div>
+              <div class="form-group">
+                <label>Inputs / what this consumes</label><button type="button" class="info-icon" aria-label="About inputs" data-help="What this activity needs before it can start — one per line. Anything produced by an earlier activity is picked up automatically from the predecessor links, and client dependencies come from the stories; this field is for the rest, the things that arrive from outside the plan. The input/output map in the WBS dictionary joins them up and names whatever is needed and never produced.">i</button>
+                <textarea id="mInputs" rows="2" placeholder="one per line, e.g. 12 months of support ticket export (client)"></textarea>
               </div>
               <div class="form-group">
                 <label>Acceptance criteria</label>
@@ -3907,7 +3914,7 @@ Or say what you want, in your own words:
         id: 0, name: '', o: 0, m: 0, p: 0, milestone: false,
         owner: '', units: 100, attendees: [], levelDelay: 0, percentComplete: 0, predecessors: [],
         startNoEarlier: '', deadline: '', jira: '', autoActualStart: false, autoActualFinish: false,
-        parentId: null, description: '', deliverable: '', acceptance: '',
+        parentId: null, description: '', deliverable: '', acceptance: '', inputs: '',
         actualStart: '', actualFinish: '', actualEffort: null, fixedCost: 0, actualCost: 0, autoActualCost: true, audience: null, taxonomy: null, taxSrc: null,
         // what was actually INVOICED and RECEIVED against this activity. null is
         // "nobody has said", which is a different fact from zero.
@@ -4622,7 +4629,7 @@ Or say what you want, in your own words:
           id: t.id, name: t.name, o: t.o, m: t.m, p: t.p, milestone: t.milestone,
           owner: t.owner, units: t.units, attendees: t.attendees || [], levelDelay: t.levelDelay,
           percentComplete: t.percentComplete, predecessors: t.predecessors,
-          parentId: t.parentId, description: t.description, deliverable: t.deliverable,
+          parentId: t.parentId, description: t.description, deliverable: t.deliverable, inputs: t.inputs || '',
           acceptance: t.acceptance, actualStart: t.actualStart, actualFinish: t.actualFinish, actualEffort: (t.actualEffort == null ? null : t.actualEffort),
           fixedCost: t.fixedCost || 0, actualCost: t.actualCost || 0, autoActualCost: t.autoActualCost !== false, audience: t.audience || null,
           actualStartInferred: !!t.actualStartInferred,
@@ -4676,6 +4683,7 @@ Or say what you want, in your own words:
         predecessors: (t.predecessors || []).map(normalizePred),
         parentId: (t.parentId == null ? null : t.parentId),
         description: t.description || '', deliverable: t.deliverable || '', acceptance: t.acceptance || '',
+        inputs: String(t.inputs || ''),
         actualStart: t.actualStart || '', actualFinish: t.actualFinish || '', actualEffort: (t.actualEffort == null || t.actualEffort === '' ? null : Number(t.actualEffort)),
         autoActualStart: !!t.autoActualStart, autoActualFinish: !!t.autoActualFinish,
         // strict ISO or nothing — these flow into title/value attributes and
@@ -5748,6 +5756,7 @@ Or say what you want, in your own words:
       document.getElementById('attRows').innerHTML = '';
       document.getElementById('mDesc').value = '';
       document.getElementById('mDeliverable').value = '';
+      document.getElementById('mInputs').value = '';
       document.getElementById('mAcceptance').value = '';
       tcRowFill(null);
       coRowFill(null);
@@ -5880,6 +5889,7 @@ Or say what you want, in your own words:
       // from older generations for display; saving keeps the multi-line form
       document.getElementById('mDesc').value = (isTestCaseTask(t) && hasRealSteps(t)) ? tcStepLines(t.description) : (t.description || '');
       document.getElementById('mDeliverable').value = t.deliverable || '';
+      document.getElementById('mInputs').value = t.inputs || '';
       document.getElementById('mAcceptance').value = t.acceptance || '';
       tcRowFill(t);
       coRowFill(t);
@@ -6269,6 +6279,7 @@ Or say what you want, in your own words:
         return showErr('That WBS parent would create a loop (a task can’t sit under its own descendant).');
       const description = document.getElementById('mDesc').value.trim();
       const deliverable = document.getElementById('mDeliverable').value.trim();
+      const inputs = document.getElementById('mInputs').value.trim();
       const acceptance = document.getElementById('mAcceptance').value.trim();
       const actualStart = document.getElementById('mActualStart').value || '';
       const actualFinish = document.getElementById('mActualFinish').value || '';
@@ -6309,7 +6320,7 @@ Or say what you want, in your own words:
       const finalPreds = Object.values(seen).filter(pr => pr.id !== editingId);
 
       const fields = { name, o, m, p, milestone: isMs, owner, units, attendees, fixedCost, curve, actualCost, actualEffort, autoActualCost: !mActualCostManual, audience: (v => (v === 'client' || v === 'internal') ? v : null)(document.getElementById('mAudience').value), taxonomy: taxCoerce(document.getElementById('mTaxonomy').value), taxSrc: null, percentComplete: pct, predecessors: finalPreds, jira: document.getElementById('mJira').value.trim(),
-        parentId, description, deliverable, acceptance, actualStart, actualFinish,
+        parentId, description, deliverable, inputs, acceptance, actualStart, actualFinish,
         /* An EMPTY box stays null. parseFloat('') is NaN and `|| 0` would turn
            every activity nobody has invoiced into one invoiced for nothing —
            which reads on the panel as "charged $0" rather than "not recorded",
@@ -15642,6 +15653,8 @@ Or say what you want, in your own words:
       const u = unitLabel();
       const anyCost = projectCost() > 0;
       // relationship maps for the dictionary's Links column (↤ waits for, ↦ feeds)
+      const ioFind = ioFindings();
+      const ioBy = {}; ioFind.forEach(f => { (ioBy[f.id] = ioBy[f.id] || []).push(f); });
       const idToW = {}; tasks.forEach(x => { idToW[x.id] = x; });
       const succOfW = {}; tasks.forEach(x => (x.predecessors || []).forEach(pd => { (succOfW[pd.id] = succOfW[pd.id] || []).push({ t: x, type: pd.type, lag: pd.lag }); }));
       const lagStr = l => l ? (l > 0 ? '+' : '') + l : '';
@@ -15662,7 +15675,22 @@ Or say what you want, in your own words:
           <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.finishDate) : '—'}</td>
           <td>${calculated ? (t.percentComplete || 0) + '%' : '—'}</td>
           ${anyCost ? `<td style="text-align:right;font-size:0.8rem">${fmtMoney(taskCost(t))}</td>` : ''}
-          <td style="font-size:0.8rem">${escapeHtml(t.deliverable || '—')}</td>
+          <td style="font-size:0.78rem;max-width:230px">${(() => {
+            const ins = t.isSummary ? [] : taskInputs(t);
+            if (!ins.length) return t.isSummary || t.milestone ? '<span class="help-text">—</span>'
+              : '<span class="io-flag" title="Nothing feeds this activity — no predecessor, no client dependency and no stated input">nothing stated</span>';
+            const mark = { upstream: '↤', client: '◇', stated: '·' };
+            return ins.slice(0, 4).map(i => `<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(
+                (i.kind === 'upstream' ? 'From ' + ((i.from && i.from.wbs ? i.from.wbs + ' ' : '') + (i.from ? i.from.name : '')) + ': '
+                 : i.kind === 'client' ? 'Client dependency (' + (i.ref || '') + '): ' : 'Stated input: ') + i.text)}">${mark[i.kind]} ${escapeHtml(i.text)}</div>`).join('')
+              + (ins.length > 4 ? `<div class="help-text" style="font-size:0.68rem">+${ins.length - 4} more</div>` : '');
+          })()}</td>
+          <td style="font-size:0.8rem">${(() => {
+            const fit = deliverableFit(t);
+            const d = escapeHtml(t.deliverable || '');
+            if (fit.level === 'ok' || fit.level === 'na') return d || '<span class="help-text">—</span>';
+            return `<span class="io-flag" title="${escapeHtml(fit.why)}">${d || 'not named'}</span>`;
+          })()}</td>
           <td style="font-size:0.8rem;max-width:280px">${escapeHtml(t.description || '')}</td>
           <td style="font-size:0.8rem">${escapeHtml(t.acceptance || '')}</td>
           <td style="font-size:0.72rem;color:var(--muted)">${linksCell}</td>
@@ -15678,11 +15706,27 @@ Or say what you want, in your own words:
           <button class="btn-sm btn-secondary" onclick="setCollapseLevel(Infinity)">Expand all</button>
           <button type="button" class="info-icon" aria-label="About the entity marks" data-ek-legend data-help="Every id is preceded by a small capital letter saying what it is.">i</button>
         </div>
+        ${(() => {
+          if (!ioFind.length) return '';
+          const byKind = {};
+          ioFind.forEach(f => { (byKind[f.kind] = byKind[f.kind] || []).push(f); });
+          const order = ['no-deliverable', 'vague-deliverable', 'input-unnamed', 'no-inputs', 'orphan-output'];
+          return `<details class="io-findings" open>
+            <summary><b>${ioFind.length} gap${ioFind.length === 1 ? '' : 's'} in the input/output chain</b>
+              <span class="help-text" style="font-weight:400"> — an activity whose output nobody can identify cannot be accepted, invoiced, or fed into the next one</span></summary>
+            ${order.filter(k => byKind[k]).map(k => `<div style="margin:0.35rem 0 0">
+              <span class="badge badge-warn">${escapeHtml(ioFindingLabel(k))} · ${byKind[k].length}</span>
+              <ul style="margin:0.2rem 0 0;padding-left:1.1rem;font-size:0.78rem">
+                ${byKind[k].slice(0, 6).map(f => `<li><a href="#" onclick="event.preventDefault();openEditModal(${f.id}, true)"><b>${escapeHtml(f.name)}</b></a> — ${escapeHtml(f.why)}</li>`).join('')}
+                ${byKind[k].length > 6 ? `<li class="help-text">and ${byKind[k].length - 6} more</li>` : ''}
+              </ul></div>`).join('')}
+          </details>`;
+        })()}
         <div class="table-wrap"><table>
-          <thead><tr><th>WBS</th><th>Element</th><th>Owner</th><th>Dur (${u})</th><th>Start</th><th>Finish</th><th>%</th>${anyCost ? '<th style="text-align:right">Cost</th>' : ''}<th>Deliverable</th><th>Description / scope</th><th>Acceptance</th><th title="Schedule relationships: ↤ predecessors this element waits for, ↦ successors it feeds — hover for the full name and link type. Full detail in the CSV export (Predecessors + Successors columns).">Links</th><th title="User stories traced to this element — hover a chip for the story, click for the Requirements tab">Stories</th></tr></thead>
+          <thead><tr><th>WBS</th><th>Element</th><th>Owner</th><th>Dur (${u})</th><th>Start</th><th>Finish</th><th>%</th>${anyCost ? '<th style="text-align:right">Cost</th>' : ''}<th title="What this activity consumes: ↤ the deliverable of an activity it waits for, ◇ a client dependency from a story, · an input stated on the activity itself">Inputs</th><th>Deliverable</th><th>Description / scope</th><th>Acceptance</th><th title="Schedule relationships: ↤ predecessors this element waits for, ↦ successors it feeds — hover for the full name and link type. Full detail in the CSV export (Predecessors + Successors columns).">Links</th><th title="User stories traced to this element — hover a chip for the story, click for the Requirements tab">Stories</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
-        <p class="help-text" style="margin-top:0.75rem">Bold rows are summary/phase elements (they roll up children). Use ▸/▾ to drill in, the ⑂ button on the Tasks tab to have AI decompose a task further, and Edit to fill deliverable / scope / acceptance for the dictionary.</p>`;
+        <p class="help-text" style="margin-top:0.75rem"><b>Inputs → Deliverable</b> is the artefact chain, and it is a different question from the ↤/↦ Links column: those say B <i>starts after</i> A, this says B <i>consumes what</i> A produces. A plan can be perfectly linked and still have an activity waiting on something nobody makes. Bold rows are summary/phase elements (they roll up children). Use ▸/▾ to drill in, the ⑂ button on the Tasks tab to have AI decompose a task further, and Edit to fill deliverable / scope / acceptance for the dictionary.</p>`;
     }
 
     // ========================= BASELINE vs VARIANCE VIEW =========================
@@ -17696,6 +17740,105 @@ Or say what you want, in your own words:
         s.wbsId = ids.length ? ids[0] : (s.wbsId != null && tasks.some(t => t.id === s.wbsId) ? s.wbsId : (ids.length ? ids[0] : (s.wbsId ?? null)));
         if (s.wbsId != null && !ids.includes(s.wbsId)) s.wbsIds = [s.wbsId, ...ids];
       });
+    }
+    /* ═══ WHAT GOES IN, WHAT COMES OUT ═══════════════════════════════════════
+       The dictionary could already draw the SCHEDULE chain — ↤ waits for, ↦
+       feeds — and that is a statement about dates, not about work. It says B
+       starts after A and is silent on whether A produces the thing B needs.
+       So a plan could be perfectly linked and still have an activity consuming
+       something nobody makes, or producing something nobody uses, and nothing
+       anywhere would say so.
+
+       The artefact chain is the one that matters, because it is the one a
+       client reads: every input is either produced by an earlier activity or
+       supplied by the client, and every deliverable is either consumed later or
+       handed over. Where that fails, somebody is going to discover it in week
+       six with the evidence missing.
+
+       AND A DELIVERABLE HAS TO NAME A THING. "Analysis", "Documentation",
+       "Report", "Findings" name a category. An activity whose output nobody can
+       identify cannot be accepted against, cannot be invoiced against, and
+       cannot be the input to anything — it is a line on a plan that reads like
+       work and commits to nothing. Those get flagged, by name, with the reason. */
+    const DELIV_CATEGORY = /^(deliverable|output|outputs|document|documents|documentation|doc|docs|report|reports|analysis|artifact|artefact|artifacts|artefacts|notes|summary|result|results|finding|findings|material|materials|content|asset|assets|update|updates|deck|slides|slide deck|spreadsheet|file|files|data|information|info|various|misc|tbd|tba|n\/a|na|none|complete|completed|done|as above|see above)$/i;
+    function deliverableFit(t) {
+      if (!t || t.isSummary) return { level: 'na', why: '' };
+      const d = String(t.deliverable || '').trim().replace(/[.\s]+$/, '');
+      // a milestone is a date, not an artefact — it has nothing to hand over
+      if (t.milestone) return { level: 'na', why: '' };
+      if (!d) return { level: 'missing', why: 'no deliverable named, so nothing says what this activity hands over' };
+      if (DELIV_CATEGORY.test(d))
+        return { level: 'vague', why: '“' + d + '” names a category rather than a thing — nobody can tell whether it exists' };
+      if (d.split(/\s+/).filter(Boolean).length < 2)
+        return { level: 'vague', why: 'one word does not identify an artefact' };
+      if (d.toLowerCase() === String(t.name || '').trim().toLowerCase())
+        return { level: 'vague', why: 'the deliverable repeats the activity name instead of naming what it produces' };
+      return { level: 'ok', why: '' };
+    }
+    /* Everything this activity consumes, from all three places it can come
+       from. Upstream deliverables are DERIVED from the predecessor links rather
+       than retyped, so the map cannot drift from the schedule. */
+    function taskInputs(t) {
+      const out = [];
+      if (!t) return out;
+      String(t.inputs || '').split(/\r?\n|;/).map(x => x.trim()).filter(Boolean)
+        .forEach(x => out.push({ kind: 'stated', text: x, from: null }));
+      /* effectivePreds returns LINK DESCRIPTORS — {id, type, lag} — not tasks.
+         Reading .deliverable off one yields undefined, which silently produced
+         an input with no text and an "input unnamed" finding against every link
+         in the plan. Resolve the id first; a descriptor pointing at nothing is
+         a dangling link and belongs to the schedule checks, not to this map. */
+      (typeof effectivePreds === 'function' ? effectivePreds(t) : (t.predecessors || []))
+        .map(pd => tasks.find(x => Number(x.id) === Number(pd.id)))
+        .filter(p => p && !p.milestone)   // a milestone is a date; it hands over nothing
+        .forEach(p => out.push({ kind: 'upstream', text: String(p.deliverable || '').trim() || p.name, from: p }));
+      (typeof storiesForTask === 'function' ? storiesForTask(t.id) : []).forEach(s =>
+        (s.assumptions || []).forEach(x => {
+          if (!/^D:/i.test(x)) return;
+          const body = String(x).replace(/^D:\s*/i, '').split(/\s*[—–-]\s*if slipped/i)[0].trim();
+          if (body) out.push({ kind: 'client', text: body, from: null, ref: s.id });
+        }));
+      return out;
+    }
+    function taskConsumers(t) {
+      if (!t) return [];
+      return tasks.filter(x => (x.predecessors || []).some(pd => Number(pd.id) === Number(t.id)));
+    }
+    /* The findings, per activity. Deliberately NOT reported for milestones or
+       phases: a milestone is a date and a phase is a container, and flagging
+       either would bury the real findings under rows that can never be fixed. */
+    function ioFindings() {
+      const out = [];
+      const leaves = (typeof leafTasks === 'function' ? leafTasks() : tasks).filter(t => !t.isSummary && !t.milestone);
+      leaves.forEach(t => {
+        const fit = deliverableFit(t);
+        if (fit.level === 'missing' || fit.level === 'vague')
+          out.push({ id: t.id, kind: fit.level === 'missing' ? 'no-deliverable' : 'vague-deliverable',
+                     name: t.name, why: fit.why });
+        const ins = taskInputs(t);
+        if (!ins.length)
+          out.push({ id: t.id, kind: 'no-inputs', name: t.name,
+                     why: 'nothing feeds this activity — no predecessor, no client dependency and no stated input, '
+                        + 'so the plan does not say what it starts from' });
+        // an upstream link whose activity names no deliverable is a link that
+        // carries a name rather than a thing
+        ins.filter(i => i.kind === 'upstream' && i.from && !String(i.from.deliverable || '').trim())
+          .forEach(i => out.push({ id: t.id, kind: 'input-unnamed', name: t.name,
+            why: 'it waits for “' + i.from.name + '”, which names no deliverable, so what actually arrives is unstated' }));
+        // produced and never used, and not the end of the line
+        if (fit.level === 'ok' && !taskConsumers(t).length) {
+          const isFinal = !leaves.some(x => x.ef > t.ef);
+          if (!isFinal) out.push({ id: t.id, kind: 'orphan-output', name: t.name,
+            why: '“' + String(t.deliverable).trim() + '” is produced mid-plan and no later activity consumes it — '
+               + 'either something should depend on it, or it goes to the client and should say so' });
+        }
+      });
+      return out;
+    }
+    function ioFindingLabel(k) {
+      return { 'no-deliverable': 'no deliverable', 'vague-deliverable': 'vague deliverable',
+               'no-inputs': 'no inputs', 'input-unnamed': 'input unnamed',
+               'orphan-output': 'output unused' }[k] || k;
     }
     function storiesForTask(taskId) {
       return (reqs && Array.isArray(reqs.stories)) ? reqs.stories.filter(s => storyLinksTask(s, taskId)) : [];
@@ -22606,7 +22749,8 @@ Apply these as a calibration factor on comparable work: if a bucket runs consist
       "units": 100,           // % of the owner this task consumes while active (100 = full-time). MUST NOT EXCEED that person's capacityPercent below: booking a 20% person at 100 over-allocates them on every day the activity runs. If the notes say somebody is available 20%, their activities take units 20, not 100.
       "attendees": [],        // optional: other people also in this session/workshop (names; each loads their own calendar)
       "parent": "",           // optional: exact name of a phase/deliverable this task rolls up under (for WBS grouping)
-      "deliverable": "",      // REQUIRED: the tangible output (one line)
+      "deliverable": "",      // REQUIRED: the tangible ARTEFACT this hands over, named so somebody could tell whether it exists. "Ranked friction-theme table with ticket counts" is a deliverable; "Analysis", "Report", "Documentation", "Findings" are categories and are rejected by the plan lint.
+      "inputs": "",           // REQUIRED on non-milestones: what this consumes before it can start, ONE PER LINE. Anything produced by an activity you listed as a dependency is picked up automatically and need not be repeated — use this for what arrives from OUTSIDE the plan (client data, an existing system, a third-party licence). The chain must join up: every input is either produced by an earlier activity here or supplied by the client.
       "taxonomy": "",         // REQUIRED: exactly one of data|integration|test|govern|delivery — see the work-type rule below
       "description": "",      // REQUIRED: scope statement for the WBS dictionary (one line)
       "acceptance": "",       // REQUIRED: acceptance criteria / definition of done (one line)
@@ -22702,7 +22846,7 @@ ${uatStylePref() === 'bigbang'
       "name": "task name", "optimistic": n, "mostLikely": n, "pessimistic": n,  // durations in ${unit}, optimistic <= mostLikely <= pessimistic
       "milestone": false, "owner": "", "units": 100, "attendees": [],
       "parent": "exact name of the phase it nests under (or \\"\\" for top level)",
-      "deliverable": "", "description": "", "acceptance": "",
+      "deliverable": "", "inputs": "", "description": "", "acceptance": "",
       "dependsOn": ["exact predecessor task names"],
       "taxonomy": "one of data|integration|test|govern|delivery — OMIT THE KEY ENTIRELY if you are not changing it",
       "was": "current name ONLY when renaming this task" }
@@ -24090,7 +24234,8 @@ ${aiSchemaHint()}`];
             milestone: !!pt.milestone && !parentNames.has(name.toLowerCase()),
             owner: String(pt.owner || '').trim(), units: (Number.isFinite(+pt.units) && +pt.units > 0) ? +pt.units : 100,
             attendees: attendees || [],
-            deliverable: String(pt.deliverable || '').trim(), description: String(pt.description || '').trim(),
+            deliverable: String(pt.deliverable || '').trim(), inputs: String(pt.inputs || '').trim(),
+            description: String(pt.description || '').trim(),
             acceptance: String(pt.acceptance || '').trim(),
             taxonomy: taxCoerce(pt.taxonomy), taxSrc: taxCoerce(pt.taxonomy) ? 'ai' : null,
             predecessors: [] });
@@ -24113,7 +24258,7 @@ ${aiSchemaHint()}`];
           // that is exactly how every TC once lost its steps. Only text that
           // itself contains numbered steps may replace them.
           const guardTC = isTestCaseTask(t) && hasRealSteps(t);
-          ['deliverable', 'description', 'acceptance'].forEach(f => {
+          ['deliverable', 'inputs', 'description', 'acceptance'].forEach(f => {
             if (pt[f] == null || !String(pt[f]).trim()) return;
             if (guardTC && (f === 'description' || f === 'acceptance') && !/(^|\s)1\.\s/.test(String(pt[f]))) return;
             t[f] = String(pt[f]).trim();
@@ -24254,7 +24399,8 @@ ${aiSchemaHint()}`];
             return { name: an, units: given ? au : 100, _unitsAuto: !given };
           }).filter(a => a.name) : [],
           _unitsAuto: !unitsGiven,
-          deliverable: String(pt.deliverable || '').trim(), description: String(pt.description || '').trim(),
+          deliverable: String(pt.deliverable || '').trim(), inputs: String(pt.inputs || '').trim(),
+          description: String(pt.description || '').trim(),
           acceptance: String(pt.acceptance || '').trim(),
           taxonomy: taxCoerce(pt.taxonomy), taxSrc: taxCoerce(pt.taxonomy) ? 'ai' : null,
           predecessors: [], _dependsOn: pt.dependsOn || [], _parent: String(pt.parent || '').trim() }));

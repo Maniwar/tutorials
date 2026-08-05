@@ -186,6 +186,80 @@ const DATA = FIXTURE();
       barBudget: bud.delta, barSchedule: sch.delta };
   });
 
+  /* ═══ THE ARTEFACT CHAIN ══════════════════════════════════════════════════
+     The dictionary could draw the SCHEDULE chain and nothing else, so a plan
+     could be perfectly linked and still have an activity consuming something
+     nobody makes. This checks the map that answers the other question, and it
+     checks the two ways the map itself can lie: a classifier that waves through
+     "Analysis", and inputs that are RETYPED rather than derived — a copy drifts
+     from the schedule the moment somebody renames a deliverable. */
+  const io = await page.evaluate(() => {
+    const out = {};
+    const leaf = leafTasks().filter(t => !t.isSummary && !t.milestone);
+    const t0 = leaf[0], keep = t0.deliverable;
+    const cases = [['', 'missing'], ['Analysis', 'vague'], ['Documentation', 'vague'],
+      ['Findings', 'vague'], ['TBD', 'vague'], [t0.name, 'vague'],
+      ['Signed engagement charter', 'ok'],
+      ['Ranked friction-theme table with ticket counts', 'ok']];
+    out.wrong = cases.filter(([v, want]) => { t0.deliverable = v; return deliverableFit(t0).level !== want; })
+      .map(([v, want]) => JSON.stringify(v) + ' wanted ' + want + ' got ' + (t0.deliverable = v, deliverableFit(t0).level));
+    t0.deliverable = keep;
+    const ms = tasks.find(t => t.milestone);
+    out.milestoneFlagged = ms ? deliverableFit(ms).level !== 'na' : null;
+
+    // inputs must be DERIVED from the predecessor's live deliverable
+    const asTask = pd => tasks.find(x => Number(x.id) === Number(pd.id));
+    const withPred = leaf.find(t => effectivePreds(t).map(asTask).some(p => p && !p.milestone
+      && String(p.deliverable || '').trim()));
+    out.hadPredCase = !!withPred;
+    if (withPred) {
+      const up = taskInputs(withPred).filter(i => i.kind === 'upstream');
+      out.upstreamEmpty = !up.length || up.some(i => !i.text || !i.from);
+      const src = up[0].from, k2 = src.deliverable;
+      src.deliverable = 'ZZ MARKER ARTEFACT';
+      out.notDerived = !taskInputs(withPred).some(i => i.text === 'ZZ MARKER ARTEFACT');
+      src.deliverable = k2;
+    }
+    // findings never point at a phase or a milestone — those cannot be fixed
+    const f = ioFindings();
+    out.unfixable = f.filter(x => { const t = tasks.find(y => y.id === x.id); return !t || t.isSummary || t.milestone; }).length;
+    out.kinds = [...new Set(f.map(x => x.kind))];
+    // and the map is actually drawn
+    switchTab('wbs'); renderWBS();
+    const html = document.getElementById('wbsContainer').innerHTML;
+    out.noInputsColumn = !/>Inputs</.test(html);
+    out.bannerMissing = f.length > 0 && !/gap.? in the input\/output chain/.test(html);
+    // the stated field survives a save/load
+    const t2 = leaf[1]; t2.inputs = 'ZZ stated input';
+    hydrate(JSON.parse(JSON.stringify(serialize())));
+    out.roundTripLost = (tasks.find(x => x.id === t2.id) || {}).inputs !== 'ZZ stated input';
+    return out;
+  });
+  R.ioMap = io;
+  if (io.wrong && io.wrong.length)
+    R.contradictions.push('IO map :: the deliverable classifier is wrong on ' + io.wrong.length
+      + ' case(s): ' + io.wrong.join('; '));
+  if (io.milestoneFlagged)
+    R.contradictions.push('IO map :: a milestone is flagged for having no deliverable — a milestone is a date, '
+      + 'and a finding nobody can fix buries the ones they can');
+  if (!io.hadPredCase)
+    R.contradictions.push('IO map :: the fixture has no activity waiting on a named deliverable, so the '
+      + 'derived-input checks below read nothing and would pass on any build');
+  if (io.upstreamEmpty)
+    R.contradictions.push('IO map :: an activity waiting on a named deliverable shows no upstream input — '
+      + 'the predecessor link is not being resolved to its task');
+  if (io.notDerived)
+    R.contradictions.push('IO map :: renaming an upstream deliverable did not change the downstream input, '
+      + 'so the map is a COPY of the schedule rather than a view of it, and drifts the moment anything moves');
+  if (io.unfixable)
+    R.contradictions.push('IO map :: ' + io.unfixable + ' finding(s) point at a phase or milestone');
+  if (io.noInputsColumn)
+    R.contradictions.push('IO map :: the WBS dictionary draws no Inputs column, so the map exists only in memory');
+  if (io.bannerMissing)
+    R.contradictions.push('IO map :: gaps were found and the dictionary shows no banner naming them');
+  if (io.roundTripLost)
+    R.contradictions.push('IO map :: a stated input did not survive a save/load round trip');
+
   R.pageErrors = errs.slice(0, 8);
   console.log(JSON.stringify(R, null, 1));
   await b.close();
