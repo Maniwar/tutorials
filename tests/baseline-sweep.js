@@ -884,6 +884,151 @@ const QA = JSON.parse(fs.readFileSync(
         closeCoModal();
       }
 
+      /* ── 3i-a2. REJECTED, AND THE WORK KEPT ─────────────────────────────
+         Declining the reversal leaves scope in the plan that nobody will pay
+         for. That used to be recorded as `reversedAt = ''` — which is ALSO
+         what a change order nobody ever rejected reads as, so the two states
+         were the same value and the only thing that ever said otherwise was a
+         flash message. This is money: work being delivered, costing what it
+         costs, with nothing paying for it.
+
+         The condition is BUILT — no fixture has one — and all four properties
+         are asserted: it is recorded distinguishably, it survives a reload, it
+         is stated where somebody reads it, and it CLEARS when resolved. The
+         last is the one a naive fix misses, and a standing finding that never
+         goes away is one people learn to scroll past. */
+      {
+        const v0 = pushVersion('sow', 'kept-scope probe baseline');
+        const g5 = leafTasks().find(t2 => !t2.milestone && (t2.te || 0) > 0);
+        g5.m = (Number(g5.m) || 1) + 6; calculate();
+        await draftChangeOrder();
+        approveChangeOrder();
+        const c5 = coLog[coLog.length - 1];
+        const linesBefore = (c5.diff || []).length;
+        /* Reject WITHOUT reversing. The page-level dialog handler accepts
+           everything, which would take the OTHER branch — so window.confirm is
+           replaced for exactly this call rather than the handler being
+           reconfigured from Node. Deterministic, scoped to one line, and it
+           does not leave the rest of the sweep answering "no" to dialogs it
+           expects to say yes to. */
+        const realConfirm = window.confirm;
+        window.confirm = () => false;
+        try { setCoState(c5.no, 'rejected'); } finally { window.confirm = realConfirm; }
+        out.keptFlag = !!c5.scopeKept;
+        out.keptLinesStillInPlan = (c5.diff || []).length === linesBefore;
+        if (!out.keptFlag)
+          fail.push('a change order was rejected with the work left in the plan and nothing distinguishes it '
+            + 'from one that was never rejected — that is unbillable scope with no record of being unbillable');
+        if (!coKept().length)
+          fail.push('the kept-scope roll-up finds nothing after a change order was rejected and kept');
+        out.keptValue = Math.round(coKeptTotal());
+        if (!Math.abs(out.keptValue))
+          fail.push('the kept scope is valued at zero, so the finding cannot state what it costs');
+        renderCoHistory();
+        const kh = (document.getElementById('coHistory') || {}).textContent || '';
+        out.keptStated = /nothing paying for it/i.test(kh);
+        if (!out.keptStated)
+          fail.push('the change-order history says nothing about scope that is in the plan and cannot be '
+            + 'billed — it was announced once in a flash message and then nowhere');
+        // it survives a reload, or it is not a standing condition
+        const doc5 = JSON.parse(JSON.stringify(serialize()));
+        hydrate(doc5);
+        out.keptSurvivesReload = coKept().length === 1;
+        if (!out.keptSurvivesReload)
+          fail.push('the kept-scope condition is lost on save and reload, so it is an event rather than the '
+            + 'standing finding it needs to be');
+        // …and it CLEARS when the order is re-agreed
+        const c5b = coLog.find(x => x.no === c5.no);
+        setCoState(c5b.no, 'accepted');
+        out.keptClears = !coKept().length;
+        out.keptFlagCleared = !c5b.scopeKept;
+        if (!out.keptClears)
+          fail.push('re-agreeing the change order left the unbillable-scope finding standing — a finding that '
+            + 'does not clear when the problem is solved is one people learn to scroll past');
+        /* THE FLAG, not only the list it feeds. coKept() also filters on the
+           state, so an accepted order drops out of it whether or not the flag
+           was cleared — the first version of this asserted the list and passed
+           a build that left the flag set forever. A stale flag is not
+           cosmetic: reject the order again, choosing to REVERSE this time, and
+           the finding comes back for scope that is no longer in the plan. */
+        if (!out.keptFlagCleared)
+          fail.push('re-agreeing cleared the finding from the list but left the kept-scope flag set on the '
+            + 'record — rejecting it again and reversing properly would resurrect a finding about scope that '
+            + 'is no longer in the plan');
+        if (v0) { /* the chain keeps its probe version */ }
+      }
+
+      /* ── 3i-a3. TWO ACCEPTED ORDERS PRICING THE SAME LINE ───────────────
+         `superseded` was a state nothing ever reached, because nothing looked.
+         When a later order re-prices a field an earlier one already priced,
+         both stay accepted and BOTH are summed into cumulative price impact —
+         the running total a client is shown counts that line twice.
+
+         Detected on activity id PLUS field. Two orders touching one activity
+         are ordinary — an owner change in March and a re-estimate in June
+         supersede nothing — so a check that matched on the id alone would
+         report every busy activity and be ignored within a week. */
+      {
+        /* calculate() first. The block above reloads the document, and `te` is
+           DERIVED — it is not in the saved file, so straight after a hydrate
+           every activity reads te 0 and a filter on it selects nothing. The
+           first version of this check silently selected zero activities and
+           reported nothing, which is the vacuous-pass this directory has a
+           whole probe about; it was found by printing the count rather than by
+           reading the filter. */
+        calculate();
+        const leaves5 = leafTasks().filter(t2 => !t2.milestone && (t2.te || 0) > 0);
+        out.overlapLeaves = leaves5.length;
+        if (leaves5.length < 3) { out.overlapCase = 'SKIPPED-too-few-activities'; }
+        else {
+          const before = coOverlaps().length;
+          leaves5[0].m = (Number(leaves5[0].m) || 1) + 3; calculate();
+          await draftChangeOrder(); approveChangeOrder();
+          const first = coLog[coLog.length - 1];
+          leaves5[0].m = (Number(leaves5[0].m) || 1) + 5;      // the SAME field again
+          leaves5[1].m = (Number(leaves5[1].m) || 1) + 5;
+          calculate();
+          await draftChangeOrder(); approveChangeOrder();
+          const second = coLog[coLog.length - 1];
+          const laps = coOverlaps();
+          out.overlapsFound = laps.length - before;
+          out.overlapPair = laps.length ? [laps[laps.length - 1].earlier.no, laps[laps.length - 1].later.no] : null;
+          if (out.overlapsFound < 1)
+            fail.push('two accepted change orders re-price the same field of the same activity and nothing '
+              + 'notices — both are summed into cumulative impact, so that money is in the running total '
+              + 'twice and the second figure is the one nobody re-derives');
+          renderCoHistory();
+          const oh = (document.getElementById('coHistory') || {}).textContent || '';
+          if (!/price the same work twice/i.test(oh))
+            fail.push('the overlap is computed and not stated on the panel that prints the doubled total');
+          // taking the offered transition must resolve it
+          setCoState(first.no, 'superseded');
+          out.overlapsAfterSupersede = coOverlaps().length;
+          if (out.overlapsAfterSupersede >= laps.length)
+            fail.push('marking the earlier order superseded did not clear the overlap finding, so the offered '
+              + 'fix does not fix it');
+          if (coAccepted().some(c2 => c2.no === first.no))
+            fail.push('a superseded change order is still counted as accepted, so the cumulative total still '
+              + 'double counts');
+          setCoState(first.no, 'accepted');
+          /* A DIFFERENT FIELD OF AN ACTIVITY THE OTHERS ALREADY TOUCHED.
+             The first version of this changed the owner of leaves5[2], which
+             no earlier change order had touched at all — so there was no
+             id-collision to test and a build matching on the id alone passed.
+             The case only exists when the SAME activity is changed in a
+             different way, which is leaves5[0]. */
+          leaves5[0].owner = 'Someone Else Entirely'; calculate();
+          await draftChangeOrder(); approveChangeOrder();
+          const n3 = coOverlaps().length;
+          out.overlapsAfterDifferentField = n3;
+          if (n3 > laps.length)
+            fail.push('changing a DIFFERENT field of an activity another change order touched was reported as '
+              + 'double pricing — an owner change and a re-estimate supersede nothing, and a check that says '
+              + 'they do is ignored within a week');
+          if (second) { /* named for the report */ }
+        }
+      }
+
       /* ── 3i-b. TWO DOCUMENTS, ONE BOX, AND A WAY BETWEEN THEM ───────────
          The SOW and the change order shared one container and the last one
          drawn won. Getting back to the other meant regenerating it — which on

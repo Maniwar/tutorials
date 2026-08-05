@@ -1238,6 +1238,26 @@ const MUTANTS = [
     find: "      const v = sowVersionNorm({ n: nextSowNo++, at: fmtISO(new Date()),",
     with: "      const v = ({ n: nextSowNo++, at: fmtISO(new Date())," },
 
+  { what: 'change order: rejected-and-kept is stored the same as never-rejected again',
+    find: '          c.scopeKept = true;',
+    with: '          c.scopeKept = false;' },
+
+  { what: 'change order: the unbillable-scope finding never clears once it is raised',
+    find: "      if (next !== 'rejected') c.scopeKept = false;",
+    with: '      if (false) c.scopeKept = false;' },
+
+  { what: 'change order: kept scope is valued off the price movement, not off its lines',
+    find: "      if ((c.diff || []).length) return c.diff.reduce((s2, d2) => s2 + (d2.priceDelta || 0), 0);",
+    with: '      if ((c.diff || []).length) return 0;' },
+
+  { what: 'change order: two accepted orders pricing the same line go unnoticed',
+    find: '          if (!shared.length) continue;',
+    with: '          if (shared.length >= 0) continue;' },
+
+  { what: 'change order: overlap is matched on the activity alone, so every busy row is a finding',
+    find: "      return new Set((c.diff || []).map(d => String(d.id) + '|' + String(d.field || '')));",
+    with: "      return new Set((c.diff || []).map(d => String(d.id)));" },
+
   { what: 'baseline history: two SOW versions both claim to be the current one',
     find: '        if (sowVersions[i].html === sowDraft) { curIdx = i; break; }',
     with: '        if (sowVersions[i].html === sowDraft) { curIdx = i; }' },

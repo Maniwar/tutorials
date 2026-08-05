@@ -3460,7 +3460,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.05.0351</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.05.1544</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4757,6 +4757,9 @@ Or say what you want, in your own words:
         // which line prices were withheld from the document this one was sent
         // as — part of what the client was shown, so it round-trips
         hidePrice: Array.isArray(c && c.hidePrice) ? c.hidePrice.map(String) : [],
+        // rejected AND the work left in the plan — unbillable scope, and a
+        // condition that has to survive a reload to be a standing one
+        scopeKept: !!(c && c.scopeKept),
         diff: Array.isArray(c && c.diff) ? c.diff : [] }));
       /* The chain, and a counter that must be AHEAD of every number in it.
          Deriving nextVersionNo from max+1 rather than trusting the stored
@@ -27402,6 +27405,9 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       const to = { issued: ['accepted', 'rejected'], accepted: ['rejected', 'superseded'],
                    rejected: ['accepted'], superseded: ['accepted', 'rejected'] }[st] || [];
       return '<span class="badge ' + d.cls + '" title="' + escapeHtml(d.tip) + '">' + escapeHtml(d.lbl) + '</span>'
+        + (c.scopeKept ? ' <span class="badge badge-critical" title="' + escapeHtml('The client declined this '
+            + 'and the work was left in the plan. It costs what it costs and nothing pays for it. Reverse the '
+            + 'scope or re-agree the order.') + '">⚑ kept, unbilled</span>' : '')
         + (c.reversedAt ? ' <span class="help-text" title="Its changes were put back into the plan on this day">↩ reversed</span>' : '')
         // stopPropagation: the history row OPENS the change order now, and a
         // state button that also opened it would leave a modal over the change
@@ -27415,6 +27421,49 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
        into "cumulative price impact" is the arithmetic that turns a request
        into revenue on a status report. */
     function coAccepted() { return (coLog || []).filter(c => coState(c) === 'accepted'); }
+    /* ── TWO ACCEPTED ORDERS PRICING THE SAME LINE ───────────────────────────
+       `superseded` existed as a state and nothing ever reached it, because
+       nothing looked. When a later change order re-prices an activity an
+       earlier one already priced, both stay accepted and BOTH are summed into
+       cumulative price impact — so the running total the client is shown counts
+       that line twice, and the second figure is the one nobody re-derives.
+
+       Detected on (activity id + field), not on the id alone. Two orders that
+       both touch one activity are ordinary — one moved its owner in March and
+       another re-estimated it in June, and neither supersedes anything. It is
+       the same FIELD of the same activity that cannot honestly be sold twice.
+
+       Reported, never applied. Which of a pair supersedes the other is a
+       judgement about what was agreed, and an app that guessed it would be
+       silently rewriting a contract record. It says what it found, names the
+       overlap, and offers the transition. */
+    function coLineKeys(c) {
+      return new Set((c.diff || []).map(d => String(d.id) + '|' + String(d.field || '')));
+    }
+    function coOverlaps() {
+      const acc = coAccepted().filter(c => (c.diff || []).length);
+      const out = [];
+      for (let i = 0; i < acc.length; i++) {
+        for (let j = i + 1; j < acc.length; j++) {
+          const a = acc[i], b = acc[j];
+          const ka = coLineKeys(a);
+          const shared = [...coLineKeys(b)].filter(k => ka.has(k));
+          if (!shared.length) continue;
+          // the money at stake is what the LATER one prices for those lines —
+          // that is the amount being counted a second time
+          const later = (String(b.date || '') >= String(a.date || '')) ? b : a;
+          const earlier = later === b ? a : b;
+          const dbl = (later.diff || [])
+            .filter(d => shared.indexOf(String(d.id) + '|' + String(d.field || '')) >= 0)
+            .reduce((s2, d) => s2 + (d.priceDelta || 0), 0);
+          out.push({ earlier: earlier, later: later, n: shared.length, doubled: dbl,
+                     names: (later.diff || [])
+                       .filter(d => shared.indexOf(String(d.id) + '|' + String(d.field || '')) >= 0)
+                       .map(d => d.name).slice(0, 4) });
+        }
+      }
+      return out;
+    }
     function setCoState(no, next) {
       const c = (coLog || []).find(x => x.no === no);
       if (!c || !CO_STATES[next]) return;
@@ -27433,18 +27482,52 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         if (ok) {
           const undone = coReverse(c);
           c.reversedAt = fmtISO(new Date());
+          c.scopeKept = false;
           flashSaved('↩ ' + c.no + ' rejected — ' + undone + ' change(s) put back');
         } else {
+          /* THE FLAG IS THE WHOLE POINT. `reversedAt = ''` was the only record
+             this branch left, and empty is ALSO what it reads on a change order
+             nobody ever rejected — so "rejected and we kept the work" and
+             "never rejected" were the same value, and the only thing that ever
+             said otherwise was a flash message that lasted three seconds.
+
+             This is money. Work sits in the plan, costs what it costs, and
+             cannot be invoiced because the client declined the order that paid
+             for it. That is not an event, it is a STANDING condition, and it
+             belongs somewhere it keeps being visible until somebody deals with
+             it — by reversing the scope or by re-agreeing the order. */
           c.reversedAt = '';
-          flashSaved('✓ ' + c.no + ' marked rejected — the plan is unchanged, so that scope is now unbilled');
+          c.scopeKept = true;
+          flashSaved('⚑ ' + c.no + ' rejected and the work kept — ' + fmtMoney(Math.abs(coKeptValue(c)))
+            + ' of scope is now in the plan with nothing paying for it. The change-order log will keep '
+            + 'saying so until it is reversed or re-agreed.');
         }
       }
+      // Re-accepting or superseding ends the condition: the scope is paid for
+      // again, or another order now carries it. Leaving the flag set would keep
+      // a resolved problem on the screen, which is how a standing finding stops
+      // being read.
+      if (next !== 'rejected') c.scopeKept = false;
       c.state = next;
       c.stateAt = fmtISO(new Date());
       saveLocal();
       try { renderCoHistory(); } catch (e) {}
       try { if (calculated) { recompute(); refreshAll(); } } catch (e) {}
     }
+    /* What the kept scope is WORTH. The lines, not the price movement: the
+       price delta also carries rate-card and basis changes, and those are not
+       work sitting unpaid in the plan. Where a change order has no typed lines
+       the price delta is all there is, and it is used with that said out loud
+       at the call site rather than silently. */
+    function coKeptValue(c) {
+      if (!c) return 0;
+      if ((c.diff || []).length) return c.diff.reduce((s2, d2) => s2 + (d2.priceDelta || 0), 0);
+      return c.priceDelta || 0;
+    }
+    function coKept() {
+      return (coLog || []).filter(c => coState(c) === 'rejected' && c.scopeKept);
+    }
+    function coKeptTotal() { return coKept().reduce((s2, c) => s2 + coKeptValue(c), 0); }
     /* ── REVERSAL ───────────────────────────────────────────────────────────
        The whole reason the log entry stores a typed change set instead of a
        joined string. Each record names the id, the field and BOTH values, so
@@ -27562,7 +27645,66 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       const cumPrice = acc.reduce((s, c) => s + (c.priceDelta || 0), 0);
       const pending = coLog.filter(c => coState(c) === 'issued');
       const pendPrice = pending.reduce((s, c) => s + (c.priceDelta || 0), 0);
-      el.innerHTML = `<details open style="margin-bottom:0.75rem">
+      /* THE STANDING FINDING. Work in the plan that nobody will pay for is not
+         an event that happened once, it is a condition that persists until
+         somebody acts, and it used to be announced by a flash message and then
+         by nothing at all. Drawn ABOVE the table, with both ways out attached,
+         because a finding you cannot act on from where you read it is a finding
+         you read again next week. */
+      const kept = coKept();
+      const keptSum = coKeptTotal();
+      const keptHtml = kept.length
+        ? '<div class="conflict-card" style="border-left-color:var(--critical);background:var(--critical-bg);'
+          + 'margin:0 0 .6rem;font-size:0.83rem">'
+          + '<b>⚑ ' + fmtMoney(Math.abs(keptSum)) + ' of scope is in the plan with nothing paying for it.</b> '
+          + kept.length + ' change order' + (kept.length === 1 ? ' was' : 's were') + ' declined by the client '
+          + 'and the work was kept: ' + kept.map(c => escapeHtml(c.no)).join(', ') + '. It is being delivered, '
+          + 'it costs what it costs, and it cannot be invoiced.'
+          + '<div style="margin-top:.45rem;display:flex;gap:.4rem;flex-wrap:wrap">'
+          + kept.map(c => '<button class="btn-sm btn-secondary no-print" onclick="coOpen(\'' + ekJs(c.no)
+              + '\')" title="' + escapeHtml('Open ' + c.no) + '">' + escapeHtml(c.no) + ' — '
+              + escapeHtml(fmtMoney(Math.abs(coKeptValue(c)))) + '</button>').join('')
+          + '</div>'
+          + '<p class="help-text" style="margin:.4rem 0 0">Two ways out, and both are decisions rather than '
+          + 'clean-ups: take the scope back out of the plan (open it and reverse), or get the change order '
+          + 're-agreed so it is paid for. Doing neither is a margin you have already spent.</p>'
+          + '</div>'
+        : '';
+      /* Drawn beside the kept-scope finding and for the same reason: the harm
+         is in a total the client reads, so the place to say it is above the
+         table that prints that total. */
+      const laps = coOverlaps();
+      const lapHtml = laps.length
+        ? '<div class="conflict-card" style="border-left-color:var(--warn);background:#fffbeb;'
+          + 'margin:0 0 .6rem;font-size:0.83rem">'
+          + '<b>⚠ ' + laps.length + ' pair' + (laps.length === 1 ? '' : 's') + ' of accepted change orders '
+          + 'price the same work twice.</b> The cumulative impact above adds both, so that money is counted '
+          + 'once more than it was agreed.'
+          + laps.map(l => '<div style="margin-top:.45rem">'
+              + '<b>' + escapeHtml(l.earlier.no) + '</b> and <b>' + escapeHtml(l.later.no) + '</b> both change '
+              + l.n + ' of the same field' + (l.n === 1 ? '' : 's') + ' — '
+              + escapeHtml(l.names.join(', ')) + (l.n > l.names.length ? ' and ' + (l.n - l.names.length)
+                  + ' more' : '')
+              + (Math.abs(l.doubled) >= 1
+                  ? '. <b>' + escapeHtml(fmtMoney(Math.abs(l.doubled))) + '</b> is in the running total twice.'
+                  : '.')
+              + '<div style="margin-top:.3rem;display:flex;gap:.35rem;flex-wrap:wrap">'
+              + '<button class="btn-sm btn-secondary no-print" onclick="coOpen(\'' + ekJs(l.earlier.no)
+                + '\')">Open ' + escapeHtml(l.earlier.no) + '</button>'
+              + '<button class="btn-sm btn-secondary no-print" onclick="coOpen(\'' + ekJs(l.later.no)
+                + '\')">Open ' + escapeHtml(l.later.no) + '</button>'
+              + '<button class="btn-sm btn-secondary no-print" onclick="setCoState(\'' + ekJs(l.earlier.no)
+                + '\',\'superseded\')" title="' + escapeHtml('Mark ' + l.earlier.no + ' as replaced by '
+                  + l.later.no + '. It stops counting toward the cumulative total; nothing in the plan moves.')
+                + '">' + escapeHtml(l.earlier.no) + ' was superseded by ' + escapeHtml(l.later.no) + '</button>'
+              + '</div></div>').join('')
+          + '<p class="help-text" style="margin:.45rem 0 0">Which one supersedes the other is a judgement '
+          + 'about what was agreed, so nothing here decides it for you. Overlap is not always double '
+          + 'counting either — a line legitimately re-priced twice was legitimately paid for twice. This '
+          + 'names the pairs and leaves the call where it belongs.</p>'
+          + '</div>'
+        : '';
+      el.innerHTML = keptHtml + lapHtml + `<details open style="margin-bottom:0.75rem">
         <summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)"><span class="ico" aria-hidden="true">📑</span> Change-order history (${coLog.length}) — <b>agreed</b>: ${cumSched >= 0 ? '+' : ''}${cumSched} days, ${cumPrice >= 0 ? '+' : ''}${fmtMoney(Math.abs(cumPrice)).replace('$', cumPrice < 0 ? '−$' : '$')}${pending.length ? ` · <span style="color:var(--warn)">${pending.length} still out for signature worth ${pendPrice >= 0 ? '+' : ''}${fmtMoney(Math.abs(pendPrice))}</span>` : ''}</summary>
         <div class="table-wrap" style="margin-top:0.5rem"><table>
           <thead><tr><th>CO</th><th title="Only accepted scope is agreed scope. An issued change order is a request; a rejected one is work you may have done and cannot bill.">State</th><th>Raised</th><th>Scope</th><th>Schedule Δ</th><th title="The project price movement this change order recorded">Price Δ</th><th title="What its own lines added up to. Where the two differ, part of the movement was the rate card or the pricing basis rather than scope.">Lines</th><th>New finish</th><th title="The plan version before and after — any two can be diffed">Versions</th></tr></thead>
@@ -27685,7 +27827,25 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
           + '<span class="help-text" style="margin-left:auto">raised ' + escapeHtml(c.date || 'today, unlogged')
           + (c.stateAt ? ' · state set ' + escapeHtml(c.stateAt) : '')
           + (c.reversedAt ? ' · reversed ' + escapeHtml(c.reversedAt) : '') + '</span></div>'
-        + (!draft && st !== 'accepted'
+        + (!draft && c.scopeKept
+            ? '<div class="conflict-card" style="border-left-color:var(--critical);background:var(--critical-bg);'
+              + 'margin:0 0 .7rem;font-size:0.83rem"><b>⚑ The client declined this and the work was kept.</b> '
+              + escapeHtml(fmtMoney(Math.abs(coKeptValue(c)))) + ' of scope is in the plan, being delivered, '
+              + 'with nothing paying for it.'
+              + ((c.diff || []).length
+                  ? '<div style="margin-top:.45rem"><button class="btn-sm btn-secondary no-print" '
+                    + 'onclick="coReverseNow(\'' + ekJs(c.no) + '\')" title="'
+                    + escapeHtml('Put the scope back the way it was before this change order. The same '
+                      + 'reversal that was offered when it was rejected — declining it then did not make it '
+                      + 'unavailable now.') + '">↩ Take the scope back out of the plan</button>'
+                    + '<button class="btn-sm btn-secondary no-print" style="margin-left:.4rem" '
+                    + 'onclick="setCoState(\'' + ekJs(c.no) + '\',\'accepted\')" title="'
+                    + escapeHtml('The client re-agreed it. The scope stays and is paid for again.')
+                    + '">✓ It was re-agreed</button></div>'
+                  : '<p class="help-text" style="margin:.35rem 0 0">No typed lines were stored with this one, '
+                    + 'so it cannot be reversed automatically — the scope has to come out by hand.</p>')
+              + '</div>'
+            : !draft && st !== 'accepted'
             ? '<div class="conflict-card" style="margin:0 0 .7rem;font-size:0.82rem">This change order is <b>'
               + escapeHtml((d.lbl || st).toLowerCase()) + '</b>, so none of the money below counts as agreed. '
               + escapeHtml(d.tip || '') + '</div>'
@@ -27797,6 +27957,28 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       try { renderCoHistory(); } catch (e) {}
       if (coOpenNo === DRAFT_CO) { try { draftChangeOrder({ keepNarrative: true }); } catch (e) {} }
       try { paintDocView(); } catch (e) {}
+    }
+    /* REVERSING LATER. Declining the reversal at the moment of rejection was a
+       decision about that moment — the work may have been half-built, or the
+       client may have been about to change their mind — and nothing about it
+       should make the reversal unavailable afterwards. Same code path as the
+       one offered then; the only difference is when it is taken. */
+    function coReverseNow(no) {
+      const c = (coLog || []).find(x => String(x.no) === String(no));
+      if (!c || !(c.diff || []).length) return;
+      if (!confirm('Take the scope of ' + c.no + ' back out of the plan?\n\n'
+        + (c.diff || []).length + ' change(s) will be put back the way they were. Activities this change '
+        + 'order ADDED are deleted; anything it removed cannot be restored and will be reported rather than '
+        + 'invented.')) return;
+      const undone = coReverse(c);
+      c.reversedAt = fmtISO(new Date());
+      c.scopeKept = false;
+      saveLocal();
+      coPaint();
+      try { renderCoHistory(); } catch (e) {}
+      try { if (calculated) { recompute(); refreshAll(); } } catch (e) {}
+      flashSaved('↩ ' + undone + ' change(s) from ' + c.no + ' put back — that scope is no longer in the plan '
+        + 'and no longer unbilled');
     }
     // Loads the change order's two ends into the compare view, which recomputes
     // the difference from the SNAPSHOTS. Two routes to one answer: if they ever
