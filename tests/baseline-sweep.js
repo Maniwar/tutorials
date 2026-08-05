@@ -911,6 +911,44 @@ const QA = JSON.parse(fs.readFileSync(
          It was one mutable string: generating overwrote it, editing overwrote
          it, and the version a client was sent existed nowhere afterwards. */
       {
+        /* A PROJECT THAT ALREADY HAD A SOW MUST NOT LOAD WITH AN EMPTY
+           HISTORY. Every real project predates this history, so on load the
+           panel read "No versions yet" directly beneath the very document the
+           reader wanted back — and the history would not begin until the next
+           generate, which is the one action that destroys it. Reported by use:
+           "I don't see how to go back to the orginial sow in the current
+           project".
+           Tested through hydrate rather than by calling the seeder, because the
+           defect was about the LOAD path: a seeder that works and is never
+           reached is the same page. */
+        const carried = '<h1>Statement of Work</h1><p>ALREADY IN HAND</p>';
+        const saved = JSON.parse(JSON.stringify(serialize()));
+        const preHistory = Object.assign({}, saved, { sowDraft: carried });
+        delete preHistory.sowVersions;
+        delete preHistory.nextSowNo;
+        hydrate(preHistory);
+        out.seededOnLoad = sowVersions.length;
+        out.seededIsTheDocument = sowVersions.some(v2 => v2.html === carried);
+        if (!out.seededOnLoad)
+          fail.push('a project loaded with a SOW already in it and an EMPTY version history — the document '
+            + 'on screen is not among the versions, so "go back to the original" has nothing to go back to '
+            + 'until the next generate, which is the action that destroys it');
+        else if (!out.seededIsTheDocument)
+          fail.push('the seeded version is not the document that was loaded');
+        renderSowHistory();
+        const btn = document.getElementById('sowHistBtn');
+        out.historyButton = btn ? btn.textContent.trim() : null;
+        if (!btn)
+          fail.push('nothing in the SOW toolbar mentions the version history — the panel is inside a closed '
+            + 'disclosure below a scrolling document, which is a fine place to keep a history and a hopeless '
+            + 'place to find one');
+        else if (out.historyButton.indexOf(String(sowVersions.length)) < 0)
+          fail.push('the history control does not state how many versions there are, so it cannot be told '
+            + 'apart from one that will open empty');
+        else if (btn.disabled)
+          fail.push('the history control is disabled while ' + sowVersions.length + ' version(s) exist');
+        hydrate(saved);                                   // put the sweep's own state back
+
         const original = String(sowDraft || '');
         out.sowVersionsAfterGenerate = sowVersions.length;
         if (!sowVersions.length)
@@ -947,6 +985,134 @@ const QA = JSON.parse(fs.readFileSync(
         if (!out.firstSurvivedTrim)
           fail.push('trimming the SOW history dropped the FIRST version — the one version that must survive '
             + 'any trim is the original, because that is what the history is for');
+      }
+
+      /* ── 3i-d. EXACTLY ONE VERSION IS THE CURRENT ONE ───────────────────
+         "Current" was decided by comparing CONTENT to the live draft, and
+         restoring makes a version byte-identical to the one it restored — so
+         after restoring v1 both v1 and v3 wore the badge and the panel claimed
+         two current documents. Reported by use: "how is it that 1 and 3 are
+         current". The condition is BUILT rather than hoped for, because it only
+         arises after a restore. */
+      {
+        await generateSOW();
+        sowDraft = String(sowDraft) + '<p>a divergence</p>';
+        sowPushVersion('edited by hand');
+        const first = sowVersions[0];
+        sowRestoreVersion(first.n);              // now two entries share content
+        renderSowHistory();
+        const h2 = (document.getElementById('sowHistory') || {}).innerHTML || '';
+        const twins = sowVersions.filter(v2 => v2.html === sowDraft);
+        out.identicalToLive = twins.length;
+        out.currentBadges = (h2.match(/badge-ok">current/g) || []).length;
+        /* COUNTING THE BADGES IS NOT ENOUGH, and the first version of this
+           check only did that. A build that picks the FIRST content match
+           instead of the last still draws exactly one badge — on the oldest
+           twin, which is not the document anybody is looking at. One badge in
+           the wrong place is a different wrong answer, not a right one. So the
+           row is identified by its version NUMBER: the live draft is the
+           newest version matching it, because restore appends. */
+        const wantNo = twins.length ? Math.max.apply(null, twins.map(v2 => v2.n)) : null;
+        const badged = [...(document.getElementById('sowHistory') || document.createElement('div'))
+          .querySelectorAll('tbody tr')]
+          .filter(tr => /current/.test(((tr.querySelector('.badge-ok') || {}).textContent) || ''))
+          .map(tr => ((tr.querySelector('td b') || {}).textContent || '').replace(/^v/, ''));
+        out.badgedVersions = badged;
+        out.expectedCurrent = wantNo;
+        if (out.identicalToLive < 2)
+          out.duplicateCurrentCase = 'SKIPPED-restore-did-not-produce-a-twin';
+        else if (out.currentBadges !== 1)
+          fail.push(out.currentBadges + ' rows in the SOW history are marked "current" while '
+            + out.identicalToLive + ' versions hold identical content — restoring makes a byte-identical '
+            + 'twin, and deciding which row is live by comparing content marks both');
+        else if (String(badged[0]) !== String(wantNo))
+          fail.push('the SOW history marks v' + badged[0] + ' as current when the live draft is v' + wantNo
+            + ' — restoring appends, so the newest matching version is the one on screen; marking the oldest '
+            + 'twin points the reader at a document they are not looking at');
+        else if (!/same as v/.test(h2))
+          fail.push('an earlier version is word for word the live document and the panel says nothing about '
+            + 'it — two identical rows with no explanation read as the bug this used to be');
+      }
+
+      /* ── 3i-d2. A VERSION SURVIVES A ROUND TRIP UNCHANGED ───────────────
+         The writer and the reader of this record were two separate field
+         lists, and the fields the writer omitted were exactly the ones the
+         reader defaulted in — absent on the way out, zero on the way back. So
+         a version could not survive serialize→hydrate identical. Nothing about
+         the SOW looked wrong; it surfaced as UNDO failing to restore the plan,
+         because undo is a round trip that compares the whole document.
+
+         Asserted HERE as well, on the record itself, because relying on undo to
+         notice means the next field added to this shape is caught in a check
+         about something else, or not at all. */
+      {
+        sowPushVersion('round-trip probe');
+        const wrote = JSON.stringify(sowVersions);
+        const doc = JSON.parse(JSON.stringify(serialize()));
+        hydrate(doc);
+        const read = JSON.stringify(sowVersions);
+        out.sowRoundTrip = wrote === read;
+        if (!out.sowRoundTrip) {
+          const a2 = JSON.parse(wrote), b2 = JSON.parse(read);
+          const bad2 = [];
+          a2.forEach((v2, i) => Object.keys(Object.assign({}, v2, b2[i] || {})).forEach(k => {
+            if (JSON.stringify(v2[k]) !== JSON.stringify((b2[i] || {})[k])) bad2.push(k);
+          }));
+          fail.push('a SOW version does not survive save-and-reload unchanged — field(s) '
+            + [...new Set(bad2)].join(', ') + ' differ. The writer and the reader of this record disagree '
+            + 'about its shape, which makes every round trip (undo, redo, reload, export) a silent edit');
+        }
+      }
+
+      /* ── 3i-e. WAS THIS CHANGE ORDER APPLIED TO THAT SOW? ───────────────
+         The SOW history and the change-order log were two chains with nothing
+         joining them, so the only way to tell whether a document already
+         reflected a change order was to read it and guess. Reported by use:
+         "how can i check if a CHANGE ORDER was applied to a given SOW?"
+
+         Stamped at WRITE time, and the check proves that rather than the
+         easier property: a version written BEFORE the change order was
+         accepted must keep saying so afterwards. Reading today's log would
+         make every past document silently claim the current agreement. */
+      {
+        await generateSOW();                       // a SOW predating the next CO
+        const before = sowVersions[sowVersions.length - 1];
+        const g4 = leafTasks().find(t2 => !t2.milestone && (t2.te || 0) > 0);
+        g4.m = (Number(g4.m) || 1) + 4; calculate();
+        await draftChangeOrder();
+        approveChangeOrder();
+        const co = coLog[coLog.length - 1];
+        out.coInSowBefore = sowVersionsWith(co.no).map(v2 => v2.n);
+        if (out.coInSowBefore.length)
+          fail.push('a change order accepted AFTER a SOW version was written is reported as being inside it '
+            + '— the stamp is being read off today’s log rather than off what the document contained');
+        await generateSOW();                       // and now one that does contain it
+        out.coInSowAfter = sowVersionsWith(co.no).map(v2 => v2.n);
+        if (!out.coInSowAfter.length)
+          fail.push('a SOW generated while ' + co.no + ' was accepted is not recorded as incorporating it, '
+            + 'so "was this change order applied to that SOW" has no answer on the page');
+        out.sowNamesTheCo = String(sowDraft || '').indexOf(co.no) >= 0;
+        if (!out.sowNamesTheCo)
+          fail.push('the SOW document itself does not name the accepted change orders it already reflects — '
+            + 'a regenerated SOW and the original are two documents with the same title and nothing on either '
+            + 'saying which agreements are inside it');
+        // the earlier version must NOT have retroactively gained it
+        const stillOut = !sowVersionsWith(co.no).some(v2 => v2.n === before.n);
+        if (!stillOut)
+          fail.push('the SOW version written before ' + co.no + ' was accepted now claims to contain it — a '
+            + 'past document changed its meaning because a state moved afterwards');
+        renderSowHistory();
+        const h3 = (document.getElementById('sowHistory') || {}).innerHTML || '';
+        out.historyStatesIncorporation = /Incorporates/.test(h3);
+        if (!out.historyStatesIncorporation)
+          fail.push('the SOW history has no column saying which change orders each version incorporates');
+        coOpen(co.no);
+        const cm = (document.getElementById('coModalBody') || {}).textContent || '';
+        out.drillNamesSow = /statement of work/i.test(cm);
+        if (!out.drillNamesSow)
+          fail.push('the change-order drill-in does not say which SOW versions already carry it, so the '
+            + 'question can only be asked from one side');
+        closeCoModal();
       }
 
       /* ── 3h. A VERSION CAN BE OPENED, AND GONE BACK TO ────────────────

@@ -1222,6 +1222,34 @@ const MUTANTS = [
     find: "        sowVersions.splice(1, sowVersions.length - SOW_VERSION_CAP);",
     with: "        sowVersions.splice(0, sowVersions.length - SOW_VERSION_CAP);" },
 
+  { what: 'baseline history: a project that already had a SOW loads with an empty history',
+    find: '      if (sowDraft && !sowVersions.length) {',
+    with: '      if (false) {' },
+
+  { what: 'baseline history: nothing in the toolbar says the SOW has a version history',
+    find: "        btn.textContent = '🕓 History' + (sowVersions.length ? ' (' + sowVersions.length + ')' : '');",
+    with: "        btn.textContent = '🕓 History';" },
+
+  /* The writer and the reader disagreeing about the record's shape. Restored
+     as a mutant because the real one was found by UNDO rather than by anything
+     about the SOW, and a defect that can only be caught sideways is one field
+     away from not being caught at all. */
+  { what: 'baseline history: a SOW version does not survive a save and reload unchanged',
+    find: "      const v = sowVersionNorm({ n: nextSowNo++, at: fmtISO(new Date()),",
+    with: "      const v = ({ n: nextSowNo++, at: fmtISO(new Date())," },
+
+  { what: 'baseline history: two SOW versions both claim to be the current one',
+    find: '        if (sowVersions[i].html === sowDraft) { curIdx = i; break; }',
+    with: '        if (sowVersions[i].html === sowDraft) { curIdx = i; }' },
+
+  { what: 'baseline history: a past SOW claims every change order accepted since it was written',
+    find: "                  cos: (coLog || []).map(c => ({ no: String(c.no), state: coState(c) })),",
+    with: "                  get cos() { return (coLog || []).map(c => ({ no: String(c.no), state: coState(c) })); }," },
+
+  { what: 'baseline history: the SOW never says which change orders it already incorporates',
+    find: "        ${(() => { const a = coAccepted(); return a.length",
+    with: "        ${(() => { const a = []; return a.length" },
+
   { what: 'baseline history: the two documents share one box with no way between them',
     find: "      strip.innerHTML = tabs.length < 2 ? '' : '<span class=\"seg\">'",
     with: "      strip.innerHTML = tabs.length < 99 ? '' : '<span class=\"seg\">'" },

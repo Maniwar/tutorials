@@ -3316,6 +3316,13 @@ Or say what you want, in your own words:
             </select>
             <button class="btn-primary btn-sm" onclick="generateSOW()"><span class="ico" aria-hidden="true">✨</span> Generate SOW draft</button>
             <button class="btn-secondary btn-sm" id="sowEditBtn" onclick="toggleSowEdit()" title="Edit the draft right here — tweak wording, delete a row, add a clause — then Save. Regenerating replaces manual edits (you'll be asked first).">✎ Edit</button>
+            <!-- Beside Edit, because editing is what makes you want it. The
+                 panel itself sits below a 560px scrolling document, inside a
+                 closed <details>, which is a fine place to KEEP a history and a
+                 hopeless place to find one. The count is on the button so it is
+                 visibly populated rather than something you open to discover is
+                 empty. -->
+            <button class="btn-secondary btn-sm" id="sowHistBtn" onclick="sowOpenHistory()" title="Every past version of this document — view any of them, restore any of them. Regenerating and editing both keep what they replaced.">🕓 History</button>
             <button class="btn-secondary btn-sm" onclick="copySOW()"><span class="ico" aria-hidden="true">📋</span> Copy (rich text)</button>
             <button class="btn-secondary btn-sm" onclick="downloadSOW()">Download (.html)</button>
             <button class="btn-sm" style="background:#fef3c7;color:#b45309" onclick="draftChangeOrder()" title="Diff the current plan against the SOW baseline and draft a change order">Δ Change order</button>
@@ -3416,7 +3423,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.04.2330</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.05.0203</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4679,12 +4686,25 @@ Or say what you want, in your own words:
       sowUserEdited = !!data.sowUserEdited;
       sowVersions = (Array.isArray(data.sowVersions) ? data.sowVersions : [])
         .filter(v => v && typeof v.html === 'string' && Number.isFinite(+v.n))
-        .map(v => ({ n: +v.n, at: String(v.at || ''), ts: String(v.ts || ''), label: String(v.label || ''),
-                     html: v.html, chars: v.html.length, trimmed: +v.trimmed || 0 }));
+        .map(sowVersionNorm);
       // ahead of every number in the list, for the same reason the plan chain
       // derives its counter rather than trusting the stored one
       nextSowNo = Math.max(1, ...sowVersions.map(v => v.n + 1),
         Number.isFinite(+data.nextSowNo) ? +data.nextSowNo : 1);
+      /* SEED THE HISTORY FROM THE DOCUMENT ALREADY IN HAND. Every project that
+         existed before this history did — which is every real one — loads with
+         a SOW sitting on screen and an empty version list, so the panel read
+         "No versions yet" directly underneath the very document the reader
+         wanted to get back to. The history began at the NEXT generate, which is
+         the one action that destroys the thing being asked for.
+         Labelled for what it honestly is: this file did not witness the draft
+         being made, it found it already here, and dating it as though it had
+         would be inventing provenance. */
+      if (sowDraft && !sowVersions.length) {
+        sowVersions = [sowVersionNorm({ n: nextSowNo++, at: fmtISO(new Date()), ts: '',
+                         label: 'the draft this project was already carrying',
+                         html: sowDraft, seeded: true })];
+      }
       reqs = (data.reqs && Array.isArray(data.reqs.stories)) ? {
         personas: Array.isArray(data.reqs.personas) ? data.reqs.personas : [],
         epics: Array.isArray(data.reqs.epics) ? data.reqs.epics : [],
@@ -25915,6 +25935,15 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       return `<div style="font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;max-width:900px">
         <h1 style="margin:0 0 2px;font-size:22px">Statement of Work — ${h(d.name)}</h1>
         <p style="color:#64748b;font-size:12px;margin:0 0 14px">DRAFT generated ${new Date().toLocaleDateString()} — review all terms before sending. Timeline ${h(d.start)} → ${h(d.finish)}${d.committed ? ' (committed date incl. contingency: ' + h(d.committed) + ')' : ''}.</p>
+        <!-- WHAT THIS DOCUMENT INCORPORATES. The change-order draft has carried
+             an "as previously amended by" line for a while; the SOW itself
+             carried nothing, so a regenerated SOW and the original were two
+             documents with the same title and no way to tell which agreements
+             were inside which. ACCEPTED only — naming an issued one here would
+             put unsigned scope on the face of a contract document. -->
+        ${(() => { const a = coAccepted(); return a.length
+          ? `<p style="font-size:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:7px 11px;margin:0 0 14px"><b>Incorporates ${a.length} accepted change order${a.length === 1 ? '' : 's'}:</b> ${a.map(c => h(c.no)).join(', ')}. The scope, schedule and price below already reflect ${a.length === 1 ? 'it' : 'them'}.</p>`
+          : ''; })()}
         <h2 style="font-size:16px;margin:16px 0 6px">1. Overview &amp; Objectives</h2><p style="font-size:13px">${n.overview || '<em>[Describe the business context and objectives of this engagement.]</em>'}</p>
         <h2 style="font-size:16px;margin:16px 0 6px">2. Scope of Work &amp; Deliverables</h2>
         <p style="font-size:13px">${n.scopeNarrative || ''}</p>
@@ -26185,6 +26214,25 @@ Professional, client-ready, no hype, no invented facts.`;
     }
     let sowVersions = [];
     let nextSowNo = 1;
+    /* ONE DEFINITION OF THE RECORD SHAPE, used when a version is made AND when
+       one is read back. They were two, and the fields the writer left off were
+       exactly the fields the reader defaulted in — `trimmed` absent on the way
+       out, `0` on the way back — so a version could not survive a round trip
+       through serialize and hydrate unchanged. Nothing on screen showed it and
+       nothing about the SOW was wrong; it surfaced as UNDO failing to restore
+       the plan, because undo is a round trip and compares the whole document.
+       That is the useful shape of the bug: a field a person never looks at,
+       found by the one check that compares everything to everything. */
+    function sowVersionNorm(v) {
+      const html = String((v && v.html) || '');
+      return { n: +v.n, at: String(v.at || ''), ts: String(v.ts || ''),
+               label: String(v.label || ''), html: html, chars: html.length,
+               trimmed: +v.trimmed || 0, seeded: !!v.seeded,
+               cos: Array.isArray(v.cos)
+                 ? v.cos.map(c => ({ no: String((c && c.no) || ''), state: String((c && c.state) || '') }))
+                 : null,
+               baseV: (v.baseV == null ? null : +v.baseV) };
+    }
     /* 25 documents, and a SOW is a few tens of KB. The FIRST is never dropped —
        "go back to the original" is the request this exists for, so the one
        version that must survive any trim is the one at the bottom. */
@@ -26197,9 +26245,19 @@ Professional, client-ready, no hype, no invented facts.`;
       // between would otherwise stack duplicates that a reader has to compare
       // by eye to discover are the same.
       if (last && last.html === html) return last;
-      const v = { n: nextSowNo++, at: fmtISO(new Date()),
+      /* THE ANSWER TO "WAS CO-002 IN THIS ONE?". A SOW version and the
+         change-order log were two histories with nothing joining them, so the
+         only way to tell whether a document already reflected a change order
+         was to read the document and guess. Stamped at write time rather than
+         inferred later: the log's states MOVE — an accepted order can be
+         rejected next week — and reading today's state would rewrite what a
+         past document is claimed to contain every time somebody clicks a
+         transition. */
+      const v = sowVersionNorm({ n: nextSowNo++, at: fmtISO(new Date()),
                   ts: new Date().toISOString().slice(11, 16),
-                  label: String(label || ''), html: html, chars: html.length };
+                  label: String(label || ''), html: html,
+                  cos: (coLog || []).map(c => ({ no: String(c.no), state: coState(c) })),
+                  baseV: (sowBaseline && sowBaseline.v) || null });
       sowVersions.push(v);
       if (sowVersions.length > SOW_VERSION_CAP) {
         // drop from the SECOND entry, never the first
@@ -26241,31 +26299,99 @@ Professional, client-ready, no hype, no invented facts.`;
         return '<p class="help-text" style="margin:0">No versions yet. One is kept every time the SOW is '
           + 'generated and every time an edit is saved, so the wording a client was sent stays reachable '
           + 'after the next regeneration replaces it.</p>';
-      const live = sowVersions[sowVersions.length - 1];
+      /* WHICH ROW IS "CURRENT" IS A QUESTION ABOUT IDENTITY, NOT CONTENT.
+         It was decided by v.html === sowDraft, and restoring makes a version
+         byte-identical to the one it restored — so after restoring v1 both v1
+         and v3 wore the badge and the panel claimed two current documents.
+         Reported by exactly that: "how is it that 1 and 3 are current".
+         The live draft is the LAST version matching it: restore pushes the
+         restored content as a new entry, so the newest match is the one the
+         reader is looking at. The older twin is not wrong and not current —
+         it is the same words at an earlier point, and saying so is more useful
+         than a blank cell, because two identical rows with no explanation read
+         as the bug this used to be. */
+      let curIdx = -1;
+      for (let i = sowVersions.length - 1; i >= 0; i--) {
+        if (sowVersions[i].html === sowDraft) { curIdx = i; break; }
+      }
+      const curNo = curIdx >= 0 ? sowVersions[curIdx].n : null;
       const rows = sowVersions.slice().reverse().map(v => '<tr>'
         + '<td style="white-space:nowrap"><b>v' + v.n + '</b>'
-          + (v.html === sowDraft ? ' <span class="badge badge-ok">current</span>' : '') + '</td>'
+          + (v.n === curNo ? ' <span class="badge badge-ok">current</span>'
+             : v.html === sowDraft
+               ? ' <span class="badge badge-slack" title="' + escapeHtml('Word for word the same document as '
+                   + 'v' + curNo + ', which is the live one. Restoring keeps the draft it replaced, so an '
+                   + 'earlier version and the current one can be identical.') + '">same as v' + curNo + '</span>'
+               : '') + '</td>'
         + '<td style="font-size:0.78rem;white-space:nowrap">' + escapeHtml(v.at) + ' ' + escapeHtml(v.ts) + '</td>'
         + '<td style="font-size:0.8rem">' + escapeHtml(v.label || '') + '</td>'
+        + '<td style="font-size:0.78rem">' + sowVersionCoCell(v) + '</td>'
         + '<td style="font-size:0.78rem;white-space:nowrap">' + Math.round(v.chars / 1024 * 10) / 10 + ' KB</td>'
         + '<td style="white-space:nowrap"><button class="btn-sm btn-secondary no-print" onclick="sowViewVersion('
           + v.n + ')">View</button> <button class="btn-sm btn-secondary no-print" onclick="sowRestoreVersion('
-          + v.n + ')"' + (v.html === sowDraft ? ' disabled title="This is the current draft"' : '') + '>Restore</button></td>'
+          + v.n + ')"' + (v.n === curNo ? ' disabled title="This is the current draft"'
+            : v.html === sowDraft ? ' disabled title="Identical to the current draft — restoring it would '
+              + 'change nothing"' : '') + '>Restore</button></td>'
         + '</tr>').join('');
       return '<div class="table-wrap"><table><thead><tr><th>Version</th><th>Saved</th><th>What happened</th>'
-        + '<th>Size</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        + '<th title="The change orders this document already reflects. Recorded when it was written, not read '
+          + 'off today\u2019s log — a state that moves later must not rewrite what a past document contained.">'
+        + 'Incorporates</th><th>Size</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
         + (sowVersions[0].trimmed
             ? '<p class="help-text" style="margin:.35rem 0 0">' + sowVersions[0].trimmed + ' intermediate '
               + 'version(s) dropped to stay under ' + SOW_VERSION_CAP + '. The first and the latest are never '
               + 'dropped, so the original and the current one are always both here.</p>'
             : '')
+        + (sowVersions.some(v => v.seeded)
+            ? '<p class="help-text" style="margin:.35rem 0 0">The oldest entry is the draft this project was '
+              + 'already carrying when the history was added. Its date is when it was <b>found</b>, not when it '
+              + 'was written — nothing in the file records that, and dating it as though it did would be '
+              + 'inventing provenance.</p>'
+            : '')
         + '<p class="help-text" style="margin:.35rem 0 0">Restoring replaces the DOCUMENT only. The plan, the '
           + 'baseline and the change-order chain are untouched — a SOW is a statement about the work, not the '
           + 'work.</p>';
     }
+    /* Which change orders a given SOW already contains, and the honest answer
+       when the version predates the stamp: "not recorded" rather than "none",
+       because those are different facts and only one of them is knowable. */
+    function sowVersionCoCell(v) {
+      if (!Array.isArray(v.cos))
+        return '<span class="help-text" title="' + escapeHtml('This version was written before the SOW '
+          + 'history recorded change-order state, so what it incorporated is not on file. Reading it off '
+          + 'today\u2019s log would be a guess dressed as a record.') + '">not recorded</span>';
+      const acc = v.cos.filter(c => c.state === 'accepted');
+      if (!acc.length)
+        return '<span class="help-text">' + (v.cos.length
+          ? 'none — ' + v.cos.length + ' on the log, none accepted at the time'
+          : 'none — no change orders existed yet') + '</span>';
+      return acc.map(c => '<button type="button" class="ptr-sc-rmore" onclick="coOpen(\'' + ekJs(c.no)
+        + '\')" title="' + escapeHtml('Open ' + c.no + '. This document was written while it was accepted, '
+          + 'so its scope and price are already inside.') + '">' + escapeHtml(c.no) + '</button>').join(' ');
+    }
+    // The same join read the other way, for the change-order drill-in.
+    function sowVersionsWith(no) {
+      return sowVersions.filter(v => Array.isArray(v.cos)
+        && v.cos.some(c => c.no === String(no) && c.state === 'accepted'));
+    }
     function renderSowHistory() {
       const el = document.getElementById('sowHistory');
       if (el) { try { el.innerHTML = sowHistoryHtml(); } catch (e) {} }
+      const btn = document.getElementById('sowHistBtn');
+      if (btn) {
+        btn.textContent = '🕓 History' + (sowVersions.length ? ' (' + sowVersions.length + ')' : '');
+        btn.disabled = !sowVersions.length;
+      }
+    }
+    // Opens the disclosure AND scrolls to it. Expanding something below the
+    // fold, out of view, is indistinguishable from the button doing nothing.
+    function sowOpenHistory() {
+      const el = document.getElementById('sowHistory');
+      if (!el) return;
+      renderSowHistory();
+      const det = el.closest('details');
+      if (det) det.open = true;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
     async function copySOW() {
       if (!sowDraft) { alert('Generate the SOW draft first.'); return; }
@@ -27468,6 +27594,33 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
               + '. The difference came from something other than scope — a rate change, a different pricing '
               + 'basis, or a discount — and a client reading only the lines will not find it.</div>'
             : '')
+        /* WHICH DOCUMENTS ALREADY CONTAIN THIS. The question a change order is
+           actually asked — "was this applied to the SOW we sent?" — had no
+           answer anywhere: the SOW history and the change-order log were two
+           chains with nothing joining them, so the only method was to read the
+           document and guess. */
+        + (() => {
+            if (draft) return '';
+            const inV = sowVersionsWith(c.no);
+            const anyStamped = sowVersions.some(v2 => Array.isArray(v2.cos));
+            return '<div class="conflict-card" style="margin:0 0 .7rem;font-size:0.82rem'
+              + (inV.length ? '' : ';border-left-color:var(--warn)') + '">'
+              + (inV.length
+                  ? '<b>In the statement of work.</b> ' + inV.length + ' SOW version'
+                    + (inV.length === 1 ? '' : 's') + ' were written while this was accepted, so they already '
+                    + 'reflect it: '
+                    + inV.map(v2 => '<button type="button" class="ptr-sc-rmore" onclick="closeCoModal();'
+                        + 'sowViewVersion(' + v2.n + ')" title="' + escapeHtml('Open SOW v' + v2.n)
+                        + '">v' + v2.n + '</button>').join(' ')
+                  : anyStamped
+                    ? '<b>Not in any statement of work yet.</b> No SOW version on file was written while this '
+                      + 'change order was accepted, so every one of them predates it — the scope it carries is '
+                      + 'agreed and not yet written into the document a client reads.'
+                    : '<b>Not recorded.</b> The SOW versions on file predate the point where they started '
+                      + 'stamping which change orders they contained, so whether they include this one is not '
+                      + 'on file. Generating the SOW again will record it.')
+              + '</div>';
+          })()
         + '<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-bottom:.6rem">'
           + vBtn(c.fromV, 'Before') + '<span aria-hidden="true" style="color:var(--muted)">→</span>'
           + vBtn(c.toV, 'After')
