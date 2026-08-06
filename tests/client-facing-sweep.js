@@ -410,6 +410,80 @@ const DATA = FIXTURE();
         }
       }
 
+      /* ── THE PROSE DOES NOT OUTRUN THE SCHEDULE ────────────────────────
+         A document promising "Weeks 1-8" over a four-week plan is a
+         contradiction a client finds and the drafter never does. */
+      {
+        const t9 = leafTasks().find(x => !x.isSummary && !x.milestone);
+        if (!t9) say('SOW weeks', 'no leaf activity — this check is vacuous');
+        else {
+          const span = sowWeekSpan();
+          if (!(span > 0)) say('SOW weeks', 'the schedule reports no week span at all');
+          /* RECOMPUTED, NOT ACCEPTED. "span > 0" is satisfied by a function
+             that returns a constant 1, and a lint whose ruler is always one
+             week flags almost everything and proves nothing. The independent
+             figure comes off the stored dates, the same way a reader counting
+             the Gantt would arrive at it. */
+          {
+            const lv = leafTasks().filter(x => !x.isSummary);
+            const ss = lv.map(x => x.startDate).filter(Boolean).map(d0 => stripTime(d0).getTime());
+            const ff = lv.map(x => currentFinish(x) || x.finishDate).filter(Boolean).map(d0 => stripTime(d0).getTime());
+            if (ss.length && ff.length) {
+              const want = Math.max(1, Math.ceil((Math.max(...ff) - Math.min(...ss) + 86400000) / (7 * 86400000)));
+              if (span !== want) say('SOW weeks', 'the schedule runs ' + want + ' weeks and the lint measures it as '
+                + span + ' — every week reference is being judged against the wrong ruler');
+              if (want < 2) say('SOW weeks', 'the fixture spans under two weeks, so a wrong ruler would be '
+                + 'indistinguishable from the right one and this check is vacuous');
+            }
+          }
+          const refs = sowWeekRefs('<p>Weeks 1\u20132, the Week 6 re-test, an 8-week proof</p>');
+          if (refs.join(',') !== '1,2,6,8')
+            say('SOW weeks', 'week references parsed as [' + refs.join(',') + '] rather than 1,2,6,8');
+          if (sowWeekLint('<p>Week 1 kickoff</p>'))
+            say('SOW weeks', 'a week inside the schedule was flagged');
+          const over = sowWeekLint('<p>through Week ' + (span + 30) + '</p>');
+          if (!over) say('SOW weeks', 'prose naming week ' + (span + 30) + ' on a ' + span
+            + '-week schedule was not flagged');
+          else if (String(over.msg).indexOf(String(span)) < 0)
+            say('SOW weeks', 'the warning does not state how long the schedule actually runs');
+          const kept = t9.description;
+          t9.description = 'Runs through Week ' + (span + 30) + ' of the engagement';
+          calculate();
+          /* ANCHORED TO THE LINT'S OWN SENTENCE, not to "Before issuing" —
+             which is also how the missing-exclusions banner opens, so the first
+             version of this check passed on a document where the week banner
+             was never drawn at all. A marker shared with another warning is not
+             a marker. */
+          const doc9 = build().html;
+          if (doc9.indexOf('but the schedule below runs') < 0)
+            say('SOW weeks', 'the document carries prose past the end of its own schedule and draws no banner');
+          else if (doc9.indexOf('week ' + (span + 30)) < 0)
+            say('SOW weeks', 'the banner is drawn without naming the week it objects to');
+          t9.description = kept; calculate();
+        }
+      }
+
+      /* ── QUALITY ATTRIBUTES ARE GROUPED, NOT DUMPED ────────────────────
+         Seventy flat rows is a third of the contract and nobody reads to the
+         end of it. They group under the attribute they concern, which is how a
+         client's legal review is organised. */
+      {
+        const st9 = (reqs.stories || [])[0];
+        if (st9) {
+          const k9 = (st9.nfrs || []).slice();
+          st9.nfrs = k9.concat(['Privacy: ZZ identifiers removed', 'Retention: ZZ deleted after 30 days']);
+          const b9 = build().html;
+          if (!/>Privacy</.test(b9) || !/>Retention</.test(b9))
+            say('SOW NFR', 'the quality attributes are not grouped by category');
+          const strip9 = strip(b9);
+          if (!/requirements? across \d+ categor/.test(strip9))
+            say('SOW NFR', 'the section does not say how many requirements it holds or in how many groups');
+          if (strip9.indexOf('ZZ identifiers removed') < 0)
+            say('SOW NFR', 'grouping dropped a requirement');
+          st9.nfrs = k9;
+        }
+      }
+
       /* ── THE CONTRACT SAYS WHAT EACH ROW CONSUMES ──────────────────────
          The chain is drawn in the WBS dictionary and stopped at the SOW, which
          is the one document where "we need this from you before we can start"

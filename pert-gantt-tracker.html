@@ -1643,9 +1643,13 @@
     td button.btn-sm:hover:not(:disabled):not(.tab), td button.btn-sm:active:not(:disabled):not(.tab) { transform: none; box-shadow: none; }
     /* W3c: owner clamp + column widths + row rhythm */
     /* "Engineering Lead · CLIE…" cut the one word in that line that changes how
-       a reader treats the row. CLIENT leads and never clips; the role follows
-       and clips if it must, with the whole string on the title. */
-    .role-sub { display: block; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.25; font-size: var(--t-sm); }
+       a reader treats the row, and putting CLIENT first only moved the cut onto
+       the role. A single-line clamp on a two-part string always loses one part.
+       So it WRAPS instead — two lines, no ellipsis, nothing cut mid-word — and
+       the column is wide enough for the roles this product actually holds. */
+    .role-sub { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden; max-width: 190px; white-space: normal; overflow-wrap: anywhere;
+      line-height: 1.25; font-size: var(--t-sm); }
     .role-sub .cli { color: #1e40af; font-weight: 700; }
     #taskTable td[data-owner-id] { min-width: 150px; }
     #wbsContainer td:nth-child(3) { min-width: 150px; }
@@ -3673,7 +3677,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.1755</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.1928</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -10224,6 +10228,42 @@ Or say what you want, in your own words:
         totDays: rows.reduce((s, r) => s + r.rec.days, 0),
         unbilledDays: rows.filter(r => r.client).reduce((s, r) => s + r.rec.days, 0) };
     }
+    /* ═══ TWO TOTALS ON ONE SCREEN, AND THE GAP UNNAMED ══════════════════════
+       The billing table sums bill rate × planned effort — the RATE-CARD sum.
+       Everything downstream (the retainer line, the payment schedule, the SOW)
+       quotes the FEE, which is a different number whenever a contract price was
+       typed or the pricing basis carries a risk uplift. Both were drawn on the
+       same screen, neither said which it was, and the reader was left to guess
+       whether $379 of difference is a markup, a rounding, or a bug. It is
+       always one of three specific things, and the app knows which. */
+    function priceVsRateCard() {
+      let f = null;
+      try { f = pricingFigures(); } catch (e) { return null; }
+      if (!f) return null;
+      const rateCard = (Number(f.labor) || 0) + (Number(f.fixedTotal) || 0);   // == billingData().totBill
+      const fee = Math.max(0, Number(f.price) || 0);
+      if (!(rateCard > 0) && !(fee > 0)) return null;
+      const gap = fee - rateCard;
+      const why = f.isTM
+        ? 'On time & materials the fee IS the rate-card sum — you invoice what you work. A typed contract price is a not-to-exceed cap and does not change the fee.'
+        : (f.contract > 0)
+          ? 'You typed a contract price of ' + fmtMoney(f.contract) + ', so that is the fee. The rate-card sum is how the price was arrived at, not what appears on the invoice.'
+          : (Math.abs(gap) > 0.5)
+            ? 'No contract price is typed, so the fee is the ' + String(f.basis || '').toUpperCase()
+              + ' figure from the simulation: the rate-card sum plus a risk uplift covering the runs where the work takes longer. '
+              + 'Set the basis to P50 on the Pricing panel to quote the rate-card sum with no uplift, or type a contract price to fix it yourself.'
+            : 'They agree — no contract price is typed and the basis carries no uplift.';
+      return { rateCard: rateCard, fee: fee, gap: gap, why: why, basis: f.basis, isTM: f.isTM, contract: f.contract };
+    }
+    function priceVsRateCardHtml() {
+      const pv = priceVsRateCard();
+      if (!pv || !(pv.rateCard > 0)) return '';
+      const same = Math.abs(pv.gap) <= 0.5;
+      return `<p class="help-text" style="margin-top:0.45rem;background:#f8fafc;border-left:3px solid var(--primary);border-radius:0 6px 6px 0;padding:0.5rem 0.7rem">
+        <b>Σ Billed above is the rate-card sum: ${fmtMoney(pv.rateCard)}.</b> The <b>fee</b> quoted everywhere downstream — payment
+        schedule, retainer, SOW — is <b>${fmtMoney(pv.fee)}</b>${same ? ', the same number' : `, ${fmtMoney(Math.abs(pv.gap))} ${pv.gap > 0 ? 'more' : 'less'}`}.
+        ${escapeHtml(pv.why)}</p>`;
+    }
     function billingBreakdownHtml() {
       const d = billingData();
       if (!d.rows.length && !d.fixedTotal) return '';
@@ -10248,7 +10288,8 @@ Or say what you want, in your own words:
             ${d.fixedTotal ? `<tr><td>Fixed costs (licenses, travel…)</td><td><span class="badge badge-done">💰 billed</span></td><td>—</td><td>—</td><td>${fmtMoney(d.fixedTotal)}</td><td>${fmtMoney(d.fixedTotal)}</td></tr>` : ''}
             <tr style="font-weight:700;background:#f8fafc"><td>Σ Total</td><td></td><td>${d.totDays.toFixed(1)}</td><td></td><td>${fmtMoney(d.totCost)}</td><td>${fmtMoney(d.totBill)}</td></tr>
           </tbody></table></div>
-        <p class="help-text" style="margin-top:0.4rem">Cost uses each person's <b>cost rate</b>; Billed uses their <b>bill rate</b> (margin = the difference). Client-side people (highlighted) do real scheduled work but are never billed — that work lands in the SOW as a client responsibility instead.${d.unbilledDays ? ` Right now <b>${d.unbilledDays.toFixed(1)} days</b> of effort is client-side/unbilled.` : ''}${d.noEstCount ? ` <span style="color:var(--critical)">⚠ ${d.noEstCount} work package(s) have no estimate at all — they are missing from BOTH columns (see the alarm on the Tasks tab).</span>` : ''}</p>`;
+        <p class="help-text" style="margin-top:0.4rem">Cost uses each person's <b>cost rate</b>; Billed uses their <b>bill rate</b> (margin = the difference). Client-side people (highlighted) do real scheduled work but are never billed — that work lands in the SOW as a client responsibility instead.${d.unbilledDays ? ` Right now <b>${d.unbilledDays.toFixed(1)} days</b> of effort is client-side/unbilled.` : ''}${d.noEstCount ? ` <span style="color:var(--critical)">⚠ ${d.noEstCount} work package(s) have no estimate at all — they are missing from BOTH columns (see the alarm on the Tasks tab).</span>` : ''}</p>
+        ${priceVsRateCardHtml()}`;
     }
     // Roster entries participating in zero tasks — usually AI-proposed parallel
     // staff that never got work, or leftovers from an earlier plan version.
@@ -16159,7 +16200,7 @@ Or say what you want, in your own words:
         worklist: () => worklistHtml()
           || '<div class="empty-state"><h3>Nothing to list</h3><p>The worklist reads open activities per owner. '
              + 'Assign owners on the Tasks tab and it fills itself in.</p></div>',
-        cost:     () => resourceEffortHtml() + timesheetHtml() + billingBreakdownHtml() + cashTermsPanelHtml()
+        cost:     () => resourceEffortHtml() + timesheetHtml() + ledgerHtml() + billingBreakdownHtml() + cashTermsPanelHtml()
       };
       cont.innerHTML = (PANELS[resTab] || PANELS.team)();
 
@@ -28339,6 +28380,8 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
              documents with the same title and no way to tell which agreements
              were inside which. ACCEPTED only — naming an issued one here would
              put unsigned scope on the face of a contract document. -->
+        ${(() => { const w = (typeof sowWeekLint === 'function') ? sowWeekLint(sowSections(d, narrative, td, th, showEffort, showRates, scopeRows)) : null;
+          return w ? `<p class="no-print" style="font-size:12px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:7px 11px;margin:0 0 14px"><b>⚠ Before issuing:</b> ${h(w.msg)}</p>` : ''; })()}
         ${(() => { const a = coAccepted(); return a.length
           ? `<p style="font-size:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:7px 11px;margin:0 0 14px"><b>Incorporates ${a.length} accepted change order${a.length === 1 ? '' : 's'}:</b> ${a.map(c => h(c.no)).join(', ')}. The scope, schedule and price below already reflect ${a.length === 1 ? 'it' : 'them'}.</p>`
           : ''; })()}
@@ -28461,6 +28504,45 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           : '';
       }
     }
+    /* "THE WHOLE 8-WEEK PROOF OF VALUE", ON A FOUR-WEEK SCHEDULE. Narrative and
+       descriptions are written by a model that was told the shape of the
+       engagement, and the schedule is then built from estimates that may not add
+       up to it. Nothing reconciled the two, so a contract went out promising
+       Weeks 1-8 with four retainer periods under it — the kind of contradiction
+       a client finds and the drafter never does, because nobody reads their own
+       document counting weeks. */
+    function sowWeekSpan() {
+      const leaves = (typeof leafTasks === 'function' ? leafTasks() : []).filter(t => !t.isSummary);
+      const starts = leaves.map(t => t.startDate).filter(Boolean);
+      const ends = leaves.map(t => currentFinish(t) || t.finishDate).filter(Boolean);
+      if (!starts.length || !ends.length) return 0;
+      const a = Math.min(...starts.map(d => stripTime(d).getTime()));
+      const b = Math.max(...ends.map(d => stripTime(d).getTime()));
+      return Math.max(1, Math.ceil((b - a + 86400000) / (7 * 86400000)));
+    }
+    function sowWeekRefs(html) {
+      const txt = String(html || '').replace(/<[^>]+>/g, ' ');
+      const out = new Set();
+      let m;
+      const re = /\bweeks?\s+(\d{1,2})(?:\s*[–—-]\s*(\d{1,2}))?\b/gi;
+      while ((m = re.exec(txt))) { out.add(+m[1]); if (m[2]) out.add(+m[2]); }
+      const re2 = /\b(\d{1,2})\s*-\s*week\b/gi;
+      while ((m = re2.exec(txt))) out.add(+m[1]);
+      // two years is the outer bound of anything a SOW calls a week number;
+      // past that the match is a quantity that happened to sit beside the word
+      return [...out].filter(n => n > 0 && n <= 104).sort((a, b) => a - b);
+    }
+    function sowWeekLint(html) {
+      const span = sowWeekSpan();
+      if (!span) return null;
+      const over = sowWeekRefs(html).filter(n => n > span);
+      if (!over.length) return null;
+      return { span: span, over: over,
+        msg: 'This document refers to week ' + over.join(', ') + ' — but the schedule below runs '
+           + span + ' week' + (span === 1 ? '' : 's') + '. Either the narrative describes an engagement '
+           + 'longer than the plan, or the plan is missing work the narrative assumes. A client will '
+           + 'reconcile these two before signing; it is cheaper to do it first.' };
+    }
     function sowExclusionsTail(list, scopeRef) {
       const h = x => escapeHtml(x || '');
       const ex = (list || []).filter(x => String(x || '').trim());
@@ -28552,11 +28634,57 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         ${d.clientTeam.map(c => `<tr><td style="${td}">${h(c.role)}</td><td style="${td}"><ul style="margin:0;padding-left:16px">${c.duties.map(x => `<li style="margin:0 0 2px">${h(x)}</li>`).join('')}</ul>${c.more ? `<p style="margin:3px 0 0;font-size:11.5px;color:#64748b">and ${c.more} further activit${c.more === 1 ? 'y' : 'ies'} — see {{sec:scope}}.</p>` : ''}</td></tr>`).join('')}</table>` : ''}`);
 
       const traceNote = `<p style="font-size:11px;color:#64748b;margin:4px 0 0">A blank story reference means the requirement was captured against a delivery-side story tracked in the project plan rather than in the appendix; it applies to the solution as delivered either way.</p>`;
+      /* SEVENTY FLAT ROWS IS NOT A CLAUSE, IT IS A DUMP. Quality attributes are
+         written per story, so a plan with twenty-five stories produces "Retention:
+         … deleted 30 days after closure" a dozen times over, and this section
+         became a third of the contract that nobody reads to the end.
+
+         Two passes. Identical wording MERGES — one row, every trace on it,
+         because a rule that applies to eight stories is one rule. What is left
+         groups under the attribute it is about (Privacy, Auditability, Retention
+         …), which is how the reader thinks about them and how a client's legal
+         review is organised. The wording is the model's; only the arrangement
+         is ours, so nothing is dropped and nothing is reworded. */
       add('nfr', 'Non-Functional Requirements', (d.nfrs && d.nfrs.length)
-        ? `<p style="font-size:12.5px;color:#475569">Quality attributes the delivered solution must meet in addition to the functional acceptance criteria — each traces to the stories listed.</p>
-        <table style="border-collapse:collapse;width:100%"><tr><th style="${th}">Requirement</th><th style="${th};width:140px">Applies to</th></tr>
-        ${d.nfrs.map(x => `<tr><td style="${td}">${h(x.text)}</td><td style="${td}">${x.refs || '—'}</td></tr>`).join('')}</table>
-        ${d.nfrs.some(x => !x.refs) ? traceNote : ''}` : '');
+        ? (() => {
+            const merged = new Map();
+            d.nfrs.forEach(x => {
+              const key = String(x.text || '').trim().toLowerCase();
+              if (!key) return;
+              const e = merged.get(key) || { text: x.text, refs: [] };
+              String(x.refs || '').split(',').map(r => r.trim()).filter(Boolean)
+                .forEach(r => { if (e.refs.indexOf(r) < 0) e.refs.push(r); });
+              merged.set(key, e);
+            });
+            const rows = [...merged.values()];
+            const KIND = /^\s*([A-Za-z][A-Za-z0-9 \/-]{2,28}?)\s*:\s*(.+)$/;
+            const groups = new Map();
+            rows.forEach(r => {
+              const m = KIND.exec(String(r.text || ''));
+              const g = m ? m[1].trim() : 'Other';
+              const body = m ? m[2].trim() : String(r.text || '');
+              (groups.get(g) || groups.set(g, []).get(g)).push({ body, refs: r.refs });
+            });
+            const order = ['Privacy', 'Security', 'Auditability', 'Retention', 'Accessibility',
+                           'Interoperability', 'Observability', 'Performance', 'Browser/device'];
+            const keys = [...groups.keys()].sort((a, b) => {
+              const ia = order.indexOf(a), ib = order.indexOf(b);
+              return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+            });
+            /* The builder upstream already keys by text, so this second pass
+               almost never has anything to merge — it is here so a future
+               change to that builder cannot reintroduce duplicate rows, not
+               because it is doing work today. The summary below therefore
+               counts what IS printed rather than claiming a saving. */
+            const saved = d.nfrs.length - rows.length;
+            return `<p style="font-size:12.5px;color:#475569">Quality attributes the delivered solution must meet in addition to the functional acceptance criteria, grouped by the attribute they concern. A requirement that applies to several deliverables is stated once, with every one it applies to listed beside it.</p>
+        <table style="border-collapse:collapse;width:100%"><tr><th style="${th}">Requirement</th><th style="${th};width:150px">Applies to</th></tr>
+        ${keys.map(k => `<tr><td colspan="2" style="${td};background:#f8fafc;font-weight:700;font-size:12px">${h(k)}</td></tr>`
+          + groups.get(k).map(r => `<tr><td style="${td}">${h(r.body)}</td><td style="${td}">${r.refs.join(', ') || '—'}</td></tr>`).join('')).join('')}</table>
+        <p style="font-size:11.5px;color:#64748b;margin:4px 0 0">${rows.length} requirement${rows.length === 1 ? '' : 's'} across ${keys.length} categor${keys.length === 1 ? 'y' : 'ies'}${saved > 0 ? `; ${saved} repeated statement${saved === 1 ? '' : 's'} merged` : ''}.</p>
+        ${rows.some(x => !x.refs.length) ? traceNote : ''}`;
+          })()
+        : '');
 
       add('clientdeps', 'Client Responsibilities &amp; Dependencies', (d.clientDeps && d.clientDeps.length)
         ? `<p style="font-size:12.5px;color:#475569">The schedule and price assume the client meets each item below by the time the dependent work starts; each entry states the consequence of a slip. CLIENT-marked rows in {{sec:scope}} apply in addition.</p>
@@ -32385,6 +32513,435 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       download(projName().replace(/[^\w\d -]+/g, '').trim().slice(0, 50) + ' timesheet.csv',
         [head.map(q).join(',')].concat(body).join('\n'));
       flashSaved('\u2b07 Timesheet exported — ' + rows.length + ' person-activity rows.');
+    }
+    /* ═══ THE LEDGER — ONE FACT TABLE YOU CAN CUT ANY WAY ═══════════════════
+       Every money and effort surface in this file answers one question with a
+       FIXED cut: the timesheet is per person per week, the billing table is per
+       person for the whole project, receivables is per activity for all time.
+       A real question — "what are VenesaCRM's people costing me in September,
+       and how much of that is even billable" — crosses all three and could not
+       be asked at all. You could export three CSVs and pivot them by hand,
+       which is exactly the work this tool exists to remove.
+
+       So: ONE fact per person per activity per working day, and a pivot over
+       it. Rows are whatever you are asking about, columns are whatever period
+       you are asking about, the measure is the number you actually want, and
+       the filters narrow the set before any of that happens.
+
+       The arithmetic is the same as the billing table's, deliberately — planned
+       hours are span × units%, cost and bill are rates × those hours — which is
+       why the unfiltered Billed total ties back to it to the dollar. That
+       tie-out is COMPUTED and printed under the table rather than promised in a
+       comment, because a fourth number that disagrees with the other three is
+       worse than no fourth number.
+
+       Undated work gets its own column instead of being dropped. A report that
+       silently omits the rows it cannot place shows a smaller book than exists,
+       which is the failure mode of every hand-built one. */
+    const LEDGER_DIMS = [['person', 'Person'], ['company', 'Company'],
+      ['side', 'Billable vs client-side'], ['phase', 'Phase'], ['activity', 'Activity'],
+      ['owner', 'Activity owner'], ['tax', 'Work type'], ['role', 'Role']];
+    const LEDGER_PERIODS = [['all', 'Whole project'], ['day', 'Day'], ['week', 'Week'],
+      ['month', 'Month'], ['quarter', 'Quarter']];
+    const LEDGER_MEASURES = {
+      planH:  { label: 'Planned hours', money: false, of: f => f.planH,
+                fmt: v => tsH(v), tip: 'Elapsed span × that person’s Units %, in hours' },
+      planD:  { label: 'Planned days', money: false, of: f => f.planH / 8,
+                fmt: v => (Math.round(v * 100) / 100).toLocaleString() + 'd', tip: 'The same work, in days (1 day = 8 h)' },
+      logH:   { label: 'Logged hours', money: false, of: f => f.logH,
+                fmt: v => tsH(v), tip: 'Their share of the time recorded against each activity' },
+      cost:   { label: 'Cost $', money: true, of: f => f.cost,
+                fmt: v => fmtMoney(v), tip: 'Cost rate × planned hours — what delivery costs you' },
+      billed: { label: 'Billed $', money: true, of: f => f.billed,
+                fmt: v => fmtMoney(v), tip: 'Bill rate × planned hours — what the client is charged. Client-side people bill nothing.' },
+      margin: { label: 'Margin $', money: true, of: f => f.billed - f.cost,
+                fmt: v => fmtMoney(v), tip: 'Billed minus cost' }
+    };
+    const LEDGER_MAX_COLS = 40;
+    let ledgerView = null;
+    function ledgerDefaults() {
+      return { row: 'person', row2: 'none', period: 'week', measure: 'planH',
+        orgs: [], people: [], side: 'all', from: '', to: '', q: '' };
+    }
+    /* The view is a VIEW, not plan data: it lives in localStorage under its own
+       key rather than in the document, so choosing a cut never dirties the file,
+       never mints a version, and never has to be merged with a teammate's. */
+    function ledgerState() {
+      if (ledgerView) return ledgerView;
+      let s = null;
+      try { s = JSON.parse(localStorage.getItem('pgt-ledger-view') || 'null'); } catch (e) {}
+      ledgerView = Object.assign(ledgerDefaults(), (s && typeof s === 'object') ? s : {});
+      if (!Array.isArray(ledgerView.orgs)) ledgerView.orgs = [];
+      if (!Array.isArray(ledgerView.people)) ledgerView.people = [];
+      return ledgerView;
+    }
+    function ledgerSet(k, v) {
+      const s = ledgerState();
+      s[k] = v;
+      try { localStorage.setItem('pgt-ledger-view', JSON.stringify(s)); } catch (e) {}
+      ledgerPaint();
+    }
+    function ledgerToggle(k, v) {
+      const s = ledgerState();
+      const arr = s[k] || [];
+      const i = arr.indexOf(v);
+      if (i < 0) arr.push(v); else arr.splice(i, 1);
+      ledgerSet(k, arr);
+    }
+    function ledgerReset() {
+      ledgerView = ledgerDefaults();
+      try { localStorage.removeItem('pgt-ledger-view'); } catch (e) {}
+      ledgerPaint();
+    }
+    function ledgerFiltersOn() {
+      const s = ledgerState();
+      return !!(s.orgs.length || s.people.length || s.side !== 'all' || s.from || s.to || String(s.q || '').trim());
+    }
+    /* REPAINTING THE CONTROLS YOU ARE TYPING IN destroys the box mid-keystroke
+       and drops focus — the same defect setRevRetainer was fixed for. The whole
+       host is rewritten because the column set changes shape, so focus and caret
+       are captured first and put back after. */
+    function ledgerPaint() {
+      const host = document.getElementById('ledgerHost');
+      if (!host) return;
+      const ae = document.activeElement;
+      const fid = (ae && ae.id) ? ae.id : '';
+      let caret = null;
+      try { if (fid && ae.selectionStart != null) caret = ae.selectionStart; } catch (e) {}
+      host.innerHTML = ledgerInnerHtml();
+      if (!fid) return;
+      const back = document.getElementById(fid);
+      if (!back) return;
+      try { back.focus(); if (caret != null && back.setSelectionRange) back.setSelectionRange(caret, caret); } catch (e) {}
+    }
+    // The top of the branch an activity hangs from — the phase, in the sense
+    // anybody reading a plan means it.
+    function ledgerPhaseOf(t) {
+      let cur = t, guard = 0;
+      while (cur && cur.parentId != null && guard++ < 60) {
+        const p = tasks.find(x => Number(x.id) === Number(cur.parentId));
+        if (!p) break;
+        cur = p;
+      }
+      return (cur && cur !== t) ? (cur.name || '(unnamed phase)') : '(no phase)';
+    }
+    function ledgerFacts() {
+      const out = [];
+      const wd = d => { try { return isWorkingDay(d); } catch (e) { return true; } };
+      leafTasks().filter(t => !t.isSummary).forEach(t => {
+        const days = [];
+        if (t.startDate instanceof Date && t.finishDate instanceof Date
+            && !isNaN(t.startDate.getTime()) && !isNaN(t.finishDate.getTime())) {
+          const end = stripTime(t.finishDate);
+          for (let d = new Date(stripTime(t.startDate)); d <= end && days.length < 800; d.setDate(d.getDate() + 1))
+            if (wd(d)) days.push(stripTime(new Date(d)).getTime());
+          // a span that falls entirely inside a shutdown still happened
+          if (!days.length) days.push(stripTime(t.startDate).getTime());
+        }
+        const base = { taskId: t.id, wbs: t.wbs || '', activity: t.name || '(unnamed)',
+          phase: ledgerPhaseOf(t), owner: t.owner || '', ownerOrg: orgOf(t.owner) || '',
+          tax: taxLabel(taxCoerce(t.taxonomy) || inferTaxonomy(t.name)) || 'Unclassified',
+          milestone: !!t.milestone };
+        const spanDays = t.milestone ? 0 : unitToWorkingDays(t.te || 0);
+        const act = t.milestone ? null : actualEffortDays(t);
+        (taskParticipants(t) || []).forEach(pr => {
+          const u = Number(pr.units) || 0;
+          const planH = spanDays * (u / 100) * 8;
+          const logH = (act == null) ? 0 : act * effortShareOf(t, pr.name) * 8;
+          if (!(planH > 0) && !(logH > 0)) return;
+          const client = isClientResource(pr.name);
+          const n = days.length || 1;
+          const rate = client ? 0 : getRate(pr.name), bill = client ? 0 : getBillRate(pr.name);
+          for (let i = 0; i < n; i++) {
+            const h = planH / n;
+            out.push(Object.assign({}, base, {
+              who: pr.name, org: orgOf(pr.name) || '', client: client, kind: 'labour',
+              role: (resources[pr.name] || {}).role || '',
+              day: days.length ? days[i] : null,
+              planH: h, logH: logH / n, cost: rate * h / 8, billed: bill * h / 8 }));
+          }
+        });
+        /* A fixed cost is nobody's time, so it cannot be a person row — but
+           leaving it out makes the ledger's Billed total short of the billing
+           table's by exactly the licences and travel, and a total that does not
+           tie is worse than no total. It rides its own row, dated to the
+           activity's finish, which is when it is incurred. */
+        const fc = Number(t.fixedCost) || 0;
+        if (fc > 0) out.push(Object.assign({}, base, {
+          who: 'Fixed costs (licences, travel…)', org: orgOf(t.owner) || '', client: false,
+          kind: 'fixed', role: 'Non-labour', day: days.length ? days[days.length - 1] : null,
+          planH: 0, logH: 0, cost: fc, billed: fc }));
+      });
+      return out;
+    }
+    function ledgerDimVal(f, dim) {
+      switch (dim) {
+        case 'person':   return f.who;
+        case 'company':  return f.org || '(no company set)';
+        case 'side':     return f.client ? 'Client-side — never billed' : 'Billable';
+        case 'phase':    return f.phase;
+        case 'activity': return (f.wbs ? f.wbs + '  ' : '') + f.activity;
+        case 'owner':    return f.owner || '(unassigned)';
+        case 'tax':      return f.tax;
+        case 'role':     return f.role || '(no role set)';
+        default:         return '';
+      }
+    }
+    function ledgerPeriod(f, per) {
+      if (per === 'all') return { k: 'all', label: 'Whole project' };
+      // sorts last on every period, so it reads as the tail of the table
+      if (f.day == null) return { k: 'zzzz-undated', label: 'Undated' };
+      const d = new Date(f.day);
+      /* "Jul 23, 2026" over a day column is three times the width of the figure
+         beneath it, and thirty-one of them turn the header into a smear of
+         overlapping text. The year is already in the column beside it and in
+         every other column on the row, so the day carries day and month only. */
+      if (per === 'day') return { k: fmtISO(d),
+        label: d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) };
+      if (per === 'week') { const k = tsWeekKey(d); return { k: k, label: 'w/c ' + fmtNice(new Date(k + 'T00:00:00')) }; }
+      if (per === 'month') return { k: fmtISO(d).slice(0, 7),
+        label: d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }) };
+      const q = Math.floor(d.getMonth() / 3) + 1;
+      return { k: d.getFullYear() + '-Q' + q, label: 'Q' + q + ' ' + d.getFullYear() };
+    }
+    function ledgerFiltered(facts, s) {
+      const from = s.from ? new Date(s.from + 'T00:00:00').getTime() : null;
+      const to = s.to ? new Date(s.to + 'T00:00:00').getTime() : null;
+      const q = String(s.q || '').trim().toLowerCase();
+      return (facts || []).filter(f => {
+        if (s.orgs.length && s.orgs.indexOf(f.org || '') < 0) return false;
+        if (s.people.length && s.people.indexOf(f.who) < 0) return false;
+        if (s.side === 'billable' && f.client) return false;
+        if (s.side === 'client' && !f.client) return false;
+        if (from != null || to != null) {
+          if (f.day == null) return false;   // a date filter cannot include what has no date
+          if (from != null && f.day < from) return false;
+          if (to != null && f.day > to) return false;
+        }
+        if (q && (f.activity + ' ' + f.wbs + ' ' + f.phase + ' ' + f.who + ' ' + (f.org || '')
+            + ' ' + f.owner + ' ' + f.tax).toLowerCase().indexOf(q) < 0) return false;
+        return true;
+      });
+    }
+    function ledgerPivot(s) {
+      const M = LEDGER_MEASURES[s.measure] || LEDGER_MEASURES.planH;
+      const all = ledgerFacts();
+      const facts = ledgerFiltered(all, s);
+      const colLabel = new Map();
+      const cells = new Map();
+      const groups = new Map();     // primary value → { total, subs: Map(secondary → total) }
+      facts.forEach(f => {
+        const p = ledgerPeriod(f, s.period);
+        if (!colLabel.has(p.k)) colLabel.set(p.k, p.label);
+        const a = ledgerDimVal(f, s.row);
+        const b = (s.row2 === 'none' || s.row2 === s.row) ? '' : ledgerDimVal(f, s.row2);
+        const v = Number(M.of(f)) || 0;
+        const g = groups.get(a) || { a: a, total: 0, subs: new Map() };
+        g.total += v;
+        if (b) g.subs.set(b, (g.subs.get(b) || 0) + v);
+        groups.set(a, g);
+        cells.set(ledgerKey(a, b, p.k), (cells.get(ledgerKey(a, b, p.k)) || 0) + v);
+      });
+      let colKeys = [...colLabel.keys()].sort();
+      const droppedCols = Math.max(0, colKeys.length - LEDGER_MAX_COLS);
+      if (droppedCols) colKeys = colKeys.slice(0, LEDGER_MAX_COLS);
+      /* Ordered by size, not alphabetically. The question behind every cut of
+         this table is "where is it going", and the answer is the top row. */
+      const rows = [...groups.values()].sort((x, y) => Math.abs(y.total) - Math.abs(x.total)
+        || String(x.a).localeCompare(String(y.a)));
+      const grand = rows.reduce((t, r) => t + r.total, 0);
+      return { M: M, facts: facts, allFacts: all, rows: rows, colKeys: colKeys,
+        colLabel: colLabel, cells: cells, grand: grand, droppedCols: droppedCols };
+    }
+    // JSON, not a delimiter character: a person named "A|B" must not collide
+    // with the pair (A, B), and a raw control byte inside an HTML file is its
+    // own small hazard for every tool that later touches the file.
+    function ledgerKey(a, b, ck) { return JSON.stringify([String(a), String(b), String(ck)]); }
+    function ledgerCell(pv, a, b, ck) { return pv.cells.get(ledgerKey(a, b, ck)) || 0; }
+    function ledgerRowTotal(pv, a, b) {
+      return pv.colKeys.reduce((t, ck) => t + ledgerCell(pv, a, b, ck), 0);
+    }
+    function ledgerHtml() {
+      if (!leafTasks().some(t => !t.isSummary)) return '';
+      return '<h3 style="font-size:0.95rem;margin:1.25rem 0 0.2rem">🔎 Work &amp; billing ledger '
+        + '<span class="help-text" style="font-weight:400">(cut the same numbers any way you need)</span></h3>'
+        + '<p class="help-text" style="margin:0 0 0.5rem">One row per person per activity per working day, pivoted. '
+        + 'Pick what the <b>rows</b> are, what the <b>columns</b> are, and which <b>number</b> you want; the filters '
+        + 'narrow the set first. Everything here is the same arithmetic as the billing table below, so with no '
+        + 'filters on, <b>Billed $</b> totals to the same figure — the tie-out is printed under the table.</p>'
+        + '<div id="ledgerHost">' + ledgerInnerHtml() + '</div>';
+    }
+    function ledgerInnerHtml() {
+      const s = ledgerState();
+      const pv = ledgerPivot(s);
+      const esc = escapeHtml;
+      /* ONE LABEL STYLE, WRITTEN OUT. A stylesheet rule elsewhere uppercases a
+         label that wraps an <input> and leaves one wrapping a <select> alone,
+         so the same row read "Rows / Columns / Number" beside "FROM / TO /
+         SEARCH" — five controls in one voice and three in another, for no
+         reason a reader could see. */
+      const LBL = 'display:flex;flex-direction:column;gap:2px;text-transform:none;letter-spacing:0;'
+        + 'font-size:0.7rem;font-weight:600;color:var(--muted)';
+      const sel = (id, key, opts) => '<label class="help-text" style="' + LBL + '">'
+        + esc(({ row: 'Rows', row2: 'then by', period: 'Columns', measure: 'Number', side: 'Show' })[key] || key)
+        + '<select id="' + id + '" class="mini-inp" style="min-width:9.5rem;width:100%" onchange="ledgerSet(\'' + key + '\',this.value)">'
+        + opts.map(o => '<option value="' + esc(o[0]) + '"' + (String(s[key]) === String(o[0]) ? ' selected' : '') + '>'
+            + esc(o[1]) + '</option>').join('') + '</select></label>';
+      const chip = (key, val, label, on) => '<button type="button" class="btn-sm" style="border-radius:999px;padding:2px 10px;'
+        + (on ? 'background:var(--primary);color:#fff;border-color:var(--primary)' : 'background:#fff;color:var(--text)')
+        + '" onclick="ledgerToggle(\'' + key + '\',' + JSON.stringify(val).replace(/"/g, '&quot;') + ')">'
+        + esc(label) + (on ? ' ✓' : '') + '</button>';
+      // Only firms and people who actually appear can be filtered to — an empty
+      // result you selected yourself from a stale list is a bug you blame on the data.
+      const orgs = [...new Set(pv.allFacts.map(f => f.org || ''))].sort((a, b) => (a || 'zzzz').localeCompare(b || 'zzzz'));
+      const people = [...new Set(pv.allFacts.map(f => f.who))].sort();
+      const controls = '<div class="no-print" style="display:flex;flex-wrap:wrap;gap:0.7rem;align-items:flex-end;'
+        + 'background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:0.6rem 0.75rem;margin-bottom:0.6rem">'
+        + sel('lgRow', 'row', LEDGER_DIMS)
+        + sel('lgRow2', 'row2', [['none', '— nothing —']].concat(LEDGER_DIMS))
+        + sel('lgPer', 'period', LEDGER_PERIODS)
+        + sel('lgMeas', 'measure', Object.keys(LEDGER_MEASURES).map(k => [k, LEDGER_MEASURES[k].label]))
+        + sel('lgSide', 'side', [['all', 'Everyone'], ['billable', 'Billable only'], ['client', 'Client-side only']])
+        /* A date box narrower than "mm/dd/yyyy" renders as "mm/□" and a search
+           box at its intrinsic width showed six characters of a placeholder
+           asking for four different things. Both need the width stated: the
+           flex basis sizes the LABEL, and the control inside it does not
+           inherit that. */
+        + '<label class="help-text" style="' + LBL + '">From'
+        + '<input id="lgFrom" class="mini-inp" type="date" style="min-width:9rem;width:100%" value="'
+        + esc(s.from) + '" onchange="ledgerSet(\'from\',this.value)"></label>'
+        + '<label class="help-text" style="' + LBL + '">To'
+        + '<input id="lgTo" class="mini-inp" type="date" style="min-width:9rem;width:100%" value="'
+        + esc(s.to) + '" onchange="ledgerSet(\'to\',this.value)"></label>'
+        + '<label class="help-text" style="' + LBL + ';flex:1 1 16rem;min-width:14rem">Search'
+        + '<input id="lgQ" class="mini-inp" type="search" style="width:100%" placeholder="activity, phase, person, company…" value="'
+        + esc(s.q) + '" oninput="ledgerSet(\'q\',this.value)"></label>'
+        + '<div style="display:flex;gap:0.35rem;align-items:center">'
+        + '<button class="btn-sm btn-secondary" onclick="exportLedgerCSV()" title="Exports exactly the table on screen — same rows, same columns, same filters">⬇ This view (.csv)</button>'
+        + '<button class="btn-sm btn-secondary" onclick="ledgerReset()"' + (ledgerFiltersOn() || s.row !== 'person' || s.period !== 'week' ? '' : ' disabled') + '>Reset</button></div>'
+        + (orgs.length > 1 ? '<div style="flex:1 1 100%;display:flex;flex-wrap:wrap;gap:0.3rem;align-items:center">'
+            + '<span class="help-text" style="min-width:5rem">Company</span>'
+            + orgs.map(o => chip('orgs', o, o || '(no company)', s.orgs.indexOf(o) >= 0)).join('') + '</div>' : '')
+        + (people.length > 1 ? '<div style="flex:1 1 100%;display:flex;flex-wrap:wrap;gap:0.3rem;align-items:center">'
+            + '<span class="help-text" style="min-width:5rem">Person</span>'
+            + people.map(p => chip('people', p, p, s.people.indexOf(p) >= 0)).join('') + '</div>' : '')
+        + '</div>';
+      if (!pv.rows.length) {
+        return controls + '<div class="empty-state" style="padding:1rem"><h3>Nothing matches</h3>'
+          + '<p>' + (ledgerFiltersOn() ? 'The filters above exclude every row. Widen them, or press Reset.'
+              : 'No activity carries assigned people with an estimate yet.') + '</p></div>';
+      }
+      const M = pv.M;
+      const num = v => (Math.abs(v) < 0.005) ? '<span class="help-text">·</span>' : esc(M.fmt(v));
+      const th = (txt, extra) => '<th style="text-align:right;white-space:nowrap' + (extra || '') + '">' + txt + '</th>';
+      const cellTd = (v, cls) => '<td class="wl-td' + (cls ? ' ' + cls : '') + '" style="text-align:right;white-space:nowrap">' + num(v) + '</td>';
+      const twoLevel = s.row2 !== 'none' && s.row2 !== s.row;
+      /* A TABLE WITH NO MIN-WIDTH DOES NOT SCROLL, IT CRUSHES. At thirty-one day
+         columns the browser honoured the container instead: headers overlapped
+         into an unreadable smear, "L. Chen" broke across three lines, and the
+         grand total lost its last character — while the wrapper reported that it
+         was scrollable, because technically it was, by four pixels. Stating the
+         width the columns actually need is what turns that back into a wide
+         table you scroll sideways. */
+      const minW = 'min-width:' + (14 + pv.colKeys.length * 5.5 + 6).toFixed(1) + 'rem';
+      const head = '<thead><tr><th style="min-width:12rem;white-space:nowrap">'
+        + esc((LEDGER_DIMS.find(d => d[0] === s.row) || [, 'Rows'])[1])
+        + (twoLevel ? ' → ' + esc((LEDGER_DIMS.find(d => d[0] === s.row2) || [, ''])[1]) : '') + '</th>'
+        + pv.colKeys.map(k => th(esc(pv.colLabel.get(k)))).join('')
+        + th('Total', ';background:#f1f5f9') + '</tr></thead>';
+      const body = pv.rows.map(g => {
+        const grpCells = pv.colKeys.map(k => {
+          let v = ledgerCell(pv, g.a, '', k);
+          if (twoLevel) [...g.subs.keys()].forEach(b => { v += ledgerCell(pv, g.a, b, k); });
+          return cellTd(v, 'wl-tot');
+        }).join('');
+        const grpRow = '<tr><td class="wl-td" style="font-weight:700;white-space:nowrap">' + esc(g.a) + '</td>'
+          + grpCells + cellTd(g.total, 'wl-tot') + '</tr>';
+        if (!twoLevel) return grpRow;
+        const subs = [...g.subs.entries()].sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]) || String(x[0]).localeCompare(String(y[0])));
+        return grpRow + subs.map(([b, tot]) => '<tr><td class="wl-td" style="padding-left:1.6rem;color:var(--muted);white-space:nowrap">'
+          + '↳ ' + esc(b) + '</td>'
+          + pv.colKeys.map(k => cellTd(ledgerCell(pv, g.a, b, k))).join('')
+          + cellTd(tot) + '</tr>').join('');
+      }).join('');
+      const foot = '<tfoot><tr><td class="wl-td wl-tot" style="white-space:nowrap">Total — ' + esc(M.label) + '</td>'
+        + pv.colKeys.map(k => cellTd(pv.rows.reduce((t, g) => {
+            let v = ledgerCell(pv, g.a, '', k);
+            if (twoLevel) [...g.subs.keys()].forEach(b => { v += ledgerCell(pv, g.a, b, k); });
+            return t + v; }, 0), 'wl-tot')).join('')
+        + cellTd(pv.grand, 'wl-tot') + '</tr></tfoot>';
+      const notes = [];
+      if (pv.droppedCols) notes.push('<span style="color:var(--warn)">⚠ ' + pv.droppedCols + ' further column'
+        + (pv.droppedCols === 1 ? ' is' : 's are') + ' not shown — this table stops at ' + LEDGER_MAX_COLS
+        + '. Narrow the date range or switch the columns to a longer period; the CSV has the same limit, '
+        + 'so filter before exporting rather than after.</span>');
+      /* THE TIE-OUT, COMPUTED. With nothing filtered out, Billed $ must equal
+         the billing table's Σ Total to the dollar; if it ever does not, one of
+         the two is wrong and the reader is told which figure to distrust rather
+         than left to notice on their own. */
+      if (s.measure === 'billed' && !ledgerFiltersOn()) {
+        let bt = null;
+        try { bt = billingData().totBill; } catch (e) {}
+        if (bt != null) notes.push(Math.abs(bt - pv.grand) <= 1
+          ? '✓ Ties to the billing table below: ' + fmtMoney(pv.grand) + '.'
+          : '<span style="color:var(--critical)">⚠ This totals ' + fmtMoney(pv.grand)
+            + ' but the billing table below totals ' + fmtMoney(bt) + '. They are built from the same rates and '
+            + 'should agree — treat both as suspect until the difference is explained.</span>');
+      }
+      if (ledgerFiltersOn()) notes.push('Filtered: ' + pv.facts.length + ' of ' + pv.allFacts.length
+        + ' person-days included.');
+      /* The measure's own tip already ends the sentence, and the Billed tip
+         already says client-side people are never billed — printing the note as
+         well put "Client-side people bill nothing" on the line twice, followed
+         by two full stops. One voice per fact. */
+      const tip = String(M.tip || '').replace(/\.\s*$/, '');
+      notes.push(esc(M.label) + ' — ' + esc(tip) + '.');
+      return controls + '<div class="table-wrap"><table class="wl-t" style="font-size:var(--t-sm);' + minW + '">'
+        + head + '<tbody>' + body + '</tbody>' + foot + '</table></div>'
+        + '<p class="help-text" style="margin-top:0.35rem">' + notes.join(' ') + '</p>';
+    }
+    function exportLedgerCSV() {
+      const s = ledgerState();
+      const pv = ledgerPivot(s);
+      if (!pv.rows.length) { alert('Nothing matches the current filters — widen them and try again.'); return; }
+      const twoLevel = s.row2 !== 'none' && s.row2 !== s.row;
+      const M = pv.M;
+      const n = v => (Math.round((Number(v) || 0) * 100) / 100);
+      const head = [(LEDGER_DIMS.find(d => d[0] === s.row) || [, 'Rows'])[1]]
+        .concat(twoLevel ? [(LEDGER_DIMS.find(d => d[0] === s.row2) || [, ''])[1]] : [])
+        .concat(pv.colKeys.map(k => pv.colLabel.get(k))).concat(['Total (' + M.label + ')']);
+      const out = [head];
+      pv.rows.forEach(g => {
+        const grp = pv.colKeys.map(k => { let v = ledgerCell(pv, g.a, '', k);
+          if (twoLevel) [...g.subs.keys()].forEach(b => { v += ledgerCell(pv, g.a, b, k); });
+          return n(v); });
+        out.push([g.a].concat(twoLevel ? [''] : []).concat(grp).concat([n(g.total)]));
+        if (twoLevel) [...g.subs.entries()].sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]))
+          .forEach(([b, tot]) => out.push([g.a, b]
+            .concat(pv.colKeys.map(k => n(ledgerCell(pv, g.a, b, k)))).concat([n(tot)])));
+      });
+      out.push(['TOTAL'].concat(twoLevel ? [''] : [])
+        .concat(pv.colKeys.map(k => n(pv.rows.reduce((t, g) => { let v = ledgerCell(pv, g.a, '', k);
+          if (twoLevel) [...g.subs.keys()].forEach(b => { v += ledgerCell(pv, g.a, b, k); });
+          return t + v; }, 0)))).concat([n(pv.grand)]));
+      /* The filters travel WITH the file. A pivot mailed to finance with no
+         record of what was excluded is a number nobody can reproduce. */
+      out.push([]);
+      out.push(['View', M.label + ' by ' + (LEDGER_DIMS.find(d => d[0] === s.row) || [, ''])[1]
+        + (twoLevel ? ' → ' + (LEDGER_DIMS.find(d => d[0] === s.row2) || [, ''])[1] : '')
+        + ', columns by ' + (LEDGER_PERIODS.find(p => p[0] === s.period) || [, ''])[1]]);
+      out.push(['Filters', ledgerFiltersOn()
+        ? [s.orgs.length ? 'company: ' + s.orgs.map(o => o || '(none)').join(' / ') : '',
+           s.people.length ? 'person: ' + s.people.join(' / ') : '',
+           s.side !== 'all' ? (s.side === 'billable' ? 'billable only' : 'client-side only') : '',
+           s.from ? 'from ' + s.from : '', s.to ? 'to ' + s.to : '',
+           String(s.q || '').trim() ? 'search: ' + s.q : ''].filter(Boolean).join('; ')
+        : 'none — this is the whole plan']);
+      if (pv.droppedCols) out.push(['Truncated', pv.droppedCols + ' further period column(s) omitted at the '
+        + LEDGER_MAX_COLS + '-column limit — narrow the date range and export again']);
+      download(safeName() + '-ledger.csv', out.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
+      flashSaved('⬇ Ledger exported — ' + pv.rows.length + ' row' + (pv.rows.length === 1 ? '' : 's')
+        + ' × ' + pv.colKeys.length + ' period' + (pv.colKeys.length === 1 ? '' : 's') + '.');
     }
     function resourceEffortHtml() {
       const rows = resourceEffortData();

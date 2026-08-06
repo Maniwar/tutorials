@@ -670,7 +670,223 @@ const DATA = FIXTURE();
       resources[who].orgId = keptId; resources[who].org = keptOrg;
     })();
 
-    return { contradictions: bad, count: n, recount: mine, built,
+    /* ══ THE LEDGER IS A VIEW OF THE BILLING TABLE, NOT A RIVAL TO IT ═══════
+       A fourth money surface that disagrees with the other three is worse than
+       no fourth surface, so the identity that matters is arithmetic: with no
+       filters, Billed $ summed over every person-day fact MUST equal the
+       billing table's Σ Total. Everything else here guards the cuts — that
+       narrowing the set actually narrows it, that a period split still adds
+       back to the whole, and that undated work is carried rather than dropped. */
+    const ledger = (() => {
+      const keep = localStorage.getItem('pgt-ledger-view');
+      const st = () => ledgerState();
+      const setAll = o => { ledgerView = Object.assign(ledgerDefaults(), o); };
+      const sum = s2 => { const p = ledgerPivot(s2); return { grand: p.grand, rows: p.rows.length,
+        cols: p.colKeys.length, facts: p.facts.length, all: p.allFacts.length }; };
+      const out = {};
+
+      setAll({ measure: 'billed', period: 'all', row: 'person' });
+      const led = sum(st());
+      const bt = billingData().totBill;
+      out.tieGap = Math.abs(led.grand - bt);
+      if (out.tieGap > 1) say('Ledger', 'unfiltered Billed $ totals ' + led.grand.toFixed(0)
+        + ' but the billing table totals ' + bt.toFixed(0) + ' — the two are built from the same rates '
+        + 'and one of them is wrong');
+      if (!led.rows) say('Ledger', 'the pivot produced no rows at all on a fixture with staffed work');
+
+      /* A PERIOD SPLIT IS A REGROUPING, NOT A RECOMPUTE. Spreading the same
+         hours across days and adding them back must land on the same number;
+         if it does not, the per-day division has lost or duplicated work, which
+         is exactly the defect the weekly timesheet had. */
+      ['day', 'week', 'month', 'quarter'].forEach(p => {
+        setAll({ measure: 'billed', period: p, row: 'person' });
+        const g = sum(st());
+        if (Math.abs(g.grand - led.grand) > 1)
+          say('Ledger', 'splitting the columns by ' + p + ' changes the total from '
+            + led.grand.toFixed(0) + ' to ' + g.grand.toFixed(0) + ' — the split is not a regrouping');
+        out['by' + p] = g.cols;
+      });
+
+      // Every row dimension must also preserve the total: they are cuts of one set.
+      LEDGER_DIMS.forEach(([d]) => {
+        setAll({ measure: 'billed', period: 'all', row: d });
+        const g = sum(st());
+        if (Math.abs(g.grand - led.grand) > 1)
+          say('Ledger', 'grouping the rows by "' + d + '" changes the total to ' + g.grand.toFixed(0)
+            + ' — a regrouping is not allowed to change the sum');
+        if (!g.rows) say('Ledger', 'grouping by "' + d + '" produces no rows');
+      });
+
+      /* THE DISCRIMINATING FILTER CASE, CONSTRUCTED. A filter that excludes
+         nothing proves nothing, so the check picks a person who is genuinely
+         only part of the set and asserts BOTH directions: their slice is
+         smaller than the whole, and it is not empty. */
+      const people = [...new Set(ledgerFacts().map(f => f.who))];
+      out.people = people.length;
+      if (people.length < 2) say('Ledger', 'the fixture has fewer than two people, so the person '
+        + 'filter cannot be shown to exclude anything and this check is vacuous');
+      else {
+        setAll({ measure: 'planH', period: 'all', row: 'person' });
+        const whole = sum(st());
+        setAll({ measure: 'planH', period: 'all', row: 'person', people: [people[0]] });
+        const one = sum(st());
+        out.filtered = one.facts;
+        if (!(one.facts > 0)) say('Ledger', 'filtering to "' + people[0] + '" excluded everything');
+        if (!(one.facts < whole.facts)) say('Ledger', 'filtering to one of ' + people.length
+          + ' people excluded nothing — the filter is not applied');
+        if (!(one.grand < whole.grand - 0.01)) say('Ledger', 'filtering to one person left the total unchanged');
+        if (one.rows !== 1) say('Ledger', 'filtering to one person left ' + one.rows + ' rows');
+      }
+
+      /* CLIENT-SIDE TIME IS REAL WORK THAT BILLS NOTHING — the distinction the
+         whole panel exists to keep, so the ledger must reproduce it: hours
+         survive the client-only filter, money does not.
+
+         THE BILL RATE IS SET FIRST, deliberately. The fixture's client-side
+         people carry no rate, so "they bill nothing" was true for the boring
+         reason and a build that billed them at full rate produced $0 all the
+         same — the check passed on exactly the defect it names. Giving them a
+         rate is what makes the zero mean "client-side", not "unpriced". */
+      const clientWho = [...new Set(ledgerFacts().filter(f => f.client).map(f => f.who))];
+      out.anyClient = clientWho.length;
+      if (!clientWho.length) say('Ledger', 'no client-side person in the fixture, so the rule that they '
+        + 'never bill cannot be shown to hold and this check is vacuous');
+      else {
+        const keptRate = clientWho.map(w => (resources[w] || {}).billRate);
+        clientWho.forEach(w => { if (!resources[w]) resources[w] = { capacity: 100 }; resources[w].billRate = 1500; });
+        setAll({ measure: 'planH', period: 'all', row: 'person', side: 'client' });
+        const ch = sum(st());
+        setAll({ measure: 'billed', period: 'all', row: 'person', side: 'client' });
+        const cm = sum(st());
+        if (!(ch.grand > 0)) say('Ledger', 'client-side people show no hours, though they do scheduled work');
+        if (Math.abs(cm.grand) > 0.5) say('Ledger', 'client-side people carry a bill rate and the ledger '
+          + 'charges the client ' + cm.grand.toFixed(0) + ' for them — client-side work is never billed');
+        clientWho.forEach((w, i) => { if (keptRate[i] == null) delete resources[w].billRate; else resources[w].billRate = keptRate[i]; });
+      }
+
+      /* THE COMPANY FILTER, ON A FIXTURE THAT MAY HAVE ONE FIRM IN IT. Filtering
+         to the only company present excludes nothing, so a filter that is never
+         applied passes. A second firm is put on one person for the duration of
+         the check and taken off again. */
+      (() => {
+        const whoAll = [...new Set(ledgerFacts().map(f => f.who))];
+        if (whoAll.length < 2) { out.orgCheck = 'vacuous — one person'; return; }
+        const subject = whoAll[0];
+        const keptOrg2 = (resources[subject] || {}).org, keptId2 = (resources[subject] || {}).orgId;
+        if (!resources[subject]) resources[subject] = { capacity: 100 };
+        resources[subject].orgId = ''; resources[subject].org = 'ZZ Test Partners Ltd';
+        setAll({ measure: 'planH', period: 'all', row: 'person' });
+        const whole = sum(st());
+        setAll({ measure: 'planH', period: 'all', row: 'person', orgs: ['ZZ Test Partners Ltd'] });
+        const one = sum(st());
+        out.orgFiltered = one.facts;
+        if (!(one.facts > 0)) say('Ledger', 'filtering to a company that one person belongs to excluded everything');
+        if (!(one.facts < whole.facts)) say('Ledger', 'filtering to one of ' + whoAll.length
+          + ' people’s companies excluded nothing — the company filter is not applied');
+        if (one.rows !== 1) say('Ledger', 'filtering to a one-person company left ' + one.rows + ' rows');
+        resources[subject].org = keptOrg2; resources[subject].orgId = keptId2;
+      })();
+
+      /* KEYS THAT CONCATENATE COLLIDE. Grouping Company → Person, a firm called
+         "AB" with a person "C" lands in the same cell as firm "A" with person
+         "BC" the moment the key is a join rather than a structure — one row's
+         money silently added to another's, which is the kind of defect a
+         reader can only find by adding the column up by hand. */
+      (() => {
+        const k1 = ledgerKey('AB', 'C', 'w1'), k2 = ledgerKey('A', 'BC', 'w1');
+        if (k1 === k2) say('Ledger', 'the pivot key for (AB, C) is identical to the key for (A, BC), so two '
+          + 'different rows share one cell and their money is added together');
+        if (ledgerKey('A', 'B', 'w1') !== ledgerKey('A', 'B', 'w1'))
+          say('Ledger', 'the same row and period produce two different keys');
+      })();
+
+      /* A DATE WINDOW THAT EXCLUDES NOTHING IS NOT A DATE WINDOW. Constructed
+         against the real span so it cannot pass by accident on a fixture whose
+         dates all sit inside whatever range was hardcoded. */
+      const days = ledgerFacts().map(f => f.day).filter(x => x != null).sort((a2, b3) => a2 - b3);
+      if (days.length < 2) out.dateCheck = 'vacuous — fewer than two dated facts';
+      else {
+        const mid = new Date(days[Math.floor(days.length / 2)]);
+        setAll({ measure: 'planH', period: 'all', row: 'person', from: fmtISO(mid) });
+        const late = sum(st());
+        if (!(late.facts > 0)) say('Ledger', 'a From date at the midpoint of the plan excluded every row');
+        if (!(late.facts < days.length)) say('Ledger', 'a From date at the midpoint of the plan excluded nothing');
+      }
+
+      // The screen itself, not only the arithmetic behind it.
+      setAll({ measure: 'billed', period: 'week', row: 'company', row2: 'person' });
+      const html = ledgerInnerHtml();
+      const flat = strip(html);
+      if (!/Total — Billed \$/.test(flat)) say('Ledger', 'the table draws no labelled total row');
+      if (flat.indexOf('↳') < 0) say('Ledger', 'a second grouping level was chosen and no sub-rows were drawn');
+      if (!/Company/.test(flat)) say('Ledger', 'the header does not name the dimension the rows are grouped by');
+      if (html.indexOf('exportLedgerCSV()') < 0) say('Ledger', 'the view cannot be exported');
+      setAll({ measure: 'billed', period: 'all', row: 'person' });
+      if (strip(ledgerInnerHtml()).indexOf('Ties to the billing table') < 0)
+        say('Ledger', 'the unfiltered Billed view does not print its tie-out to the billing table');
+      out.rendered = flat.length;
+
+      /* FIXED COSTS ARE NOT ANYBODY'S TIME, and dropping them is precisely how
+         the tie-out above would silently break on a plan that has them.
+
+         CONSTRUCTED, because the fixture carries none — so "the ledger has a
+         fixed-cost row" was trivially satisfied by a build that has no such
+         concept, and the tie-out could not come apart no matter what the code
+         did. A licence is put on one activity, the identity is checked while it
+         is there, and it is taken off again. */
+      out.fixed = (() => {
+        const t4 = leafTasks().find(x => !x.isSummary && !x.milestone);
+        if (!t4) { say('Ledger', 'no leaf activity to hang a fixed cost on — this check is vacuous'); return null; }
+        const kept4 = t4.fixedCost;
+        t4.fixedCost = 4321;
+        const facts4 = ledgerFacts();
+        const fixedFacts = facts4.filter(f => f.kind === 'fixed');
+        const res = { rows: fixedFacts.length, sum: fixedFacts.reduce((a2, f) => a2 + f.billed, 0) };
+        if (!fixedFacts.length) say('Ledger', 'a 4,321 licence was put on an activity and the ledger has no row '
+          + 'for it — the Billed total is now short of the billing table by exactly the non-labour cost');
+        else if (Math.abs(res.sum - 4321) > 0.5) say('Ledger', 'the 4,321 licence appears in the ledger as '
+          + res.sum.toFixed(0));
+        setAll({ measure: 'billed', period: 'all', row: 'person' });
+        const g4 = sum(st()), b4 = billingData().totBill;
+        res.tieGap = Math.abs(g4.grand - b4);
+        if (res.tieGap > 1) say('Ledger', 'with a fixed cost on the plan the ledger totals ' + g4.grand.toFixed(0)
+          + ' and the billing table totals ' + b4.toFixed(0) + ' — non-labour money is being counted by one and not the other');
+        if (kept4 == null) delete t4.fixedCost; else t4.fixedCost = kept4;
+        return res;
+      })();
+
+      ledgerView = null;
+      try { if (keep == null) localStorage.removeItem('pgt-ledger-view'); else localStorage.setItem('pgt-ledger-view', keep); } catch (e) {}
+      return out;
+    })();
+
+    /* ══ TWO TOTALS ON ONE SCREEN, AND THE GAP NAMED ═══════════════════════ */
+    const priceGap = (() => {
+      const pv = priceVsRateCard();
+      if (!pv) { say('Price vs rate card', 'the comparison could not be computed at all'); return null; }
+      if (Math.abs(pv.rateCard - billingData().totBill) > 1)
+        say('Price vs rate card', 'the "rate-card sum" it quotes (' + pv.rateCard.toFixed(0)
+          + ') is not the billing table total (' + billingData().totBill.toFixed(0) + ')');
+      if (Math.abs(pv.fee - revenueAtCompletion()) > 1)
+        say('Price vs rate card', 'the fee it quotes is not the fee the payment schedule uses');
+      /* READ OFF THE PANEL THAT DRAWS IT, not off the builder. Calling
+         priceVsRateCardHtml() directly proves the sentence can be produced; it
+         says nothing about whether the billing table actually carries it, and
+         the first version of this check passed on a build where the call site
+         had been deleted. */
+      const flat = strip(billingBreakdownHtml());
+      if (flat.indexOf('rate-card sum') < 0) say('Price vs rate card', 'the billing table does not carry the '
+        + 'explanation, so the two totals still sit on one screen with the gap unnamed');
+      if (!/fee/.test(flat)) say('Price vs rate card', 'the panel never names the fee');
+      if (Math.abs(pv.gap) > 0.5 && !/(more|less)/.test(flat))
+        say('Price vs rate card', 'the two figures differ by ' + Math.abs(pv.gap).toFixed(0)
+          + ' and the sentence does not say the difference exists');
+      if (!pv.why || pv.why.length < 40)
+        say('Price vs rate card', 'the gap is stated and never explained');
+      return { rateCard: Math.round(pv.rateCard), fee: Math.round(pv.fee), gap: Math.round(pv.gap) };
+    })();
+
+    return { contradictions: bad, ledger, priceGap, count: n, recount: mine, built,
              overPeople: rl.resourcesOver, atCapacity, ptoCase, doneRule, levelling, heatmap,
              lintFindings: lint.map(f => String(f.finding).slice(0, 80)) };
   });

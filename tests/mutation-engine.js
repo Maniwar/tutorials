@@ -1642,6 +1642,100 @@ const MUTANTS = [
   { what: 'baseline history: the two documents share one box with no way between them',
     find: "      strip.innerHTML = tabs.length < 2 ? '' : '<span class=\"seg\">'",
     with: "      strip.innerHTML = tabs.length < 99 ? '' : '<span class=\"seg\">'" },
+
+  /* The narrative promises a longer engagement than the schedule funds. Both
+     halves are written from the same brief and neither is checked against the
+     other, so the contradiction leaves the building inside the contract. */
+
+  { what: 'week lint: the schedule span is measured from the start dates alone, so it is always one week',
+    find: '      return Math.max(1, Math.ceil((b - a + 86400000) / (7 * 86400000)));',
+    with: '      return 1;' },
+
+  { what: 'week lint: a range ("Weeks 1-8") is read as its first number, so the far end is never seen',
+    find: '      while ((m = re.exec(txt))) { out.add(+m[1]); if (m[2]) out.add(+m[2]); }',
+    with: '      while ((m = re.exec(txt))) { out.add(+m[1]); }' },
+
+  { what: 'week lint: "an 8-week proof of value" is not a week reference',
+    find: '      const re2 = /\\b(\\d{1,2})\\s*-\\s*week\\b/gi;\n      while ((m = re2.exec(txt))) out.add(+m[1]);',
+    with: '      const re2 = /\\b(\\d{1,2})\\s*-\\s*week\\b/gi;' },
+
+  { what: 'week lint: a week past the end of the schedule is counted as inside it',
+    find: '      const over = sowWeekRefs(html).filter(n => n > span);',
+    with: '      const over = sowWeekRefs(html).filter(n => n > span + 100);' },
+
+  { what: 'week lint: the warning is computed and never drawn on the document',
+    find: "        ${(() => { const w = (typeof sowWeekLint === 'function') ? sowWeekLint(sowSections(d, narrative, td, th, showEffort, showRates, scopeRows)) : null;",
+    with: '        ${(() => { const w = null;' },
+
+  /* Seventy quality attributes in one flat run is a third of the contract and
+     nobody reads to the end of it. */
+
+  { what: 'NFR: the attribute prefix is not parsed, so every requirement lands in one heap',
+    find: '              const g = m ? m[1].trim() : \'Other\';',
+    with: "              const g = 'Other';" },
+
+  { what: 'NFR: the group heading is computed and the rows print without it',
+    find: '        ${keys.map(k => `<tr><td colspan="2" style="${td};background:#f8fafc;font-weight:700;font-size:12px">${h(k)}</td></tr>`',
+    with: '        ${keys.map(k => ``' },
+
+  { what: 'NFR: only the first group is printed and the rest are dropped',
+    find: '            const keys = [...groups.keys()].sort((a, b) => {',
+    with: '            const keys = [...groups.keys()].slice(0, 1).sort((a, b) => {' },
+
+  /* The ledger is a VIEW of the billing table. Every mutant here turns it into
+     a rival to it — a fourth money surface that disagrees with the other three,
+     which is worse than not having it. */
+
+  { what: 'ledger: fixed costs are nobody’s time, so they are left out and the total no longer ties',
+    find: '        const fc = Number(t.fixedCost) || 0;\n        if (fc > 0) out.push(',
+    with: '        const fc = 0;\n        if (fc > 0) out.push(' },
+
+  { what: 'ledger: the per-day split repeats the whole activity on every day instead of dividing it',
+    find: '            const h = planH / n;',
+    with: '            const h = planH;' },
+
+  { what: 'ledger: the person filter is accepted and never applied',
+    find: '        if (s.people.length && s.people.indexOf(f.who) < 0) return false;',
+    with: '        if (false) return false;' },
+
+  { what: 'ledger: the company filter is accepted and never applied',
+    find: "        if (s.orgs.length && s.orgs.indexOf(f.org || '') < 0) return false;",
+    with: '        if (false) return false;' },
+
+  { what: 'ledger: the date window is accepted and never applied',
+    find: '          if (from != null && f.day < from) return false;',
+    with: '          if (false) return false;' },
+
+  { what: 'ledger: client-side people are billed at their bill rate like everybody else',
+    find: '          const rate = client ? 0 : getRate(pr.name), bill = client ? 0 : getBillRate(pr.name);',
+    with: '          const rate = getRate(pr.name), bill = getBillRate(pr.name);' },
+
+  { what: 'ledger: the second grouping level is chosen and its rows are never drawn',
+    find: "        return grpRow + subs.map(([b, tot]) => '<tr><td class=\"wl-td\" style=\"padding-left:1.6rem;color:var(--muted)\">'",
+    with: "        return grpRow + [].map(([b, tot]) => '<tr><td class=\"wl-td\" style=\"padding-left:1.6rem;color:var(--muted)\">'" },
+
+  { what: 'ledger: the tie-out to the billing table is never printed, so nobody can tell the two agree',
+    find: "      if (s.measure === 'billed' && !ledgerFiltersOn()) {",
+    with: '      if (false) {' },
+
+  { what: 'ledger: a person named "A" and the pair (A, B) collide in one cell',
+    find: '    function ledgerKey(a, b, ck) { return JSON.stringify([String(a), String(b), String(ck)]); }',
+    with: "    function ledgerKey(a, b, ck) { return String(a) + String(b) + String(ck); }" },
+
+  /* Two totals on one screen. The gap between them is always one of three
+     specific things and the app knows which; these put it back to a mystery. */
+
+  { what: 'price gap: the "rate-card sum" it quotes is the fee, so the two can never differ',
+    find: '      const rateCard = (Number(f.labor) || 0) + (Number(f.fixedTotal) || 0);   // == billingData().totBill',
+    with: '      const rateCard = Math.max(0, Number(f.price) || 0);' },
+
+  { what: 'price gap: the difference is computed and never drawn beside the table it contradicts',
+    find: '        ${priceVsRateCardHtml()}`;',
+    with: '        `;' },
+
+  { what: 'NFR: the section never says how much it holds',
+    find: '        <p style="font-size:11.5px;color:#64748b;margin:4px 0 0">${rows.length} requirement${rows.length === 1 ? \'\' : \'s\'} across ${keys.length} categor${keys.length === 1 ? \'y\' : \'ies\'}',
+    with: '        <p style="font-size:11.5px;color:#64748b;margin:4px 0 0">${\'\'}' },
 ];
 
 /* Filtered AFTER the array is written, never inside it, so the anchor audit and
