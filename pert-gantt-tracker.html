@@ -3556,7 +3556,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0416</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0425</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3602,8 +3602,8 @@ Or say what you want, in your own words:
             <div id="mOwnerRole" style="margin-top:2px"></div>
           </div>
           <div class="form-group">
-            <span class="fg-head"><label for="mUnits">Units %</label><button type="button" class="info-icon" aria-label="About Units %" data-help="How much of the resource this task consumes while active. 100 = full-time. Two 100% tasks at once for one person = over-allocated.">i</button></span>
-            <input id="mUnits" type="number" min="0" step="5" value="100" oninput="refreshAutoActualCost()" />
+            <span class="fg-head"><label for="mUnits">Units % <span class="help-text" style="text-transform:none;font-weight:400">— span → work</span></label><button type="button" class="info-icon" aria-label="About Units %" data-help="How much of the resource this task consumes while it is open. 100 = full-time. This is also the converter between the two quantities on this form: the O/M/P boxes are an ELAPSED span, and the WORK inside it is that span times this number. Four elapsed days at 20% is 0.8 person-days of work. Two 100% tasks at once for one person = over-allocated.">i</button></span>
+            <input id="mUnits" type="number" min="0" step="5" value="100" oninput="refreshAutoActualCost(); ompHintUpd();" />
           </div>
           <div class="form-group">
             <span class="fg-head"><label for="mCurve">Spend shape</label><button type="button" class="info-icon" aria-label="About spend shape" data-help="WHEN inside this activity's window the money is expected, not how much. The total is identical under every shape — this moves the spend curve's path, and with it what the plan says should have been spent BY TODAY, which is the figure the Budget bar is measured against. Flat is the default and is wrong in the two places money concentrates: mobilisation is front-loaded, integration is back-loaded, and a flat curve is early on one and late on the other. It changes no total, no margin and no variance against the envelope.">i</button></span>
@@ -15829,7 +15829,7 @@ Or say what you want, in your own words:
         worklist: () => worklistHtml()
           || '<div class="empty-state"><h3>Nothing to list</h3><p>The worklist reads open activities per owner. '
              + 'Assign owners on the Tasks tab and it fills itself in.</p></div>',
-        cost:     () => resourceEffortHtml() + billingBreakdownHtml() + cashTermsPanelHtml()
+        cost:     () => resourceEffortHtml() + timesheetHtml() + billingBreakdownHtml() + cashTermsPanelHtml()
       };
       cont.innerHTML = (PANELS[resTab] || PANELS.team)();
 
@@ -20632,7 +20632,8 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       L.push('STATUS UPDATE REQUEST — ' + projName() + scopeNote + ' — ' + fmtNice(new Date()));
       L.push('');
       L.push('Please update your items below: replace ____ with today\'s % complete (or "done"),');
-      L.push('add the actual finish date for anything completed, the TIME SPENT (e.g. 90m, 1.5h, 2d)');
+      L.push('add the actual finish date for anything completed, and the TIME SPENT — the WORK you actually did '
+        + '(e.g. 90m, 1.5h, 2d), not how long the task was open. Open for a week but worked three hours = 3h');
       L.push('so we can compare actuals against estimates, and flag blockers.');
       L.push('Reply with the whole list — it gets pasted straight back into the plan.');
       owners.forEach(o => {
@@ -30760,6 +30761,162 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         + 'terms above this is a <b>projection</b>, not a ledger — to record what was actually invoiced and '
         + 'received, put it on the activity itself (<b>Invoiced $</b> and <b>Received $</b> in the editor), and '
         + 'the panel will then tell you how much finished work has never been charged for.</p>';
+    }
+    /* ═══ THE TIMESHEET ═══════════════════════════════════════════════════════
+       Hours, per person, per activity, per week — planned against logged.
+
+       IN HOURS, not days, because that is what a timesheet is and what anybody
+       reconciling one against an invoice has in front of them. The project unit
+       stays days everywhere else; this converts once, at the edge.
+
+       PLANNED is the span times the allocation: what the plan expects of this
+       person. LOGGED is their share of what was recorded against the activity,
+       normalised across the participants so the pieces add back to the number
+       somebody typed. Those are the two definitions the rest of the file now
+       uses, and this report exists to be reconciled against a client invoice,
+       so it must not invent a third.
+
+       A WEEK IS THE PLANNED WEEK, spread evenly across the activity's working
+       span. It is a projection of when the work falls, not a record of when it
+       happened — the app knows the plan and the totals, and does not know which
+       Tuesday somebody sat down. Said on the report rather than implied. */
+    function timesheetRows(opts) {
+      const hb = (opts && opts.baseline != null) ? !!opts.baseline : hasBaseline();
+      const out = [];
+      leafTasks().filter(t => !t.isSummary && !t.milestone).forEach(t => {
+        const parts = taskParticipants(t) || [];
+        if (!parts.length) return;
+        const spanDays = unitToWorkingDays((hb && t.baseTe != null) ? t.baseTe : (t.te || 0));
+        const act = actualEffortDays(t);
+        parts.forEach(pr => {
+          const u = Number(pr.units) || 0;
+          const planH = spanDays * (u / 100) * 8;
+          const logH = act == null ? null : act * effortShareOf(t, pr.name) * 8;
+          if (!(planH > 0) && !(logH > 0)) return;
+          out.push({ who: pr.name, client: isClientResource(pr.name),
+            wbs: t.wbs || '', name: t.name, id: t.id, units: u,
+            start: t.startDate || null, finish: t.finishDate || null,
+            spanDays: spanDays, planH: planH, logH: logH,
+            varH: (logH == null) ? null : logH - planH,
+            rate: isClientResource(pr.name) ? 0 : rawBillRate(pr.name),
+            pct: t.percentComplete || 0 });
+        });
+      });
+      out.sort((a, b) => a.who.localeCompare(b.who)
+        || ((a.start ? a.start.getTime() : 0) - (b.start ? b.start.getTime() : 0))
+        || String(a.wbs).localeCompare(String(b.wbs)));
+      return out;
+    }
+    // Monday-anchored ISO week key, so the columns line up with a payroll week
+    function tsWeekKey(d) {
+      if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+      const x = stripTime(new Date(d));
+      x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+      return fmtISO(x);
+    }
+    function timesheetByWeek(rows) {
+      const weeks = new Map();
+      (rows || []).forEach(r => {
+        if (!(r.start instanceof Date) || !(r.finish instanceof Date)) return;
+        // spread the planned hours evenly across the working days of the span
+        const days = [];
+        // a report must not take the page down; an unusable calendar falls back
+        // to every day rather than throwing out of a panel somebody opened
+        const wd = d => { try { return isWorkingDay(d); } catch (e) { return true; } };
+        for (let d = new Date(stripTime(r.start)); d <= stripTime(r.finish); d.setDate(d.getDate() + 1))
+          if (wd(d)) days.push(new Date(d));
+        if (!days.length) return;
+        const perDayPlan = r.planH / days.length;
+        const perDayLog = r.logH == null ? null : r.logH / days.length;
+        days.forEach(d => {
+          const k = r.who + '|' + tsWeekKey(d);
+          if (!weeks.has(k)) weeks.set(k, { who: r.who, week: tsWeekKey(d), planH: 0, logH: 0, hasLog: false });
+          const w = weeks.get(k);
+          w.planH += perDayPlan;
+          if (perDayLog != null) { w.logH += perDayLog; w.hasLog = true; }
+        });
+      });
+      return [...weeks.values()].sort((a, b) => a.who.localeCompare(b.who) || a.week.localeCompare(b.week));
+    }
+    function tsH(n) { return (Math.round((n || 0) * 10) / 10).toLocaleString() + 'h'; }
+    function timesheetHtml() {
+      const rows = timesheetRows();
+      if (!rows.length) return '';
+      const byWho = new Map();
+      rows.forEach(r => {
+        if (!byWho.has(r.who)) byWho.set(r.who, { who: r.who, client: r.client, rate: r.rate,
+          planH: 0, logH: 0, hasLog: false, n: 0 });
+        const w = byWho.get(r.who);
+        w.planH += r.planH; w.n++;
+        if (r.logH != null) { w.logH += r.logH; w.hasLog = true; }
+      });
+      const people = [...byWho.values()].sort((a, b) => b.planH - a.planH);
+      const totPlan = people.reduce((a, x) => a + x.planH, 0);
+      const totLog = people.reduce((a, x) => a + (x.hasLog ? x.logH : 0), 0);
+      const anyLog = people.some(x => x.hasLog);
+      const wk = timesheetByWeek(rows);
+      const weekCols = [...new Set(wk.map(w => w.week))].sort();
+      const cell = (v, cls) => '<td class="wl-td' + (cls ? ' ' + cls : '') + '" style="text-align:right">' + v + '</td>';
+      const summary = '<div class="table-wrap"><table class="wl-t" style="font-size:var(--t-sm)">'
+        + '<thead><tr><th>Person</th><th style="text-align:right">Activities</th>'
+        + '<th style="text-align:right" title="Elapsed span × their Units %, in hours — the work the plan expects of them">Planned</th>'
+        + '<th style="text-align:right" title="Their share of the time logged against each activity, normalised across the participants">Logged</th>'
+        + '<th style="text-align:right">Variance</th>'
+        + '<th style="text-align:right" title="Planned hours × their bill rate. Client-side people are never billed.">Value at bill rate</th></tr></thead><tbody>'
+        + people.map(x => '<tr><td class="wl-td" style="font-weight:600">' + escapeHtml(x.who)
+            + (x.client ? ' <span class="badge badge-info">client</span>' : '') + '</td>'
+            + cell(x.n) + cell(tsH(x.planH))
+            + cell(x.hasLog ? tsH(x.logH) : '<span class="help-text">—</span>')
+            + cell(x.hasLog ? (Math.abs(x.logH - x.planH) < 0.05 ? '<span class="help-text">on plan</span>'
+                : '<b style="color:' + (x.logH > x.planH ? 'var(--critical)' : 'var(--success)') + '">'
+                  + (x.logH > x.planH ? '+' : '') + tsH(x.logH - x.planH) + '</b>') : '<span class="help-text">—</span>')
+            + cell(x.client || !(x.rate > 0) ? '<span class="help-text">n/a</span>' : fmtMoney(x.planH * x.rate))
+            + '</tr>').join('')
+        + '</tbody><tfoot><tr><td class="wl-td wl-tot">Total</td>'
+        + cell(rows.length, 'wl-tot') + cell(tsH(totPlan), 'wl-tot')
+        + cell(anyLog ? tsH(totLog) : '—', 'wl-tot')
+        + cell(anyLog ? tsH(totLog - totPlan) : '—', 'wl-tot') + cell('', 'wl-tot')
+        + '</tr></tfoot></table></div>';
+      const weekTable = weekCols.length ? '<h4 style="font-size:0.85rem;margin:0.9rem 0 0.3rem">By week '
+        + '<span class="help-text" style="font-weight:400">(planned hours spread evenly across each activity\u2019s working days)</span></h4>'
+        + '<div class="table-wrap"><table class="wl-t" style="font-size:var(--t-sm)"><thead><tr><th>Person</th>'
+        + weekCols.map(c => '<th style="text-align:right;white-space:nowrap">w/c ' + escapeHtml(fmtNice(new Date(c + 'T00:00:00'))) + '</th>').join('')
+        + '<th style="text-align:right">Total</th></tr></thead><tbody>'
+        + people.map(pn => { let tot = 0;
+            const cells = weekCols.map(c => { const h = wk.find(w => w.who === pn.who && w.week === c);
+              tot += h ? h.planH : 0;
+              return '<td class="wl-td" style="text-align:right">' + (h && h.planH > 0.05 ? tsH(h.planH) : '<span class="help-text">·</span>') + '</td>'; }).join('');
+            return '<tr><td class="wl-td" style="font-weight:600">' + escapeHtml(pn.who) + '</td>' + cells
+              + '<td class="wl-td wl-tot" style="text-align:right">' + tsH(tot) + '</td></tr>'; }).join('')
+        + '</tbody></table></div>' : '';
+      return '<h3 style="font-size:0.95rem;margin:1.1rem 0 0.2rem">Timesheet — planned vs logged hours'
+        + ' <span class="help-text" style="font-weight:400">(in hours; 1 day = 8 h)</span></h3>'
+        + '<p class="help-text" style="margin:0 0 0.5rem"><b>Planned</b> is each person\u2019s elapsed span on an '
+        + 'activity times their Units % — the work the plan expects of them, which is not the same as how long the '
+        + 'activity is open. <b>Logged</b> is their share of the time recorded against it, split across the '
+        + 'participants so the pieces add back to what was typed. The weekly split is a <b>projection</b>: hours are '
+        + 'spread evenly across each activity\u2019s working days, because the plan knows the totals and the dates '
+        + 'and does not know which day anybody actually sat down.</p>'
+        + '<div class="toolbar no-print" style="margin-bottom:0.5rem"><button class="btn-sm btn-secondary" '
+        + 'onclick="exportTimesheetCSV()">\u2b07 Timesheet (.csv)</button></div>'
+        + summary + weekTable;
+    }
+    function exportTimesheetCSV() {
+      const rows = timesheetRows();
+      if (!rows.length) { alert('No assigned work with hours yet.'); return; }
+      const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+      const head = ['Person', 'Client side', 'WBS', 'Activity', 'Units %', 'Start', 'Finish',
+        'Elapsed days', 'Planned hours', 'Logged hours', 'Variance hours', 'Bill rate', 'Planned value', '% complete'];
+      const body = rows.map(r => [r.who, r.client ? 'yes' : 'no', r.wbs, r.name, r.units,
+        r.start ? fmtISO(r.start) : '', r.finish ? fmtISO(r.finish) : '',
+        Math.round(r.spanDays * 100) / 100, Math.round(r.planH * 100) / 100,
+        r.logH == null ? '' : Math.round(r.logH * 100) / 100,
+        r.varH == null ? '' : Math.round(r.varH * 100) / 100,
+        r.client ? '' : (r.rate || ''), r.client || !(r.rate > 0) ? '' : Math.round(r.planH * r.rate * 100) / 100,
+        r.pct].map(q).join(','));
+      download(projName().replace(/[^\w\d -]+/g, '').trim().slice(0, 50) + ' timesheet.csv',
+        [head.map(q).join(',')].concat(body).join('\n'));
+      flashSaved('\u2b07 Timesheet exported — ' + rows.length + ' person-activity rows.');
     }
     function resourceEffortHtml() {
       const rows = resourceEffortData();
