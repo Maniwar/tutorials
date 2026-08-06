@@ -3556,7 +3556,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0358</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0408</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -5588,7 +5588,11 @@ Or say what you want, in your own words:
       const auto = computedActualCost(sh);   // null when there is no basis at all
       return {
         isSum: false, leaves: 0,
-        estTime: sh.te, actTime: days == null ? null : workingDaysToUnit(days),
+        // the ESTIMATE this is compared against has to be the work the plan
+        // expects, not the span it occupies — "Estimated 4d, logged 6.4h" was
+        // four days of calendar against six hours of work
+        estTime: workingDaysToUnit(plannedEffortDays(sh)), estSpan: sh.te,
+        actTime: days == null ? null : workingDaysToUnit(days),
         estCost: Math.round(taskCost(sh)),
         actCost: mActualCostManual ? typed : auto,
         autoCost: auto, days, crew, fixed: sh.fixedCost,
@@ -9774,6 +9778,54 @@ Or say what you want, in your own words:
     // effort actually spent, in working days. Prefers the logged actualEffort
     // (real effort, minute-resolution) and only falls back to the elapsed span
     // between actual dates, which counts calendar presence rather than work.
+    /* ═══ DURATION IS NOT EFFORT ═══════════════════════════════════════════════
+       `te` is a CALENDAR SPAN: how many working days the activity occupies. The
+       WORK inside it is that span times how much of the people it consumes. A
+       four-day activity owned by somebody at 20% is four days of calendar and
+       0.8 person-days of work, and the two are equal only when the allocation
+       happens to total 100%.
+
+       Every planned-cost site in this file already had this right — rate × days
+       × units/100 — because getting it wrong there would have shown up as money.
+       Every place that compared an ESTIMATE against LOGGED TIME had it wrong,
+       because both were called "days" and neither said which kind:
+
+         - the activity editor read "Estimated 4d, logged 6.4h" and meant
+           4 days of CALENDAR against 6.4 hours of WORK;
+         - the estimate BANK archived te against logged effort, so the whole
+           calibration history compared spans to work, and every ratio it has
+           ever suggested was scaled by the allocation rather than by accuracy;
+         - the roster split an activity's logged effort by units/100, which is
+           a SPLIT that only sums to one when the allocations do. A lone person
+           at 20% kept a fifth of the time they had logged themselves.
+
+       Two definitions, used everywhere from here on:
+         plannedEffortDays(t)  — the work the plan expects, in person-days
+         effortShareOf(t, who)  — a participant's fraction of the activity's
+                                  logged effort, normalised so the shares sum
+                                  to one however the allocations are set. */
+    function taskUnitsTotal(t) {
+      return (typeof taskParticipants === 'function' ? taskParticipants(t) : [])
+        .reduce((a, pr) => a + (Number(pr.units) || 0), 0);
+    }
+    function plannedEffortDays(t, useBaseline) {
+      if (!t || t.milestone || t.isSummary) return 0;
+      const te = useBaseline && t.baseTe != null ? t.baseTe : (t.te || 0);
+      const u = taskUnitsTotal(t);
+      return unitToWorkingDays(te) * ((u > 0 ? u : 100) / 100);
+    }
+    /* NORMALISED, not units/100. The old form is right only when the
+       allocations total 100: two people at 50% split correctly, one person at
+       20% lost four fifths of their own logged time and the activity's total
+       came back as a fifth of what was typed. */
+    function effortShareOf(t, who) {
+      const parts = (typeof taskParticipants === 'function' ? taskParticipants(t) : []);
+      const tot = parts.reduce((a, pr) => a + (Number(pr.units) || 0), 0);
+      const me = parts.find(pr => pr.name === who);
+      if (!me) return 0;
+      if (!(tot > 0)) return parts.length ? 1 / parts.length : 0;
+      return (Number(me.units) || 0) / tot;
+    }
     function actualEffortDays(t) {
       if (t && t.actualEffort != null && Number.isFinite(+t.actualEffort) && +t.actualEffort >= 0) return unitToWorkingDays(+t.actualEffort);
       return actualWorkingDays(t);
@@ -22648,8 +22700,14 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         const days = actualEffortDays(t);
         if (days == null) return;                      // no actual → nothing to learn from
         const tx = taxonomyOf(t);
-        const est = t.te || 0;
+        /* THE CALIBRATION BANK compared te — a span — against logged effort,
+           so every ratio it has ever produced was scaled by the allocation
+           instead of by how accurate the estimate was. A 20% person finishing
+           exactly on plan was filed as a 5x overrun, and that number is what
+           the next estimate is calibrated from. */
+        const est = workingDaysToUnit(plannedEffortDays(t));
         const act = workingDaysToUnit(days);
+        if (!(est > 0)) return;   // nothing to compare a ratio against
         out.push({
           // Stable identity for the ACTIVITY, not for the act of archiving it.
           // Re-archiving after logging more actuals must replace this row, and the
@@ -30329,12 +30387,18 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         names.forEach(n => {
           const b = at(n);
           const pr = parts.find(x => x.name === n);
+          /* TWO different shares. The PLAN's share of an activity is
+             units/100 — that is what the allocation means and what every cost
+             figure already uses. The share of what was LOGGED is normalised
+             across the participants, because the person typed the activity's
+             total and the pieces have to add back up to it. */
           const share = pr ? (Number(pr.units) || 0) / 100 : 1;
+          const logShare = pr ? effortShareOf(t, n) : 1;
           const r2 = Object.assign({}, row, {
             units: pr ? (Number(pr.units) || 0) : 100,
             estDays: unitToWorkingDays(row.te) * share,
             refDays: unitToWorkingDays(row.baseTe != null ? row.baseTe : row.te) * share,
-            actEffDays: row.actDays == null ? null : row.actDays * share });
+            actEffDays: row.actDays == null ? null : row.actDays * logShare });
           r2.varDays = (r2.actEffDays == null || !(r2.refDays > 0)) ? null : r2.actEffDays - r2.refDays;
           if (done) { b.done++; b.doneRows.push(r2); return; }
           b.effort += workingDaysToUnit(r2.estDays) * (1 - pct / 100);
@@ -30397,7 +30461,14 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
           R.earnedDays += unitToWorkingDays(hb && t.baseTe != null ? Number(t.baseTe) : (Number(t.te) || 0))
             * share * (pct / 100);
           if (pct < 100) R.open++;
-          if (act != null) { R.actDays += act * share; R.measured++; }
+          /* LOGGED effort splits by the NORMALISED share, not by units/100.
+             The plan's share of an activity is units/100 — that is what an
+             allocation means, and planDays above is right to use it. What was
+             LOGGED is one number for the whole activity, typed by a person, and
+             the pieces have to add back up to it: two people at 50% split it in
+             half, and a lone person at 20% keeps all of it rather than a fifth
+             of the time they recorded themselves. */
+          if (act != null) { R.actDays += act * effortShareOf(t, pr.name); R.measured++; }
         });
       });
       const out = [...rows.values()].map(R => {
