@@ -3446,6 +3446,7 @@ Or say what you want, in your own words:
               <option value="compact">Stories: compact</option>
               <option value="none">Stories: off</option>
             </select>
+            <button class="btn-secondary btn-sm" onclick="aiDraftExclusions()" title="Out of Scope is the one section of a contract nobody enjoys writing and everybody regrets skipping. The AI reads what IS in scope and proposes the boundaries a client would most likely assume the other way — data migration, licences, other regions, session limits. They land in the RAID log as Exclusion entries for you to review and edit, not straight into the document.">🚫 Draft the exclusions</button>
             <button class="btn-primary btn-sm" onclick="generateSOW()"><span class="ico" aria-hidden="true">✨</span> Generate SOW draft</button>
             <button class="btn-secondary btn-sm" id="sowEditBtn" onclick="toggleSowEdit()" title="Edit the draft right here — tweak wording, delete a row, add a clause — then Save. Regenerating replaces manual edits (you'll be asked first).">✎ Edit</button>
             <!-- Beside Edit, because editing is what makes you want it. The
@@ -3555,7 +3556,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0347</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0358</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3750,7 +3751,7 @@ Or say what you want, in your own words:
                 <textarea id="mInputs" rows="2" placeholder="one per line, e.g. 12 months of support ticket export (client)"></textarea>
               </div>
               <div class="form-group">
-                <label>Acceptance criteria</label>
+                <label>Done when — deliverable accepted</label>
                 <textarea id="mAcceptance" rows="2" placeholder="Definition of done"></textarea>
               </div>
             </div>
@@ -14688,6 +14689,16 @@ Or say what you want, in your own words:
 
     // Build the whole Gantt as ONE self-contained SVG (all styles inline) so the
     // exact on-screen chart can be exported to PNG/SVG or copied to the clipboard.
+    /* THE BAR NUMBER IS A DURATION, and never said so. An activity of 4 days
+       run by somebody at 20% is 4 days of CALENDAR and 0.8 person-days of
+       WORK — the roster prints the second, the chart printed the first, and
+       neither carried a unit. Summing the bars for one person gave 18 against
+       a roster reading 3.6, which looks like a contradiction and is the same
+       fact seen from the calendar instead of from the person.
+
+       So the label carries its unit, and where the owner is not full-time it
+       carries the effort too. Both numbers, named, on the one surface where
+       people were adding up the wrong one. */
     function buildGanttSvg() {
       const holidays = getHolidaySet();
       const start = projectStartDate();
@@ -15181,7 +15192,19 @@ Or say what you want, in your own words:
           // sub-day durations label as minutes/hours — "0.0" on a 20-minute
           // test case reads as no work at all
           const teLbl = (() => { const n = t.te || 0; if (document.getElementById('durationUnit').value !== 'days' || n <= 0 || n >= 1) return n.toFixed(1); const h2 = n * 8; return h2 < 1 ? Math.round(h2 * 60) + 'm' : (Math.round(h2 * 10) / 10) + 'h'; })();
-          const lbl = `${teLbl}${done ? ' ✓' : (t.percentComplete > 0 ? ' · ' + t.percentComplete + '%' : '')}`;
+          /* THE NUMBER IS A DURATION. Where the owner is part-time it is not the
+             work either — a 4-day activity at 20% is 0.8 person-days — and the
+             roster prints the second while this printed the first, with no unit
+             on either. Summing one person's bars gave 18 against a roster
+             reading 3.6: the same fact from the calendar instead of the person.
+             Part-time rows now carry both. */
+          const effLbl = (() => {
+            const u = Number(t.units);
+            if (t.milestone || t.isSummary || !Number.isFinite(u) || u <= 0 || u >= 100) return '';
+            const eff = unitToWorkingDays(t.te || 0) * (u / 100);
+            return eff > 0 ? ' · ' + (Math.round(eff * 10) / 10) + 'd @' + Math.round(u) + '%' : '';
+          })();
+          const lbl = `${teLbl}${effLbl}${done ? ' ✓' : (t.percentComplete > 0 ? ' · ' + t.percentComplete + '%' : '')}`;
           if (bw >= 56) {
             const lw = lbl.length * 5.8 + 10;
             const ink = crit ? '#7f1d1d' : '#1e3a8a';
@@ -18582,6 +18605,49 @@ Or say what you want, in your own words:
       if (!v) { if (t) t.focus(); return; }
       closeOverlay('rsModal');
       aiReviseStories(v);
+    }
+    /* DRAFTING THE EXCLUSIONS, from the plan rather than from nothing.
+       The schema now carries them on a NEW plan, which does not help a plan
+       that already exists — and "what is this engagement not" is the one
+       section of a contract nobody enjoys writing and everybody regrets
+       skipping. The model sees the scope, the deliverables and the stories,
+       and proposes the boundaries a client would most likely assume the other
+       way. They land in the RAID log as Exclusions, for review, not straight
+       into the document. */
+    async function aiDraftExclusions() {
+      if (!tasks.length) { alert('Build the plan first — the exclusions are drawn from what IS in scope.'); return; }
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) {
+        alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
+      computeWbsCodes();
+      const inScope = tasksInWbsOrder().filter(({ task: t }) => !t.milestone)
+        .map(({ task: t }) => (t.wbs ? t.wbs + ' ' : '') + t.name
+          + (t.deliverable ? ' → ' + t.deliverable : '')).slice(0, 120);
+      const have = (raid || []).filter(r => r.type === 'Exclusion').map(r => r.title);
+      const p3 = `You are drafting the OUT OF SCOPE section of a consulting Statement of Work.
+
+THE ENGAGEMENT: ${projName()}
+
+WHAT IS IN SCOPE (the whole plan):
+${inScope.join('\n')}
+
+${have.length ? 'ALREADY EXCLUDED (do not repeat these):\n' + have.join('\n') : 'Nothing is excluded yet.'}
+
+Propose 6-10 exclusions. The test for each: would a reasonable client, reading the scope above, ASSUME this was included? If yes and it is not, it belongs here. Think about data migration, integrations, third-party licences and their cost, production code changes, environments, other regions/languages/products/channels, training beyond what is listed, support after handover, anything a neighbouring team usually does, and the volume limits implied by the effort (numbers of sessions, participants, workshops, revisions).
+
+Each is ONE short line, phrased as a LIMIT ("No changes to the mobile app", "Up to five coordinator sessions; further sessions are a change order"). Never a promise. Never restate something already in scope. Do not invent facts about the client.
+
+Return ONLY JSON: {"exclusions":["...","..."]}`;
+      try {
+        const onDelta = streamShow('Drafting exclusions');
+        const raw = await callAnthropic(p3, { onDelta: onDelta, cachePrefix: [histPromptBlock() + bankPromptBlock()] });
+        streamHide(true);
+        const res = parseAIJsonNoted(raw, 'the exclusions');
+        const n = applyAIExclusions(res);
+        if (!n) { alert('Nothing new came back — the exclusions already on the RAID log cover it.'); return; }
+        saveLocal(); renderRaid();
+        flashSaved('🚫 ' + n + ' exclusion' + (n === 1 ? '' : 's') + ' drafted into the RAID log. '
+          + 'Review and edit them, delete any that do not apply, then regenerate the SOW — they print under Out of Scope.');
+      } catch (e) { streamHide(false); alert('Drafting the exclusions failed: ' + (e.message || e)); }
     }
     async function aiReviseStories(preset) {
       if (!reqs || !Array.isArray(reqs.stories) || !reqs.stories.length) {
@@ -30802,7 +30868,11 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       const totDays = rows.reduce((a, r) => a + (r.estDays || 0), 0);
       const varRows = rows.filter(r => r.varDays != null);
       const totVar = varRows.length ? varRows.reduce((a, r) => a + r.varDays, 0) : null;
-      const foot = '<tfoot><tr><td class="wl-td wl-tot">Total — ' + rows.length + ' '
+      /* "Total" under a group heading reads as the person's total. It is the
+         subtotal of THAT group, and a reader comparing it against the roster's
+         Planned effort finds two numbers that disagree by however much the
+         other groups hold. Named for the group it belongs to. */
+      const foot = '<tfoot><tr><td class="wl-td wl-tot">Subtotal — ' + rows.length + ' '
         + (rows.length === 1 ? 'activity' : 'activities')
         + (shown.length < rows.length ? ' (' + shown.length + ' shown)' : '') + '</td>'
         + '<td class="wl-td"></td><td class="wl-td"></td>'
