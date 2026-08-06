@@ -3556,7 +3556,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0433</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0504</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3576,19 +3576,27 @@ Or say what you want, in your own words:
           <label for="mMilestone">This is a milestone (zero duration marker)</label>
         </div>
         <div id="mSummaryHint" class="help-text" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:0.5rem 0.75rem;margin:-0.25rem 0 1rem">📦 <b>Roll-up (summary) row</b> — estimates, owner, units and % complete are computed from its children and locked here (the fields show the rolled-up values). Edit the child activities to change them.</div>
+        <!-- One caption for all three boxes. Repeating "elapsed span" on each
+             label spent three lines saying the same thing and still left the
+             question unanswered, so the meaning is stated once, in words, and
+             the boxes are just named. -->
+        <div id="estBlock">
+        <div class="fg-head" style="margin-bottom:0.2rem"><label for="mO" style="margin:0">How long it stays open * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label><button type="button" class="info-icon" aria-label="About the duration estimate" data-help="Calendar span from the day the activity starts to the day it finishes — the length of the bar on the Gantt. It is NOT the hours of work inside it. Give a three-point range and the plan uses (O + 4M + P) / 6. Set Units % below to say how much of the owner&#39;s time it takes while it is open; that is what turns this span into work.">i</button></div>
+        <div class="help-text" style="text-transform:none;margin:0 0 0.55rem">Calendar time from start to finish, <b>not</b> hours of work. Four days open at 20% of someone&#39;s time is 0.8 days of work — <i>Units %</i> below converts between the two.</div>
         <div id="estFields" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
           <div class="form-group">
-            <label for="mO">Optimistic (O) <span class="help-text" style="text-transform:none;font-weight:400">— elapsed span</span> * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label>
+            <label for="mO">Optimistic (O)</label>
             <input id="mO" type="text" inputmode="decimal" placeholder="Best case — 2d · 4h · 30m" oninput="ompHintUpd()" />
           </div>
           <div class="form-group">
-            <label for="mM">Most likely (M) <span class="help-text" style="text-transform:none;font-weight:400">— elapsed span</span> * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label>
+            <label for="mM">Most likely (M)</label>
             <input id="mM" type="text" inputmode="decimal" placeholder="Expected — 2d · 4h · 30m" oninput="ompHintUpd()" />
           </div>
           <div class="form-group">
-            <label for="mP">Pessimistic (P) <span class="help-text" style="text-transform:none;font-weight:400">— elapsed span</span> * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label>
+            <label for="mP">Pessimistic (P)</label>
             <input id="mP" type="text" inputmode="decimal" placeholder="Worst case — 2d · 4h · 30m" oninput="ompHintUpd()" />
           </div>
+        </div>
         </div>
         <div id="ompHint" class="help-text" style="display:none;margin:-0.4rem 0 0.8rem"></div>
         <div class="metric-row" style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:0.75rem">
@@ -3602,7 +3610,7 @@ Or say what you want, in your own words:
             <div id="mOwnerRole" style="margin-top:2px"></div>
           </div>
           <div class="form-group">
-            <span class="fg-head"><label for="mUnits">Units % <span class="help-text" style="text-transform:none;font-weight:400">— span → work</span></label><button type="button" class="info-icon" aria-label="About Units %" data-help="How much of the resource this task consumes while it is open. 100 = full-time. This is also the converter between the two quantities on this form: the O/M/P boxes are an ELAPSED span, and the WORK inside it is that span times this number. Four elapsed days at 20% is 0.8 person-days of work. Two 100% tasks at once for one person = over-allocated.">i</button></span>
+            <span class="fg-head"><label for="mUnits">Units % <span class="help-text" style="text-transform:none;font-weight:400">— of their time</span></label><button type="button" class="info-icon" aria-label="About Units %" data-help="How much of the resource this task consumes while it is open. 100 = full-time. This is also the converter between the two quantities on this form: the O/M/P boxes are an ELAPSED span, and the WORK inside it is that span times this number. Four elapsed days at 20% is 0.8 person-days of work. Two 100% tasks at once for one person = over-allocated.">i</button></span>
             <input id="mUnits" type="number" min="0" step="5" value="100" oninput="refreshAutoActualCost(); ompHintUpd();" />
           </div>
           <div class="form-group">
@@ -3650,7 +3658,7 @@ Or say what you want, in your own words:
               <input id="mPct" type="number" min="0" max="100" step="1" value="0" oninput="paOnPctInput()" onchange="paOnPctCommit()" />
             </div>
             <div class="form-group">
-              <span class="fg-head"><label for="mActualEffort">Time spent <span class="help-text" style="text-transform:none;font-weight:400">— work done, not elapsed</span></label><button type="button" class="info-icon" aria-label="About time spent" data-help="The REAL effort this took — the number that tells you how good your estimates are. Any resolution: 20m, 90m, 1.5h, 2d, or '1d 4h'. Effort, not elapsed time: open for a week but worked three hours = 3h. Enter it PER PARTICIPANT, not as a team total — each person on the activity is costed for this same duration. Typing here fills in the actual start date if it is blank.">i</button></span>
+              <span class="fg-head"><label for="mActualEffort">Time spent <span class="help-text" style="text-transform:none;font-weight:400">— hours worked</span></label><button type="button" class="info-icon" aria-label="About time spent" data-help="The REAL effort this took — the number that tells you how good your estimates are. Any resolution: 20m, 90m, 1.5h, 2d, or '1d 4h'. Effort, not elapsed time: open for a week but worked three hours = 3h. Enter it PER PARTICIPANT, not as a team total — each person on the activity is costed for this same duration. Typing here fills in the actual start date if it is blank.">i</button></span>
               <input id="mActualEffort" type="text" inputmode="text" placeholder="20m · 1.5h · 2d" oninput="paOnEffortInput()" onchange="paOnEffortCommit()" />
             </div>
             <div class="form-group">
@@ -6123,7 +6131,9 @@ Or say what you want, in your own words:
     }
     function toggleMilestoneFields() {
       const ms = document.getElementById('mMilestone').checked;
-      document.getElementById('estFields').style.display = ms ? 'none' : 'grid';
+      // hide the caption and the explanation with the boxes, or a milestone
+      // shows a heading asking for a duration it does not have
+      document.getElementById('estBlock').style.display = ms ? 'none' : 'block';
       refreshProgressPanel();
     }
     /* One spelling per company, or the bank splits the same partner into two
@@ -14782,7 +14792,7 @@ Or say what you want, in your own words:
       const dayW = ganttDayW || autoW;
 
       const _gcw = (document.getElementById('ganttContainer') || {}).clientWidth || 1150;
-      const PAD = 12, LABELW = Math.max(140, Math.min(640, ganttLabelW || Math.min(300, Math.round(_gcw * 0.38)))), TITLE_H = 62, MON_H = 20, DAY_H = 24, ROWH = 30, BAR_H = 16, LEGEND_H = 34; // TITLE_H reserves a strip for the TODAY pill above the month header
+      const PAD = 12, LABELW = Math.max(240, Math.min(640, ganttLabelW || Math.min(300, Math.round(_gcw * 0.38)))), TITLE_H = 62, MON_H = 20, DAY_H = 24, ROWH = 30, BAR_H = 16, LEGEND_H = 34; // TITLE_H reserves a strip for the TODAY pill above the month header
       const HEADER_H = MON_H + DAY_H;
       const chartW = totalDays * dayW;
       const hasReserve = rv.contingencyUnits > 0 || rv.managementUnits > 0;
@@ -14866,14 +14876,17 @@ Or say what you want, in your own words:
               : `<polygon points="${cx + 1},${cy - 5} ${cx + 9},${cy} ${cx + 1},${cy + 5}" fill="#475569"/>`) + `</g>`;
         }
         // truncate to whatever actually fits the (resizable) title column
-        const availPx = (PAD + LABELW - 78) - tx;
-        const maxCh = Math.max(8, Math.floor(availPx / 6.3));
+        const availPx = (PAD + LABELW - 122) - tx;
+        const doneMark = (t.percentComplete >= 100) ? '✓ ' : '';
+        /* the budget has to cover the prefixes the renderer adds too (the ✓ and
+           the ◆), or a finished activity spills two characters into the avatar */
+        const prefixCh = doneMark.length + (t.milestone ? 2 : 0);
+        const maxCh = Math.max(8, Math.floor(availPx / 6.6) - prefixCh);
         const nmBase = t.milestone ? t.name.replace(/^◆\s*/, '') : t.name; // renderer adds its own ◆
         const nm = nmBase.length > maxCh ? nmBase.slice(0, Math.max(6, maxCh - 1)) + '…' : nmBase;
-        const doneMark = (t.percentComplete >= 100) ? '✓ ' : '';
         svg += `<g data-gopen="${t.id}" style="cursor:pointer"><text x="${tx}" y="${y + ROWH / 2 + 4}" font-family="${FF}" font-size="${isSum ? 12 : 11.5}" font-weight="${isSum ? 700 : 400}" fill="${t.percentComplete >= 100 ? '#16a34a' : '#1e293b'}">${escapeXml(doneMark)}${t.milestone ? '◆ ' : ''}${escapeXml(nm)}${isSum && collapsedIds.has(t.id) ? ' (+' + leafDescendants(t.id).length + ')' : ''}</text><title>${escapeXml(t.name)} — click to edit</title></g>`;
         // owner chip + pct at right edge of label column
-        const chipX = PAD + LABELW - 66;
+        const chipX = PAD + LABELW - 110;
         if (t.owner && !isSum) {
           svg += `<circle cx="${chipX}" cy="${y + ROWH / 2}" r="8.5" fill="${ownerColor(t.owner)}"/><text x="${chipX}" y="${y + ROWH / 2 + 3}" font-family="${FF}" font-size="7.5" font-weight="700" fill="white" text-anchor="middle">${escapeXml(ownerInitials(t.owner))}</text>`;
         }
@@ -14882,7 +14895,7 @@ Or say what you want, in your own words:
         if (i === 0) {
           // captions once, in the header band, so the two columns are named
           svg += `<text x="${PAD + LABELW - 12}" y="${Y0 - 6}" font-family="${FF}" font-size="9" font-weight="700" fill="#94a3b8" text-anchor="end">DONE</text>`;
-          svg += `<text x="${PAD + LABELW - 52}" y="${Y0 - 6}" font-family="${FF}" font-size="9" font-weight="700" fill="#94a3b8" text-anchor="end">WORK</text>`;
+          svg += `<text x="${PAD + LABELW - 46}" y="${Y0 - 6}" font-family="${FF}" font-size="9" font-weight="700" fill="#94a3b8" text-anchor="end">WORK</text>`;
         }
         /* EFFORT, in its own column. The bar says how long the activity is open;
            this says how much work is inside it, which is a different number
@@ -14890,7 +14903,7 @@ Or say what you want, in your own words:
            meaning, rather than two numbers fighting for one label on a bar. */
         if (!t.isSummary && !t.milestone) {
           const eff = plannedEffortDays(t);
-          if (eff > 0) svg += `<text x="${PAD + LABELW - 52}" y="${y + ROWH / 2 + 4}" font-family="${FF}" font-size="10" fill="#64748b" text-anchor="end">${escapeXml(fmtDurCell(workingDaysToUnit(eff)))}</text>`;
+          if (eff > 0) svg += `<text x="${PAD + LABELW - 46}" y="${y + ROWH / 2 + 4}" font-family="${FF}" font-size="10" fill="#64748b" text-anchor="end">${escapeXml(fmtDurCell(workingDaysToUnit(eff)))}</text>`;
         }
       });
 
@@ -21569,7 +21582,11 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     }
     function exportWBSDictionaryCSV() {
       if (!ensureCalc()) return;
-      const rows = [['WBS','Level','Element','Type','Owner','Start','Finish','Duration','% Complete','Deliverable','Description / scope','Acceptance criteria','Predecessors','Successors','User stories (trace)','Story acceptance criteria','Verified by (test cases)','Jira / evidence']];
+      const u = unitLabel();
+      /* the on-screen dictionary carries both quantities; the exported one used to
+         carry only the span, so a reader of the CSV could not tell a 4-day
+         activity at 20% from one at full allocation */
+      const rows = [['WBS','Level','Element','Type','Owner','Start','Finish','Duration — span (' + u + ')','Work effort (' + u + ')','% Complete','Deliverable','Description / scope','Acceptance criteria','Predecessors','Successors','User stories (trace)','Story acceptance criteria','Verified by (test cases)','Jira / evidence']];
       const idTo = {}; tasks.forEach(x => { idTo[x.id] = x; });
       const fmtLink = (x, type, lag) => (x.wbs ? x.wbs + ' ' : '') + x.name + ' (' + type + (lag ? (lag > 0 ? '+' : '') + lag : '') + ')';
       const succOf = {}; tasks.forEach(x => (x.predecessors || []).forEach(pd => { (succOf[pd.id] = succOf[pd.id] || []).push(fmtLink(x, pd.type, pd.lag)); }));
@@ -21579,7 +21596,12 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         rows.push([
           t.wbs, depth + 1, t.name, t.isSummary ? 'Summary' : (t.milestone ? 'Milestone' : (isTestCaseTask(t) ? 'Test case' : 'Work package')),
           t.owner || '', t.startDate?fmtISO(t.startDate):'', t.finishDate?fmtISO(t.finishDate):'',
-          t.milestone ? '0' : (t.te||0).toFixed(2), (t.percentComplete||0)+'%',
+          t.milestone ? '0' : (t.te||0).toFixed(2),
+          t.milestone ? '0' : (() => {
+            const e = t.isSummary ? leafDescendants(t.id).reduce((a, x) => a + plannedEffortDays(x), 0) : plannedEffortDays(t);
+            return e > 0 ? workingDaysToUnit(e).toFixed(2) : '';
+          })(),
+          (t.percentComplete||0)+'%',
           t.deliverable||'', t.description||'', t.acceptance||'',
           (t.predecessors || []).map(pd => { const pt = idTo[pd.id]; return pt ? fmtLink(pt, pd.type, pd.lag) : ''; }).filter(Boolean).join(' || '),
           (succOf[t.id] || []).join(' || '),
@@ -30926,9 +30948,9 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         + '</tbody></table></div>' : '';
       return '<h3 style="font-size:0.95rem;margin:1.1rem 0 0.2rem">Timesheet — planned vs logged hours'
         + ' <span class="help-text" style="font-weight:400">(in hours; 1 day = 8 h)</span></h3>'
-        + '<p class="help-text" style="margin:0 0 0.5rem"><b>Planned</b> is each person\u2019s elapsed span on an '
-        + 'activity times their Units % — the work the plan expects of them, which is not the same as how long the '
-        + 'activity is open. <b>Logged</b> is their share of the time recorded against it, split across the '
+        + '<p class="help-text" style="margin:0 0 0.5rem"><b>Planned</b> is how long the activity stays open '
+        + 'times that person\u2019s Units % — the work the plan expects from them, which is not the same number as '
+        + 'the length of the activity. <b>Logged</b> is their share of the time recorded against it, split across the '
         + 'participants so the pieces add back to what was typed. The weekly split is a <b>projection</b>: hours are '
         + 'spread evenly across each activity\u2019s working days, because the plan knows the totals and the dates '
         + 'and does not know which day anybody actually sat down.</p>'

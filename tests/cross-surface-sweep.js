@@ -234,6 +234,32 @@ const DATA = FIXTURE();
     const html = document.getElementById('wbsContainer').innerHTML;
     out.noInputsColumn = !/>Inputs</.test(html);
     out.bannerMissing = f.length > 0 && !/gap.? in the input\/output chain/.test(html);
+    /* The dictionary prints two quantities per row: how long the activity is
+       OPEN, and the WORK inside it. Force a partial allocation so the two are
+       genuinely different numbers — at 100% they agree, and a Work column that
+       simply reprinted the duration would pass unnoticed. */
+    {
+      const t = visibleWbsOrder().map(r => r.task)
+        .find(x => !x.isSummary && !x.milestone && (x.te || 0) > 0);
+      if (!t) out.wbsNoLeaf = true;
+      else {
+        const keptU = t.units, keptP = t.participants;
+        t.units = 20; t.participants = null;
+        calculate(); switchTab('wbs'); renderWBS();
+        const tbl = document.querySelector('#wbsContainer table');
+        const hdr = [...tbl.querySelectorAll('thead th')].map(th => th.textContent.trim());
+        const di = hdr.findIndex(h => /^Dur\b/i.test(h));
+        const wi = hdr.findIndex(h => /^Work$/i.test(h));
+        out.wbsNoDurCol = di < 0; out.wbsNoWorkCol = wi < 0;
+        const row = [...tbl.querySelectorAll('tbody tr')].find(r => r.cells[1] && r.cells[1].textContent.indexOf(t.name) >= 0);
+        out.wbsRowMissing = !row;
+        if (row && di >= 0 && wi >= 0) {
+          out.wbsSpanCell = row.cells[di].textContent.trim();
+          out.wbsWorkCell = row.cells[wi].textContent.trim();
+        }
+        t.units = keptU; t.participants = keptP; calculate();
+      }
+    }
     // the stated field survives a save/load
     const t2 = leaf[1]; t2.inputs = 'ZZ stated input';
     hydrate(JSON.parse(JSON.stringify(serialize())));
@@ -244,6 +270,18 @@ const DATA = FIXTURE();
   if (io.wrong && io.wrong.length)
     R.contradictions.push('IO map :: the deliverable classifier is wrong on ' + io.wrong.length
       + ' case(s): ' + io.wrong.join('; '));
+  if (io.wbsNoLeaf)
+    R.contradictions.push('WBS dictionary :: no leaf activity to measure — the Work column check is vacuous');
+  if (io.wbsNoDurCol) R.contradictions.push('WBS dictionary :: no duration column');
+  if (io.wbsNoWorkCol)
+    R.contradictions.push('WBS dictionary :: no Work column — the table shows only how long an activity is open, '
+      + 'never how much work is inside it');
+  if (io.wbsRowMissing) R.contradictions.push('WBS dictionary :: the measured activity has no row');
+  if (io.wbsWorkCell != null && (!io.wbsWorkCell || io.wbsWorkCell === '\u2014'))
+    R.contradictions.push('WBS dictionary :: the Work cell is empty for an activity with a duration and an allocation');
+  if (io.wbsWorkCell != null && io.wbsSpanCell != null && io.wbsWorkCell === io.wbsSpanCell)
+    R.contradictions.push('WBS dictionary :: at 20% allocation the Work column reads "' + io.wbsWorkCell
+      + '", the same as the duration — it is reprinting the span, not the work');
   if (io.milestoneFlagged)
     R.contradictions.push('IO map :: a milestone is flagged for having no deliverable — a milestone is a date, '
       + 'and a finding nobody can fix buries the ones they can');

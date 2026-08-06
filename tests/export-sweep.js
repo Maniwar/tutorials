@@ -225,6 +225,46 @@ const QA = JSON.parse(fs.readFileSync(
         });
       });
 
+      /* ── 6. THE WBS DICTIONARY CARRIES BOTH QUANTITIES ──────────────────
+         The dictionary is the document a client reads to understand what each
+         work package is. Printing only the calendar span makes a four-day
+         activity at 20% allocation indistinguishable from one at full time —
+         same row, five times the work. Force the condition rather than hoping
+         a fixture contains it, so this can never pass vacuously. */
+      ran('6·dictionaryEffort');
+      {
+        const t = leafTasks().find(x => !x.isSummary && !x.milestone && (x.te || 0) > 0);
+        if (!t) say('Dictionary', 'no leaf activity to measure — check is vacuous');
+        else {
+          const keptU = t.units, keptP = t.participants;
+          t.units = 20; t.participants = null;            // one fifth of a person
+          const got = grab('exportWBSDictionaryCSV');
+          t.units = keptU; t.participants = keptP;
+          const csv = [...got.values()][0];
+          if (typeof csv !== 'string' || !csv.trim()) say('Dictionary', 'exportWBSDictionaryCSV produced nothing');
+          else {
+            const hdr = csv.split('\n')[0].split(',');
+            const di = hdr.findIndex(h => /Duration/.test(h));
+            const wi = hdr.findIndex(h => /Work effort/.test(h));
+            if (di < 0) say('Dictionary', 'no duration column');
+            if (wi < 0) say('Dictionary', 'no work-effort column — a reader cannot tell span from work');
+            if (di >= 0 && wi >= 0) {
+              // find this activity's row by its WBS code in column 0
+              const row = csv.split('\n').find(l => l.split(',')[0] === t.wbs);
+              if (!row) say('Dictionary', 'activity ' + t.wbs + ' is missing from the dictionary');
+              else {
+                const cells = row.split(',');
+                const span = parseFloat(cells[di]), work = parseFloat(cells[wi]);
+                if (!(span > 0)) say('Dictionary', 'span column is not a number for ' + t.wbs);
+                if (!(work > 0)) say('Dictionary', 'work column is empty for ' + t.wbs);
+                if (span > 0 && work > 0 && !(work < span * 0.5))
+                  say('Dictionary', 'at 20% allocation the work column (' + work + ') is not below the span (' + span + ') — it is repeating the duration');
+              }
+            }
+          }
+        }
+      }
+
       window.download = origD; window.downloadBlobFile = origB;
       return { contradictions: bad, counts: out };
     }, label);

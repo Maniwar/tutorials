@@ -1324,6 +1324,41 @@ const MUTANTS = [
     find: "          parentId: t.parentId, description: t.description, deliverable: t.deliverable, inputs: t.inputs || '',",
     with: '          parentId: t.parentId, description: t.description, deliverable: t.deliverable,' },
 
+  /* Duration versus effort. The distinction is the whole point, and every
+     mutant here collapses it back — which is what the product did before. */
+
+  { what: 'effort: planned effort ignores the allocation and equals the calendar span',
+    find: '      return unitToWorkingDays(te) * ((u > 0 ? u : 100) / 100);',
+    with: '      return unitToWorkingDays(te);' },
+
+  { what: 'effort: a lone part-time person keeps only units/100 of the time they logged',
+    find: '      return (Number(me.units) || 0) / tot;',
+    with: '      return (Number(me.units) || 0) / 100;' },
+
+  { what: 'effort: actual cost multiplies logged time by the allocation a second time',
+    find: '      const labor = taskParticipants(t).reduce((sx, pr) => sx + (isClientResource(pr.name) ? 0 : getRate(pr.name) * days), 0);',
+    with: '      const labor = taskParticipants(t).reduce((sx, pr) => sx + (isClientResource(pr.name) ? 0 : getRate(pr.name) * days * pr.units / 100), 0);' },
+
+  { what: 'effort: the estimate bank files a calendar span against logged work',
+    find: '        const est = workingDaysToUnit(plannedEffortDays(t));',
+    with: '        const est = t.te || 0;' },
+
+  { what: 'timesheet: planned hours are the span rather than the work',
+    find: '          const planH = spanDays * (u / 100) * 8;',
+    with: '          const planH = spanDays * 8;' },
+
+  { what: 'timesheet: the weekly split does not add back to the activity total',
+    find: '        const perDayPlan = r.planH / days.length;',
+    with: '        const perDayPlan = r.planH;' },
+
+  { what: 'wbs dictionary: the Work column repeats the duration',
+    find: '            const e = plannedEffortDays(t);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';',
+    with: '            const e = unitToWorkingDays(t.te || 0);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';' },
+
+  { what: 'wbs dictionary CSV: the exported Work effort column repeats the span',
+    find: "            const e = t.isSummary ? leafDescendants(t.id).reduce((a, x) => a + plannedEffortDays(x), 0) : plannedEffortDays(t);",
+    with: "            const e = t.isSummary ? leafDescendants(t.id).reduce((a, x) => a + unitToWorkingDays(x.te || 0), 0) : unitToWorkingDays(t.te || 0);" },
+
   /* The four SOW-generation defects, each planted back. All four shipped in a
      document a client had already been sent, and none of them were visible in
      the skeleton DATA — they lived in the assembly, which is why the sweep that
