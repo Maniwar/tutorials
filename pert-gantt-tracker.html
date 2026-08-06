@@ -2616,6 +2616,12 @@
         Import
         <input type="file" accept=".json,.csv" onchange="importJSON(event)" style="display:none" title="A .json backup opens as its own project; an ✏️ editable-workbook .csv merges into the open project by ID" />
       </label>
+      <!-- Beside Import, because it is the other answer to "I have a file from
+           somebody". Import REPLACES; this one combines. -->
+      <label class="btn-ghost btn-sm" style="cursor:pointer;margin:0" title="Combine a teammate's copy of THIS plan with yours. It finds the last version you both share, applies everything only they changed, and asks you about the fields you both changed. Nothing changes until you press Merge.">
+        Merge a copy
+        <input type="file" accept=".json" onchange="mergeOpenFile(event)" style="display:none" />
+      </label>
       <button class="btn-light btn-sm" onclick="resetProject()" title="Start a fresh plan — the current project stays saved in the Projects menu">New project</button>
     </div>
   </header>
@@ -2959,6 +2965,20 @@
         <div class="modal-footer">
           <button class="btn-secondary" onclick="closeOverlay('rsModal')">Cancel</button>
           <button class="btn-primary" id="rsGo" onclick="runReviseStories()">Apply to all stories</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="mergeModal" style="z-index:140">
+      <div class="modal" style="max-width:760px" role="dialog" aria-modal="true" aria-labelledby="mergeTitle">
+        <div class="modal-header"><h3 id="mergeTitle">Merge a teammate's copy</h3>
+          <button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="mergePlanState=null;closeOverlay('mergeModal')" aria-label="Close dialog">✕</button></div>
+        <div class="modal-body">
+          <p class="help-text" id="mergeSub" style="margin:0 0 0.6rem"></p>
+          <div id="mergeBody"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="mergePlanState=null;closeOverlay('mergeModal')">Cancel</button>
+          <button class="btn-primary" id="mergeGo" onclick="mergeApply()">Merge</button>
         </div>
       </div>
     </div>
@@ -3618,7 +3638,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.1615</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.1645</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -29181,6 +29201,240 @@ Do not write payment terms or exclusions — both are generated from the project
     };
     function predKey(ps) {
       return (ps || []).map(p => p.id + ':' + p.type + ':' + (p.lag || 0)).sort().join(',');
+    }
+    /* ═══ MERGING A TEAMMATE'S COPY ══════════════════════════════════════════
+       Two people, two files, and the question "whose is right" asked of every
+       field rather than of the whole document. The plan is keyed by activity id
+       and the version chain already stores full snapshots, so a three-way merge
+       is available without a server, without an account and without giving up
+       the property that all of this stays in your browser.
+
+       THE ANCESTOR IS FOUND BY CONTENT, not by version number. Both copies mint
+       their own versions after they diverge, so their v11 and your v11 are two
+       different plans wearing the same number. Two snapshots that are byte-
+       identical ARE the same plan state, whatever either side called it.
+
+       WHAT IS MERGED: leaf activities and their input fields, which is where
+       estimates, owners, links and dates live. Snapshots hold leaves only — the
+       existing version diff has always had the same shape — so phase rows,
+       stories, the RAID log and the roster are NOT merged, and the panel says
+       so rather than letting somebody assume they were. */
+    const MERGE_FIELDS = [
+      ['name', 'Name'], ['o', 'Optimistic'], ['m', 'Most likely'], ['p', 'Pessimistic'],
+      ['milestone', 'Is a milestone'], ['owner', 'Owner'], ['units', 'Units %'],
+      ['parentId', 'Parent'], ['predecessors', 'Predecessors'],
+      ['startNoEarlier', 'Start no earlier than'], ['deadline', 'Deadline'],
+      ['fixedCost', 'Fixed cost'], ['acceptance', 'Acceptance'], ['deliverable', 'Deliverable'],
+      ['curve', 'Spend shape'], ['audience', 'Audience'], ['taxonomy', 'Work type']
+    ];
+    function mergeFieldVal(t, f) {
+      if (!t) return undefined;
+      if (f === 'predecessors') return JSON.stringify((t.predecessors || [])
+        .map(normalizePred).map(p => ({ id: p.id, type: p.type, lag: p.lag })));
+      const v = t[f];
+      return v == null ? '' : (typeof v === 'number' ? v : String(v));
+    }
+    function mergeShow(f, v) {
+      if (v === undefined || v === '' || v === null) return '(blank)';
+      if (f === 'predecessors') {
+        try { const a = JSON.parse(v); return a.length ? a.map(x => '#' + x.id + x.type + (x.lag ? (x.lag > 0 ? '+' : '') + x.lag : '')).join(', ') : '(none)'; }
+        catch (e) { return String(v); }
+      }
+      if (f === 'milestone') return v ? 'yes' : 'no';
+      return String(v);
+    }
+    // the newest version whose snapshot is byte-identical in both files
+    function mergeFindBase(theirDoc) {
+      const theirs = (theirDoc && Array.isArray(theirDoc.planVersions)) ? theirDoc.planVersions : [];
+      if (!theirs.length || !planVersions.length) return null;
+      const key = v => JSON.stringify((v && v.snap && v.snap.tasks) || []);
+      const theirKeys = new Map();
+      theirs.forEach(v => { const k = key(v); if (!theirKeys.has(k)) theirKeys.set(k, v); });
+      for (let i = planVersions.length - 1; i >= 0; i--) {
+        const k = key(planVersions[i]);
+        if (theirKeys.has(k)) return { mine: planVersions[i], theirs: theirKeys.get(k), snap: planVersions[i].snap };
+      }
+      return null;
+    }
+    function mergeCompute(theirDoc) {
+      const found = mergeFindBase(theirDoc);
+      if (!found) return { noBase: true };
+      const baseT = new Map(((found.snap && found.snap.tasks) || []).map(t => [t.id, t]));
+      const mineT = new Map(leafTasks().map(t => [t.id, t]));
+      /* isSummary is COMPUTED by calculate() and is not in the file, so trusting
+         the flag on a serialized task kept every phase row and made the whole
+         plan look like additions. A row is a summary if something claims it as
+         a parent — which is how the app decides it too. */
+      const theirParents = new Set((theirDoc.tasks || [])
+        .map(t => t.parentId).filter(x => x != null).map(Number));
+      const theirT = new Map((theirDoc.tasks || [])
+        .filter(t => !theirParents.has(Number(t.id))).map(t => [t.id, t]));
+      const auto = [], conflicts = [], theirAdds = [], myAdds = [], theirDeletes = [], deleteEdits = [];
+      // ids added on BOTH sides since the ancestor are two different activities
+      // that happened to draw the same number from the counter
+      const collisions = [];
+      baseT.forEach((b, id) => {
+        const a = mineT.get(id), c = theirT.get(id);
+        if (!c && a) { theirDeletes.push({ id: id, name: a.name }); return; }
+        if (!a) return;                                   // I deleted it; their edits do not resurrect it
+        MERGE_FIELDS.forEach(([f, lbl]) => {
+          const vb = mergeFieldVal(b, f), va = mergeFieldVal(a, f), vc = mergeFieldVal(c, f);
+          if (vc === undefined || String(vc) === String(vb)) return;   // they did not touch it
+          if (String(va) === String(vb)) { auto.push({ id: id, name: a.name, field: f, label: lbl, mine: va, theirs: vc }); return; }
+          if (String(va) === String(vc)) return;                        // same edit, both sides
+          conflicts.push({ id: id, name: a.name, field: f, label: lbl, mine: va, theirs: vc, take: 'mine' });
+        });
+      });
+      theirT.forEach((c, id) => {
+        if (baseT.has(id)) return;
+        if (mineT.has(id)) { collisions.push({ id: id, mine: mineT.get(id).name, theirs: c.name }); return; }
+        theirAdds.push({ id: id, name: c.name, task: c });
+      });
+      mineT.forEach((a, id) => { if (!baseT.has(id) && !theirT.has(id)) myAdds.push({ id: id, name: a.name }); });
+      return { base: found, auto: auto, conflicts: conflicts, theirAdds: theirAdds, myAdds: myAdds,
+               theirDeletes: theirDeletes, collisions: collisions, deleteEdits: deleteEdits };
+    }
+    let mergePlanState = null;
+    function mergeOpenFile(ev) {
+      const f = ev && ev.target && ev.target.files && ev.target.files[0];
+      if (!f) return;
+      const rd = new FileReader();
+      rd.onload = () => {
+        try { mergeReview(JSON.parse(String(rd.result)), f.name); }
+        catch (e) { alert('That file is not a project export this tool can read: ' + (e.message || e)); }
+      };
+      rd.readAsText(f);
+      ev.target.value = '';
+    }
+    function mergeReview(doc, fname) {
+      if (!doc || !Array.isArray(doc.tasks)) { alert('That file has no plan in it.'); return; }
+      const r = mergeCompute(doc);
+      if (r.noBase) {
+        alert('No shared history.\n\nThis file and yours have no plan version in common, so there is nothing '
+          + 'to merge ONTO — every activity would look like an addition. It was probably started separately '
+          + 'rather than from a copy of this plan.\n\nUse Import to open it as its own project instead.');
+        return;
+      }
+      mergePlanState = { doc: doc, name: fname || 'their copy', r: r };
+      renderMergePanel();
+      openOverlay(document.getElementById('mergeModal'));
+    }
+    function mergeSetTake(i, who) {
+      if (!mergePlanState) return;
+      const c = mergePlanState.r.conflicts[i];
+      if (c) { c.take = who; renderMergePanel(); }
+    }
+    function mergeTakeAll(who) {
+      if (!mergePlanState) return;
+      mergePlanState.r.conflicts.forEach(c => { c.take = who; });
+      renderMergePanel();
+    }
+    function renderMergePanel() {
+      const st = mergePlanState;
+      if (!st) return;
+      const r = st.r;
+      const esc = escapeHtml;
+      const sub = document.getElementById('mergeSub');
+      if (sub) sub.innerHTML = 'Merging <b>' + esc(st.name) + '</b> onto your plan. '
+        + 'Last shared version: <b>v' + esc(String(r.base.mine.v)) + '</b>, taken ' + esc(r.base.mine.at) + '. '
+        + '<b>Nothing changes until you press Merge.</b>';
+      const box = document.getElementById('mergeBody');
+      const grp = (title, note, inner, open) => inner
+        ? '<details ' + (open ? 'open' : '') + ' style="margin-bottom:0.5rem"><summary style="cursor:pointer;font-weight:600">'
+          + title + '</summary><div class="help-text" style="margin:0.2rem 0 0.4rem">' + note + '</div>' + inner + '</details>'
+        : '';
+      const line = x => '<div style="font-size:0.82rem;padding:0.15rem 0"><b>' + esc(x.name) + '</b>'
+        + (x.label ? ' · ' + esc(x.label) + ' <span style="color:#15803d">' + esc(mergeShow(x.field, x.theirs)) + '</span>' : '') + '</div>';
+      const conflictRows = r.conflicts.map((c, i) => `
+        <div style="border:1px solid var(--border);border-radius:8px;padding:0.5rem 0.6rem;margin-bottom:0.4rem">
+          <div style="font-weight:600;font-size:0.85rem">${esc(c.name)} <span class="help-text">· ${esc(c.label)}</span></div>
+          <div style="display:flex;gap:0.5rem;margin-top:0.35rem;flex-wrap:wrap">
+            <button class="btn-sm ${c.take === 'mine' ? 'btn-primary' : 'btn-secondary'}" style="flex:1 1 45%;text-align:left;white-space:normal" onclick="mergeSetTake(${i},'mine')">
+              <b>Yours</b><br><span style="font-weight:400">${esc(mergeShow(c.field, c.mine))}</span></button>
+            <button class="btn-sm ${c.take === 'theirs' ? 'btn-primary' : 'btn-secondary'}" style="flex:1 1 45%;text-align:left;white-space:normal" onclick="mergeSetTake(${i},'theirs')">
+              <b>Theirs</b><br><span style="font-weight:400">${esc(mergeShow(c.field, c.theirs))}</span></button>
+          </div>
+        </div>`).join('');
+      box.innerHTML =
+        (r.conflicts.length
+          ? '<div style="margin-bottom:0.6rem"><div style="display:flex;justify-content:space-between;align-items:center">'
+            + '<b style="font-size:0.9rem">' + r.conflicts.length + ' field' + (r.conflicts.length === 1 ? '' : 's')
+            + ' you both changed</b>'
+            + '<span class="toolbar" style="gap:0.3rem"><button class="btn-sm btn-secondary" onclick="mergeTakeAll(\'mine\')">All mine</button>'
+            + '<button class="btn-sm btn-secondary" onclick="mergeTakeAll(\'theirs\')">All theirs</button></span></div>'
+            + '<div class="help-text" style="margin:0.15rem 0 0.4rem">Only where you edited the SAME field. If you changed the estimate and they changed the owner, both apply and neither appears here.</div>'
+            + conflictRows + '</div>'
+          : '<p class="help-text" style="margin:0 0 0.6rem">✓ No field was changed on both sides.</p>')
+        + grp('Coming in cleanly · ' + r.auto.length, 'Only they touched these, so they apply as they are.',
+              r.auto.map(line).join(''), r.auto.length > 0 && r.auto.length <= 8)
+        + grp('New activities from them · ' + r.theirAdds.length, 'Added since the shared version. They come in whole.',
+              r.theirAdds.map(x => '<div style="font-size:0.82rem;padding:0.15rem 0">' + esc(x.name) + '</div>').join(''))
+        + grp('They deleted · ' + r.theirDeletes.length,
+              'Removed in their copy. These are NOT deleted here — a merge that removes work silently is the one mistake this cannot undo for you. Delete them yourself if you agree.',
+              r.theirDeletes.map(x => '<div style="font-size:0.82rem;padding:0.15rem 0">' + esc(x.name) + '</div>').join(''), true)
+        + grp('Yours, untouched by them · ' + r.myAdds.length, 'Nothing to decide.',
+              r.myAdds.map(x => '<div style="font-size:0.82rem;padding:0.15rem 0">' + esc(x.name) + '</div>').join(''))
+        + (r.collisions.length
+            ? '<div class="help-text" style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:0.5rem 0.7rem;margin-top:0.4rem">'
+              + '<b>' + r.collisions.length + ' activity number' + (r.collisions.length === 1 ? '' : 's') + ' used twice.</b> '
+              + 'You each added an activity after the shared version and both drew the same number. Theirs are '
+              + 'renumbered on the way in, so nothing is lost and nothing is overwritten.</div>'
+            : '')
+        + '<p class="help-text" style="margin-top:0.6rem">Leaf activities and their inputs are merged. Phase rows, user stories, the RAID log and the roster are <b>not</b> — take those across by hand if they matter.</p>';
+      const go = document.getElementById('mergeGo');
+      if (go) go.textContent = 'Merge ' + (r.auto.length + r.conflicts.filter(c => c.take === 'theirs').length
+        + r.theirAdds.length) + ' change' + ((r.auto.length + r.conflicts.filter(c => c.take === 'theirs').length + r.theirAdds.length) === 1 ? '' : 's');
+    }
+    function mergeApply() {
+      const st = mergePlanState;
+      if (!st) return;
+      const r = st.r;
+      // undo is captured by saveLocal via trackUndo — one entry for the whole
+      // merge, which is the granularity somebody undoing a merge wants
+      const byId = new Map(tasks.map(t => [t.id, t]));
+      const setField = (t, f, raw) => {
+        if (f === 'predecessors') { try { t.predecessors = JSON.parse(raw).map(normalizePred); } catch (e) {} return; }
+        if (f === 'milestone') { t.milestone = !!raw; return; }
+        if (['o', 'm', 'p', 'units', 'fixedCost'].indexOf(f) >= 0) { t[f] = Number(raw) || 0; return; }
+        if (f === 'parentId') { t.parentId = (raw === '' || raw == null) ? null : Number(raw); return; }
+        t[f] = raw;
+      };
+      let n = 0;
+      r.auto.forEach(x => { const t = byId.get(x.id); if (t) { setField(t, x.field, x.theirs); n++; } });
+      r.conflicts.forEach(c => { if (c.take !== 'theirs') return; const t = byId.get(c.id); if (t) { setField(t, c.field, c.theirs); n++; } });
+      // renumber their adds past anything either side is using
+      let next = Math.max(0, nextId, ...tasks.map(t => t.id)) + 1;
+      const remap = new Map();
+      r.theirAdds.forEach(x => { remap.set(x.id, next++); });
+      r.theirAdds.forEach(x => {
+        const src = JSON.parse(JSON.stringify(x.task));
+        src.id = remap.get(x.id);
+        /* THEIR BASELINE IS NOT MINE. An activity arriving in a merge was never
+           in my committed plan, so it has no baselined dates, effort or cost —
+           carrying theirs across would report variance against a commitment
+           this plan never made (and they arrive as ISO strings, which the date
+           maths downstream is not expecting). */
+        src.baseStart = null; src.baseFinish = null; src.baseTe = null;
+        src.baseUnits = null; src.baseCost = null;
+        // links that pointed inside their added set follow the renumbering; links
+        // to activities we share keep the id they already agree on
+        src.predecessors = (src.predecessors || []).map(normalizePred)
+          .map(p => ({ id: remap.has(p.id) ? remap.get(p.id) : p.id, type: p.type, lag: p.lag }))
+          .filter(p => byId.has(p.id) || remap.has(p.id) || [...remap.values()].indexOf(p.id) >= 0);
+        if (src.parentId != null && remap.has(src.parentId)) src.parentId = remap.get(src.parentId);
+        else if (src.parentId != null && !byId.has(src.parentId)) src.parentId = null;
+        tasks.push(makeTask(src));
+        n++;
+      });
+      nextId = next;
+      mergePlanState = null;
+      closeOverlay('mergeModal');
+      recompute();
+      saveLocal();
+      pushVersion('merge', 'merged ' + st.name);
+      refreshAll();
+      flashSaved('🔀 ' + n + ' change' + (n === 1 ? '' : 's') + ' merged from ' + st.name
+        + '. A version was filed, and ↶ Undo reverses the whole merge.');
     }
     function planDiff(fromSnap, toSnap) {
       const out = [];

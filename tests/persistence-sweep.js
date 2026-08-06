@@ -204,8 +204,80 @@ const DERIVED = ['te', 'variance', 'es', 'ef', 'ls', 'lf', 'slack', 'isCritical'
     return { contradictions: bad2, counts: out };
   });
 
-  const R = { contradictions: [].concat(qa.contradictions, crm.contradictions, RT.contradictions || []),
-              qaCounts: qa.counts, crmCounts: crm.counts, backupRoundTrip: RT.counts,
+  /* ═══ MERGING A TEAMMATE'S COPY ══════════════════════════════════════════
+     Two people, two files. The merge is per FIELD against a shared ancestor:
+     an edit only one side made applies silently, the same field edited on both
+     sides is a question, and the default answer is keep-mine so an accidental
+     Merge can never quietly take somebody else's value. */
+  const MG = await page.evaluate(() => {
+    const bad3 = [];
+    const say3 = x => bad3.push('Merge :: ' + x);
+    const out = {};
+    pushVersion('draft', 'shared starting point');
+    const their = JSON.parse(JSON.stringify(serialize()));
+    const parents = new Set((their.tasks || []).map(t => t.parentId).filter(x => x != null));
+    const leaves = (their.tasks || []).filter(t => !parents.has(t.id) && !t.milestone);
+    if (leaves.length < 4) { say3('the fixture has fewer than four leaf activities — this check is vacuous');
+      return { contradictions: bad3, counts: out }; }
+    // they change three things; I change a DIFFERENT field on one of them, and
+    // the SAME field on another
+    their.tasks.find(t => t.id === leaves[0].id).owner = 'ZZ their owner';
+    their.tasks.find(t => t.id === leaves[1].id).m = 99;
+    their.tasks.find(t => t.id === leaves[2].id).name = 'ZZ their rename';
+    const nid = Math.max(...their.tasks.map(t => t.id)) + 1;
+    their.tasks.push(Object.assign({}, leaves[0], { id: nid, name: 'ZZ their new activity',
+      predecessors: [], parentId: null }));
+    tasks.find(t => t.id === leaves[0].id).deliverable = 'ZZ my deliverable';
+    tasks.find(t => t.id === leaves[1].id).m = 42;
+    calculate();
+
+    const r = mergeCompute(their);
+    if (r.noBase) { say3('two copies of one plan share no ancestor — the version chain is not being matched'); return { contradictions: bad3, counts: out }; }
+    out.auto = r.auto.map(x => x.field).sort();
+    out.conflicts = r.conflicts.map(x => x.field);
+    out.adds = r.theirAdds.length;
+    if (r.auto.length !== 2) say3('two one-sided edits produced ' + r.auto.length + ' clean applies: ' + JSON.stringify(out.auto));
+    if (r.conflicts.length !== 1 || r.conflicts[0].field !== 'm')
+      say3('one field was edited on both sides and the merge found ' + r.conflicts.length + ' conflict(s)');
+    if (r.theirAdds.length !== 1) say3('one added activity came through as ' + r.theirAdds.length);
+    if (!r.conflicts.every(c => c.take === 'mine'))
+      say3('a conflict defaults to THEIRS — pressing Merge without reading would silently take somebody '
+        + 'else\u2019s value over yours');
+    // phases must not read as additions: isSummary is computed, not stored
+    if (r.theirAdds.some(x => /Phase/i.test(x.name)))
+      say3('phase rows come through as new activities — summary-ness is being read from a flag the file '
+        + 'does not carry');
+
+    // applying keeps mine on the conflict, takes theirs where only they moved
+    const myM = tasks.find(t => t.id === leaves[1].id).m;
+    const before = tasks.length;
+    mergeReview(their, 'zz-teammate.json');
+    mergeApply();
+    out.added = tasks.length - before;
+    if (tasks.find(t => t.id === leaves[0].id).owner !== 'ZZ their owner')
+      say3('a change only they made did not come through');
+    if (tasks.find(t => t.id === leaves[0].id).deliverable !== 'ZZ my deliverable')
+      say3('my edit was overwritten on an activity where they changed a DIFFERENT field — the merge is '
+        + 'per activity rather than per field');
+    if (tasks.find(t => t.id === leaves[1].id).m !== myM)
+      say3('a conflict left on "keep mine" took their value anyway');
+    if (!tasks.find(t => t.name === 'ZZ their rename')) say3('their rename did not apply');
+    const nu = tasks.find(t => t.name === 'ZZ their new activity');
+    if (!nu) say3('their added activity did not arrive');
+    else if (nu.baseFinish) say3('an activity arriving in a merge carries THEIR baseline, so it reports '
+      + 'variance against a commitment this plan never made');
+    const lastV = planVersions[planVersions.length - 1];
+    if (!lastV || !/merged/.test(lastV.label || '')) say3('the merge filed no version, so it cannot be read back');
+
+    // a file with no shared history is refused rather than treated as all-adds
+    const stranger = JSON.parse(JSON.stringify(their));
+    stranger.planVersions = [];
+    if (!mergeCompute(stranger).noBase)
+      say3('a file sharing no history was accepted for merge — every activity would look like an addition');
+    return { contradictions: bad3, counts: out };
+  });
+  const R = { contradictions: [].concat(qa.contradictions, crm.contradictions, RT.contradictions || [], MG.contradictions || []),
+              qaCounts: qa.counts, crmCounts: crm.counts, backupRoundTrip: RT.counts, merge: MG.counts,
               pageErrors: errs.slice(0, 8) };
   console.log(JSON.stringify(R, null, 1));
   await b.close();

@@ -1355,6 +1355,26 @@ const MUTANTS = [
     find: '            const e = plannedEffortDays(t);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';',
     with: '            const e = unitToWorkingDays(t.te || 0);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';' },
 
+  { what: 'merge: a conflict defaults to taking THEIR value',
+    with: "          conflicts.push({ id: id, name: a.name, field: f, label: lbl, mine: va, theirs: vc, take: 'theirs' });",
+    find: "          conflicts.push({ id: id, name: a.name, field: f, label: lbl, mine: va, theirs: vc, take: 'mine' });" },
+
+  { what: 'merge: it merges per ACTIVITY, so an untouched field of mine is overwritten',
+    find: "          if (vc === undefined || String(vc) === String(vb)) return;   // they did not touch it",
+    with: "          if (vc === undefined) return;" },
+
+  { what: 'merge: phases read as new activities because the stored flag is trusted',
+    find: "      const theirParents = new Set((theirDoc.tasks || [])\n        .map(t => t.parentId).filter(x => x != null).map(Number));",
+    with: "      const theirParents = new Set();" },
+
+  { what: 'merge: an arriving activity carries their baseline into my plan',
+    find: "        src.baseStart = null; src.baseFinish = null; src.baseTe = null;",
+    with: "        src.baseTe = src.baseTe;" },
+
+  { what: 'merge: a file with no shared history is merged anyway',
+    find: "      if (!theirs.length || !planVersions.length) return null;",
+    with: "      if (!theirs.length || !planVersions.length) return { mine: planVersions[0] || { v: 0, at: '' }, theirs: null, snap: { tasks: [] } };" },
+
   { what: 'SOW: the section picker does nothing — every section prints anyway',
     find: "    function sowWants(key) { return !sowOffSet().has(String(key)); }",
     with: "    function sowWants(key) { return true; }" },
