@@ -1075,6 +1075,38 @@ const QA = JSON.parse(fs.readFileSync(
         t.units = keptU; t.participants = keptP; calculate();
       })();
 
+      /* ── WORK ABOVE DURATION IS RIGHT, AND HAS TO SAY WHY ───────────────
+         Allocation is the sum across everybody on the activity, so a 33-minute
+         call with two people is 33 minutes of calendar and 66 person-minutes of
+         work. Correct, and unreadable without a reason: the first thing anyone
+         says on seeing it is "how can the duration be shorter than the work?" */
+      (() => {
+        const t2 = leafTasks().find(x => !x.isSummary && !x.milestone && (x.te || 0) > 0);
+        if (!t2) { say('Work cell', 'no leaf activity — this check is vacuous'); return; }
+        const k = { u: t2.units, a: t2.attendees, p: t2.participants };
+        const other = Object.keys(resources || {}).find(n => n !== t2.owner);
+        if (!other) { say('Work cell', 'the fixture has only one resource, so two-person work cannot be shown'); return; }
+        t2.units = 100; t2.attendees = [{ name: other, units: 100 }]; t2.participants = null;
+        calculate();
+        const dur = t2.te, wk = workingDaysToUnit(plannedEffortDays(t2));
+        out.twoPersonDur = dur; out.twoPersonWork = wk;
+        if (!(wk > dur))
+          say('Work cell', 'two people on one activity produced ' + wk + ' of work against ' + dur
+            + ' of duration — allocation is being capped at 100% somewhere');
+        const tip = (typeof workCellTip === 'function') ? workCellTip(t2) : '';
+        out.workTip = tip.slice(0, 60);
+        if (!tip) say('Work cell', 'the work cell carries no explanation at all');
+        else {
+          if (tip.indexOf('%') < 0) say('Work cell', 'the explanation does not state the allocation');
+          if (tip.indexOf(other) < 0) say('Work cell', 'the explanation does not name who is on the activity');
+          if (!/LONGER/.test(tip))
+            say('Work cell', 'work exceeds duration and the explanation does not say why: "' + tip + '"');
+        }
+        if (workCellTip(tasks.find(x => x.milestone) || null) !== '')
+          say('Work cell', 'a milestone carries a work explanation, though it holds no work');
+        t2.units = k.u; t2.attendees = k.a; t2.participants = k.p; calculate();
+      })();
+
       return { contradictions: bad, counts: out };
     }, label);
   };

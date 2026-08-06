@@ -3673,7 +3673,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.1741</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.1755</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -7995,7 +7995,7 @@ Or say what you want, in your own words:
           <td${a}${ed('m')}>${summary ? rollCell(t.mUp, 'most-likely') : t.milestone ? '—' : fmtDurCell(t.m)}</td>
           <td${a}${ed('p')}>${summary ? rollCell(t.pUp, 'pessimistic') : t.milestone ? '—' : fmtDurCell(t.p)}</td>
           <td${a}><strong>${noEst ? '⚠ 0' : teStr}</strong></td>
-          <td${a} style="color:#475569">${(() => {
+          <td${a} style="color:#475569" title="${escapeHtml(workCellTip(t))}">${(() => {
             if (t.milestone) return '◆';
             if (!calculated) return '—';
             const w = t.isSummary
@@ -10079,6 +10079,29 @@ Or say what you want, in your own words:
       const p = boldPersona ? '<b>' + e(persona) + '</b>' : e(persona);
       return 'As ' + storyArticle(persona) + ' ' + p + ', ' + storyWantVerb(s && s.want)
         + ' ' + e((s && s.want) || '?') + ', so that ' + e((s && s.soThat) || '?');
+    }
+    /* "How can the duration be shorter than the work?" — because allocation is
+       the sum across EVERYBODY on the activity, so a 33-minute call with two
+       people is 33 minutes of calendar and 66 person-minutes of work. The
+       arithmetic was right and the table never said why, which is the same
+       thing as being wrong to the person reading it. */
+    function workCellTip(t) {
+      if (!t || t.milestone) return '';
+      if (t.isSummary) {
+        const kids = leafDescendants(t.id).filter(x => !x.milestone);
+        const w = kids.reduce((a, x) => a + workingDaysToUnit(plannedEffortDays(x)), 0);
+        return 'The work inside this phase: ' + fmtDurCell(w) + ' across ' + kids.length
+          + ' activit' + (kids.length === 1 ? 'y' : 'ies')
+          + '. Work IS a sum. The duration beside it is not — it is the span through the dependency '
+          + 'network, so parallel activities overlap and a phase is usually shorter than its parts added up.';
+      }
+      const parts = (typeof taskParticipants === 'function' ? taskParticipants(t) : []);
+      const tot = taskUnitsTotal(t);
+      const who = parts.map(p => p.name + ' ' + (Number(p.units) || 0) + '%').join(' + ');
+      const w = workingDaysToUnit(plannedEffortDays(t));
+      return fmtDurCell(t.te || 0) + ' open \u00d7 ' + (Math.round(tot * 10) / 10) + '% = ' + fmtDurCell(w)
+        + ' of work' + (who ? ' \u2014 ' + who : '')
+        + (tot > 100 ? '. More than one person is on this, so the work is LONGER than the time it is open: a 30-minute call with two people is an hour of somebody\u2019s time.' : '');
     }
     function plannedEffortUnit(t, useBaseline) {
       if (!t || t.milestone) return 0;
@@ -16290,7 +16313,7 @@ Or say what you want, in your own words:
           <td style="padding-left:${8 + depth * 18}px"><span style="display:inline-flex;align-items:center">${twisty}${t.milestone ? '◆ ' : ''}${escapeHtml(t.milestone ? t.name.replace(/^◆\s*/, '') : t.name)}${collapsedIds.has(t.id) ? ` <span class="help-text" style="font-size:0.68rem;margin-left:4px">(+${leafDescendants(t.id).length})</span>` : ''}</span></td>
           <td style="font-size:0.8rem">${t.isSummary ? summaryOwnerCell(t) : escapeHtml(t.owner || '—') + roleSub(t.owner)}</td>
           <td>${dur}</td>
-          <td title="${escapeHtml('The work inside that span: duration x this row\u2019s allocation. They are the same number only at 100%.')}">${(() => {
+          <td title="${escapeHtml(workCellTip(t))}">${(() => {
             if (t.isSummary) { const e = leafDescendants(t.id).reduce((a, x) => a + plannedEffortDays(x), 0);
               return e > 0 ? '<span class="help-text">' + escapeHtml(fmtDurCell(workingDaysToUnit(e))) + '</span>' : '—'; }
             if (t.milestone) return '◆';

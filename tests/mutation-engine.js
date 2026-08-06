@@ -1355,6 +1355,10 @@ const MUTANTS = [
     find: '            const e = plannedEffortDays(t);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';',
     with: '            const e = unitToWorkingDays(t.te || 0);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';' },
 
+  { what: 'work cell: no explanation when the work exceeds the duration',
+    find: "        + (tot > 100 ? '. More than one person is on this, so the work is LONGER than the time it is open: a 30-minute call with two people is an hour of somebody\\u2019s time.' : '');",
+    with: "        + '';" },
+
   { what: 'io repair: the AI pass overwrites a deliverable somebody wrote',
     find: "          if (d && !String(t.deliverable || '').trim()) { t.deliverable = d; dLit++; }",
     with: "          if (d) { t.deliverable = d; dLit++; }" },
