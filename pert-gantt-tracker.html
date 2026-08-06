@@ -3580,7 +3580,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0627</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0646</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -5926,7 +5926,7 @@ Or say what you want, in your own words:
           <details class="src-story" style="margin:-0.4rem 0 1rem;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:0.55rem 0.75rem;font-size:0.8rem;line-height:1.5">
             <summary style="font-weight:700;color:#334155;cursor:pointer;list-style:none;display:flex;align-items:center;gap:0.25rem"><span class="ico" aria-hidden="true">📖</span> Source story · ${ekMark('us')}${escapeHtml(stHit.id)}${stHit.epicId ? ` <span class="help-text" style="font-weight:400">${ekMark('ep', { xs: true })}${escapeHtml(stHit.epicId)}</span>` : ''} <span class="help-text" style="font-weight:400;margin-left:auto">${(stHit.ac || []).length} criteria · show</span></summary>
             <div style="margin-top:0.4rem">
-            <div style="margin-bottom:0.4rem">As a <b>${escapeHtml(stHit.persona || '?')}</b>, I want to ${escapeHtml(stHit.want || '?')}, so that ${escapeHtml(stHit.soThat || '?')}.</div>
+            <div style="margin-bottom:0.4rem">${storySentence(stHit, escapeHtml, true)}.</div>
             ${(stHit.ac || []).length ? `<div style="margin-bottom:0.35rem"><b>Acceptance criteria (${stHit.ac.length}):</b><ul style="list-style:none;margin:0.2rem 0 0;padding-left:0.25rem">${stHit.ac.map(a => `<li style="margin-bottom:0.15rem${a.id === (acHit && acHit.id) ? ';background:#fef9c3;border-radius:4px;padding:1px 4px' : ''}">${typeIcon[a.type] || '•'} <span style="color:#475569">${escapeHtml(a.id)}</span> ${escapeHtml(a.text)}${a.id === (acHit && acHit.id) ? ' <span class="help-text">← this test verifies this one</span>' : ''}</li>`).join('')}</ul></div>` : ''}
             <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.5rem">
               <button class="btn-sm btn-secondary no-print" onclick="openStoryModal('${ekJs(stHit.id)}')" title="Edit ${escapeHtml(stHit.id)} — persona, acceptance criteria, NFRs, assumptions. Opens on top; saving refreshes this panel.">✎ Edit story</button>
@@ -5959,7 +5959,7 @@ Or say what you want, in your own words:
               <summary style="cursor:pointer;font-size:0.8rem;font-weight:600;color:#1e40af"><span class="ico" aria-hidden="true">📖</span> User stories traced to this activity (${st.length}) — the acceptance criteria that define “done” for billing</summary>
               ${st.map(s => `<div style="margin:0.6rem 0 0.75rem;font-size:0.8rem;line-height:1.45">
                 <div style="display:flex;gap:0.6rem;align-items:flex-start">
-                  <span style="flex:1;min-width:0"><b>${escapeHtml(s.id)}</b> — As a <b>${escapeHtml(s.persona || '?')}</b>, I want to ${escapeHtml(s.want || '?')}, so that ${escapeHtml(s.soThat || '?')}</span>
+                  <span style="flex:1;min-width:0"><b>${escapeHtml(s.id)}</b> — ${storySentence(s, escapeHtml, true)}</span>
                   <button class="btn-lite no-print" onclick="openStoryModal('${ekJs(s.id)}')" title="Edit ${escapeHtml(s.id)} right here — persona, acceptance criteria, NFRs, assumptions. The story editor opens ON TOP of this one; saving refreshes this panel and your unsaved activity fields stay put. Criteria edits still offer test-case regeneration.">✎ Edit</button>
                 </div>
                 ${(s.ac || []).length ? `<ul style="list-style:none;margin:0.25rem 0 0;padding-left:0.5rem">${s.ac.map(a => `<li>${typeIcon[a.type] || '•'} <span style="color:#475569">${escapeHtml(a.id)}</span> ${escapeHtml(a.text)}</li>`).join('')}</ul>` : ''}
@@ -9877,6 +9877,34 @@ Or say what you want, in your own words:
     /* The same figure in the display unit, which is what every table and card
        shows. Summaries roll up their leaves: a summary's own te is a schedule
        span through a dependency network and is not anybody's work. */
+    /* "As a Independent Product Advisor, I want to a baseline scorecard" — the
+       story template concatenated three fields and produced broken English in
+       every one of the twenty-five stories printed in a client's contract. Two
+       rules, both cheap: an article that agrees with the persona, and "I want"
+       rather than "I want to" when what follows is a THING rather than an act.
+       The determiner set is deliberately conservative — an unrecognised opening
+       keeps today's "I want to", which is right for the verb-led majority. */
+    const STORY_NOUN_LEAD = new Set(['a','an','the','my','our','their','its','this','that','these','those',
+      'every','each','all','any','some','no','one','two','three','four','five','six','more','fewer','per',
+      'written','clear','full','complete','detailed','single','consistent','automatic','visible','accurate',
+      'reliable','stable','current','ongoing','regular','monthly','weekly','daily']);
+    function storyArticle(word) {
+      return /^[aeiou]/i.test(String(word || '').trim()) ? 'an' : 'a';
+    }
+    function storyWantVerb(want) {
+      const first = String(want || '').trim().split(/[\s,]+/)[0].toLowerCase().replace(/[^a-z-]/g, '');
+      return (STORY_NOUN_LEAD.has(first) || /^\d/.test(String(want || '').trim())) ? 'I want' : 'I want to';
+    }
+    /* One sentence builder, so the wording is the same in the contract, the
+       requirements tab, the exports and every prompt. esc is passed in because
+       the callers differ on whether they are writing HTML or plain text. */
+    function storySentence(s, esc, boldPersona) {
+      const e = esc || (x => String(x == null ? '' : x));
+      const persona = (s && s.persona) || '?';
+      const p = boldPersona ? '<b>' + e(persona) + '</b>' : e(persona);
+      return 'As ' + storyArticle(persona) + ' ' + p + ', ' + storyWantVerb(s && s.want)
+        + ' ' + e((s && s.want) || '?') + ', so that ' + e((s && s.soThat) || '?');
+    }
     function plannedEffortUnit(t, useBaseline) {
       if (!t || t.milestone) return 0;
       if (t.isSummary) return leafDescendants(t.id)
@@ -16117,7 +16145,7 @@ Or say what you want, in your own words:
           <td style="font-size:0.8rem">${escapeHtml(t.acceptance || '')}</td>
           <td style="font-size:0.72rem;color:var(--muted)">${linksCell}</td>
           <td style="font-size:0.75rem;white-space:nowrap">${(() => { const st = storiesForTask(t.id); return st.length
-            ? st.map(s => `<span class="badge badge-info" style="cursor:pointer" onclick="event.stopPropagation();openReqStory('${ekJs(s.id)}')" title="${escapeHtml('As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?') + ' — ' + (s.ac || []).length + ' acceptance criteria. Click to jump to this story.')}">${escapeHtml(s.id)}</span>`).join(' ')
+            ? st.map(s => `<span class="badge badge-info" style="cursor:pointer" onclick="event.stopPropagation();openReqStory('${ekJs(s.id)}')" title="${escapeHtml(storySentence(s) + ' — ' + (s.ac || []).length + ' acceptance criteria. Click to jump to this story.')}">${escapeHtml(s.id)}</span>`).join(' ')
             : '<span class="help-text">—</span>'; })()}</td>
         </tr>`;
       }).join('');
@@ -17088,7 +17116,7 @@ Or say what you want, in your own words:
         const span = acsList.length;
         // the FULL story sentence, once per story (rowspan across its AC rows) —
         // never just the "I want" fragment
-        const sentence = `As a <b>${escapeHtml(s.persona || '?')}</b>, I want to ${escapeHtml(s.want || '?')}, <span style="color:var(--muted)">so that ${escapeHtml(s.soThat || '?')}</span>`;
+        const sentence = `As ${storyArticle(s.persona || '?')} <b>${escapeHtml(s.persona || '?')}</b>, ${storyWantVerb(s.want)} ${escapeHtml(s.want || '?')}, <span style="color:var(--muted)">so that ${escapeHtml(s.soThat || '?')}</span>`;
         const cells = (a, first) => `<tr>
           ${first ? `<td rowspan="${span}" style="font-size:0.75rem;white-space:nowrap;vertical-align:top">${s.epicId ? ekMark('ep', { xs: true }) + escapeHtml(s.epicId) : '—'}</td>
           <td rowspan="${span}" style="font-size:0.75rem;vertical-align:top">${ekTok('us', s.id, '', { xs: true, onclick: `event.stopPropagation();openReqStory('${ekJs(s.id)}')` })}${jiraChip(s.jira)}</td>
@@ -18273,7 +18301,7 @@ Or say what you want, in your own words:
         L.push('');
         L.push('THE REQUIREMENTS IT HAS TO SATISFY');
         use.forEach(s => {
-          L.push('  ' + s.id + ' — As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?')
+          L.push('  ' + s.id + ' — ' + storySentence(s).replace(/, so that .*$/, '')
             + ', so that ' + (s.soThat || '?') + '.');
           (s.ac || []).forEach((a, i) => L.push('      AC' + (i + 1) + ' (' + (a.type || 'happy') + '): ' + a.text));
           (s.nfrs || []).forEach(n => L.push('      Quality attribute: ' + n));
@@ -18665,7 +18693,7 @@ Or say what you want, in your own words:
     }
     function storyTraceText(taskId, withAc) {
       return storiesForTask(taskId).map(s =>
-        s.id + ': As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?') + '.'
+        s.id + ': ' + storySentence(s) + '.'
         + ((s.ac || []).length ? (withAc
           ? ' AC: ' + s.ac.map(a => a.id + ' (' + a.type + ') ' + a.text).join(' | ')
           : ' (' + s.ac.length + ' acceptance criteria)') : '')
@@ -18687,7 +18715,7 @@ Or say what you want, in your own words:
       const t = makeTask({
         id: nextId++, name, o: 0, m: 0, p: 0, milestone: false, owner: '', units: 100,
         parentId, predecessors: [],
-        description: 'From ' + s.id + ': As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?'),
+        description: 'From ' + s.id + ': ' + storySentence(s),
         deliverable: name,
         acceptance: happy ? happy.text.slice(0, 300) : ''
       });
@@ -19149,7 +19177,7 @@ Return ONLY JSON (no prose, no fences):
         const batch = batches[bi];
         const partBar = batches.map((x, i) => i < bi ? '✓' : i === bi ? '▶' : '·').join('');
         const prompt = `ACCEPTANCE CRITERIA NEEDING TEST CASES (story context included):
-${batch.map(({ s, a }) => `- ${a.id} [${a.type}] (from ${s.id}: As a ${s.persona || '?'}, I want to ${s.want || '?'}): ${a.text}`).join('\n')}
+${batch.map(({ s, a }) => `- ${a.id} [${a.type}] (from ${s.id}: ${storySentence(s).replace(/, so that .*$/, '')}): ${a.text}`).join('\n')}
 Write the test cases for the criteria above, following the contract exactly. Return ONLY the JSON object described.`;
         const onDelta = streamShow('Writing test cases [' + partBar + '] batch ' + (bi + 1) + '/' + batches.length + ' (' + batch.length + ' ACs)');
         const text = await callAnthropic(prompt, { onDelta, cachePrefix: [histPromptBlock() + bankPromptBlock(), tcContract] });
@@ -19317,7 +19345,7 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       tcs.forEach(tc => {
         const acId = ((tc.name.match(/^TC\s+([A-Za-z0-9_.-]+)/i) || [])[1] || '').toLowerCase();
         const hit = acIndex[acId];
-        rows.push([tc.name, hit ? hit.a.id : acId.toUpperCase(), hit ? gwtLines(hit.a.text) : '', hit ? hit.s.id + '\nAs a ' + (hit.s.persona || '?') + ', I want to ' + (hit.s.want || '?') : '',
+        rows.push([tc.name, hit ? hit.a.id : acId.toUpperCase(), hit ? gwtLines(hit.a.text) : '', hit ? hit.s.id + '\n' + storySentence(hit.s).replace(/, so that .*$/, '') : '',
           hasRealSteps(tc) ? tcStepLines(tc.description) : '⚠ NO EXECUTABLE STEPS — run 🧪 Generate test plan (re-specifies shallow TCs)' + (tc.description ? '\nCurrent note: ' + tc.description : ''), gwtLines(tc.acceptance), tc.owner || '', fmtDurText(tc.te), (tc.percentComplete || 0) + '%', taskStatus(tc).label,
           tc.startDate ? fmtISO(tc.startDate) : '', tc.jira || '', '', '']);
       });
@@ -19899,7 +19927,8 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       aiAddCriteria._id = storyId;
       const act = s.wbsId != null ? tasks.find(t => t.id === s.wbsId) : null;
       document.getElementById('acTitle').textContent = '✚ AI: more acceptance criteria — ' + s.id;
-      document.getElementById('acMeta').textContent = 'As a ' + (s.persona || '?') + ', I want to '
+      document.getElementById('acMeta').textContent = 'As ' + storyArticle(s.persona || '?') + ' '
+        + (s.persona || '?') + ', ' + storyWantVerb(s.want) + ' '
         + (s.want || '?') + (s.soThat ? ', so that ' + s.soThat : '')
         + (act ? '  ·  traces to ' + (act.wbs ? act.wbs + ' ' : '') + act.name : '');
       /* Show what it already has, and by TYPE. The gap is nearly always visible
@@ -19933,7 +19962,7 @@ Write the test cases for the criteria above, following the contract exactly. Ret
       const prompt = `You are a senior business analyst ADDING acceptance criteria to one user story of a billable engagement. You are NOT rewriting anything.
 PROJECT: ${projName()}
 ${act ? 'THE WBS ACTIVITY it traces to: ' + (act.wbs ? act.wbs + ' ' : '') + act.name + (act.description ? ' | scope: ' + act.description : '') + (act.deliverable ? ' | deliverable: ' + act.deliverable : '') + (act.acceptance ? ' | done-when: ' + act.acceptance : '') : 'No linked WBS activity.'}
-THE STORY: As a ${s.persona || '?'}, I want to ${s.want || '?'}${s.soThat ? ', so that ' + s.soThat : ''}.
+THE STORY: ${storySentence(s)}.
 CRITERIA THAT ALREADY EXIST — do not repeat, restate, contradict or renumber any of these:
 ${oldAc.length ? oldAc.map(a => `${a.id} (${a.type}): ${a.text}`).join('\n') : '(none yet)'}
 ${guidance ? `WHAT THE USER ASKED FOR — this is the instruction; follow it exactly and let it override the default gap-finding below:\n"""${guidance}"""\n`
@@ -20403,7 +20432,7 @@ ${existingBatch.length ? 'EXISTING STORIES FOR THIS BRANCH — keep their IDs, i
           rendered.add(s.id);
           const t = s.wbsId != null ? idToTask[s.wbsId] : null;
           L.push('### ' + s.id + (t ? ' · WBS ' + t.wbs + ' ' + t.name + ' (' + (t.percentComplete || 0) + '% complete)' : ' · (not linked to WBS)'));
-          L.push('As a **' + (s.persona || '?') + '**, I want to **' + (s.want || '?') + '**, so that ' + (s.soThat || '?') + '.', '');
+          L.push('As ' + storyArticle(s.persona || '?') + ' **' + (s.persona || '?') + '**, ' + storyWantVerb(s.want) + ' **' + (s.want || '?') + '**, so that ' + (s.soThat || '?') + '.', '');
           if ((s.ac || []).length) { L.push('**Acceptance criteria**'); s.ac.forEach(a => L.push('- `' + a.id + '` *(' + a.type + ')* ' + a.text)); L.push(''); }
           if ((s.nfrs || []).length) { L.push('**Non-functional requirements**'); s.nfrs.forEach(n => L.push('- ' + n)); L.push(''); }
           if ((s.assumptions || []).length) { L.push('**Assumptions & client dependencies**'); s.assumptions.forEach(a => L.push('- ' + a)); L.push(''); }
@@ -20424,7 +20453,7 @@ ${existingBatch.length ? 'EXISTING STORIES FOR THIS BRANCH — keep their IDs, i
       const rows = [['Epic', 'Story ID', 'User story', 'Persona', 'Jira', 'AC ID', 'AC type', 'Acceptance criterion', 'Test cases', 'WBS', 'Activity', 'Owner', '% complete', 'Status']];
       reqs.stories.forEach(s => {
         const t = s.wbsId != null ? idToTask[s.wbsId] : null;
-        const base = [s.epicId || '', s.id, 'As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?') + ', so that ' + (s.soThat || '?'), s.persona || '', s.jira || ''];
+        const base = [s.epicId || '', s.id, storySentence(s), s.persona || '', s.jira || ''];
         const tail = t ? [t.wbs, t.name, t.owner || '', (t.percentComplete || 0) + '%', taskStatus(t).label] : ['', '', '', '', 'unlinked'];
         if (!(s.ac || []).length) rows.push([...base, '', '', '', '', ...tail]);
         (s.ac || []).forEach(a => rows.push([...base, a.id, a.type, gwtLines(a.text),
@@ -21255,7 +21284,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       reqs.stories.forEach(st => {
         const t = st.wbsId != null ? tasks.find(x => x.id === st.wbsId) : null;
         const e = (reqs.epics || []).find(x => x.id === st.epicId);
-        rows.push(['Story', jiraKeyOf(st.jira), (st.id + ' \u2014 As a ' + (st.persona || '?') + ', I want to ' + (st.want || '?')).slice(0, 250), jiraStoryDesc(st, t), 'engagement-planner ' + st.id, '', epicTitle(e)]);
+        rows.push(['Story', jiraKeyOf(st.jira), (st.id + ' \u2014 ' + storySentence(st).replace(/, so that .*$/, '')).slice(0, 250), jiraStoryDesc(st, t), 'engagement-planner ' + st.id, '', epicTitle(e)]);
       });
       const acIdx = {}; reqs.stories.forEach(st => (st.ac || []).forEach(a => { acIdx[String(a.id).toLowerCase()] = st; }));
       tasks.filter(isTestCaseTask).forEach(tc2 => {
@@ -21692,7 +21721,7 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
           t.deliverable||'', t.description||'', t.acceptance||'',
           (t.predecessors || []).map(pd => { const pt = idTo[pd.id]; return pt ? fmtLink(pt, pd.type, pd.lag) : ''; }).filter(Boolean).join(' || '),
           (succOf[t.id] || []).join(' || '),
-          st.map(s => s.id + ' — As a ' + (s.persona||'?') + ', I want to ' + (s.want||'?') + ', so that ' + (s.soThat||'?')).join(' || '),
+          st.map(s => s.id + ' — ' + storySentence(s)).join(' || '),
           st.flatMap(s => (s.ac||[]).map(a => a.id + ' (' + a.type + ') ' + a.text)).join(' || '),
           verif.join(' || ') || (st.length && st.every(isProcessStory) ? 'Process — verified by the deliverable/sign-off artifact itself' : ''),
           t.jira || ''
@@ -25676,7 +25705,7 @@ Estimate rules: an estimates[] entry ONLY for rows where new O/M/P numbers were 
       // full requirements context: for UAT/test-case decomposition the sub-tasks
       // should trace back to acceptance criteria (AC → TC per the estimation guide)
       const reqBlock = (reqs && Array.isArray(reqs.stories) && reqs.stories.length)
-        ? `\nPROJECT USER STORIES & ACCEPTANCE CRITERIA (when decomposing testing/UAT/validation work, derive test-case sub-tasks from these and reference their IDs):\n${reqs.stories.map(s => `${s.id}${s.wbsName ? ' [' + s.wbsName + ']' : ''}: As a ${s.persona || '?'}, I want to ${s.want || '?'}. ` + (s.ac || []).map(a => a.id + ' (' + a.type + '): ' + a.text).join(' | ')).join('\n')}\n`
+        ? `\nPROJECT USER STORIES & ACCEPTANCE CRITERIA (when decomposing testing/UAT/validation work, derive test-case sub-tasks from these and reference their IDs):\n${reqs.stories.map(s => `${s.id}${s.wbsName ? ' [' + s.wbsName + ']' : ''}: ${storySentence(s).replace(/, so that .*$/, '')}. ` + (s.ac || []).map(a => a.id + ' (' + a.type + '): ' + a.text).join(' | ')).join('\n')}\n`
         : '';
       const prompt = `You are helping an engagement manager decompose one task of a project plan into a finer work breakdown.
 Project: ${document.getElementById('projectName').value} (durations in ${unit}).
@@ -27615,17 +27644,26 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
                with one person on it at 20% is 4 days of calendar and 0.8 days
                of work, and a client reading "4 days" against a day rate reaches
                a figure five times the one being charged. */
+            /* ONE UNIT DOWN THE COLUMN. fmtDurText drops to hours below a day,
+               so a single table read "4.0 days", "1.6 days of work over 2.0
+               days" and "6.4 h (0.80 days) of work over 4.0 days" — three
+               formats for one quantity, in the table a client prices the
+               engagement from. The project unit, always, two decimals only when
+               they carry information. */
             effort: (clientSafeReports || t.milestone) ? null
-              : t.isSummary
-                ? fmtDurText(leafDescendants(t.id).reduce((sx, x) => sx + workingDaysToUnit(plannedEffortDays(x)), 0))
-                    + ' of work (rolled up)'
-                : (() => {
-                    const work = workingDaysToUnit(plannedEffortDays(t));
-                    const span = Number(t.te) || 0;
-                    return Math.abs(work - span) < 0.005
-                      ? fmtDurText(span)
-                      : fmtDurText(work) + ' of work over ' + fmtDurText(span);
-                  })()
+              : (() => {
+                  const u2 = (typeof unitLabel === 'function' ? unitLabel() : 'days');
+                  const num = v => (Math.abs(v - Math.round(v)) < 0.005 ? v.toFixed(1) : v.toFixed(2)) + ' ' + u2;
+                  if (t.isSummary) {
+                    const roll = leafDescendants(t.id).reduce((sx, x) => sx + workingDaysToUnit(plannedEffortDays(x)), 0);
+                    return num(roll) + ' of work (rolled up)';
+                  }
+                  const work = workingDaysToUnit(plannedEffortDays(t));
+                  const span = Number(t.te) || 0;
+                  return Math.abs(work - span) < 0.005
+                    ? num(span)
+                    : num(work) + ' of work over ' + num(span);
+                })()
           }));
         })(),
         /* Every story id printed anywhere in this document resolves to a story
@@ -27725,7 +27763,7 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       const scopeRows = d.scope.map(r => `<tr style="${r.summary ? 'font-weight:700;background:#f8fafc' : ''}">
         <td style="${td}">${h(r.wbs)}</td><td style="${td};padding-left:${9 + r.depth * 14}px">${r.milestone ? '◆ ' : ''}${h(r.name)}</td>
         <td style="${td}">${h(r.deliverable)}</td><td style="${td}">${h(r.description)}</td><td style="${td}">${h(r.acceptance)}</td>
-        <td style="${td}${String(r.resp || '').indexOf('CLIENT') === 0 ? 'background:#fffbeb;' : ''}">${h(r.resp || '—')}</td>${showEffort ? `<td style="${td}">${h(r.effort || '')}</td>` : ''}</tr>`).join('');
+        <td style="${td}${String(r.resp || '').indexOf('CLIENT') === 0 ? 'background:#fffbeb;' : ''}">${h(r.resp || '—')}</td>${showEffort ? `<td style="${td}">${r.effort ? h(r.effort) : '<span style="color:#94a3b8">n/a — milestone</span>'}</td>` : ''}</tr>`).join('');
       return `<div style="font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;max-width:1080px;margin:0 auto">
         <h1 style="margin:0 0 2px;font-size:22px">Statement of Work — ${h(d.name)}</h1>
         <p style="color:#64748b;font-size:12px;margin:0 0 14px">DRAFT generated ${new Date().toLocaleDateString()} — review all terms before sending. Timeline ${h(d.start)} → ${h(d.finish)}${d.committed ? ' (committed date incl. contingency: ' + h(d.committed) + ')' : ''}.</p>
@@ -27949,7 +27987,7 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           <table style="border-collapse:collapse;width:100%"><tr><th style="${th};width:60px">ID</th><th style="${th}">Story</th><th style="${th};width:60px">ACs</th><th style="${th};width:160px">WBS trace</th></tr>
           ${(() => { const printed = sowPrintedStoryIds();
             return reqs.stories.filter(s => printed.has(s.id)).map(s => { const t = s.wbsId != null ? idToTask[s.wbsId] : null;
-            return `<tr><td style="${td}">${h(s.id)}</td><td style="${td}">As a <b>${h(s.persona)}</b>, I want to ${h(s.want)}, so that ${h(s.soThat)}.</td><td style="${td};text-align:center">${(s.ac || []).length}</td><td style="${td}">${t ? h(t.wbs + ' ' + t.name) : '—'}</td></tr>`; }).join(''); })()}
+            return `<tr><td style="${td}">${h(s.id)}</td><td style="${td}">${storySentence(s, h, true)}.</td><td style="${td};text-align:center">${(s.ac || []).length}</td><td style="${td}">${t ? h(t.wbs + ' ' + t.name) : '—'}</td></tr>`; }).join(''); })()}
           </table>${(() => { const printed = sowPrintedStoryIds(); const n2 = reqs.stories.filter(s => !printed.has(s.id)).length;
             return n2 ? `<p style="font-size:11.5px;color:#64748b;margin:4px 0 0">${n2} further internal delivery-side stor${n2 === 1 ? 'y is' : 'ies are'} managed in the project plan and not referred to in this document.</p>` : ''; })()}`;
       }
@@ -27964,7 +28002,7 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           <table style="border-collapse:collapse;width:100%"><tr><th style="${th};width:70px">ID</th><th style="${th}">Story &amp; acceptance criteria</th><th style="${th};width:150px">WBS trace</th></tr>
           ${list.map(s => {
             const t = s.wbsId != null ? idToTask[s.wbsId] : null;
-            return `<tr><td style="${td}">${h(s.id)}</td><td style="${td}">As a <b>${h(s.persona)}</b>, I want to ${h(s.want)}, so that ${h(s.soThat)}.
+            return `<tr><td style="${td}">${h(s.id)}</td><td style="${td}">${storySentence(s, h, true)}.
               ${(s.ac || []).length ? '<ul style="margin:4px 0 0 14px;padding:0">' + s.ac.map(a => `<li><i>${h(a.type)}</i> — ${h(a.text)}</li>`).join('') + '</ul>' : ''}
               ${(s.nfrs || []).length ? `<div style="margin-top:3px;color:#475569"><b>NFRs:</b> ${s.nfrs.map(h).join('; ')}</div>` : ''}</td>
               <td style="${td}">${t ? h(t.wbs + ' ' + t.name) : '—'}</td></tr>`;

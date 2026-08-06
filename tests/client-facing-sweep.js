@@ -281,6 +281,66 @@ const DATA = FIXTURE();
         if (/all activities and deliverables are as defined|no exclusions apply/i.test(oosBody))
           say('SOW document', 'the Out of Scope section reads as a waiver rather than a limit');
       }
+      /* ── THE DOCUMENT IS WRITTEN IN ENGLISH ────────────────────────────
+         Three fields concatenated by a template produced "As a Independent
+         Product Advisor, I want to a baseline task-completion scorecard" in
+         every one of twenty-five stories printed in a client's contract. */
+      {
+        const st = (reqs.stories || [])[0];
+        if (!st) say('SOW prose', 'no stories — this check is vacuous');
+        else {
+          const kp = st.persona, kw = st.want;
+          st.persona = 'Independent Product Advisor';       // vowel-initial
+          st.want = 'a baseline task-completion scorecard'; // noun phrase
+          const txt = strip(build().html);
+          if (/As a Independent/.test(txt))
+            say('SOW prose', 'the contract reads "As a Independent Product Advisor"');
+          if (/I want to a baseline/.test(txt))
+            say('SOW prose', 'the contract reads "I want to a baseline task-completion scorecard" — '
+              + '"I want to" in front of a thing rather than an act');
+          // strip() leaves a space where the </b> was, so allow it before the comma
+          if (!/As an Independent Product Advisor\s*, I want a baseline/.test(txt))
+            say('SOW prose', 'the story sentence did not come out as "As an Independent Product Advisor, '
+              + 'I want a baseline…": ' + (txt.match(/As an? Independent[^.]{0,70}/) || ['not found'])[0]);
+          // and a verb-led want keeps its "to"
+          st.want = 'receive an evidence inventory memo';
+          if (!/I want to receive an evidence/.test(strip(build().html)))
+            say('SOW prose', 'a verb-led want lost its "to" — "I want receive an evidence inventory memo"');
+          st.persona = kp; st.want = kw;
+        }
+      }
+
+      /* ── ONE UNIT DOWN THE EFFORT COLUMN ───────────────────────────────
+         The formatter drops to hours below a day, so one table carried "4.0
+         days", "1.6 days of work over 2.0 days" and "6.4 h (0.80 days) of work
+         over 4.0 days" — three formats for the quantity a client prices from. */
+      {
+        /* FORCE a sub-day row. The formatter only switches to hours below one
+           day, so on a fixture where every activity is a day or more the mixing
+           is invisible and this check would prove nothing. */
+        const t3 = leafTasks().find(x => !x.isSummary && !x.milestone);
+        if (!t3) say('SOW effort', 'no leaf activity — the unit check is vacuous');
+        else {
+          const k3 = { o: t3.o, m: t3.m, p: t3.p, u: t3.units, par: t3.participants };
+          t3.o = 4; t3.m = 4; t3.p = 4; t3.units = 20; t3.participants = null;   // 0.8 days of work
+          calculate();
+          const built = build();
+          const rowsAll = (built.d.scope || []).map(x => String(x.effort || '')).filter(Boolean);
+          const hourish = rowsAll.filter(x => /\d\s*h\b|\bmin\b/.test(x));
+          if (hourish.length)
+            say('SOW effort', 'the effort column mixes units down one column — ' + hourish.slice(0, 2).join(' / ')
+              + ' beside ' + (rowsAll.find(x => !/\d\s*h\b/.test(x)) || '?'));
+          const sub = rowsAll.find(x => /0\.8/.test(x));
+          if (!sub) say('SOW effort', 'a 0.8-day activity does not print as 0.8 in the project unit: '
+            + rowsAll.slice(0, 3).join(' / '));
+          const ms = (built.d.scope || []).filter(x => /◆/.test(x.name || ''));
+          if (ms.length && ms.every(x => !x.effort) && !/n\/a — milestone/.test(built.html))
+            say('SOW effort', 'milestone rows leave the effort cell blank, which reads as an omission');
+          t3.o = k3.o; t3.m = k3.m; t3.p = k3.p; t3.units = k3.u; t3.participants = k3.par;
+          calculate();
+        }
+      }
+
       /* ── THE SCOPE TABLE'S EFFORT COLUMN IS WORK ───────────────────────
          A client reads this column against a day rate. Printing the calendar
          span under the heading "Effort" quotes a part-time activity at several

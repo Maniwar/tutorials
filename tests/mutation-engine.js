@@ -1355,6 +1355,18 @@ const MUTANTS = [
     find: '            const e = plannedEffortDays(t);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';',
     with: '            const e = unitToWorkingDays(t.te || 0);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';' },
 
+  { what: 'SOW prose: "As a Independent Product Advisor"',
+    find: "      return /^[aeiou]/i.test(String(word || '').trim()) ? 'an' : 'a';",
+    with: "      return 'a';" },
+
+  { what: 'SOW prose: "I want to a baseline scorecard"',
+    find: "      return (STORY_NOUN_LEAD.has(first) || /^\\d/.test(String(want || '').trim())) ? 'I want' : 'I want to';",
+    with: "      return 'I want to';" },
+
+  { what: 'SOW: the effort column mixes hours and days down one column',
+    find: "                  const num = v => (Math.abs(v - Math.round(v)) < 0.005 ? v.toFixed(1) : v.toFixed(2)) + ' ' + u2;",
+    with: "                  const num = v => fmtDurText(v);" },
+
   { what: 'SOW panel: both history tabs show the same history',
     find: "          host.innerHTML = docHistTab === 'plan' ? versionChainHtml(true) : sowHistoryHtml();",
     with: "          host.innerHTML = sowHistoryHtml();" },
