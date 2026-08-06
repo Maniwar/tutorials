@@ -3556,7 +3556,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0408</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0416</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -9833,7 +9833,16 @@ Or say what you want, in your own words:
     function computedActualCost(t) {
       const days = actualEffortDays(t);
       if (days == null) return null;
-      const labor = taskParticipants(t).reduce((sx, pr) => sx + (isClientResource(pr.name) ? 0 : getRate(pr.name) * days * pr.units / 100), 0);
+      /* LOGGED EFFORT IS ALREADY EFFORT. The field asks for it in as many
+         words — "Effort, not elapsed time: open for a week but worked three
+         hours = 3h", entered per participant — and this then multiplied it by
+         units/100 a second time. A person at 20% who logged their real 6.4
+         hours was costed for 1.3 of them: $230 against $1,152, understated
+         fivefold, and that figure is AC in every EVM calculation, the CPI, and
+         the margin. The allocation belongs to the PLAN, which uses it to turn a
+         span into expected effort. It has no business scaling a number somebody
+         measured. */
+      const labor = taskParticipants(t).reduce((sx, pr) => sx + (isClientResource(pr.name) ? 0 : getRate(pr.name) * days), 0);
       // Fixed cost accrues WITH the work rather than all at once on the first
       // logged minute. Labor here is already a to-date figure (rate × effort so
       // far), so charging a whole licence alongside it put two different clocks in
