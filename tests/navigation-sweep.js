@@ -703,6 +703,58 @@ const { chromium } = requirePlaywright();
   W.contradictions.forEach(x => bad.push(x));
   note.worklist = W.counts;
 
+  /* ═══ THE SOW PANEL HOLDS ONE DOCUMENT AND ONE HISTORY ══════════════════
+     Two version histories of two different things used to sandwich the
+     document — the plan's chain in an accordion above it, the document's own
+     drafts in an accordion below — so a reader looking for "the last version"
+     met two controls and neither said which history it held. They are
+     genuinely different questions and stay separate, but as named tabs in one
+     region under the document. */
+  const H = await page.evaluate(async () => {
+    const bad3 = [];
+    const say3 = x => bad3.push('SOW panel :: ' + x);
+    switchTab('raid');
+    await generateSOW();
+    renderSowHistory();
+    const tS = document.getElementById('dhTabSow'), tP = document.getElementById('dhTabPlan');
+    const body = document.getElementById('docHistBody');
+    if (!tS || !tP || !body) { say3('the history region is gone'); return { contradictions: bad3, counts: {} }; }
+    const out = {};
+    out.tabs = [tS.textContent, tP.textContent];
+    if (!/\(\d+\)/.test(tS.textContent))
+      say3('the document tab carries no count, so an empty history is only discoverable by opening it');
+    // the tabs show DIFFERENT histories
+    setDocHistTab('sow');   const a = body.innerHTML;
+    setDocHistTab('plan');  const b2 = body.innerHTML;
+    out.differ = a !== b2;
+    if (a === b2) say3('both tabs render the same thing — the document history and the plan chain are '
+      + 'different questions and one of them is not being shown');
+    if (!/Restore|restore/.test(a)) say3('the document history offers no restore');
+    if (!/Version|version/.test(b2)) say3('the plan tab shows no version chain');
+    // and the active tab is visibly the active one
+    setDocHistTab('sow');
+    out.activeClass = tS.className;
+    if (tS.className === tP.className)
+      say3('the selected tab looks identical to the unselected one');
+    // nothing else in the panel opens a second version history
+    const stray = [...document.querySelectorAll('#view-raid details summary')]
+      .map(x => x.textContent).filter(x => /version/i.test(x));
+    out.strayHistories = stray;
+    if (stray.length) say3('a second version history still hides in an accordion: ' + stray.join(' / '));
+    // the document is not read through a letterbox
+    const c = document.getElementById('sowContainer');
+    out.panelW = c.clientWidth;
+    out.docW = c.firstElementChild ? c.firstElementChild.clientWidth : 0;
+    if (out.docW && out.panelW && out.docW < out.panelW * 0.45)
+      say3('the document is ' + out.docW + 'px inside a ' + out.panelW + 'px panel');
+    out.seps = document.querySelectorAll('#view-raid .tb-sep').length;
+    if (out.seps < 3) say3('the toolbar groups its controls with ' + out.seps + ' separators — nine buttons '
+      + 'in one flat row read as nine unrelated decisions');
+    return { contradictions: bad3, counts: out };
+  });
+  H.contradictions.forEach(x => bad.push(x));
+  note.sowPanel = H.counts;
+
   console.log(JSON.stringify({ contradictions: bad, note: note, pageErrors: errs.slice(0, 6) }, null, 1));
   await b.close();
   if (bad.length || errs.length) process.exitCode = 1;

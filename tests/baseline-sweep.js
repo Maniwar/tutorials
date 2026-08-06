@@ -1352,7 +1352,7 @@ const QA = JSON.parse(fs.readFileSync(
         const first = sowVersions[0];
         sowRestoreVersion(first.n);              // now two entries share content
         renderSowHistory();
-        const h2 = (document.getElementById('sowHistory') || {}).innerHTML || '';
+        const h2 = (document.getElementById('docHistBody') || {}).innerHTML || '';
         const twins = sowVersions.filter(v2 => v2.html === sowDraft);
         out.identicalToLive = twins.length;
         out.currentBadges = (h2.match(/badge-ok">current/g) || []).length;
@@ -1364,7 +1364,7 @@ const QA = JSON.parse(fs.readFileSync(
            row is identified by its version NUMBER: the live draft is the
            newest version matching it, because restore appends. */
         const wantNo = twins.length ? Math.max.apply(null, twins.map(v2 => v2.n)) : null;
-        const badged = [...(document.getElementById('sowHistory') || document.createElement('div'))
+        const badged = [...(document.getElementById('docHistBody') || document.createElement('div'))
           .querySelectorAll('tbody tr')]
           .filter(tr => /current/.test(((tr.querySelector('.badge-ok') || {}).textContent) || ''))
           .map(tr => ((tr.querySelector('td b') || {}).textContent || '').replace(/^v/, ''));
@@ -1453,7 +1453,7 @@ const QA = JSON.parse(fs.readFileSync(
           fail.push('the SOW version written before ' + co.no + ' was accepted now claims to contain it — a '
             + 'past document changed its meaning because a state moved afterwards');
         renderSowHistory();
-        const h3 = (document.getElementById('sowHistory') || {}).innerHTML || '';
+        const h3 = (document.getElementById('docHistBody') || {}).innerHTML || '';
         out.historyStatesIncorporation = /Incorporates/.test(h3);
         if (!out.historyStatesIncorporation)
           fail.push('the SOW history has no column saying which change orders each version incorporates');
@@ -1484,7 +1484,7 @@ const QA = JSON.parse(fs.readFileSync(
             fail.push('a text match is being counted as a stamped record — those are different strengths of '
               + 'claim and merging them overstates the weaker one');
           renderSowHistory();
-          const cell = (document.getElementById('sowHistory') || {}).textContent || '';
+          const cell = (document.getElementById('docHistBody') || {}).textContent || '';
           if (cell.indexOf('per the text') < 0)
             fail.push('the history does not distinguish a change order read from the document text from one '
               + 'recorded when the document was written');

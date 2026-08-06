@@ -1355,6 +1355,18 @@ const MUTANTS = [
     find: '            const e = plannedEffortDays(t);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';',
     with: '            const e = unitToWorkingDays(t.te || 0);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';' },
 
+  { what: 'SOW panel: both history tabs show the same history',
+    find: "          host.innerHTML = docHistTab === 'plan' ? versionChainHtml(true) : sowHistoryHtml();",
+    with: "          host.innerHTML = sowHistoryHtml();" },
+
+  { what: 'SOW panel: the selected history tab looks like the unselected one',
+    find: "        el.className = 'btn-sm ' + (on ? 'btn-primary' : 'btn-secondary');",
+    with: "        el.className = 'btn-sm btn-secondary';" },
+
+  { what: 'SOW panel: the document is read through a letterbox again',
+    find: "color:#1e293b;max-width:1080px;margin:0 auto\">",
+    with: "color:#1e293b;max-width:420px\">" },
+
   { what: 'editor: the estimate form does not say what the estimate comes to',
     find: "      const work = unitToWorkingDays(te) * (u / 100);",
     with: "      const work = unitToWorkingDays(te);" },

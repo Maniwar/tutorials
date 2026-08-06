@@ -7,6 +7,10 @@
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate" />
   <title>Engagement PERT &amp; Gantt Tracker</title>
   <style>
+    /* Nine controls in one flat row read as nine unrelated decisions. A
+       hairline between groups — shape it, draft it, edit it, send it, change it
+       — costs one pixel and does the work a heading would. */
+    .tb-sep { width:1px; align-self:stretch; background:var(--border); margin:0 0.35rem; min-height:1.4rem; }
     :root {
       --primary: #2563eb;
       --primary-dark: #1d4ed8;
@@ -3446,8 +3450,10 @@ Or say what you want, in your own words:
               <option value="compact">Stories: compact</option>
               <option value="none">Stories: off</option>
             </select>
-            <button class="btn-secondary btn-sm" onclick="aiDraftExclusions()" title="Out of Scope is the one section of a contract nobody enjoys writing and everybody regrets skipping. The AI reads what IS in scope and proposes the boundaries a client would most likely assume the other way — data migration, licences, other regions, session limits. They land in the RAID log as Exclusion entries for you to review and edit, not straight into the document.">🚫 Draft the exclusions</button>
+            <span class="tb-sep" aria-hidden="true"></span>
+            <button class="btn-secondary btn-sm" onclick="aiDraftExclusions()" title="Fills the Out of Scope section of THIS document — the one section of a contract nobody enjoys writing and everybody regrets skipping. The AI reads what is in scope and proposes the boundaries a client would most likely assume the other way: data migration, licences, other regions, session limits. Each one is also filed on the RAID log as an Exclusion, which is where you edit or delete it; the section here follows whatever the log says.">🚫 Draft Out of Scope</button>
             <button class="btn-primary btn-sm" onclick="generateSOW()"><span class="ico" aria-hidden="true">✨</span> Generate SOW draft</button>
+            <span class="tb-sep" aria-hidden="true"></span>
             <button class="btn-secondary btn-sm" id="sowEditBtn" onclick="toggleSowEdit()" title="Edit the draft right here — tweak wording, delete a row, add a clause — then Save. Regenerating replaces manual edits (you'll be asked first).">✎ Edit</button>
             <!-- Beside Edit, because editing is what makes you want it. The
                  panel itself sits below a 560px scrolling document, inside a
@@ -3456,8 +3462,10 @@ Or say what you want, in your own words:
                  visibly populated rather than something you open to discover is
                  empty. -->
             <button class="btn-secondary btn-sm" id="sowHistBtn" onclick="sowOpenHistory()" title="Every past version of this document — view any of them, restore any of them. Regenerating and editing both keep what they replaced.">🕓 History</button>
+            <span class="tb-sep" aria-hidden="true"></span>
             <button class="btn-secondary btn-sm" onclick="copySOW()"><span class="ico" aria-hidden="true">📋</span> Copy (rich text)</button>
             <button class="btn-secondary btn-sm" onclick="downloadSOW()">Download (.html)</button>
+            <span class="tb-sep" aria-hidden="true"></span>
             <button class="btn-sm" style="background:#fef3c7;color:#b45309" onclick="draftChangeOrder()" title="Diff the current plan against the SOW baseline and draft a change order">Δ Change order</button>
             <button class="btn-secondary btn-sm" onclick="copyCO()" title="Copy the last change-order draft"><span class="ico" aria-hidden="true">📋</span> Copy CO</button>
           </div>
@@ -3473,13 +3481,29 @@ Or say what you want, in your own words:
                "how can i go between viewing the change order and the SOW that
                was there before ect? I don't see a obvious way to switch". -->
           <div id="docSwitch" class="doc-switch no-print"></div>
-          <div id="sowContainer" style="border:1px solid var(--border);border-radius:10px;padding:1rem;max-height:560px;overflow:auto;background:white">
+          <!-- A contract read through a 560px window inside a panel three times
+               its width is a contract nobody reads. The page gets the height of
+               the viewport and the document is centred in it like a page, so the
+               space either side reads as a margin rather than as waste. -->
+          <div id="sowContainer" style="border:1px solid var(--border);border-radius:10px;padding:1.5rem 1.75rem;max-height:78vh;overflow:auto;background:white">
             <div class="empty-state"><h3>No SOW draft yet</h3><p>Click <strong>Generate SOW draft</strong> — the plan, dictionary, milestones, pricing and RAID entries become a client-ready starting document.</p></div>
           </div>
-          <details class="help-details" style="margin-top:0.75rem">
-            <summary>SOW version history — every draft, back to the original</summary>
-            <div id="sowHistory" style="margin-top:0.5rem"></div>
-          </details>
+          <!-- ONE HISTORY, NOT TWO SANDWICHING THE DOCUMENT. The plan's version
+               chain opened an accordion above the SOW and the SOW's own drafts
+               opened another below it, so a reader looking for "the last
+               version" met two controls, neither of which said which history it
+               held. They are different histories — the document versus the plan
+               it was generated from — so they stay separate, but as tabs in one
+               place, named. -->
+          <div class="doc-hist" style="margin-top:0.9rem;border-top:1px solid var(--border);padding-top:0.7rem">
+            <div class="toolbar no-print" style="gap:0.35rem;margin-bottom:0.5rem">
+              <span class="help-text" style="font-weight:700;letter-spacing:0.03em;margin-right:0.2rem">HISTORY</span>
+              <button class="btn-sm" id="dhTabSow" onclick="setDocHistTab('sow')" title="Every draft of this document, back to the original — view or restore any of them">📄 This document</button>
+              <button class="btn-sm" id="dhTabPlan" onclick="setDocHistTab('plan')" title="Every version of the PLAN the document was generated from — a different history from the document's own">📌 Plan versions</button>
+            </div>
+            <div id="docHistBody"></div>
+          </div>
+
         </div>
       </div>
     </div>
@@ -3556,7 +3580,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0608</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0627</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -27702,7 +27726,7 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
         <td style="${td}">${h(r.wbs)}</td><td style="${td};padding-left:${9 + r.depth * 14}px">${r.milestone ? '◆ ' : ''}${h(r.name)}</td>
         <td style="${td}">${h(r.deliverable)}</td><td style="${td}">${h(r.description)}</td><td style="${td}">${h(r.acceptance)}</td>
         <td style="${td}${String(r.resp || '').indexOf('CLIENT') === 0 ? 'background:#fffbeb;' : ''}">${h(r.resp || '—')}</td>${showEffort ? `<td style="${td}">${h(r.effort || '')}</td>` : ''}</tr>`).join('');
-      return `<div style="font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;max-width:900px">
+      return `<div style="font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;max-width:1080px;margin:0 auto">
         <h1 style="margin:0 0 2px;font-size:22px">Statement of Work — ${h(d.name)}</h1>
         <p style="color:#64748b;font-size:12px;margin:0 0 14px">DRAFT generated ${new Date().toLocaleDateString()} — review all terms before sending. Timeline ${h(d.start)} → ${h(d.finish)}${d.committed ? ' (committed date incl. contingency: ' + h(d.committed) + ')' : ''}.</p>
         <!-- WHAT THIS DOCUMENT INCORPORATES. The change-order draft has carried
@@ -28344,24 +28368,48 @@ Do not write payment terms or exclusions — both are generated from the project
       return sowVersions.filter(v => { const r = sowVersionCoRead(v);
         return r.stamped && r.nos.some(x => String(x) === String(no)); });
     }
+    /* Two histories, one region, and the tab says which you are reading. The
+       document's own drafts and the plan's version chain answer different
+       questions — "what did we send them" and "what did we commit to" — and
+       putting them in one undifferentiated list would be worse than the two
+       accordions this replaces. Named tabs, one place. */
+    let docHistTab = 'sow';
+    function setDocHistTab(k) {
+      docHistTab = (k === 'plan') ? 'plan' : 'sow';
+      renderSowHistory();
+      const host = document.getElementById('docHistBody');
+      if (host) host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
     function renderSowHistory() {
-      const el = document.getElementById('sowHistory');
-      if (el) { try { el.innerHTML = sowHistoryHtml(); } catch (e) {} }
+      const host = document.getElementById('docHistBody');
+      if (host) {
+        try {
+          host.innerHTML = docHistTab === 'plan' ? versionChainHtml(true) : sowHistoryHtml();
+        } catch (e) { host.innerHTML = '<p class="help-text">This history could not be drawn.</p>'; }
+      }
+      // the counts live on the tabs, so an empty history is visible before it is opened
+      const tS = document.getElementById('dhTabSow'), tP = document.getElementById('dhTabPlan');
+      const paint = (el, on, label, n) => {
+        if (!el) return;
+        el.textContent = label + (n ? ' (' + n + ')' : '');
+        el.className = 'btn-sm ' + (on ? 'btn-primary' : 'btn-secondary');
+      };
+      paint(tS, docHistTab === 'sow', '📄 This document', sowVersions.length);
+      paint(tP, docHistTab === 'plan', '📌 Plan versions', planVersions.length);
       const btn = document.getElementById('sowHistBtn');
       if (btn) {
         btn.textContent = '🕓 History' + (sowVersions.length ? ' (' + sowVersions.length + ')' : '');
         btn.disabled = !sowVersions.length;
       }
     }
-    // Opens the disclosure AND scrolls to it. Expanding something below the
-    // fold, out of view, is indistinguishable from the button doing nothing.
+    // Scrolls to the history AND puts it on the document's own tab. Revealing
+    // something below the fold, out of view, is indistinguishable from the
+    // button doing nothing.
     function sowOpenHistory() {
-      const el = document.getElementById('sowHistory');
-      if (!el) return;
+      docHistTab = 'sow';
       renderSowHistory();
-      const det = el.closest('details');
-      if (det) det.open = true;
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const el = document.getElementById('docHistBody');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
     async function copySOW() {
       if (!sowDraft) { alert('Generate the SOW draft first.'); return; }
@@ -29491,8 +29539,8 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
        dates, and the diff between any version and the plan as it stands is one
        click — the question "what has moved since we agreed this" used to have no
        answer at all once a change order had rolled the baseline over it. */
-    function versionChainHtml() {
-      if (!planVersions.length) return '';
+    function versionChainHtml(bare) {
+      if (!planVersions.length) return bare ? '<p class="help-text">No plan versions yet. One is taken whenever the SOW is generated, a change order is accepted, or a sign-off is recorded.</p>' : '';
       const KIND = { sow: ['📄', 'Contract baseline'], co: ['📑', 'Change order'],
                      signoff: ['✍', 'Sign-off'], draft: ['·', 'Working snapshot'] };
       const rows = planVersions.slice().reverse().map(v => {
@@ -29520,21 +29568,26 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
               + ' stands is saved as a version first, so this is undoable.">↺ restore</button></td>'
           + '</tr>';
       }).join('');
-      return `<details style="margin-bottom:0.75rem">
-        <summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)"><span class="ico" aria-hidden="true">🕓</span> Plan versions (${planVersions.length}) — every commitment, in order, each pointing at the one before it</summary>
-        <div class="table-wrap" style="margin-top:0.5rem"><table>
+      /* bare = no <details> wrapper. The chain used to open its own accordion
+         ABOVE the document while the SOW's own history sat in a second one
+         BELOW it, so two different histories of two different things sandwiched
+         the thing they were about. Both now render inside one history region,
+         as tabs, and this returns the contents rather than the container. */
+      const body = `<div class="table-wrap" style="margin-top:0.5rem"><table>
           <thead><tr><th>Version</th><th>Kind</th><th>Label</th><th>Taken</th><th>Held</th><th title="Structured diff against the plan as it stands right now — by activity id, across every input field, so a rename is a rename rather than an add and a delete">vs today</th><th></th></tr></thead>
           <tbody>${rows}</tbody></table></div>
         ${planVersions[0] && planVersions[0].trimmed ? `<p class="help-text">⋯ <b>${planVersions[0].trimmed}</b> working snapshot${planVersions[0].trimmed === 1 ? '' : 's'} between the oldest and newest rows were dropped to keep this history bounded — each one is a full copy of the plan. Nothing load-bearing is ever dropped: the contract baseline, every accepted change order, every version a sign-off was taken against, and the first and last are all kept, so no change order or sign-off can end up pointing at a version that is not in the file. The version numbers will therefore have gaps.</p>` : ''}
         <p class="help-text" style="margin-top:0.4rem">A version is the whole plan keyed by activity <b>id</b>, not by name, and versions form a chain rather than one mutable baseline that each approval overwrote. That is what makes “show me the plan as we agreed it”, “diff any two” and “what if they reject this one” answerable.</p>
-        <div id="versionCompare" style="margin-top:0.6rem">${versionViewHtml()}${versionCompareHtml()}</div>
-      </details>`;
+        <div id="versionCompare" style="margin-top:0.6rem">${versionViewHtml()}${versionCompareHtml()}</div>`;
+      if (bare) return body;
+      return `<details style="margin-bottom:0.75rem">
+        <summary style="cursor:pointer;font-weight:600;font-size:0.85rem;color:var(--primary)"><span class="ico" aria-hidden="true">🕓</span> Plan versions (${planVersions.length}) — every commitment, in order, each pointing at the one before it</summary>
+        ${body}</details>`;
     }
     function renderCoHistory() {
       const el = document.getElementById('coHistory');
       if (!el) return;
-      if (!coLog.length && !planVersions.length) { el.innerHTML = ''; return; }
-      if (!coLog.length) { el.innerHTML = versionChainHtml(); return; }
+      if (!coLog.length) { el.innerHTML = ''; return; }
       /* ACCEPTED only. Summing the whole log put issued and rejected change
          orders into "cumulative price impact", which reports a request as
          revenue and a refusal as money. The two counts are printed side by
@@ -29619,7 +29672,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
             <td style="white-space:nowrap;font-size:0.78rem">${c.fromV ? 'v' + c.fromV : '—'} → ${c.toV ? 'v' + c.toV : '—'}</td></tr>`).join('')}</tbody>
         </table></div>
         <p class="help-text" style="margin-top:0.4rem">Running total per the change-control log — nobody gets surprised at the end. Hover a row for the line-level detail.</p>
-      </details>` + versionChainHtml();
+      </details>`;
     }
     /* ── EVERY DETAIL OF ONE CHANGE ORDER ────────────────────────────────────
        What was on the record and unreachable: the narrative, the typed line
