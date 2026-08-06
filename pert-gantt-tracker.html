@@ -2895,7 +2895,7 @@
           <h2>Requirements &amp; user stories <button type="button" class="info-icon" aria-label="More about this" data-help="Epics → user stories → Given/When/Then acceptance criteria, each traced to a WBS work item. The estimation unit for SOWs: a story that isn't testable can't be accepted or invoiced.">i</button><button type="button" class="info-icon" aria-label="About the entity marks" data-ek-legend data-help="Every id is preceded by a small capital letter saying what it is.">i</button></h2>
           <div class="toolbar no-print">
             <button class="btn-primary btn-sm" onclick="draftRequirements()" title="AI drafts personas, epics and INVEST user stories with happy/error/edge acceptance criteria for every WBS work item — or fills the gaps if some already exist">🤖 Draft from WBS</button>
-            <button class="btn-secondary btn-sm" onclick="openReviseStories()" title="Apply ONE instruction across every story and every acceptance criterion at once — &quot;remove every reference to UK localisation&quot;, &quot;the users are job coordinators, not construction workers&quot;, &quot;drop anything about a mobile app&quot;. A generated plan that invented something is not a lint finding: the stories are well-formed, they are simply about the wrong thing. Stories the instruction does not touch come back unchanged, and ↶ Undo reverses the lot.">✏ Revise all stories…</button>
+            <button class="btn-secondary btn-sm" onclick="openReviseStories()" title="Apply ONE instruction across every story and every acceptance criterion at once — remove a concept the plan invented, correct who the users actually are, drop a feature or region that is out of scope, make vague thresholds measurable. A generated plan that invented something is not a lint finding: the stories are well-formed, they are simply about the wrong thing. Stories the instruction does not touch come back unchanged, and ↶ Undo reverses the lot.">✏ Revise all stories…</button>
             <button class="btn-secondary btn-sm" onclick="openStoryModal(null)" title="Write a story by hand">+ Add story</button>
             <button class="btn-secondary btn-sm" onclick="generateTestPlan()" title="AI derives test cases from EVERY story's acceptance criteria (batched so nothing truncates): one TC per AC minimum, scheduled as WBS tasks under a Test Execution phase, each depending on the activity it verifies, owned by your QA/UAT resource. Safe to re-run — existing TCs are kept, only gaps are filled."><span class="ico" aria-hidden="true">🧪</span> Generate test plan</button>
             <button class="btn-secondary btn-sm" onclick="exportTestPlanMarkdown()" title="Test plan document: strategy, entry/exit criteria, S1–S4 severity gates, AC→TC traceability, FULL test-case specifications (steps + expected results), and coverage gaps">⬇ Test plan (.md)</button>
@@ -2946,7 +2946,7 @@
           <p class="help-text" id="rsCount" style="margin:0 0 .6rem"></p>
           <div class="form-group" style="margin-bottom:.5rem">
             <span class="fg-head"><label for="rsText">What should change?</label></span>
-            <textarea id="rsText" rows="4" placeholder="e.g. Remove every reference to UK localisation — it is not in scope for this engagement."></textarea>
+            <textarea id="rsText" rows="4" placeholder="e.g. Remove every reference to the reporting module — it is not in this engagement. Or: the users are pharmacy technicians, not pharmacists."></textarea>
           </div>
           <p class="help-text" style="margin:0 0 .3rem">Start from one of these, or write your own:</p>
           <div class="toolbar" id="rsEx" style="gap:.35rem;margin-bottom:.6rem"></div>
@@ -3556,7 +3556,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0425</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0433</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3578,15 +3578,15 @@ Or say what you want, in your own words:
         <div id="mSummaryHint" class="help-text" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:0.5rem 0.75rem;margin:-0.25rem 0 1rem">📦 <b>Roll-up (summary) row</b> — estimates, owner, units and % complete are computed from its children and locked here (the fields show the rolled-up values). Edit the child activities to change them.</div>
         <div id="estFields" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
           <div class="form-group">
-            <label for="mO">Optimistic (O) * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label>
+            <label for="mO">Optimistic (O) <span class="help-text" style="text-transform:none;font-weight:400">— elapsed span</span> * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label>
             <input id="mO" type="text" inputmode="decimal" placeholder="Best case — 2d · 4h · 30m" oninput="ompHintUpd()" />
           </div>
           <div class="form-group">
-            <label for="mM">Most likely (M) * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label>
+            <label for="mM">Most likely (M) <span class="help-text" style="text-transform:none;font-weight:400">— elapsed span</span> * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label>
             <input id="mM" type="text" inputmode="decimal" placeholder="Expected — 2d · 4h · 30m" oninput="ompHintUpd()" />
           </div>
           <div class="form-group">
-            <label for="mP">Pessimistic (P) * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label>
+            <label for="mP">Pessimistic (P) <span class="help-text" style="text-transform:none;font-weight:400">— elapsed span</span> * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label>
             <input id="mP" type="text" inputmode="decimal" placeholder="Worst case — 2d · 4h · 30m" oninput="ompHintUpd()" />
           </div>
         </div>
@@ -3650,7 +3650,7 @@ Or say what you want, in your own words:
               <input id="mPct" type="number" min="0" max="100" step="1" value="0" oninput="paOnPctInput()" onchange="paOnPctCommit()" />
             </div>
             <div class="form-group">
-              <span class="fg-head"><label for="mActualEffort">Time spent</label><button type="button" class="info-icon" aria-label="About time spent" data-help="The REAL effort this took — the number that tells you how good your estimates are. Any resolution: 20m, 90m, 1.5h, 2d, or '1d 4h'. Effort, not elapsed time: open for a week but worked three hours = 3h. Enter it PER PARTICIPANT, not as a team total — each person on the activity is costed for this same duration. Typing here fills in the actual start date if it is blank.">i</button></span>
+              <span class="fg-head"><label for="mActualEffort">Time spent <span class="help-text" style="text-transform:none;font-weight:400">— work done, not elapsed</span></label><button type="button" class="info-icon" aria-label="About time spent" data-help="The REAL effort this took — the number that tells you how good your estimates are. Any resolution: 20m, 90m, 1.5h, 2d, or '1d 4h'. Effort, not elapsed time: open for a week but worked three hours = 3h. Enter it PER PARTICIPANT, not as a team total — each person on the activity is costed for this same duration. Typing here fills in the actual start date if it is blank.">i</button></span>
               <input id="mActualEffort" type="text" inputmode="text" placeholder="20m · 1.5h · 2d" oninput="paOnEffortInput()" onchange="paOnEffortCommit()" />
             </div>
             <div class="form-group">
@@ -14879,6 +14879,19 @@ Or say what you want, in your own words:
         }
         const pct = t.percentComplete || 0;
         svg += `<text x="${PAD + LABELW - 12}" y="${y + ROWH / 2 + 4}" font-family="${FF}" font-size="10" font-weight="600" fill="${pct >= 100 ? '#16a34a' : pct > 0 ? '#2563eb' : '#94a3b8'}" text-anchor="end">${pct}%</text>`;
+        if (i === 0) {
+          // captions once, in the header band, so the two columns are named
+          svg += `<text x="${PAD + LABELW - 12}" y="${Y0 - 6}" font-family="${FF}" font-size="9" font-weight="700" fill="#94a3b8" text-anchor="end">DONE</text>`;
+          svg += `<text x="${PAD + LABELW - 52}" y="${Y0 - 6}" font-family="${FF}" font-size="9" font-weight="700" fill="#94a3b8" text-anchor="end">WORK</text>`;
+        }
+        /* EFFORT, in its own column. The bar says how long the activity is open;
+           this says how much work is inside it, which is a different number
+           whenever the allocation is not 100%. Two columns, each with one
+           meaning, rather than two numbers fighting for one label on a bar. */
+        if (!t.isSummary && !t.milestone) {
+          const eff = plannedEffortDays(t);
+          if (eff > 0) svg += `<text x="${PAD + LABELW - 52}" y="${y + ROWH / 2 + 4}" font-family="${FF}" font-size="10" fill="#64748b" text-anchor="end">${escapeXml(fmtDurCell(workingDaysToUnit(eff)))}</text>`;
+        }
       });
 
       // label column divider — draggable to resize the title column
@@ -15265,7 +15278,14 @@ Or say what you want, in your own words:
             const eff = unitToWorkingDays(t.te || 0) * (u / 100);
             return eff > 0 ? ' · ' + (Math.round(eff * 10) / 10) + 'd @' + Math.round(u) + '%' : '';
           })();
-          const lbl = `${teLbl}${effLbl}${done ? ' ✓' : (t.percentComplete > 0 ? ' · ' + t.percentComplete + '%' : '')}`;
+          /* THE EFFORT CAME OFF THE BARS. Putting it on every part-time row put
+             it on nearly every row — most people on most engagements are not
+             full-time — and a chart whose every bar carries "2.0 · 1.6d @80%"
+             is a chart nobody reads. It is a per-row FACT, so it belongs in the
+             row header beside the other per-row facts, in a column of its own
+             where the eye can skip it or scan it. The bar goes back to one
+             number: how long this is open. */
+          const lbl = `${teLbl}${done ? ' ✓' : (t.percentComplete > 0 ? ' · ' + t.percentComplete + '%' : '')}`;
           if (bw >= 56) {
             const lw = lbl.length * 5.8 + 10;
             const ink = crit ? '#7f1d1d' : '#1e3a8a';
@@ -15983,6 +16003,12 @@ Or say what you want, in your own words:
           <td style="padding-left:${8 + depth * 18}px"><span style="display:inline-flex;align-items:center">${twisty}${t.milestone ? '◆ ' : ''}${escapeHtml(t.milestone ? t.name.replace(/^◆\s*/, '') : t.name)}${collapsedIds.has(t.id) ? ` <span class="help-text" style="font-size:0.68rem;margin-left:4px">(+${leafDescendants(t.id).length})</span>` : ''}</span></td>
           <td style="font-size:0.8rem">${t.isSummary ? summaryOwnerCell(t) : escapeHtml(t.owner || '—') + roleSub(t.owner)}</td>
           <td>${dur}</td>
+          <td title="${escapeHtml('The work inside that span: duration x this row\u2019s allocation. They are the same number only at 100%.')}">${(() => {
+            if (t.isSummary) { const e = leafDescendants(t.id).reduce((a, x) => a + plannedEffortDays(x), 0);
+              return e > 0 ? '<span class="help-text">' + escapeHtml(fmtDurCell(workingDaysToUnit(e))) + '</span>' : '—'; }
+            if (t.milestone) return '◆';
+            const e = plannedEffortDays(t);
+            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : '—'; })()}</td>
           <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.startDate) : '—'}</td>
           <td style="font-size:0.8rem;white-space:nowrap">${calculated ? fmtNice(t.finishDate) : '—'}</td>
           <td>${calculated ? (t.percentComplete || 0) + '%' : '—'}</td>
@@ -16035,7 +16061,7 @@ Or say what you want, in your own words:
           </details>`;
         })()}
         <div class="table-wrap"><table>
-          <thead><tr><th>WBS</th><th>Element</th><th>Owner</th><th>Dur (${u})</th><th>Start</th><th>Finish</th><th>%</th>${anyCost ? '<th style="text-align:right">Cost</th>' : ''}<th title="What this activity consumes: ↤ the deliverable of an activity it waits for, ◇ a client dependency from a story, · an input stated on the activity itself">Inputs</th><th>Deliverable</th><th>Description / scope</th><th>Acceptance</th><th title="Schedule relationships: ↤ predecessors this element waits for, ↦ successors it feeds — hover for the full name and link type. Full detail in the CSV export (Predecessors + Successors columns).">Links</th><th title="User stories traced to this element — hover a chip for the story, click for the Requirements tab">Stories</th></tr></thead>
+          <thead><tr><th>WBS</th><th>Element</th><th>Owner</th><th title="How long the activity is OPEN — elapsed working days">Dur (${u})</th><th title="The WORK inside that span: duration x allocation. Equal to duration only when the allocation is 100%.">Work</th><th>Start</th><th>Finish</th><th>%</th>${anyCost ? '<th style="text-align:right">Cost</th>' : ''}<th title="What this activity consumes: ↤ the deliverable of an activity it waits for, ◇ a client dependency from a story, · an input stated on the activity itself">Inputs</th><th>Deliverable</th><th>Description / scope</th><th>Acceptance</th><th title="Schedule relationships: ↤ predecessors this element waits for, ↦ successors it feeds — hover for the full name and link type. Full detail in the CSV export (Predecessors + Successors columns).">Links</th><th title="User stories traced to this element — hover a chip for the story, click for the Requirements tab">Stories</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
         <p class="help-text" style="margin-top:0.75rem"><b>Inputs → Deliverable</b> is the artefact chain, and it is a different question from the ↤/↦ Links column: those say B <i>starts after</i> A, this says B <i>consumes what</i> A produces. A plan can be perfectly linked and still have an activity waiting on something nobody makes. Bold rows are summary/phase elements (they roll up children). Use ▸/▾ to drill in, the ⑂ button on the Tasks tab to have AI decompose a task further, and Edit to fill deliverable / scope / acceptance for the dictionary.</p>`;
@@ -18614,8 +18640,8 @@ Or say what you want, in your own words:
        card and editing by hand, which on a fourteen-story plan nobody does.
 
        So: one instruction, applied across every story and every criterion, in
-       one pass. "Remove every reference to UK localisation." "The users are job
-       coordinators, not construction workers." "Drop anything about mobile."
+       one pass: remove a concept the plan invented, correct who the users
+       actually are, drop a feature that is out of scope.
 
        IT REVISES, IT DOES NOT REGENERATE. The model is given the stories as they
        stand and told to return them changed only where the instruction bites,
@@ -18625,12 +18651,21 @@ Or say what you want, in your own words:
        asks for and an assignment would destroy. That defect has been shipped
        once already, by the lint repair, and it silently cleared all four
        project-wide on one click. */
+    /* PATTERNS, not one engagement's problems. These shipped as the literal
+       complaints of the project they were written beside — UK localisation,
+       job coordinators in home improvement — which is a tool that assumes it
+       is only ever used once. What generalises is the SHAPE of the instruction:
+       remove a concept, correct who the users are, delete an invented
+       constraint, make the vague measurable. The slot is left in square
+       brackets so it reads as something to complete rather than something to
+       send, and the one instruction that needs no slot is offered whole. */
     const RS_EXAMPLES = [
-      'Remove every reference to UK localisation — it is not in scope',
-      'The users are job coordinators in home improvement, not construction workers',
-      'Drop anything about a mobile or field app',
-      'Remove the invented compliance requirements; none apply',
-      'Replace every vague threshold with a measurable one'
+      'Remove every reference to [something the plan invented] — it is not in scope',
+      'The users are [who they actually are], not [who the plan assumed]',
+      'Drop anything about [a feature, channel or region that is out of scope]',
+      'Remove the compliance and regulatory requirements nobody has confirmed apply',
+      'Replace every vague threshold with a measurable one',
+      'Rewrite anything written from our side so it is about the client\u2019s job, not our process'
     ];
     /* A NATIVE prompt() COULD NOT HOLD THIS. The instruction is a sentence
        somebody composes, the examples are the useful half of the affordance,
