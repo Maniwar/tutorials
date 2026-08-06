@@ -1355,6 +1355,26 @@ const MUTANTS = [
     find: '            const e = plannedEffortDays(t);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';',
     with: '            const e = unitToWorkingDays(t.te || 0);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';' },
 
+  { what: 'RAID: the type tab shows every entry regardless of kind',
+    find: "        if (raidTab !== 'all' && r.type !== raidTab) return false;",
+    with: "        if (false) return false;" },
+
+  { what: 'RAID: the text filter matches everything',
+    find: "        return [r.title, r.mitigation, r.owner, r.description, r.rootCause]\n          .some(x => String(x || '').toLowerCase().indexOf(raidQ) >= 0);",
+    with: "        return true;" },
+
+  { what: 'RAID: near-duplicates are only found when byte-identical',
+    find: "      return inter / Math.min(A.size, B.size);      // containment, so a longer restatement still matches",
+    with: "      return a === b ? 1 : 0;" },
+
+  { what: 'RAID: bulk delete removes only the first selected entry',
+    find: "      raid = raid.filter(x => !raidSel.has(x.id));",
+    with: "      const one9 = ids[0]; raid = raid.filter(x => x.id !== one9);" },
+
+  { what: 'SOW: the version history mints a version on every RAID edit',
+    find: "    function raidTouched() {\n      try {\n        if (sowSyncExclusions() < 0) return;\n        sowShowLive();",
+    with: "    function raidTouched() {\n      try {\n        if (sowSyncExclusions() < 0) return;\n        sowPushVersion('exclusions changed'); sowShowLive();" },
+
   { what: 'SOW prose: "As a Independent Product Advisor"',
     find: "      return /^[aeiou]/i.test(String(word || '').trim()) ? 'an' : 'a';",
     with: "      return 'a';" },

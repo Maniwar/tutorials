@@ -2962,6 +2962,26 @@
         </div>
       </div>
     </div>
+    <div class="modal-overlay" id="rrModal" style="z-index:138">
+      <div class="modal" style="max-width:660px" role="dialog" aria-modal="true" aria-labelledby="rrTitle">
+        <div class="modal-header"><h3 id="rrTitle">Revise the RAID log</h3>
+          <button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeOverlay('rrModal')" aria-label="Close dialog">✕</button></div>
+        <div class="modal-body">
+          <p class="help-text" id="rrCount" style="margin:0 0 .6rem"></p>
+          <div class="form-group" style="margin-bottom:.5rem">
+            <span class="fg-head"><label for="rrText">What should change?</label></span>
+            <textarea id="rrText" rows="4" placeholder="e.g. Merge the duplicates and keep the sharper wording. Or: every exclusion must be a limit, never a promise."></textarea>
+          </div>
+          <p class="help-text" style="margin:0 0 .3rem">Start from one of these, or write your own:</p>
+          <div class="toolbar" id="rrEx" style="gap:.35rem;margin-bottom:.6rem"></div>
+          <p class="help-text" style="margin:0">Applied to every entry the instruction touches; the rest come back unchanged. Entries the pass drops are <b>deleted</b>, so exclusions removed here also leave the SOW's Out of Scope section. Nothing is invented, and <b>↶ Undo</b> reverses the whole pass.</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="closeOverlay('rrModal')">Cancel</button>
+          <button class="btn-primary" onclick="runReviseRaid()">Apply to the log</button>
+        </div>
+      </div>
+    </div>
     <div class="modal-overlay" id="orgMgrModal" style="z-index:137">
       <div class="modal" style="max-width:760px" role="dialog" aria-modal="true" aria-labelledby="orgMgrTitle">
         <div class="modal-header"><h3 id="orgMgrTitle">Companies</h3>
@@ -3580,7 +3600,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0646</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.1536</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -18813,6 +18833,111 @@ Or say what you want, in your own words:
       openOverlay(document.getElementById('rsModal'));
       setTimeout(() => { const t = document.getElementById('rsText'); if (t) t.focus(); }, 60);
     }
+    const RR_EXAMPLES = [
+      'Merge the duplicates and keep the sharper wording',
+      'Every exclusion must be phrased as a limit, never as a promise',
+      'Drop anything about [a topic that is not in this engagement]',
+      'Tighten every title to one short line a client could read in a contract',
+      'Give each risk a concrete mitigation instead of "monitor"',
+      'Remove the entries that restate something already in scope'
+    ];
+    function openReviseRaid() {
+      if (!Array.isArray(raid) || !raid.length) { alert('The RAID log is empty — nothing to revise.'); return; }
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) {
+        alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
+      const scope = raidTab === 'all' ? raid : raid.filter(r => r.type === raidTab);
+      document.getElementById('rrCount').textContent =
+        'One instruction, applied across ' + scope.length + ' entr' + (scope.length === 1 ? 'y' : 'ies')
+        + (raidTab === 'all' ? ' — the whole log' : ' — the ' + raidTab + ' tab only') + ', in a single pass.';
+      const box = document.getElementById('rrEx');
+      box.innerHTML = '';
+      RR_EXAMPLES.forEach(x => {
+        const b = document.createElement('button');
+        b.className = 'btn-sm btn-secondary';
+        b.style.cssText = 'text-align:left;white-space:normal;max-width:100%';
+        b.textContent = x;
+        b.onclick = () => { const t = document.getElementById('rrText'); t.value = x; t.focus(); };
+        box.appendChild(b);
+      });
+      document.getElementById('rrText').value = '';
+      openOverlay(document.getElementById('rrModal'));
+      setTimeout(() => { const t = document.getElementById('rrText'); if (t) t.focus(); }, 60);
+    }
+    function runReviseRaid() {
+      const t = document.getElementById('rrText');
+      const v = String((t && t.value) || '').trim();
+      if (!v) { if (t) t.focus(); return; }
+      closeOverlay('rrModal');
+      aiReviseRaid(v);
+    }
+    /* The same shape as the story revision: every entry comes back with its own
+       id whether or not it changed, so a returned set can be merged by identity
+       rather than replaced wholesale. An OMITTED id is a deletion — which is how
+       "merge the duplicates" and "drop anything about X" are expressible at all
+       — so the prompt says so and the merge honours it. */
+    async function aiReviseRaid(instruction) {
+      const scope = raidTab === 'all' ? raid.slice() : raid.filter(r => r.type === raidTab);
+      if (!scope.length) { alert('Nothing in this tab to revise.'); return; }
+      const payload = scope.map(r => ({ id: r.id, type: r.type, title: r.title,
+        description: r.description || '', mitigation: r.mitigation || '', owner: r.owner || '',
+        probability: r.probability || 0, impact: r.impact || 0, status: r.status || 'Open' }));
+      const p = `You are revising the RAID log of a live consulting engagement against ONE instruction from the person running it. They know the client; you do not. Their instruction wins over anything the existing text implies.
+
+THE INSTRUCTION:
+${instruction}
+
+WHAT A RAID LOG HOLDS
+- Risk: might happen. Assumption: we are planning on it. Issue: happening now. Decision: it was decided. Exclusion: explicitly out of scope, and these print verbatim in the Statement of Work's Out of Scope section.
+
+RULES
+- Return EVERY entry you are keeping, with the SAME id, whether or not you changed it.
+- OMIT an entry to DELETE it. That is the only way to merge duplicates or drop a topic, so use it deliberately and never by accident.
+- Change an entry ONLY where the instruction bites. If it does not apply, return the entry byte-for-byte as given.
+- Never invent a new entry. This is a revision pass, not a drafting one.
+- An Exclusion is a LIMIT ("No changes to the mobile app", "Up to five sessions; further sessions are a change order"), never a promise, and never a restatement of something in scope.
+- Keep the type unless the instruction changes it. Keep probability and impact unless the instruction is about scoring.
+
+THE ENTRIES:
+${JSON.stringify(payload, null, 1)}
+
+Return ONLY JSON: {"entries":[{"id":<number>,"type":"Risk|Assumption|Issue|Decision|Exclusion","title":"...","description":"...","mitigation":"...","owner":"...","probability":1-5,"impact":1-5,"status":"Open|Mitigating|Closed"}],"dropped":<how many you omitted>,"note":"one line on what you changed"}`;
+      try {
+        const onDelta = streamShow('Revising ' + scope.length + ' RAID entries');
+        const raw = await callAnthropic(p, { onDelta: onDelta, cachePrefix: [histPromptBlock() + bankPromptBlock()] });
+        streamHide(true);
+        const res = parseAIJsonNoted(raw, 'the RAID revision');
+        if (!res || !Array.isArray(res.entries)) { alert('The revision came back empty — nothing changed.'); return; }
+        const byId = new Map(res.entries.map(e => [Number(e.id), e]));
+        const inScope = new Set(scope.map(r => r.id));
+        const clean = v => String(v == null ? '' : v).trim();
+        const TYPES = ['Risk', 'Assumption', 'Issue', 'Decision', 'Exclusion'];
+        let changed = 0, dropped = 0;
+        const kept = [];
+        raid.forEach(r => {
+          if (!inScope.has(r.id)) { kept.push(r); return; }      // outside the tab: untouched
+          const e = byId.get(r.id);
+          if (!e) { dropped++; return; }                          // omitted = deleted
+          const before = JSON.stringify([r.type, r.title, r.description, r.mitigation, r.owner, r.status]);
+          r.type = TYPES.includes(clean(e.type)) ? clean(e.type) : r.type;
+          r.title = clean(e.title) || r.title;
+          r.description = clean(e.description);
+          r.mitigation = clean(e.mitigation);
+          r.owner = clean(e.owner);
+          if (raidStatusOf(e.status)) r.status = raidStatusOf(e.status);
+          if (Number(e.probability) >= 0) r.probability = Math.max(0, Math.min(5, Number(e.probability) || 0));
+          if (Number(e.impact) >= 0) r.impact = Math.max(0, Math.min(5, Number(e.impact) || 0));
+          if (JSON.stringify([r.type, r.title, r.description, r.mitigation, r.owner, r.status]) !== before) changed++;
+          kept.push(r);
+        });
+        raid = kept;
+        raidSel = new Set();
+        raidTouched(); saveLocal(); renderRaid();
+        flashSaved('✨ ' + changed + ' entr' + (changed === 1 ? 'y' : 'ies') + ' revised'
+          + (dropped ? ', ' + dropped + ' removed' : '') + '. '
+          + (clean(res.note) ? clean(res.note).slice(0, 120) + ' ' : '')
+          + '↶ Undo reverses the whole pass.');
+      } catch (e) { streamHide(false); alert('The revision failed: ' + (e.message || e)); }
+    }
     function runReviseStories() {
       const t = document.getElementById('rsText');
       const v = String((t && t.value) || '').trim();
@@ -26370,17 +26495,23 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
       } else {
         raid.push(Object.assign({ id: nextRaidId++, status: 'Open', description: '', createdAt: fmtISO(new Date()) }, entry));
       }
-      closeRaidForm(); raidTouched('edited by hand'); saveLocal(); renderRaid();
+      closeRaidForm(); raidTouched(); saveLocal(); renderRaid();
     }
     /* One place that answers "did this change what the contract says?". Editing,
        adding and deleting an Exclusion all move the SOW's Out of Scope section,
        and each of them used to leave the document stale in exactly the way the
-       AI drafting did. */
-    function raidTouched(why) {
+       AI drafting did.
+
+       NO VERSION PER KEYSTROKE. The first cut filed one on every RAID edit, so
+       clearing out twenty drafted exclusions minted twenty versions reading
+       "exclusions one deleted" — which pushed the versions that meant something
+       past the cap and off the end of the list. Tidying a log is not a document
+       revision. The document is patched and saved; the version that precedes
+       the editing session stays as the restore point, and the next real action
+       (generate, save an edit, draft a batch) files the next version. */
+    function raidTouched() {
       try {
-        const shown = sowSyncExclusions();
-        if (shown < 0) return;
-        sowPushVersion('exclusions ' + (why || 'changed'));
+        if (sowSyncExclusions() < 0) return;
         sowShowLive();
       } catch (e) {}
     }
@@ -26390,7 +26521,7 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
     }
     function deleteRaidEntry(id) {
       if (!confirm('Delete this RAID entry?')) return;
-      raid = raid.filter(x => x.id !== id); raidTouched('one deleted'); saveLocal(); renderRaid();
+      raid = raid.filter(x => x.id !== id); raidTouched(); saveLocal(); renderRaid();
     }
     /* RAID has always been readable in one direction only. Nine places walk the
        log — the AI prompt, the SOW, the status report, the exports, the RAID tab
@@ -26676,6 +26807,115 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
       const t = String(v == null ? '' : v).trim().toLowerCase();
       return RAID_STATUSES.find(x => x.toLowerCase() === t) || null;
     }
+    /* ═══ ONE FLAT TABLE DOES NOT SURVIVE A REAL ENGAGEMENT ═════════════════
+       Five different kinds of thing — risks, assumptions, issues, decisions and
+       exclusions — sorted into one list, with no way to see only the twenty
+       exclusions you just drafted or to act on more than one at a time. Drafting
+       exclusions twice puts forty rows in front of somebody whose actual job is
+       "delete the dozen that do not apply", one confirm dialog at a time.
+
+       Tabs by kind (the kinds answer different questions and are edited in
+       different sittings), a text filter, an open/closed filter, and selection
+       with bulk actions. The counts live on the tabs so an empty kind is visible
+       without clicking into it. */
+    let raidTab = 'all', raidQ = '', raidOpenOnly = false;
+    let raidSel = new Set();
+    function setRaidTab(k) { raidTab = k; raidSel = new Set(); renderRaid(); }
+    function setRaidQuery(v) { raidQ = String(v || '').trim().toLowerCase(); renderRaid(); }
+    function setRaidOpenOnly(on) { raidOpenOnly = !!on; renderRaid(); }
+    function raidVisible() {
+      return raid.filter(r => {
+        if (raidTab !== 'all' && r.type !== raidTab) return false;
+        if (raidOpenOnly && r.status === 'Closed') return false;
+        if (!raidQ) return true;
+        return [r.title, r.mitigation, r.owner, r.description, r.rootCause]
+          .some(x => String(x || '').toLowerCase().indexOf(raidQ) >= 0);
+      });
+    }
+    function raidToggleSel(id, on) {
+      if (on) raidSel.add(id); else raidSel.delete(id);
+      renderRaidBulkBar();
+    }
+    function raidSelectAllVisible(on) {
+      const vis = raidVisible();
+      if (on) vis.forEach(r => raidSel.add(r.id)); else vis.forEach(r => raidSel.delete(r.id));
+      renderRaid();
+    }
+    function renderRaidBulkBar() {
+      const el = document.getElementById('raidBulk');
+      if (!el) return;
+      const n = raidSel.size;
+      el.style.display = n ? 'flex' : 'none';
+      const lbl = document.getElementById('raidBulkCount');
+      if (lbl) lbl.textContent = n + ' selected';
+    }
+    /* Bulk delete asks ONCE for the whole set rather than once per row. Twenty
+       confirm dialogs is not twenty times the safety; it is a reflex to click
+       through, which is worse than one dialog somebody actually reads. */
+    function raidBulkDelete() {
+      const ids = [...raidSel];
+      if (!ids.length) return;
+      if (!confirm('Delete ' + ids.length + ' RAID entr' + (ids.length === 1 ? 'y' : 'ies') + '?\n\nThis cannot be undone from here — use ↺ Undo on the toolbar if it was a mistake.')) return;
+      raid = raid.filter(x => !raidSel.has(x.id));
+      raidSel = new Set();
+      raidTouched(); saveLocal(); renderRaid();
+      flashSaved('🗑 ' + ids.length + ' entr' + (ids.length === 1 ? 'y' : 'ies') + ' deleted.');
+    }
+    function raidBulkSet(field, value) {
+      const ids = [...raidSel];
+      if (!ids.length || !value) return;
+      let n = 0;
+      raid.forEach(r => { if (raidSel.has(r.id) && r[field] !== value) { r[field] = value; n++; } });
+      raidTouched(); saveLocal(); renderRaid();
+      flashSaved('✓ ' + field + ' set on ' + n + ' entr' + (n === 1 ? 'y' : 'ies') + '.');
+    }
+    /* NEAR-DUPLICATES, not byte-identical ones. Two drafting passes phrase the
+       same boundary differently — "No CRM data migration, cleansing, or database
+       configuration work" and "No data migration or cleansing" are one exclusion
+       twice — and an exact-title check files both. Compared on their significant
+       words, ignoring order and the words every exclusion contains. */
+    const RAID_STOP = new Set(['no','not','the','a','an','of','or','and','to','for','in','on','is','are','any',
+      'this','that','beyond','other','than','with','without','work','only','up','be','will','shall','including']);
+    function raidWordSet(t) {
+      return new Set(String(t || '').toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').split(/\s+/)
+        .filter(w => w.length > 2 && !RAID_STOP.has(w)));
+    }
+    function raidSimilarity(a, b) {
+      const A = raidWordSet(a), B = raidWordSet(b);
+      if (!A.size || !B.size) return 0;
+      let inter = 0; A.forEach(w => { if (B.has(w)) inter++; });
+      return inter / Math.min(A.size, B.size);      // containment, so a longer restatement still matches
+    }
+    function raidDuplicateGroups(type) {
+      const pool = raid.filter(r => !type || r.type === type);
+      const seen = new Set(), groups = [];
+      pool.forEach((r, i) => {
+        if (seen.has(r.id)) return;
+        const g = [r];
+        for (let j = i + 1; j < pool.length; j++) {
+          const o2 = pool[j];
+          if (seen.has(o2.id)) continue;
+          if (raidSimilarity(r.title, o2.title) >= 0.75) { g.push(o2); seen.add(o2.id); }
+        }
+        if (g.length > 1) { seen.add(r.id); groups.push(g); }
+      });
+      return groups;
+    }
+    function raidDedupe() {
+      const groups = raidDuplicateGroups(raidTab === 'all' ? null : raidTab);
+      if (!groups.length) { alert('No near-duplicates found' + (raidTab === 'all' ? '' : ' among the ' + raidTab + 's') + '.'); return; }
+      const drop = groups.flatMap(g => g.slice(1));   // keep the first, which is the earliest filed
+      const preview = groups.slice(0, 6).map(g => '• keep: ' + g[0].title.slice(0, 70)
+        + '\n  drop: ' + g.slice(1).map(x => x.title.slice(0, 70)).join('\n  drop: ')).join('\n\n');
+      if (!confirm(drop.length + ' near-duplicate entr' + (drop.length === 1 ? 'y' : 'ies') + ' in '
+        + groups.length + ' group' + (groups.length === 1 ? '' : 's') + '. The earliest of each group is kept.\n\n'
+        + preview + (groups.length > 6 ? '\n\n… and ' + (groups.length - 6) + ' more groups' : ''))) return;
+      const ids = new Set(drop.map(x => x.id));
+      raid = raid.filter(x => !ids.has(x.id));
+      raidSel = new Set();
+      raidTouched(); saveLocal(); renderRaid();
+      flashSaved('🧹 ' + drop.length + ' near-duplicate entr' + (drop.length === 1 ? 'y' : 'ies') + ' removed.');
+    }
     function renderRaid() {
       const cont = document.getElementById('raidContainer');
       if (!cont) return;
@@ -26687,10 +26927,13 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
       normalizeRaidLinks();
       if (!raid.length) { cont.innerHTML = '<div class="empty-state"><h3>RAID log is empty</h3><p>Track risks, assumptions, issues, decisions and scope exclusions here — they feed the status report and the SOW draft. Try <strong>✨ AI draft RAID</strong> to seed it from the plan.</p></div>'; renderPricing(); return; }
       const order = { Risk: 0, Issue: 1, Assumption: 2, Decision: 3, Exclusion: 4 };
-      const rows = raid.slice().sort((a, b) => (order[a.type] ?? 9) - (order[b.type] ?? 9) || ((b.probability * b.impact) - (a.probability * a.impact))).map(r => {
+      const vis = raidVisible();
+      const dupN = raidDuplicateGroups(raidTab === 'all' ? null : raidTab).reduce((a, g) => a + g.length - 1, 0);
+      const rows = vis.slice().sort((a, b) => (order[a.type] ?? 9) - (order[b.type] ?? 9) || ((b.probability * b.impact) - (a.probability * a.impact))).map(r => {
         const t = r.taskId ? tasks.find(x => x.id === r.taskId) : null;
         const closed = r.status === 'Closed';
         return `<tr style="${closed ? 'opacity:0.55' : ''}">
+          <td style="width:26px"><input type="checkbox" ${raidSel.has(r.id) ? 'checked' : ''} onchange="raidToggleSel(${r.id}, this.checked)" aria-label="Select entry" /></td>
           <td>${raidTypeChip(r)}</td>
           <td style="font-weight:600">${escapeHtml(r.title)}${raidTitleSubHtml(r)}</td>
           <td>${raidScoreBadge(r)}</td>
@@ -26708,9 +26951,34 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
           </td>
         </tr>`;
       }).join('');
-      cont.innerHTML = `<div class="table-wrap"><table>
-        <thead><tr><th title="Risk (might happen) · Assumption (planning on it) · Issue (happening now) · Decision · Exclusion (out of scope — feeds the SOW)">Type</th><th>Title</th><th title="Probability × Impact (1–5 each). 15+ red = act now">Score</th><th>Owner</th><th title="Linked plan task, if any">Task</th><th>Mitigation / detail</th><th title="Open → Mitigating → Closed. How much attention it still needs, not how it turned out.">Status</th><th title="How it TURNED OUT, which status cannot say: “Closed” reads the same whether a risk never happened or happened and was handled, and whether a decision still stands or was reversed. Only an entry that turned is shown as the cause of a number.">How it turned out</th><th></th></tr></thead>
+      const TABS = [['all', 'All'], ['Risk', 'Risks'], ['Issue', 'Issues'], ['Assumption', 'Assumptions'],
+                    ['Decision', 'Decisions'], ['Exclusion', 'Exclusions']];
+      const countOf = k => k === 'all' ? raid.length : raid.filter(r => r.type === k).length;
+      const tabStrip = TABS.filter(([k]) => k === 'all' || countOf(k)).map(([k, lbl]) =>
+        `<button class="btn-sm ${raidTab === k ? 'btn-primary' : 'btn-secondary'}" onclick="setRaidTab('${k}')">${lbl} <span style="opacity:0.7">${countOf(k)}</span></button>`).join('');
+      const allVisSelected = vis.length > 0 && vis.every(r => raidSel.has(r.id));
+      cont.innerHTML = `<div class="toolbar no-print" style="gap:0.35rem;margin-bottom:0.5rem;flex-wrap:wrap">
+          ${tabStrip}
+          <span class="tb-sep" aria-hidden="true"></span>
+          <input class="mini-inp" style="width:200px" placeholder="Filter by text…" value="${escapeHtml(raidQ)}" oninput="setRaidQuery(this.value)" aria-label="Filter RAID entries" />
+          <label class="help-text" style="display:inline-flex;align-items:center;gap:0.3rem;cursor:pointer;white-space:nowrap"><input type="checkbox" ${raidOpenOnly ? 'checked' : ''} onchange="setRaidOpenOnly(this.checked)" />open only</label>
+          ${dupN ? `<button class="btn-sm" style="background:#fef3c7;color:#b45309" onclick="raidDedupe()" title="Entries whose significant words overlap by three quarters or more are the same boundary written twice. The earliest of each group is kept.">🧹 ${dupN} near-duplicate${dupN === 1 ? '' : 's'}</button>` : ''}
+          <button class="btn-sm btn-secondary" onclick="openReviseRaid()" title="Rewrite the whole log from one instruction — tighten the wording, drop anything about a topic, make every exclusion a limit rather than a promise. Nothing is changed until you review the result.">✨ Revise the log</button>
+        </div>
+        <div id="raidBulk" class="toolbar no-print" style="display:none;gap:0.35rem;align-items:center;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:0.4rem 0.6rem;margin-bottom:0.5rem">
+          <b id="raidBulkCount" style="font-size:0.82rem">0 selected</b>
+          <span class="tb-sep" aria-hidden="true"></span>
+          <select class="mini-inp" style="width:auto" onchange="raidBulkSet('type', this.value); this.value=''" aria-label="Set type on selected"><option value="">Set type…</option>${['Risk','Assumption','Issue','Decision','Exclusion'].map(x => `<option>${x}</option>`).join('')}</select>
+          <select class="mini-inp" style="width:auto" onchange="raidBulkSet('status', this.value); this.value=''" aria-label="Set status on selected"><option value="">Set status…</option>${RAID_STATUSES.map(x => `<option>${x}</option>`).join('')}</select>
+          <select class="mini-inp" style="width:auto" onchange="raidBulkSet('owner', this.value); this.value=''" aria-label="Set owner on selected"><option value="">Set owner…</option>${Object.keys(resources || {}).map(x => `<option>${escapeHtml(x)}</option>`).join('')}</select>
+          <button class="btn-sm btn-danger" onclick="raidBulkDelete()">Delete selected</button>
+          <button class="btn-sm btn-secondary" onclick="raidSelectAllVisible(false)">Clear</button>
+        </div>
+        ${vis.length ? '' : '<p class="help-text">Nothing matches this filter. ' + raid.length + ' entr' + (raid.length === 1 ? 'y' : 'ies') + ' in the log.</p>'}
+        <div class="table-wrap"><table>
+        <thead><tr><th style="width:26px"><input type="checkbox" ${allVisSelected ? 'checked' : ''} onchange="raidSelectAllVisible(this.checked)" title="Select everything this filter shows" aria-label="Select all shown" /></th><th title="Risk (might happen) · Assumption (planning on it) · Issue (happening now) · Decision · Exclusion (out of scope — feeds the SOW)">Type</th><th>Title</th><th title="Probability × Impact (1–5 each). 15+ red = act now">Score</th><th>Owner</th><th title="Linked plan task, if any">Task</th><th>Mitigation / detail</th><th title="Open → Mitigating → Closed. How much attention it still needs, not how it turned out.">Status</th><th title="How it TURNED OUT, which status cannot say: “Closed” reads the same whether a risk never happened or happened and was handled, and whether a decision still stands or was reversed. Only an entry that turned is shown as the cause of a number.">How it turned out</th><th></th></tr></thead>
         <tbody>${rows}</tbody></table></div>`;
+      renderRaidBulkBar();
       renderPricing();
     }
     /* The cell, not a column of empty selects: an Issue has no outcome to
@@ -28265,6 +28533,97 @@ Do not write payment terms or exclusions — both are generated from the project
       return v;
     }
     function sowVersionByNo(n) { return sowVersions.find(v => v.n === Number(n)) || null; }
+    /* SEEING WHAT CHANGED, not just that something did. The plan's version chain
+       has had a structured diff for a while; the document's own history offered
+       View and Restore and nothing between them, so answering "what is different
+       about v41" meant opening two versions and reading two contracts. A SOW is
+       prose, so the diff is by SECTION — the unit a reader and a client both
+       argue in — and inside a changed section, by sentence. */
+    let sowCmpA = null, sowCmpB = null;
+    const SOW_NOW = -1;
+    function sowDocOf(n) { return Number(n) === SOW_NOW ? (sowDraft || '') : ((sowVersionByNo(n) || {}).html || ''); }
+    function sowDocLabel(n) {
+      if (Number(n) === SOW_NOW) return 'the draft as it stands';
+      const v = sowVersionByNo(n);
+      return v ? 'v' + v.n + (v.label ? ' — ' + v.label : '') : '?';
+    }
+    // section title -> its text, in document order
+    function sowSectionsOf(html) {
+      const out = [];
+      const re = /<h2[^>]*>([\s\S]*?)<\/h2>/g;
+      let m, prev = null, prevAt = 0;
+      // a bullet list is a list of statements, not one sentence — end each item
+      // so the sentence splitter can tell them apart in the diff
+      const plain = x => String(x || '').replace(/<\/(li|p|tr|h3)>/gi, '. ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
+      while ((m = re.exec(html))) {
+        if (prev !== null) out.push({ title: prev, body: plain(html.slice(prevAt, m.index)) });
+        prev = plain(m[1]).replace(/^\d+\.\s*/, '');   // number by position, compare by name
+        prevAt = re.lastIndex;
+      }
+      if (prev !== null) out.push({ title: prev, body: plain(html.slice(prevAt)) });
+      return out;
+    }
+    function sowSentences(t) {
+      return String(t || '').split(/(?<=[.:;])\s+/).map(x => x.trim()).filter(Boolean);
+    }
+    function sowSetCmp(which, v) {
+      if (which === 'a') sowCmpA = Number(v); else sowCmpB = Number(v);
+      renderSowHistory();
+    }
+    function sowCompareHtml() {
+      if (sowVersions.length < 1) return '';
+      const last = sowVersions[sowVersions.length - 1];
+      if (sowCmpA == null) sowCmpA = sowVersions.length > 1 ? sowVersions[sowVersions.length - 2].n : (last ? last.n : null);
+      if (sowCmpB == null) sowCmpB = SOW_NOW;
+      const opts = sel => sowVersions.slice().reverse()
+          .map(v => '<option value="' + v.n + '"' + (sel === v.n ? ' selected' : '') + '>'
+            + escapeHtml(sowDocLabel(v.n)) + '</option>').join('')
+        + '<option value="' + SOW_NOW + '"' + (sel === SOW_NOW ? ' selected' : '') + '>'
+          + escapeHtml(sowDocLabel(SOW_NOW)) + '</option>';
+      const A = sowSectionsOf(sowDocOf(sowCmpA)), B = sowSectionsOf(sowDocOf(sowCmpB));
+      const byTitle = arr => { const m2 = new Map(); arr.forEach(x => m2.set(x.title, x)); return m2; };
+      const ma = byTitle(A), mb = byTitle(B);
+      const titles = [];
+      B.forEach(x => titles.push(x.title));
+      A.forEach(x => { if (!mb.has(x.title)) titles.push(x.title); });
+      const rows = titles.map(t => {
+        const a = ma.get(t), b = mb.get(t);
+        if (!a) return { t: t, kind: 'added' };
+        if (!b) return { t: t, kind: 'removed' };
+        if (a.body === b.body) return { t: t, kind: 'same' };
+        const sa = new Set(sowSentences(a.body)), sb = new Set(sowSentences(b.body));
+        return { t: t, kind: 'changed',
+                 gone: [...sa].filter(x => !sb.has(x)), came: [...sb].filter(x => !sa.has(x)) };
+      });
+      const moved = rows.filter(r => r.kind !== 'same');
+      const CAP = 6;
+      const body = !moved.length
+        ? '<p class="help-text" style="margin:0.4rem 0 0">These two documents are word for word the same.</p>'
+        : moved.map(r => {
+            const tag = r.kind === 'added' ? '<span class="badge badge-ok">added</span>'
+                      : r.kind === 'removed' ? '<span class="badge badge-blocked">removed</span>'
+                      : '<span class="badge badge-info">changed</span>';
+            const lines = r.kind !== 'changed' ? '' :
+              (r.gone.slice(0, CAP).map(x => '<div style="color:#b91c1c">− ' + escapeHtml(x) + '</div>').join('')
+             + r.came.slice(0, CAP).map(x => '<div style="color:#15803d">+ ' + escapeHtml(x) + '</div>').join('')
+             + ((r.gone.length > CAP || r.came.length > CAP)
+                 ? '<div class="help-text">… and ' + ((Math.max(0, r.gone.length - CAP)) + (Math.max(0, r.came.length - CAP)))
+                   + ' more sentence(s) in this section</div>' : ''));
+            return '<div style="border-top:1px solid var(--border);padding:0.5rem 0">'
+              + '<div style="font-weight:600;font-size:0.85rem">' + escapeHtml(r.t) + ' ' + tag + '</div>'
+              + (lines ? '<div style="font-size:0.8rem;font-family:ui-monospace,monospace;margin-top:0.3rem">' + lines + '</div>' : '')
+              + '</div>';
+          }).join('');
+      return '<div style="margin-top:0.8rem;border-top:1px solid var(--border);padding-top:0.6rem">'
+        + '<div class="toolbar no-print" style="gap:0.4rem;align-items:center">'
+        + '<span class="help-text" style="font-weight:700;letter-spacing:0.03em">COMPARE</span>'
+        + '<select class="mini-inp" style="width:auto" onchange="sowSetCmp(\'a\', this.value)">' + opts(sowCmpA) + '</select>'
+        + '<span class="help-text">→</span>'
+        + '<select class="mini-inp" style="width:auto" onchange="sowSetCmp(\'b\', this.value)">' + opts(sowCmpB) + '</select>'
+        + '<span class="help-text">' + (moved.length ? moved.length + ' section' + (moved.length === 1 ? '' : 's') + ' differ' : 'identical') + '</span>'
+        + '</div>' + body + '</div>';
+    }
     /* A past version is a third document the box can hold, so it goes through
        the same switch as the other two rather than writing the container
        directly — the banner it carries says what it is, but the tab strip is
@@ -28422,7 +28781,7 @@ Do not write payment terms or exclusions — both are generated from the project
       const host = document.getElementById('docHistBody');
       if (host) {
         try {
-          host.innerHTML = docHistTab === 'plan' ? versionChainHtml(true) : sowHistoryHtml();
+          host.innerHTML = docHistTab === 'plan' ? versionChainHtml(true) : (sowHistoryHtml() + sowCompareHtml());
         } catch (e) { host.innerHTML = '<p class="help-text">This history could not be drawn.</p>'; }
       }
       // the counts live on the tabs, so an empty history is visible before it is opened

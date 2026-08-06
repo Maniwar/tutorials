@@ -755,6 +755,76 @@ const { chromium } = requirePlaywright();
   H.contradictions.forEach(x => bad.push(x));
   note.sowPanel = H.counts;
 
+  /* ═══ THE RAID LOG SURVIVES A REAL ENGAGEMENT ═══════════════════════════
+     One flat table of five different kinds of thing, no filter and one confirm
+     dialog per deletion. Drafting exclusions twice put forty rows in front of
+     somebody whose job was "delete the dozen that do not apply". */
+  const RD = await page.evaluate(() => {
+    const bad4 = [];
+    const say4 = x => bad4.push('RAID log :: ' + x);
+    const out = {};
+    applyAIExclusions({ exclusions: [
+      'ZZ no CRM data migration, cleansing, or database configuration work',
+      'ZZ no data migration or cleansing work',
+      'ZZ no changes to the mobile app',
+      'ZZ no mobile app changes',
+      'ZZ up to five coordinator sessions; further sessions are a change order' ] });
+    switchTab('raid'); setRaidTab('all'); setRaidQuery(''); renderRaid();
+    const cont = document.getElementById('raidContainer');
+    const rowsNow = () => document.querySelectorAll('#raidContainer tbody tr').length;
+    out.allRows = rowsNow();
+    if (out.allRows !== raid.length) say4('the All tab shows ' + out.allRows + ' of ' + raid.length + ' entries');
+
+    // a tab shows only its kind, and carries its count
+    setRaidTab('Exclusion');
+    out.exclRows = rowsNow();
+    const want = raid.filter(r => r.type === 'Exclusion').length;
+    if (out.exclRows !== want) say4('the Exclusion tab shows ' + out.exclRows + ' of ' + want);
+    const tabTxt = [...cont.querySelectorAll('.toolbar button')].map(x => x.textContent).join(' ');
+    if (tabTxt.indexOf(String(want)) < 0)
+      say4('the tabs carry no counts, so an empty kind is only discoverable by clicking into it');
+
+    // the text filter narrows
+    setRaidQuery('mobile');
+    out.filtered = rowsNow();
+    if (!(out.filtered > 0 && out.filtered < want))
+      say4('filtering on "mobile" left ' + out.filtered + ' of ' + want + ' rows — the filter does not filter');
+    setRaidQuery('');
+
+    // near-duplicates are FOUND, not just byte-identical ones
+    out.simSame = raidSimilarity('No changes to the mobile app', 'No mobile app changes');
+    out.simDiff = raidSimilarity('No changes to the mobile app', 'Up to five coordinator sessions');
+    if (!(out.simSame >= 0.75)) say4('two phrasings of one boundary score ' + out.simSame.toFixed(2) + ' — not detected as duplicates');
+    if (out.simDiff >= 0.5) say4('two unrelated exclusions score ' + out.simDiff.toFixed(2) + ' — the detector would merge distinct boundaries');
+    out.dupGroups = raidDuplicateGroups('Exclusion').length;
+    if (out.dupGroups < 2) say4('two near-duplicate pairs were filed and the detector found ' + out.dupGroups + ' group(s)');
+
+    // bulk: select everything shown, set a field, delete the lot in one go
+    setRaidTab('Exclusion');
+    raidSelectAllVisible(true);
+    out.selected = raidSel.size;
+    if (out.selected !== raid.filter(r => r.type === 'Exclusion').length)
+      say4('select-all selected ' + out.selected + ' of the shown rows');
+    if (document.getElementById('raidBulk').style.display === 'none')
+      say4('rows are selected and no bulk bar appeared');
+    const who = Object.keys(resources || {})[0];
+    if (who) {
+      raidBulkSet('owner', who);
+      const missed = raid.filter(r => r.type === 'Exclusion' && r.owner !== who).length;
+      if (missed) say4('a bulk owner change missed ' + missed + ' selected entries');
+    }
+    const before = raid.length;
+    raidSelectAllVisible(true);
+    raidBulkDelete();
+    out.bulkDeleted = before - raid.length;
+    if (out.bulkDeleted < 2) say4('bulk delete removed ' + out.bulkDeleted + ' entries');
+    if (raid.some(r => /^ZZ /.test(r.title))) say4('bulk delete left some of the selected entries behind');
+    setRaidTab('all');
+    return { contradictions: bad4, counts: out };
+  });
+  RD.contradictions.forEach(x => bad.push(x));
+  note.raidLog = RD.counts;
+
   console.log(JSON.stringify({ contradictions: bad, note: note, pageErrors: errs.slice(0, 6) }, null, 1));
   await b.close();
   if (bad.length || errs.length) process.exitCode = 1;

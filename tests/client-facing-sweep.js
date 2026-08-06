@@ -421,6 +421,42 @@ const DATA = FIXTURE();
       if (sowVersions.length <= vBefore)
         say('SOW exclusions', 'the document changed and no version was kept, so the wording it replaced '
           + 'exists nowhere');
+      /* TIDYING A LOG IS NOT A DOCUMENT REVISION. The first cut of the live
+         patch filed a SOW version on every RAID edit, so clearing out twenty
+         drafted exclusions minted twenty versions reading "exclusions one
+         deleted" — which pushed the versions that meant something past the cap
+         and off the end of the history. */
+      raid = raid.filter(x => x.type !== 'Exclusion');
+      sowDraft = build().html;
+      applyAIExclusions({ exclusions: ['ZZ one', 'ZZ two', 'ZZ three', 'ZZ four', 'ZZ five'] });
+      sowSyncExclusions();
+      const vBase = sowVersions.length;
+      ['ZZ one', 'ZZ two', 'ZZ three', 'ZZ four', 'ZZ five'].forEach(t => {
+        raid = raid.filter(x => x.title !== t);
+        raidTouched();
+      });
+      if (sowVersions.length > vBase)
+        say('SOW exclusions', 'deleting five exclusions filed ' + (sowVersions.length - vBase)
+          + ' SOW version(s) — tidying the log is not a document revision, and a version per '
+          + 'deletion pushes the ones that mean something off the end of the capped history');
+      if (/ZZ three/.test(sowDraft))
+        say('SOW exclusions', 'a deleted exclusion is still printed in Out of Scope');
+
+      /* And the document history can say WHAT changed, not only that something
+         did. The plan chain has had a structured diff for a while; the
+         document's own history offered View and Restore and nothing between. */
+      if (typeof sowCompareHtml !== 'function')
+        say('SOW exclusions', 'the document history has no comparison at all');
+      else {
+        sowCmpA = sowVersions[sowVersions.length - 1].n; sowCmpB = -1;
+        const cmp = sowCompareHtml();
+        if (!/COMPARE/.test(cmp)) say('SOW exclusions', 'the comparison renders no control');
+        if (!/Out of Scope/.test(cmp))
+          say('SOW exclusions', 'five exclusions were removed and the comparison does not name the '
+            + 'section that changed: ' + strip(cmp).slice(0, 120));
+        sowCmpA = null; sowCmpB = null;
+      }
+
       raid = savedRaid; sowDraft = null;
 
       // ── numbering is contiguous and every reference resolves ────────────
