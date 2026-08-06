@@ -1355,6 +1355,49 @@ const MUTANTS = [
     find: '            const e = plannedEffortDays(t);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';',
     with: '            const e = unitToWorkingDays(t.te || 0);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';' },
 
+  { what: 'SOW: the scope table quotes the calendar span as effort',
+    find: "                    const work = workingDaysToUnit(plannedEffortDays(t));",
+    with: "                    const work = Number(t.te) || 0;" },
+
+  { what: 'SOW: filing an exclusion changes the log and not the document',
+    find: "        const shown = sowSyncExclusions();\n        if (shown > 0) { sowPushVersion(n + ' exclusion' + (n === 1 ? '' : 's') + ' drafted'); sowShowLive(); }",
+    with: "        const shown = -1;" },
+
+  { what: 'SOW: the exclusion patch overwrites the boundary clause above it',
+    find: "      sowDraft = sowDraft.slice(0, hd) + after.slice(0, bodyAt)\n        + clause + tail + after.slice(secEnd);",
+    with: "      sowDraft = sowDraft.slice(0, hd) + after.slice(0, bodyAt) + tail + after.slice(secEnd);" },
+
+  /* Effort vs schedule, the second sweep. Every one of these took te — a
+     CALENDAR SPAN — as the estimate and compared it against logged WORK. */
+
+  { what: 'plan vs actual: the Effort column estimates with the span',
+    find: "        const planTe = plannedEffortUnit(t, hb);",
+    with: "        const planTe = hb && t.baseTe != null ? t.baseTe : (t.te || 0);" },
+
+  { what: 'plan vs actual: the Effort spent card totals spans',
+    find: "      const planTeAll = sum(t => plannedEffortUnit(t));",
+    with: "      const planTeAll = sum(t => t.te);" },
+
+  { what: 'plan truth: the scope panel calls a sum of spans effort',
+    find: "        const planTe = leaves.reduce((s, t) => s + plannedEffortUnit(t), 0);",
+    with: "        const planTe = leaves.reduce((s, t) => s + (Number(t.te) || 0), 0);" },
+
+  { what: 'cause of a miss: a part-time person on plan ranks as an overrun',
+    find: "      const refD = plannedEffortDays(t, true);",
+    with: "      const refD = unitToWorkingDays(Number(t.baseTe) > 0 ? Number(t.baseTe) : (Number(t.te) || 0));" },
+
+  { what: 'variance CSV: the effort ratio divides logged work by the span',
+    find: "        const est = plannedEffortUnit(t, hasBaseline());   // the work, which is what varies",
+    with: "        const est = t.te || 0;   // the work, which is what varies" },
+
+  { what: 'editor: a summary rolls up its leaves\u2019 spans and calls it effort',
+    find: "          estTime: lv.reduce((s, x) => s + workingDaysToUnit(plannedEffortDays(x)), 0),",
+    with: "          estTime: lv.reduce((s, x) => s + (+x.te || 0), 0)," },
+
+  { what: 'baseline: the committed effort follows today\u2019s allocation',
+    find: "        t.baseUnits = taskUnitsTotal(t);",
+    with: "        t.baseUnits = null;" },
+
   { what: 'wbs dictionary CSV: the exported Work effort column repeats the span',
     find: "            const e = t.isSummary ? leafDescendants(t.id).reduce((a, x) => a + plannedEffortDays(x), 0) : plannedEffortDays(t);",
     with: "            const e = t.isSummary ? leafDescendants(t.id).reduce((a, x) => a + unitToWorkingDays(x.te || 0), 0) : unitToWorkingDays(t.te || 0);" },

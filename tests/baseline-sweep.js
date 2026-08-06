@@ -453,6 +453,109 @@ const QA = JSON.parse(fs.readFileSync(
       }
     })();
 
+    /* ═══ EFFORT IS WORK, AND THIS PANEL IS WHERE IT IS READ ════════════════
+       The column is headed "Effort (est → spent)" and the card "Effort spent".
+       Both took their estimate from te, a CALENDAR SPAN, and compared it against
+       logged WORK. Set one activity to four elapsed days at 20% and log exactly
+       the 0.8 days the plan expects: an honest panel reports no variance. The
+       broken one reported 84% under, and the estimate bank calibrated off it. */
+    ran('effortIsWork');
+    (() => {
+      const t = leafTasks().find(x => !x.isSummary && !x.milestone);
+      if (!t) { say('Effort', 'no leaf activity — this check is vacuous'); return; }
+      const kept = JSON.stringify({ o: t.o, m: t.m, p: t.p, u: t.units, pc: t.percentComplete,
+        ae: t.actualEffort, as: t.actualStart, af: t.actualFinish, par: t.participants,
+        bt: t.baseTe, bu: t.baseUnits });
+      t.o = 4; t.m = 4; t.p = 4; t.units = 20; t.participants = null;
+      t.percentComplete = 100; t.actualEffort = 0.8; t.actualStart = null; t.actualFinish = null;
+      calculate();
+      /* baseline THIS activity to what it now is, without disturbing the rest:
+         the panel measures against what was committed, so "on plan" has to mean
+         the commitment and the current estimate agree. */
+      if (t.baseTe != null) { t.baseTe = t.te; t.baseUnits = taskUnitsTotal(t); }
+      out.effSpan = t.te;
+      out.effPlanned = workingDaysToUnit(plannedEffortDays(t));
+      if (Math.abs(out.effPlanned - 0.8) > 0.001)
+        say('Effort', 'four elapsed days at 20% is 0.8 days of work, and the plan says '
+          + out.effPlanned + ' — the two quantities are not being told apart at all');
+      switchTab('baseline'); renderBaseline();
+      const tbl = document.querySelector('#view-baseline table');
+      const hdr = tbl ? [...tbl.querySelectorAll('thead th')].map(x => x.textContent.trim()) : [];
+      const ei = hdr.findIndex(h => /^Effort/i.test(h));
+      const row = tbl ? [...tbl.querySelectorAll('tbody tr')]
+        .find(x => x.cells[1] && x.cells[1].textContent.indexOf(t.name) >= 0) : null;
+      if (!row || ei < 0) say('Effort', 'no Effort column or no row for the measured activity');
+      else {
+        const cell = row.cells[ei].textContent.replace(/\s+/g, ' ').trim();
+        out.effCell = cell;
+        // logged exactly to plan: the variance the cell reports must be nil
+        const pct = (cell.match(/([+-]?\d+)%/) || [])[1];
+        if (pct != null && Math.abs(+pct) > 1)
+          say('Effort', 'an activity logged at exactly its planned work reports ' + pct
+            + '% variance — "' + cell + '". The estimate side is the span, not the work');
+        if (/\b4d\b/.test(cell))
+          say('Effort', 'the Effort cell shows the 4-day span — "' + cell + '"');
+      }
+      const cards = [...document.querySelectorAll('#view-baseline .stat-card')]
+        .map(c => c.textContent.replace(/\s+/g, ' ').trim());
+      const ec = cards.find(c => /^Effort spent/.test(c));
+      out.effCard = ec || null;
+      if (!ec) say('Effort', 'no "Effort spent" card on the panel');
+      /* The miss-ranking, in both directions. Measured against the span, an
+         activity at 20% has a reference five times too large: somebody on plan
+         is not flagged (fine, by luck) but a REAL 2.5x overrun disappears
+         entirely, because 2 days is still comfortably under a 4-day span. The
+         second case is the one that matters — a silent miss is worse than a
+         noisy one, and this is the list that says what went wrong. */
+      // completionMiss, not missCause — a typeof guard on a name that does not
+      // exist skips the whole check and reports nothing, which is how this one
+      // sat here passing while the identity underneath it was unguarded
+      if (typeof completionMiss !== 'function') say('Effort', 'completionMiss is gone — the miss ranking is unchecked');
+      else {
+        const kinds = r => ((r && r.all) || []).map(x => x.k);
+        const onPlan = kinds(completionMiss(t));
+        out.effMissOnPlan = onPlan;
+        if (onPlan.indexOf('effort') >= 0)
+          say('Effort', 'an activity logged at exactly its planned work is ranked as an effort miss');
+        t.actualEffort = 2;                     // 2.5x the 0.8 days the plan expects
+        const over = kinds(completionMiss(t));
+        out.effMissOverrun = over;
+        if (over.indexOf('effort') < 0)
+          say('Effort', 'an activity that took 2 days against a planned 0.8 is not ranked as an effort '
+            + 'miss at all — the reference is the 4-day span, so every overrun by a part-time person '
+            + 'is invisible to the list that is supposed to say what went wrong');
+        t.actualEffort = 0.8;
+      }
+      const k = JSON.parse(kept);
+      t.o = k.o; t.m = k.m; t.p = k.p; t.units = k.u; t.percentComplete = k.pc;
+      t.actualEffort = k.ae; t.actualStart = k.as; t.actualFinish = k.af; t.participants = k.par;
+      t.baseTe = k.bt; t.baseUnits = k.bu;
+      calculate();
+    })();
+
+    /* The baseline has to remember the ALLOCATION, not only the span. Without
+       it, halving everybody's time after baselining makes the committed-effort
+       figure follow the new allocation and scope growth reads as flat. */
+    ran('baselineKeepsAllocation');
+    (() => {
+      const t = leafTasks().find(x => !x.isSummary && !x.milestone);
+      if (!t) return;
+      const keptU = t.units, keptP = t.participants, keptBU = t.baseUnits, keptBT = t.baseTe;
+      t.units = 100; t.participants = null; calculate();
+      setBaseline();
+      out.baseUnitsCaptured = t.baseUnits;
+      if (t.baseUnits == null) say('Baseline', 'setBaseline stores the span but not the allocation, '
+        + 'so a baselined effort figure silently uses today\u2019s allocation');
+      t.units = 20; calculate();
+      const committed = workingDaysToUnit(plannedEffortDays(t, true));
+      const now = workingDaysToUnit(plannedEffortDays(t));
+      out.committedVsNow = [committed, now];
+      if (!(committed > now + 0.001))
+        say('Baseline', 'allocation cut from 100% to 20% and the committed effort followed it ('
+          + committed + ' vs ' + now + ') — the baseline is not a fixed point');
+      t.units = keptU; t.participants = keptP; t.baseUnits = keptBU; t.baseTe = keptBT; calculate();
+    })();
+
     return { contradictions: bad, counts: out };
     }, label);
   };

@@ -241,6 +241,38 @@ const QA = JSON.parse(fs.readFileSync(
       set('mO', String(before.o)); set('mM', String(before.m)); set('mP', String(before.p));
       saveActivity();
 
+      /* ── A SUMMARY'S "ESTIMATED" IS THE WORK UNDER IT ────────────────────
+         The Progress panel on a phase compares an estimate against logged
+         effort. The estimate was Sigma of the children's te — spans, not work —
+         so a phase of part-time activities claimed several times the work it
+         actually contains, and every reading of "how much of the estimate is
+         gone" on that row was wrong by the allocation. */
+      ran('summaryEstimateIsWork');
+      (() => {
+        const sum = tasks.find(t => t.isSummary && leafDescendants(t.id)
+          .some(x => !x.milestone && (x.te || 0) > 0));
+        // the QA reference is a flat five-activity plan; the real export has
+        // phases. Vacuity is caught below, across both fixtures, not here.
+        if (!sum) { out.summaryEstTime = 'no summary in this fixture'; return; }
+        const kids = leafDescendants(sum.id).filter(x => !x.isSummary && !x.milestone);
+        const keep = kids.map(x => ({ x: x, u: x.units, par: x.participants }));
+        kids.forEach(x => { x.units = 20; x.participants = null; });
+        calculate();
+        const wantWork = kids.reduce((a, x) => a + workingDaysToUnit(plannedEffortDays(x)), 0);
+        const wantSpan = kids.reduce((a, x) => a + (x.te || 0), 0);
+        editingId = sum.id;
+        const got = (paDerive() || {}).estTime;
+        editingId = null;
+        out.summaryEstTime = got;
+        if (got == null) say('Editor', 'a summary row derives no estimate at all');
+        else if (Math.abs(got - wantWork) > 0.01)
+          say('Editor', 'a phase of activities at 20% holds ' + wantWork.toFixed(2) + ' of work and the '
+            + 'editor calls its estimate ' + Number(got).toFixed(2)
+            + (Math.abs(got - wantSpan) < 0.01 ? ' — the sum of their spans' : ''));
+        keep.forEach(k => { k.x.units = k.u; k.x.participants = k.par; });
+        calculate();
+      })();
+
       return { contradictions: bad, counts: out };
     }, label);
   };
@@ -250,6 +282,10 @@ const QA = JSON.parse(fs.readFileSync(
   const R = { contradictions: [].concat(qa.contradictions, crm.contradictions),
               qaCounts: qa.counts, crmCounts: crm.counts,
               pageErrors: errs.slice(0, 8) };
+  // a check no fixture could exercise is a check that proves nothing
+  if (typeof qa.counts.summaryEstTime === 'string' && typeof crm.counts.summaryEstTime === 'string')
+    R.contradictions.push('Editor :: neither fixture contains a summary with estimated children, so the '
+      + 'summary-estimate check never ran against anything');
   console.log(JSON.stringify(R, null, 1));
   await b.close();
   if (R.contradictions.length || errs.length) process.exitCode = 1;

@@ -265,6 +265,49 @@ const QA = JSON.parse(fs.readFileSync(
         }
       }
 
+      /* ── 7. THE VARIANCE CSV DIVIDES WORK BY WORK ───────────────────────
+         The Effort ratio column is what the estimate bank calibrates from, so a
+         ratio that is really the allocation teaches the next engagement to
+         estimate wrong. Log exactly the planned work at 20% and the ratio has
+         to be 1.00, not 0.20. */
+      ran('7·varianceRatio');
+      {
+        const t = leafTasks().find(x => !x.isSummary && !x.milestone);
+        if (!t) say('Variance', 'no leaf activity to measure — check is vacuous');
+        else {
+          const kept = { o: t.o, m: t.m, p: t.p, u: t.units, par: t.participants,
+            pc: t.percentComplete, ae: t.actualEffort, bt: t.baseTe, bu: t.baseUnits };
+          t.o = 4; t.m = 4; t.p = 4; t.units = 20; t.participants = null;
+          t.percentComplete = 100; t.actualEffort = 0.8;
+          calculate();
+          if (t.baseTe != null) { t.baseTe = t.te; t.baseUnits = taskUnitsTotal(t); }
+          const got = grab('exportVarianceCSV');
+          const csv = [...got.values()][0];
+          if (typeof csv !== 'string' || !csv.trim()) say('Variance', 'exportVarianceCSV produced nothing');
+          else {
+            const h = csv.split('\n')[0].split(',');
+            const ci = nm => h.findIndex(x => x.indexOf(nm) >= 0);
+            const iEst = ci('Est effort'), iRatio = ci('Effort ratio'), iVar = ci('Effort variance');
+            if (iEst < 0) say('Variance', 'no "Est effort" column — the sheet cannot show its own working');
+            const row = (csv.split('\n').find(l => l.indexOf(t.name.slice(0, 12)) >= 0) || '').split(',');
+            if (!row.length) say('Variance', 'the measured activity has no row');
+            else {
+              const est = parseFloat(row[iEst]), ratio = parseFloat(row[iRatio]), varr = parseFloat(row[iVar]);
+              if (Math.abs(est - 0.8) > 0.01)
+                say('Variance', 'four elapsed days at 20% exports as ' + row[iEst] + ' of estimated effort');
+              if (Math.abs(ratio - 1) > 0.02)
+                say('Variance', 'an activity logged at exactly its planned work exports an effort ratio of '
+                  + row[iRatio] + ' — the divisor is the span, and the bank calibrates off this number');
+              if (Math.abs(varr) > 0.01)
+                say('Variance', 'the same activity exports an effort variance of ' + row[iVar]);
+            }
+          }
+          Object.assign(t, { o: kept.o, m: kept.m, p: kept.p, units: kept.u, participants: kept.par,
+            percentComplete: kept.pc, actualEffort: kept.ae, baseTe: kept.bt, baseUnits: kept.bu });
+          calculate();
+        }
+      }
+
       window.download = origD; window.downloadBlobFile = origB;
       return { contradictions: bad, counts: out };
     }, label);

@@ -22,7 +22,7 @@ const DATA = FIXTURE();
   await page.evaluate(data => { hydrate(data); calculate(); }, DATA);
   await page.waitForTimeout(700);
 
-  const R = await page.evaluate(() => {
+  const R = await page.evaluate(async () => {
     const bad = [];
     const say = (a, b2) => bad.push(a + ' :: ' + b2);
     const hb = hasBaseline();
@@ -281,7 +281,87 @@ const DATA = FIXTURE();
         if (/all activities and deliverables are as defined|no exclusions apply/i.test(oosBody))
           say('SOW document', 'the Out of Scope section reads as a waiver rather than a limit');
       }
-      raid = savedRaid;
+      /* ── THE SCOPE TABLE'S EFFORT COLUMN IS WORK ───────────────────────
+         A client reads this column against a day rate. Printing the calendar
+         span under the heading "Effort" quotes a part-time activity at several
+         times the work being charged for, in the one table of the contract that
+         says what is being bought. */
+      {
+        const t = leafTasks().find(x => !x.isSummary && !x.milestone);
+        if (!t) say('SOW effort', 'no leaf activity — this check is vacuous');
+        else {
+          const keptU = t.units, keptP = t.participants, keptO = t.o, keptM = t.m, keptP2 = t.p;
+          t.o = 4; t.m = 4; t.p = 4; t.units = 20; t.participants = null;
+          calculate();
+          const row = (build().d.scope || []).find(x => x.name === t.name);
+          if (!row) say('SOW effort', 'the measured activity has no row in the scope table');
+          else {
+            const cell = String(row.effort || '');
+            if (!/\bwork\b/.test(cell))
+              say('SOW effort', 'the Effort cell reads "' + cell + '" — it names no work at all');
+            if (/^4(\.0)? days?$/.test(cell.trim()))
+              say('SOW effort', 'four elapsed days at 20% prints as "' + cell
+                + '" — the calendar span, quoted to a client under the heading Effort');
+            if (cell.indexOf('0.8') < 0)
+              say('SOW effort', 'four elapsed days at 20% is 0.8 days of work and the cell says "'
+                + cell + '"');
+          }
+          t.o = keptO; t.m = keptM; t.p = keptP2; t.units = keptU; t.participants = keptP;
+          calculate();
+        }
+      }
+
+      /* ── FILING AN EXCLUSION REACHES THE DOCUMENT ──────────────────────
+         The SOW is generated and versioned, so the log and the contract are two
+         stores. Filing an exclusion used to change only the first, and the
+         section whose entire job is to list them went on saying none had been
+         recorded — visible nowhere except by regenerating the whole document,
+         which re-runs the narrative and warns about losing manual edits. */
+      raid = raid.filter(x => x.type !== 'Exclusion');
+      sowDraft = build().html;
+      if (!/no specific exclusions have been recorded/.test(sowDraft))
+        say('SOW exclusions', 'with an empty log the document does not flag the missing exclusions, '
+          + 'so this check cannot tell whether filing one changed anything');
+      const before = sowDraft;
+      const filed = applyAIExclusions({ exclusions: ['ZZ no changes to the mobile app',
+        'ZZ up to five sessions; further sessions are a change order'] });
+      const synced = sowSyncExclusions();
+      if (filed !== 2) say('SOW exclusions', 'filing two exclusions filed ' + filed);
+      if (synced !== 2)
+        say('SOW exclusions', 'two exclusions are on the log and the document prints ' + synced
+          + ' — filing one does not reach the contract');
+      if (/no specific exclusions have been recorded/.test(sowDraft))
+        say('SOW exclusions', 'the document still says none have been recorded after two were filed');
+      if (sowDraft.indexOf('ZZ no changes to the mobile app') < 0)
+        say('SOW exclusions', 'a filed exclusion does not appear in the Out of Scope section');
+      if (!/not expressly listed there is out of scope/.test(strip(sowDraft)))
+        say('SOW exclusions', 'patching the exclusions destroyed the boundary clause above them');
+      if (secNums(sowDraft).length !== secNums(before).length)
+        say('SOW exclusions', 'patching the exclusions changed the section count from '
+          + secNums(before).length + ' to ' + secNums(sowDraft).length);
+      if (sowSyncExclusions() !== -1)
+        say('SOW exclusions', 'syncing twice with nothing changed reports a change — every RAID edit '
+          + 'would file a SOW version nobody made');
+
+      /* And through the BUTTON, not only the helper. The wiring is the part that
+         was missing; a check that calls sowSyncExclusions() itself would pass on
+         a build where nothing ever calls it. The model is stubbed — what is
+         under test is what the app does with the answer. */
+      raid = raid.filter(x => x.type !== 'Exclusion');
+      sowDraft = build().html;
+      const vBefore = sowVersions.length;
+      const realCall = window.callAnthropic;
+      window.callAnthropic = async () => JSON.stringify({ exclusions: ['ZZ drafted through the button'] });
+      localStorage.setItem('pertGantt.anthropicKey', 'sk-test-not-a-real-key');
+      try { await aiDraftExclusions(); }
+      finally { window.callAnthropic = realCall; localStorage.removeItem('pertGantt.anthropicKey'); }
+      if (sowDraft.indexOf('ZZ drafted through the button') < 0)
+        say('SOW exclusions', 'drafting an exclusion files it on the RAID log and leaves the document '
+          + 'saying none have been recorded — the two stores never meet');
+      if (sowVersions.length <= vBefore)
+        say('SOW exclusions', 'the document changed and no version was kept, so the wording it replaced '
+          + 'exists nowhere');
+      raid = savedRaid; sowDraft = null;
 
       // ── numbering is contiguous and every reference resolves ────────────
       const savedStories = reqs.stories;

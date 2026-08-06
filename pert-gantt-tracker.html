@@ -3556,7 +3556,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0504</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0559</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4003,7 +4003,7 @@ Or say what you want, in your own words:
         // how the spend is distributed across this activity's window. 'even' is
         // the default and is a real answer, not an absence.
         curve: 'even',
-        baseStart: null, baseFinish: null, baseTe: null, baseCost: null,
+        baseStart: null, baseFinish: null, baseTe: null, baseUnits: null, baseCost: null,
         te: 0, variance: 0, es: 0, ef: 0, ls: 0, lf: 0, slack: 0, wbs: '', isSummary: false,
         isCritical: false, criticality: 0, startDate: null, finishDate: null, overallocated: false
       }, o);
@@ -4715,7 +4715,7 @@ Or say what you want, in your own words:
           taxonomy: t.taxonomy || null, taxSrc: (t.taxSrc === 'ai' ? 'ai' : null),
           baseStart: t.baseStart ? fmtISO(new Date(t.baseStart)) : null,
           baseFinish: t.baseFinish ? fmtISO(new Date(t.baseFinish)) : null,
-          baseTe: t.baseTe, baseCost: (t.baseCost == null ? null : t.baseCost),
+          baseTe: t.baseTe, baseUnits: (t.baseUnits == null ? null : t.baseUnits), baseCost: (t.baseCost == null ? null : t.baseCost),
           startNoEarlier: t.startNoEarlier || '', deadline: t.deadline || '', jira: t.jira || '',
           autoActualStart: !!t.autoActualStart, autoActualFinish: !!t.autoActualFinish,
           // "this one missed and needs no entry" — a judgement, so it is stored
@@ -4786,6 +4786,7 @@ Or say what you want, in your own words:
         baseStart: t.baseStart ? new Date(t.baseStart + 'T00:00:00') : null,
         baseFinish: t.baseFinish ? new Date(t.baseFinish + 'T00:00:00') : null,
         baseTe: (t.baseTe == null ? null : Number(t.baseTe)),
+        baseUnits: (t.baseUnits == null ? null : Number(t.baseUnits)),
         baseCost: (t.baseCost == null ? null : Number(t.baseCost)),
         // hydrate maps every field EXPLICITLY (makeTask's defaults are the
         // schema, not a pass-through), so a new stored field that is not
@@ -5581,8 +5582,10 @@ Or say what you want, in your own words:
         const ds = lv.map(actualEffortDays).filter(d => d != null);
         return {
           isSum: true, leaves: lv.length,
-          // Σ leaf TE = effort. A summary's own te is a schedule SPAN, not effort.
-          estTime: lv.reduce((s, x) => s + (+x.te || 0), 0),
+          /* A summary's own te is a schedule SPAN through the sub-network. So is
+             each leaf's, which is why summing them was still not effort: at 20%
+             allocation this reported five times the work the plan expects. */
+          estTime: lv.reduce((s, x) => s + workingDaysToUnit(plannedEffortDays(x)), 0),
           actTime: ds.length ? workingDaysToUnit(ds.reduce((a, b) => a + b, 0)) : null,
           estCost: taskCost(cur), actCost: actualCostOf(cur), autoCost: null, days: null, fixed: 0,
           basis: ds.length ? 'rolled up from ' + ds.length + ' sub-task' + (ds.length === 1 ? '' : 's') : null,
@@ -6794,8 +6797,10 @@ Or say what you want, in your own words:
       }
       // effort is compared in working days, because te and actualEffort can be
       // entered in different units and only this function reconciles them
-      const refU = Number(t.baseTe) > 0 ? Number(t.baseTe) : (Number(t.te) || 0);
-      const refD = refU > 0 ? unitToWorkingDays(refU) : 0;
+      /* The reference is the WORK the plan expected, not the span it occupied.
+         Against the span, somebody at 20% who logged exactly their planned 0.8
+         days read as a 400% overrun and led the list of what went wrong. */
+      const refD = plannedEffortDays(t, true);
       const actD = actualEffortDays(t);
       if (refD > 0 && actD != null && actD > refD * 1.25 && (actD - refD) >= 0.5)
         out.push({ k: 'effort', w: actD / refD - 1,
@@ -9820,9 +9825,22 @@ Or say what you want, in your own words:
     }
     function plannedEffortDays(t, useBaseline) {
       if (!t || t.milestone || t.isSummary) return 0;
-      const te = useBaseline && t.baseTe != null ? t.baseTe : (t.te || 0);
-      const u = taskUnitsTotal(t);
+      const onBase = useBaseline && t.baseTe != null;
+      const te = onBase ? t.baseTe : (t.te || 0);
+      /* Baselined effort uses the allocation captured WITH the baseline where
+         there is one; plans baselined before baseUnits existed fall back to
+         today's, which is what they were already doing. */
+      const u = (onBase && t.baseUnits != null) ? Number(t.baseUnits) : taskUnitsTotal(t);
       return unitToWorkingDays(te) * ((u > 0 ? u : 100) / 100);
+    }
+    /* The same figure in the display unit, which is what every table and card
+       shows. Summaries roll up their leaves: a summary's own te is a schedule
+       span through a dependency network and is not anybody's work. */
+    function plannedEffortUnit(t, useBaseline) {
+      if (!t || t.milestone) return 0;
+      if (t.isSummary) return leafDescendants(t.id)
+        .reduce((a, x) => a + workingDaysToUnit(plannedEffortDays(x, useBaseline)), 0);
+      return workingDaysToUnit(plannedEffortDays(t, useBaseline));
     }
     /* NORMALISED, not units/100. The old form is right only when the
        allocations total 100: two people at 50% split correctly, one person at
@@ -11199,6 +11217,11 @@ Or say what you want, in your own words:
         t.baseStart = t.startDate ? new Date(t.startDate) : null;
         t.baseFinish = t.finishDate ? new Date(t.finishDate) : null;
         t.baseTe = t.te;
+        /* The span alone cannot reconstruct the committed WORK. Halve everyone's
+           allocation after baselining and a baselined-effort figure computed
+           from baseTe x today's units silently reports the new number as the
+           committed one. Capture the allocation at the same instant as the span. */
+        t.baseUnits = taskUnitsTotal(t);
         t.baseCost = taskCost(t);
       });
       baselineDate = fmtISO(new Date());
@@ -11426,7 +11449,7 @@ Or say what you want, in your own words:
     }
     function clearBaseline() {
       if (!confirm('Clear the saved baseline?')) return;
-      tasks.forEach(t => { t.baseStart = null; t.baseFinish = null; t.baseTe = null; t.baseCost = null; });
+      tasks.forEach(t => { t.baseStart = null; t.baseFinish = null; t.baseTe = null; t.baseUnits = null; t.baseCost = null; });
       baselineDate = '';
       reqsBaseline = null;
       // logged, not truncated: what was once promised stays knowable after the
@@ -12206,7 +12229,12 @@ Or say what you want, in your own words:
       // ------------------------------- SCOPE --------------------------------
       const scp = { key: 'scope', dim: 'Scope', icon: '📦', kind: 'change', state: 'needs' };
       (function () {
-        const planTe = leaves.reduce((s, t) => s + (Number(t.te) || 0), 0);
+        /* This panel says "effort" in every sentence it prints, and was summing
+           te — a calendar span. On a plan where half the roster is part-time the
+           committed-vs-now comparison was a comparison of two wrong numbers that
+           happened to be wrong the same way, and the figure quoted to the reader
+           ("the plan holds 34.2 days of effort") was simply not the work. */
+        const planTe = leaves.reduce((s, t) => s + plannedEffortUnit(t), 0);
         if (!hb) {
           scp.why = 'No baseline is saved, so there is no committed scope to measure growth against. The plan '
             + 'holds <b>' + (Math.round(planTe * 10) / 10) + ' ' + escapeHtml(u) + '</b> of effort across <b>'
@@ -12214,7 +12242,7 @@ Or say what you want, in your own words:
           scp.cta = { label: '📌 Set baseline (today)', act: 'setBaseline();renderAnalytics()' };
           return;
         }
-        const baseTe = leaves.reduce((s, t) => s + (Number(t.baseTe) || 0), 0);
+        const baseTe = leaves.reduce((s, t) => s + (t.baseTe == null ? 0 : plannedEffortUnit(t, true)), 0);
         if (!(baseTe > 0)) {
           scp.why = 'The baseline of ' + escapeHtml(baselineDate) + ' captured no effort — everything was '
             + 'unestimated when it was taken, so scope growth has no denominator. Estimate the work, then '
@@ -12225,7 +12253,7 @@ Or say what you want, in your own words:
         // baseTe === null is the app's own "added after the baseline" test:
         // makeTask (1754) defaults it to null and only setBaseline (6068) fills it.
         const added = leaves.filter(t => t.baseTe == null);
-        const addedTe = added.reduce((s, t) => s + (Number(t.te) || 0), 0);
+        const addedTe = added.reduce((s, t) => s + plannedEffortUnit(t), 0);
         const addedTc = added.filter(isTestCaseTask).length;
         const drift = planTe - baseTe;
         const reEst = drift - addedTe;
@@ -12238,8 +12266,10 @@ Or say what you want, in your own words:
            the answer from three clauses, the decisive one ("exactly the set
            committed") buried at the end of the last. Asked outright by someone
            looking at twelve new rows that were all generated test cases. */
+        /* An allocation change moves the committed work without touching the
+           span, so this asks the effort question rather than the te one. */
         const moved = leaves.filter(t => t.baseTe == null
-          || Math.abs((Number(t.te) || 0) - (Number(t.baseTe) || 0)) > 1e-9);
+          || Math.abs(plannedEffortUnit(t) - plannedEffortUnit(t, true)) > 1e-9);
         const movedTc = moved.filter(isTestCaseTask).length;
         const verificationOnly = moved.length > 0 && movedTc === moved.length;
         scp.planTxt = (Math.round(baseTe * 10) / 10) + ' ' + u;
@@ -16218,7 +16248,11 @@ Or say what you want, in your own words:
         const planCost = hb && t.baseCost != null ? t.baseCost : taskCost(t);
         const actCost = actualCostOf(t);
         // SCOPE / EFFORT — estimate vs the effort actually logged.
-        const planTe = hb && t.baseTe != null ? t.baseTe : (t.te || 0);
+        /* The column is headed "Effort (est → spent)" and its spent side is
+           logged WORK, so its estimate side has to be the work the plan expects
+           — not the span. A 4-day activity at 20% read "4d → 6.4h logged" and
+           called a person who came in exactly on plan 84% under it. */
+        const planTe = plannedEffortUnit(t, hb);
         const spent = t.actualEffort;
         const isNew = hb && t.baseTe == null;   // added after the baseline was taken
         // Finished work has a real over/under. Work in flight does not: 71% of the
@@ -16282,8 +16316,9 @@ Or say what you want, in your own words:
       const baseCostAll = hb ? sum(t => t.baseCost) : 0;
       const planCostAll = projectCost();
       const actCostAll = sum(actualCostOf);
-      const baseTeAll = hb ? sum(t => t.baseTe) : 0;
-      const planTeAll = sum(t => t.te);
+      // both sides in WORK, for the same reason the column beneath them is
+      const baseTeAll = hb ? sum(t => t.baseTe == null ? 0 : plannedEffortUnit(t, true)) : 0;
+      const planTeAll = sum(t => plannedEffortUnit(t));
       const spentAll = sum(t => actualEffortDays(t) == null ? 0 : workingDaysToUnit(actualEffortDays(t)));
       // Scope variance and effort consumption are different questions and were
       // sharing one card. "45.8d baselined → 18d logged" says how much of the
@@ -16291,9 +16326,10 @@ Or say what you want, in your own words:
       // Scope change is baseline plan → current plan, and it has two causes worth
       // telling apart: work that was added, and work that was re-estimated.
       const addedTasks = hb ? leaves.filter(t => t.baseTe == null).length : 0;
-      const reEstimated = hb ? leaves.filter(t => t.baseTe != null && Math.abs((t.te || 0) - t.baseTe) > 0.01) : [];
-      const addedTe = hb ? leaves.filter(t => t.baseTe == null).reduce((s, t) => s + (t.te || 0), 0) : 0;
-      const reEstTe = reEstimated.reduce((s, t) => s + ((t.te || 0) - t.baseTe), 0);
+      const reEstimated = hb ? leaves.filter(t => t.baseTe != null
+        && Math.abs(plannedEffortUnit(t) - plannedEffortUnit(t, true)) > 0.01) : [];
+      const addedTe = hb ? leaves.filter(t => t.baseTe == null).reduce((s, t) => s + plannedEffortUnit(t), 0) : 0;
+      const reEstTe = reEstimated.reduce((s, t) => s + (plannedEffortUnit(t) - plannedEffortUnit(t, true)), 0);
       const costRef = hb ? baseCostAll : planCostAll;
       const teRef = hb ? baseTeAll : planTeAll;
       const noEffort = tasksNeedingEffort().length;
@@ -18753,9 +18789,19 @@ Return ONLY JSON: {"exclusions":["...","..."]}`;
         const res = parseAIJsonNoted(raw, 'the exclusions');
         const n = applyAIExclusions(res);
         if (!n) { alert('Nothing new came back — the exclusions already on the RAID log cover it.'); return; }
-        saveLocal(); renderRaid();
-        flashSaved('🚫 ' + n + ' exclusion' + (n === 1 ? '' : 's') + ' drafted into the RAID log. '
-          + 'Review and edit them, delete any that do not apply, then regenerate the SOW — they print under Out of Scope.');
+        renderRaid();
+        /* and into the DOCUMENT, not only the log behind it. The SOW is
+           generated and versioned, so filing an exclusion left the section that
+           is meant to list them still saying none had been recorded until
+           somebody regenerated the whole thing. */
+        const shown = sowSyncExclusions();
+        if (shown > 0) { sowPushVersion(n + ' exclusion' + (n === 1 ? '' : 's') + ' drafted'); sowShowLive(); }
+        saveLocal();
+        flashSaved('🚫 ' + n + ' exclusion' + (n === 1 ? '' : 's') + ' drafted into the RAID log'
+          + (shown > 0
+            ? ' and printed under Out of Scope — ' + shown + ' in the document now, saved as a new SOW version. '
+              + 'Edit the wording on the RAID log; each line goes into the contract as written.'
+            : '. Review and edit them, then generate the SOW — they print under Out of Scope.'));
       } catch (e) { streamHide(false); alert('Drafting the exclusions failed: ' + (e.message || e)); }
     }
     async function aiReviseStories(preset) {
@@ -21622,8 +21668,15 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
     function exportVarianceCSV() {
       if (!ensureCalc()) return;
       const u = unitLabel();
+      /* Effort variance is measured against the WORK the plan expected, which is
+         TE times the allocation. Measured against TE itself, a part-time person
+         who came in exactly on plan exported as a large saving, and the ratio
+         column — the one the estimate bank calibrates from — was the allocation
+         rather than the accuracy. Both quantities are printed so the spreadsheet
+         can show its own working. */
       const rows = [['WBS', 'Activity', 'Type', 'Owner', '% Complete',
-        'Est O (' + u + ')', 'Est M (' + u + ')', 'Est P (' + u + ')', 'Est TE (' + u + ')',
+        'Est O (' + u + ')', 'Est M (' + u + ')', 'Est P (' + u + ')', 'Est TE — span (' + u + ')',
+        'Allocation %', 'Est effort (' + u + ')',
         'Actual effort (' + u + ')', 'Effort variance (' + u + ')', 'Effort ratio (actual/est)', 'Effort basis',
         'Baseline start', 'Baseline finish', 'Planned start', 'Planned finish',
         'Actual start', 'Actual finish', 'Finish variance (working days)',
@@ -21631,22 +21684,24 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       let tEst = 0, tAct = 0, tPc = 0, tAc = 0;
       tasksInWbsOrder().forEach(({ task: t }) => {
         if (t.isSummary) return;                     // leaves only — summaries would double-count
-        const te = t.te || 0;
+        const te = t.te || 0;                        // the span, printed for reference
+        const est = plannedEffortUnit(t, hasBaseline());   // the work, which is what varies
         const effDays = actualEffortDays(t);
         const effUnit = effDays == null ? null : workingDaysToUnit(effDays);
         const basis = effDays == null ? '' : (t.actualEffort != null ? 'logged effort' : 'elapsed span between actual dates');
         const pc = taskCost(t), ac = actualCostOf(t);
         const fv = (t.baseFinish && t.actualFinish) ? calDaysBetween(new Date(t.baseFinish), new Date(t.actualFinish + 'T00:00:00')) : null;
-        if (effUnit != null) { tEst += te; tAct += effUnit; }
+        if (effUnit != null) { tEst += est; tAct += effUnit; }
         tPc += pc; tAc += ac;
         rows.push([
           t.wbs, t.name,
           t.milestone ? 'Milestone' : (isTestCaseTask(t) ? 'Test case' : 'Work package'),
           t.owner || '', (t.percentComplete || 0) + '%',
           t.milestone ? '' : t.o, t.milestone ? '' : t.m, t.milestone ? '' : t.p, t.milestone ? '' : te.toFixed(3),
+          t.milestone ? '' : taskUnitsTotal(t), t.milestone ? '' : est.toFixed(3),
           effUnit == null ? '' : effUnit.toFixed(3),
-          effUnit == null ? '' : (effUnit - te).toFixed(3),
-          (effUnit == null || !(te > 0)) ? '' : (effUnit / te).toFixed(2),
+          effUnit == null ? '' : (effUnit - est).toFixed(3),
+          (effUnit == null || !(est > 0)) ? '' : (effUnit / est).toFixed(2),
           basis,
           t.baseStart ? fmtISO(new Date(t.baseStart)) : '', t.baseFinish ? fmtISO(new Date(t.baseFinish)) : '',
           t.startDate ? fmtISO(t.startDate) : '', t.finishDate ? fmtISO(t.finishDate) : '',
@@ -21656,8 +21711,9 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
         ]);
       });
       rows.push([]);
-      rows.push(['TOTAL (activities with logged actuals)', '', '', '', '', '', '', '', tEst.toFixed(3), tAct.toFixed(3),
-        (tAct - tEst).toFixed(3), tEst > 0 ? (tAct / tEst).toFixed(2) : '', '', '', '', '', '', '', '', '',
+      rows.push(['TOTAL (activities with logged actuals)', '', '', '', '', '', '', '', '', '', tEst.toFixed(3),
+        tAct.toFixed(3), (tAct - tEst).toFixed(3), tEst > 0 ? (tAct / tEst).toFixed(2) : '',
+        '', '', '', '', '', '', '', '',
         tPc.toFixed(2), tAc.toFixed(2), (tAc - tPc).toFixed(2), tPc > 0 ? (tAc / tPc).toFixed(2) : '']);
       download(safeName() + '-variance-plan-vs-actual.csv', rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
       const n = rows.length - 3;
@@ -26244,7 +26300,19 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
       } else {
         raid.push(Object.assign({ id: nextRaidId++, status: 'Open', description: '', createdAt: fmtISO(new Date()) }, entry));
       }
-      closeRaidForm(); saveLocal(); renderRaid();
+      closeRaidForm(); raidTouched('edited by hand'); saveLocal(); renderRaid();
+    }
+    /* One place that answers "did this change what the contract says?". Editing,
+       adding and deleting an Exclusion all move the SOW's Out of Scope section,
+       and each of them used to leave the document stale in exactly the way the
+       AI drafting did. */
+    function raidTouched(why) {
+      try {
+        const shown = sowSyncExclusions();
+        if (shown < 0) return;
+        sowPushVersion('exclusions ' + (why || 'changed'));
+        sowShowLive();
+      } catch (e) {}
     }
     function setRaidStatus(id, status) {
       const r = raid.find(x => x.id === id); if (!r) return;
@@ -26252,7 +26320,7 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
     }
     function deleteRaidEntry(id) {
       if (!confirm('Delete this RAID entry?')) return;
-      raid = raid.filter(x => x.id !== id); saveLocal(); renderRaid();
+      raid = raid.filter(x => x.id !== id); raidTouched('one deleted'); saveLocal(); renderRaid();
     }
     /* RAID has always been readable in one direction only. Nine places walk the
        log — the AI prompt, the SOW, the status report, the exports, the RAID tab
@@ -26559,8 +26627,10 @@ ${unit === 'days' ? '- THINK IN HOURS at this level of detail: estimate each fin
           <td style="font-size:0.8rem">${escapeHtml(r.owner || '—') + roleSub(r.owner)}</td>
           <td style="font-size:0.8rem">${raidLinkChips(r, false)}</td>
           <td style="font-size:0.8rem;max-width:300px">${escapeHtml(r.mitigation || '')}</td>
-          <td><select class="mini-inp" style="width:auto" onchange="setRaidStatus(${r.id}, this.value)"${raidStatusOf(r.status) ? '' : ` title="Stored status is “${escapeHtml(String(r.status || ''))}”, which this log does not recognise — pick one of the three to fix it."`}>
-            ${(raidStatusOf(r.status) ? '' : `<option selected>${escapeHtml(String(r.status || '(blank)'))}</option>`)}${RAID_STATUSES.map(st => `<option ${st === r.status ? 'selected' : ''}>${st}</option>`).join('')}</select></td>
+          <td>${r.type === 'Exclusion'
+            ? `<span class="help-text" title="An exclusion is a boundary, not something anybody works down. It has no lifecycle: it either prints in the SOW\u2019s Out of Scope section or it is deleted.">in the SOW</span>`
+            : `<select class="mini-inp" style="width:auto" onchange="setRaidStatus(${r.id}, this.value)"${raidStatusOf(r.status) ? '' : ` title="Stored status is “${escapeHtml(String(r.status || ''))}”, which this log does not recognise — pick one of the three to fix it."`}>
+            ${(raidStatusOf(r.status) ? '' : `<option selected>${escapeHtml(String(r.status || '(blank)'))}</option>`)}${RAID_STATUSES.map(st => `<option ${st === r.status ? 'selected' : ''}>${st}</option>`).join('')}</select>`}</td>
           <td>${raidOutcomeCell(r)}</td>
           <td style="white-space:nowrap">
             <button class="btn-sm btn-secondary" onclick="openRaidForm(${r.id})">Edit</button>
@@ -27498,10 +27568,23 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
               : taskParticipants(t).map(pr => pr.name)),
             // summaries ALWAYS show the rolled-up total of their leaves — a
             // blank duration on a phase row reads like an omission
+            /* BOTH QUANTITIES, because a contract needs both and they are not
+               the same number. The column was headed "Effort" and printed te —
+               how long the activity is OPEN. An activity that runs four days
+               with one person on it at 20% is 4 days of calendar and 0.8 days
+               of work, and a client reading "4 days" against a day rate reaches
+               a figure five times the one being charged. */
             effort: (clientSafeReports || t.milestone) ? null
               : t.isSummary
-                ? fmtDurText(leafDescendants(t.id).reduce((sx, x) => sx + (x.te || 0), 0)) + ' (rolled up)'
-                : fmtDurText(t.te)
+                ? fmtDurText(leafDescendants(t.id).reduce((sx, x) => sx + workingDaysToUnit(plannedEffortDays(x)), 0))
+                    + ' of work (rolled up)'
+                : (() => {
+                    const work = workingDaysToUnit(plannedEffortDays(t));
+                    const span = Number(t.te) || 0;
+                    return Math.abs(work - span) < 0.005
+                      ? fmtDurText(span)
+                      : fmtDurText(work) + ' of work over ' + fmtDurText(span);
+                  })()
           }));
         })(),
         /* Every story id printed anywhere in this document resolves to a story
@@ -27638,6 +27721,52 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
        in the document — and the one question every reader of a SOW has is what
        it costs and when they pay. It now follows the timeline, because the
        payment schedule refers to the milestone dates immediately above it. */
+    /* THE HALF OF "Out of Scope" THAT CHANGES. The clause above it is fixed
+       prose; this is the part that depends on the RAID log, and it is pulled
+       out so that filing an exclusion can update the document that is on screen
+       instead of only the log behind it. scopeRef is passed in because the
+       generator writes an unresolved {{sec:scope}} and the live patch has to
+       reuse the number already printed in the document it is editing. */
+    function sowExclusionsTail(list, scopeRef) {
+      const h = x => escapeHtml(x || '');
+      const ex = (list || []).filter(x => String(x || '').trim());
+      return ex.length
+        ? `<p style="font-size:13px;margin:8px 0 2px">The following are specifically excluded:</p><ul style="font-size:13px;margin-top:2px">${ex.map(x => '<li>' + h(x) + '</li>').join('')}</ul>`
+        : `<p style="font-size:12.5px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:7px 11px;margin:8px 0 0"><b>Before issuing:</b> no specific exclusions have been recorded for this engagement. The boundary clause above stands on its own, but naming the exclusions the client is most likely to assume are included — data migration, third-party licences, out-of-hours support, training beyond the sessions in ${scopeRef || 'the scope table'} — is what prevents the argument. Add them to the RAID log as <i>Exclusion</i> entries and regenerate.</p>`;
+    }
+    /* Filing exclusions used to change the RAID log and nothing else: the SOW on
+       screen is a GENERATED, versioned document, so the section that is supposed
+       to list them went on saying none had been recorded until somebody
+       regenerated the whole thing — which re-runs the AI narrative and warns
+       about replacing manual edits. Nobody connected a flash message on one tab
+       to a section on another. Out of Scope carries no drafted prose, so it can
+       be brought up to date on its own. Returns the number of exclusions now
+       printed, or -1 when there is no document to patch. */
+    function sowSyncExclusions() {
+      if (!sowDraft) return -1;
+      const ex = (raid || []).filter(r => r.type === 'Exclusion')
+        .map(r => String(r.title || '').trim()).filter(Boolean);
+      const hd = sowDraft.search(/<h2[^>]*>\s*\d+\.\s*Out of Scope\s*<\/h2>/);
+      if (hd < 0) return -1;
+      const after = sowDraft.slice(hd);
+      const bodyAt = after.indexOf('</h2>') + 5;
+      const nextH2 = after.indexOf('<h2', bodyAt);
+      const secEnd = nextH2 < 0 ? after.length : nextH2;
+      const body = after.slice(bodyAt, secEnd);
+      const clauseEnd = body.indexOf('</p>');
+      if (clauseEnd < 0) return -1;
+      // the opening clause was generated with its cross-references already
+      // resolved, so it is kept byte-for-byte and its scope reference reused
+      const clause = body.slice(0, clauseEnd + 4);
+      const scopeRef = (clause.match(/§\d+/) || ['the scope table'])[0];
+      const tail = sowExclusionsTail(ex, scopeRef);
+      // an unchanged section is not a new version — saving one on every RAID
+      // edit would fill the history with documents nobody changed
+      if (body.slice(clauseEnd + 4).trim() === tail.trim()) return -1;
+      sowDraft = sowDraft.slice(0, hd) + after.slice(0, bodyAt)
+        + clause + tail + after.slice(secEnd);
+      return ex.length;
+    }
     function sowSections(d, narrative, td, th, showEffort, showRates, scopeRows) {
       const h = x => escapeHtml(x || '');
       const n = narrative || {};
@@ -27649,8 +27778,8 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
 
       add('scope', 'Scope of Work &amp; Deliverables',
         `<p style="font-size:13px">${n.scopeNarrative || ''}</p>
-        <table style="border-collapse:collapse"><tr><th style="${th}">WBS</th><th style="${th}">Work item</th><th style="${th}">Deliverable</th><th style="${th}">Description</th><th style="${th}">Acceptance criteria</th><th style="${th}" title="Who performs the work — CLIENT rows are the client's obligations and are highlighted">Responsible</th>${showEffort ? `<th style="${th}">Effort</th>` : ''}</tr>${scopeRows}</table>
-        <p style="font-size:11.5px;color:#64748b;margin:4px 0 0">Effort is in working ${h((typeof unitLabel === 'function' ? unitLabel() : 'days'))}; phase rows show the rolled-up total of their contained work. Rows marked <b>CLIENT</b> (highlighted) are client responsibilities — their timely completion is a schedule dependency.</p>`);
+        <table style="border-collapse:collapse"><tr><th style="${th}">WBS</th><th style="${th}">Work item</th><th style="${th}">Deliverable</th><th style="${th}">Description</th><th style="${th}">Acceptance criteria</th><th style="${th}" title="Who performs the work — CLIENT rows are the client's obligations and are highlighted">Responsible</th>${showEffort ? `<th style="${th}" title="The WORK inside the activity. Where the named people are not on it full time, the calendar span it runs over is given after it — the two are different numbers and only the first is what is being charged for.">Effort</th>` : ''}</tr>${scopeRows}</table>
+        <p style="font-size:11.5px;color:#64748b;margin:4px 0 0">Effort is in working ${h((typeof unitLabel === 'function' ? unitLabel() : 'days'))} of WORK; where the named people are not assigned full time, the calendar span the activity runs over is stated after it. Phase rows show the rolled-up total of their contained work. Rows marked <b>CLIENT</b> (highlighted) are client responsibilities — their timely completion is a schedule dependency.</p>`);
 
       /* OUT OF SCOPE LIMITS, IT NEVER WAIVES. With an empty RAID log this
          section used to be handed to the AI, which was asked for "1-2 sentences
@@ -27663,9 +27792,7 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
          their absence is flagged to the drafter rather than papered over. */
       add('outofscope', 'Out of Scope',
         `<p style="font-size:13px">Only the work itemised in {{sec:scope}} is included in this Statement of Work. Anything not expressly listed there is out of scope, including work arising from a change to the assumptions in {{sec:assumptions}}; any such work is estimated, priced and agreed through the change-control process in {{sec:change}} before it is undertaken.</p>
-        ${d.exclusions.length
-          ? `<p style="font-size:13px;margin:8px 0 2px">The following are specifically excluded:</p><ul style="font-size:13px;margin-top:2px">${d.exclusions.map(x => '<li>' + h(x) + '</li>').join('')}</ul>`
-          : `<p style="font-size:12.5px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:7px 11px;margin:8px 0 0"><b>Before issuing:</b> no specific exclusions have been recorded for this engagement. The boundary clause above stands on its own, but naming the exclusions the client is most likely to assume are included — data migration, third-party licences, out-of-hours support, training beyond the sessions in {{sec:scope}} — is what prevents the argument. Add them to the RAID log as <i>Exclusion</i> entries and regenerate.</p>`}`);
+        ${sowExclusionsTail(d.exclusions, '{{sec:scope}}')}`);
 
       add('timeline', 'Timeline &amp; Milestones',
         `${d.ganttImg ? `<img src="${d.ganttImg}" alt="Project schedule Gantt chart" style="max-width:100%;border:1px solid #e2e8f0;border-radius:6px;margin:4px 0 10px"/>` : ''}
@@ -28492,7 +28619,10 @@ Do not write payment terms or exclusions — both are generated from the project
              which has the right mean and is not what anybody typed. The
              snapshot already held all three; only the diff record was throwing
              them away. */
-          add('re-estimated', id, b.name, 'effort', a.te, b.te,
+          // "duration", because a.te and b.te are spans. Labelling a span change
+          // "effort" made a diff say effort had moved when the allocation — the
+          // thing that turns a span into work — had not been looked at at all.
+          add('re-estimated', id, b.name, 'duration', a.te, b.te,
               { priceDelta: (b.value || 0) - (a.value || 0), days: (b.te || 0) - (a.te || 0),
                 omp: { o: a.o, m: a.m, p: a.p } });
         if (String(a.owner || '') !== String(b.owner || ''))
@@ -28961,7 +29091,7 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         <h1 style="margin:0 0 2px;font-size:20px">Change Order ${coNo} — ${escapeHtml(projName())}</h1>
         <p style="color:#64748b;font-size:12px;margin:0 0 12px">DRAFT ${new Date().toLocaleDateString()} • diffs against the contract baseline of ${escapeHtml(sowBaseline.date)}${escapeHtml(amendedNote)}</p>
         ${rationale ? `<p style="font-size:13px">${rationale}</p>` : '<p style="font-size:13px"><em>[Describe why this change is needed.]</em></p>'}
-        ${(added.length && Math.abs(priceDelta) < 1) ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 12px;margin:10px 0;font-size:12.5px;color:#b91c1c"><b>⚠ Unpriced scope:</b> ${added.length} added item(s) totalling ${added.reduce((sx, t) => sx + (t.te || 0), 0).toFixed(1)} ${u} of effort carry <b>no price impact</b> in this change order. If that is intentional goodwill, say so explicitly below and cap it; otherwise set rates for the people doing the work (Resources tab) or a contract price (Pricing) and re-draft — silent free scope is how margins die.</div>` : ''}
+        ${(added.length && Math.abs(priceDelta) < 1) ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 12px;margin:10px 0;font-size:12.5px;color:#b91c1c"><b>⚠ Unpriced scope:</b> ${added.length} added item(s) totalling ${added.reduce((sx, t) => sx + plannedEffortUnit(t), 0).toFixed(1)} ${u} of work carry <b>no price impact</b> in this change order. If that is intentional goodwill, say so explicitly below and cap it; otherwise set rates for the people doing the work (Resources tab) or a contract price (Pricing) and re-draft — silent free scope is how margins die.</div>` : ''}
         ${legacyBasis ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;margin:10px 0;font-size:12.5px;color:#92400e"><b>⚠ Baseline priced on the previous method:</b> this SOW baseline was captured before pricing was consolidated onto the simulated revenue percentile, so part of the price movement below is the change of method rather than a change of scope. Re-generate the SOW to re-baseline before issuing this change order, or state the scope-only delta explicitly.</div>` : ''}
         <h2 style="font-size:15px;margin:12px 0 6px">Scope changes</h2>
         <!-- EVERY line of the diff, with its own money, and a total that is the
