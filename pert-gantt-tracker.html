@@ -2895,6 +2895,7 @@
           <h2>Requirements &amp; user stories <button type="button" class="info-icon" aria-label="More about this" data-help="Epics → user stories → Given/When/Then acceptance criteria, each traced to a WBS work item. The estimation unit for SOWs: a story that isn't testable can't be accepted or invoiced.">i</button><button type="button" class="info-icon" aria-label="About the entity marks" data-ek-legend data-help="Every id is preceded by a small capital letter saying what it is.">i</button></h2>
           <div class="toolbar no-print">
             <button class="btn-primary btn-sm" onclick="draftRequirements()" title="AI drafts personas, epics and INVEST user stories with happy/error/edge acceptance criteria for every WBS work item — or fills the gaps if some already exist">🤖 Draft from WBS</button>
+            <button class="btn-secondary btn-sm" onclick="aiReviseStories()" title="Apply ONE instruction across every story and every acceptance criterion at once — &quot;remove every reference to UK localisation&quot;, &quot;the users are job coordinators, not construction workers&quot;, &quot;drop anything about a mobile app&quot;. A generated plan that invented something is not a lint finding: the stories are well-formed, they are simply about the wrong thing. Stories the instruction does not touch come back unchanged, and ↶ Undo reverses the lot.">✏ Revise all stories…</button>
             <button class="btn-secondary btn-sm" onclick="openStoryModal(null)" title="Write a story by hand">+ Add story</button>
             <button class="btn-secondary btn-sm" onclick="generateTestPlan()" title="AI derives test cases from EVERY story's acceptance criteria (batched so nothing truncates): one TC per AC minimum, scheduled as WBS tasks under a Test Execution phase, each depending on the activity it verifies, owned by your QA/UAT resource. Safe to re-run — existing TCs are kept, only gaps are filled."><span class="ico" aria-hidden="true">🧪</span> Generate test plan</button>
             <button class="btn-secondary btn-sm" onclick="exportTestPlanMarkdown()" title="Test plan document: strategy, entry/exit criteria, S1–S4 severity gates, AC→TC traceability, FULL test-case specifications (steps + expected results), and coverage gaps">⬇ Test plan (.md)</button>
@@ -3534,7 +3535,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0258</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0312</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -18472,6 +18473,109 @@ Or say what you want, in your own words:
     // Targeted lint repair: send ONLY the flagged stories with their specific
     // findings; the AI fixes just those per the estimation guide and we merge
     // the corrected stories back by ID. Clean stories are never touched.
+    /* ═══ REVISE EVERY STORY AGAINST ONE INSTRUCTION ══════════════════════════
+       The lint repair below fixes what a RULE says is wrong. It has no answer
+       for what a person knows is wrong: a generated plan that invented UK
+       localisation, a persona that is not who the client actually employs, a
+       compliance regime nobody is subject to. That is not a lint finding — the
+       stories are perfectly well-formed — and the only remedy was opening each
+       card and editing by hand, which on a fourteen-story plan nobody does.
+
+       So: one instruction, applied across every story and every criterion, in
+       one pass. "Remove every reference to UK localisation." "The users are job
+       coordinators, not construction workers." "Drop anything about mobile."
+
+       IT REVISES, IT DOES NOT REGENERATE. The model is given the stories as they
+       stand and told to return them changed only where the instruction bites,
+       with the same ids. A story the instruction does not touch comes back
+       identical, and the apply path below carries audience, wbsIds,
+       verification and jira across by hand — the four fields the prompt never
+       asks for and an assignment would destroy. That defect has been shipped
+       once already, by the lint repair, and it silently cleared all four
+       project-wide on one click. */
+    async function aiReviseStories(preset) {
+      if (!reqs || !Array.isArray(reqs.stories) || !reqs.stories.length) {
+        alert('No stories yet — draft the requirements first.'); return; }
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) {
+        alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
+      const instruction = String(preset != null ? preset : (prompt(
+        'What should change across every story and acceptance criterion?\n\n'
+        + 'Examples:\n'
+        + '  • Remove every reference to UK localisation — it is not in scope\n'
+        + '  • The users are job coordinators in home improvement, not construction workers\n'
+        + '  • Drop anything about a mobile app\n'
+        + '  • Replace the invented compliance regime with SOC 2 only\n\n'
+        + 'Stories the instruction does not touch are left exactly as they are.', '') || '')).trim();
+      if (!instruction) return;
+      const affected = reqs.stories.length;
+      if (!confirm('Apply this to all ' + affected + ' stories and their criteria?\n\n“' + instruction
+        + '”\n\nAnything it changes can be reversed with ↶ Undo.')) return;
+      computeWbsCodes();
+      const payload = reqs.stories.map(s => ({ id: s.id, epicId: s.epicId, wbsName: s.wbsName || '',
+        persona: s.persona, want: s.want, soThat: s.soThat, ac: s.ac, nfrs: s.nfrs, assumptions: s.assumptions }));
+      const p2 = `You are revising the user stories of a live consulting engagement against ONE instruction from the person running it. They know the client; you do not. Their instruction wins over anything the existing text implies.
+
+THE INSTRUCTION:
+${instruction}
+
+RULES
+- Return EVERY story, with the SAME id, whether or not you changed it. An omitted story is a story deleted.
+- Change a story ONLY where the instruction bites. If it does not apply, return the story byte-for-byte as given.
+- The instruction applies to the story sentence, the acceptance criteria, the NFRs and the assumptions alike. Removing a concept means removing it everywhere, including from criteria that only mention it in passing.
+- When removing something leaves a criterion empty of purpose, delete that criterion rather than leaving a stub. When it leaves a story with no criteria at all, keep the story and say so in its "want".
+- Keep every criterion in "Given … When … Then …" form. Keep criterion types (happy/error/edge/perf) as they are unless the instruction changes them.
+- Invent nothing new. This is a removal-and-correction pass, not a drafting one.
+
+KNOWN PERSONAS: ${(reqs.personas || []).map(x => x.name).join(', ') || '(none)'}
+
+THE STORIES:
+${JSON.stringify(payload, null, 1)}
+
+Return ONLY JSON: {"stories":[{"id":"US-1","epicId":"","wbsName":"","persona":"","want":"","soThat":"","ac":[{"id":"","type":"happy","text":""}],"nfrs":[],"assumptions":[]}],"changed":["US-1","US-4"]}
+"changed" lists the ids you actually altered.`;
+      try {
+        streamShow('Revising stories');
+        const raw = await callAnthropic(p2, { onDelta: streamDelta,
+          cachePrefix: [histPromptBlock() + bankPromptBlock()] });
+        streamHide(true);
+        const res = parseAIJsonNoted(raw, 'the story revision');
+        if (!res || !Array.isArray(res.stories) || !res.stories.length) { alert('The revision came back empty — nothing changed.'); return; }
+        const clean = v => String(v == null ? '' : v).trim();
+        const got = new Set(res.stories.map(x => clean(x.id)));
+        const missing = reqs.stories.filter(s => !got.has(s.id)).map(s => s.id);
+        let merged = 0;
+        res.stories.forEach(cs => {
+          const idx = reqs.stories.findIndex(s => s.id === clean(cs.id));
+          if (idx < 0) return;
+          const old = reqs.stories[idx];
+          const t = old.wbsId != null && tasks.some(x => x.id === old.wbsId)
+            ? tasks.find(x => x.id === old.wbsId) : taskByLooseName(clean(cs.wbsName));
+          reqs.stories[idx] = {
+            id: old.id, epicId: clean(cs.epicId) || old.epicId,
+            wbsId: t ? t.id : null, wbsName: t ? t.name : (clean(cs.wbsName) || old.wbsName || ''),
+            persona: clean(cs.persona) || old.persona, want: clean(cs.want) || old.want,
+            soThat: clean(cs.soThat) || old.soThat,
+            ac: Array.isArray(cs.ac) ? cs.ac.map((a, j) => ({
+                  id: clean(a.id) || (old.id.replace(/^US/i, 'AC') + '.' + (j + 1)),
+                  type: ['happy', 'error', 'edge', 'perf'].includes(clean(a.type)) ? clean(a.type) : 'happy',
+                  text: clean(a.text) })).filter(a => a.text) : old.ac,
+            nfrs: Array.isArray(cs.nfrs) ? cs.nfrs.map(clean).filter(Boolean) : old.nfrs,
+            assumptions: Array.isArray(cs.assumptions) ? cs.assumptions.map(clean).filter(Boolean) : old.assumptions,
+            // carried by hand — the prompt never asks for these and an assignment destroys them
+            audience: old.audience, wbsIds: old.wbsIds, verification: old.verification, jira: old.jira
+          };
+          merged++;
+        });
+        saveLocal(); renderReqs();
+        const chg = Array.isArray(res.changed) ? res.changed.filter(x => got.has(clean(x))) : [];
+        flashSaved('✏ ' + merged + ' stor' + (merged === 1 ? 'y' : 'ies') + ' reviewed'
+          + (chg.length ? ', ' + chg.length + ' changed (' + chg.slice(0, 5).join(', ')
+              + (chg.length > 5 ? ' +' + (chg.length - 5) : '') + ')' : ', none needed changing')
+          + (missing.length ? ' — ⚠ ' + missing.length + ' came back missing and were LEFT AS THEY WERE ('
+              + missing.slice(0, 4).join(', ') + ')' : '')
+          + '. ↶ Undo reverses all of it. Test cases written against changed criteria may now be stale.');
+      } catch (e) { streamHide(false); alert('The revision failed: ' + (e.message || e)); }
+    }
     async function aiFixStoryLints() {
       if (!reqs || !Array.isArray(reqs.stories) || !reqs.stories.length) return;
       if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) { alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
