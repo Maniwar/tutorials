@@ -281,6 +281,46 @@ const DATA = FIXTURE();
         if (/all activities and deliverables are as defined|no exclusions apply/i.test(oosBody))
           say('SOW document', 'the Out of Scope section reads as a waiver rather than a limit');
       }
+      /* ── LEAVING A SECTION OUT RENUMBERS AND RE-POINTS ─────────────────
+         Sections are a keyed list numbered by position with references written
+         as {{sec:key}}, so omitting one has to renumber the rest AND move every
+         reference with it. A contract that says "agreed through the process in
+         §11" when change control is §9 is worse than one with no reference. */
+      {
+        const keptOff = (pricing.sowOff || []).slice();
+        pricing.sowOff = [];
+        const full = build().html;
+        const numsOf = h => (String(h).match(/<h2[^>]*>\s*(\d+)\./g) || [])
+          .map(x => Number(x.match(/(\d+)\./)[1]));
+        const before = numsOf(full);
+        if (!before.length) say('SOW sections', 'the document is unnumbered');
+        pricing.sowOff = ['nfr', 'team'];
+        const cut = build().html;
+        const after = numsOf(cut);
+        if (/>\s*\d+\.\s*Non-Functional/.test(cut) || /Team &amp; Rates<\/h2>/.test(cut))
+          say('SOW sections', 'a section excluded in the picker still prints');
+        if (after.length !== before.length - 2)
+          say('SOW sections', 'excluding two sections changed the count from ' + before.length
+            + ' to ' + after.length);
+        if (!after.every((x, i) => x === i + 1))
+          say('SOW sections', 'the numbers run ' + after.join(',') + ' after an exclusion — a contract '
+            + 'referred to by number cannot skip one');
+        if (/\{\{sec:|§undefined/.test(cut))
+          say('SOW sections', 'a cross-reference did not resolve after a section was excluded');
+        const m = cut.match(/<h2[^>]*>\s*(\d+)\.\s*Change Control/);
+        if (!m) say('SOW sections', 'change control vanished when unrelated sections were excluded');
+        else if (cut.indexOf('§' + m[1]) < 0)
+          say('SOW sections', 'change control landed at §' + m[1] + ' and nothing references it there — '
+            + 'the references still point at where it used to be');
+        // and the version records the shape it was written in
+        sowDraft = cut;
+        const v = sowPushVersion('section test');
+        if (!v || !Array.isArray(v.off) || v.off.length !== 2)
+          say('SOW sections', 'the saved version does not record which sections it was written without, '
+            + 'so a past document reads under today\u2019s setting');
+        pricing.sowOff = keptOff; sowDraft = null;
+      }
+
       /* ── THE DOCUMENT IS WRITTEN IN ENGLISH ────────────────────────────
          Three fields concatenated by a template produced "As a Independent
          Product Advisor, I want to a baseline task-completion scorecard" in

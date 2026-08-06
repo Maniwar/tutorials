@@ -2962,6 +2962,23 @@
         </div>
       </div>
     </div>
+    <div class="modal-overlay" id="sowSecModal" style="z-index:138">
+      <div class="modal" style="max-width:620px" role="dialog" aria-modal="true" aria-labelledby="sowSecTitle">
+        <div class="modal-header"><h3 id="sowSecTitle">Sections in this SOW</h3>
+          <button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeOverlay('sowSecModal')" aria-label="Close dialog">✕</button></div>
+        <div class="modal-body">
+          <p class="help-text" style="margin:0 0 0.5rem">Untick a section to leave it out. The rest <b>renumber as you click</b>, and every cross-reference in the document re-points to wherever its section actually lands — so §11 stays change control however many sections are above it.</p>
+          <div id="sowSecList" style="border:1px solid var(--border);border-radius:8px;padding:0 0.6rem"></div>
+          <p class="help-text" id="sowSecSummary" style="margin:0.5rem 0 0;font-weight:600"></p>
+          <div id="sowSecWarn" class="help-text" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:0.5rem 0.7rem;margin-top:0.5rem"></div>
+          <p class="help-text" style="margin:0.5rem 0 0">The choice travels with the project and is recorded on each saved version, so a past document can be read for the shape it actually had. Generate again to apply it.</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="sowAllSections()">Include everything</button>
+          <button class="btn-primary" onclick="closeOverlay('sowSecModal')">Done</button>
+        </div>
+      </div>
+    </div>
     <div class="modal-overlay" id="rrModal" style="z-index:138">
       <div class="modal" style="max-width:660px" role="dialog" aria-modal="true" aria-labelledby="rrTitle">
         <div class="modal-header"><h3 id="rrTitle">Revise the RAID log</h3>
@@ -3470,6 +3487,7 @@ Or say what you want, in your own words:
               <option value="compact">Stories: compact</option>
               <option value="none">Stories: off</option>
             </select>
+            <button class="btn-secondary btn-sm" id="sowSecBtn" onclick="sowOpenSections()" title="Choose which sections this document carries. The rest renumber and every cross-reference re-points, so nothing is left pointing at a section that is not there.">☰ Sections</button>
             <span class="tb-sep" aria-hidden="true"></span>
             <button class="btn-secondary btn-sm" onclick="aiDraftExclusions()" title="Fills the Out of Scope section of THIS document — the one section of a contract nobody enjoys writing and everybody regrets skipping. The AI reads what is in scope and proposes the boundaries a client would most likely assume the other way: data migration, licences, other regions, session limits. Each one is also filed on the RAID log as an Exclusion, which is where you edit or delete it; the section here follows whatever the log says.">🚫 Draft Out of Scope</button>
             <button class="btn-primary btn-sm" onclick="generateSOW()"><span class="ico" aria-hidden="true">✨</span> Generate SOW draft</button>
@@ -3600,7 +3618,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.1536</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.1615</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -28074,6 +28092,92 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
        instead of only the log behind it. scopeRef is passed in because the
        generator writes an unresolved {{sec:scope}} and the live patch has to
        reuse the number already printed in the document it is editing. */
+    /* Every section this generator can emit, in document order, with what it
+       holds and what dropping it costs. The catalogue is declared once so the
+       picker, the persistence and the generator cannot drift apart. */
+    const SOW_SECTIONS = [
+      { key: 'overview',    name: 'Overview & Objectives',        note: 'the framing paragraph' },
+      { key: 'scope',       name: 'Scope of Work & Deliverables', note: 'the table of what is being bought', heavy: true },
+      { key: 'outofscope',  name: 'Out of Scope',                 note: 'the boundary clause and the exclusions', heavy: true },
+      { key: 'timeline',    name: 'Timeline & Milestones',        note: 'the Gantt and the milestone dates' },
+      { key: 'commercial',  name: 'Commercial Terms',             note: 'the price and the payment schedule', heavy: true },
+      { key: 'team',        name: 'Team & Rates',                 note: 'who does the work, and the client-side people' },
+      { key: 'nfr',         name: 'Non-Functional Requirements',  note: 'quality attributes traced to stories' },
+      { key: 'clientdeps',  name: 'Client Responsibilities',      note: 'what the client owes, and the slip consequence' },
+      { key: 'assumptions', name: 'Assumptions',                  note: 'what the price rests on', heavy: true },
+      { key: 'acceptance',  name: 'Acceptance & Defect Severity', note: 'how a deliverable is accepted' },
+      { key: 'change',      name: 'Change Control',               note: 'how scope changes are agreed', heavy: true }
+    ];
+    function sowOffSet() {
+      const raw = (pricing && pricing.sowOff) || [];
+      return new Set(Array.isArray(raw) ? raw.map(String) : []);
+    }
+    function sowWants(key) { return !sowOffSet().has(String(key)); }
+    function sowToggleSection(key) {
+      const off = sowOffSet();
+      if (off.has(key)) off.delete(key); else off.add(key);
+      pricing.sowOff = [...off];
+      saveLocal();
+      renderSowSectionPicker();
+    }
+    function sowAllSections() { pricing.sowOff = []; saveLocal(); renderSowSectionPicker(); }
+    function sowOpenSections() {
+      renderSowSectionPicker();
+      openOverlay(document.getElementById('sowSecModal'));
+    }
+    /* The picker RENUMBERS AS YOU CLICK. A list of checkboxes tells you what is
+       on; it does not tell you that dropping §7 makes change control §10, which
+       is the thing a reader of the contract will be looking for. So the numbers
+       are live, an excluded row loses its number rather than keeping a stale one,
+       and a section that would be empty anyway says so — because unticking
+       something that was never going to print is a decision about nothing. */
+    function renderSowSectionPicker() {
+      const host = document.getElementById('sowSecList');
+      if (!host) return;
+      let empties = {};
+      try {
+        const d0 = sowSkeletonData();
+        empties = {
+          commercial: !d0.price,
+          nfr: !(d0.nfrs && d0.nfrs.length),
+          clientdeps: !(d0.clientDeps && d0.clientDeps.length),
+          assumptions: !((d0.assumptions && d0.assumptions.length) || (d0.clientDeps && d0.clientDeps.length))
+        };
+      } catch (e) { empties = {}; }
+      const off = sowOffSet();
+      let n = 0;
+      host.innerHTML = SOW_SECTIONS.map(sec => {
+        const on = !off.has(sec.key);
+        const empty = !!empties[sec.key];
+        const num = (on && !empty) ? ++n : null;
+        /* flex:0 0 auto on the control and the number, or the checkbox stretches
+           to fill the row and the text it labels collapses to a column of single
+           letters. A default flex item grows; only the text should. */
+        return `<label style="display:flex;gap:0.6rem;align-items:flex-start;padding:0.45rem 0.2rem;border-bottom:1px solid var(--border);cursor:pointer;${on ? '' : 'opacity:0.5'}">
+          <input type="checkbox" ${on ? 'checked' : ''} onchange="sowToggleSection('${sec.key}')" style="flex:0 0 auto;width:16px;height:16px;margin-top:0.15rem" />
+          <span style="flex:0 0 2.2rem;font-variant-numeric:tabular-nums;font-weight:700;color:${num ? 'var(--primary)' : '#94a3b8'}">${num ? num + '.' : '—'}</span>
+          <span style="flex:1 1 auto;min-width:0">
+            <span style="font-weight:600">${escapeHtml(sec.name)}</span>
+            ${sec.heavy && !on ? ' <span class="badge badge-warn" style="font-size:0.6rem">load-bearing</span>' : ''}
+            <span class="help-text" style="display:block;font-size:0.75rem">${escapeHtml(sec.note)}${empty ? ' — nothing recorded, so it would not print anyway' : ''}</span>
+          </span></label>`;
+      }).join('');
+      const dropped = SOW_SECTIONS.filter(x => off.has(x.key));
+      const heavy = dropped.filter(x => x.heavy);
+      const sum = document.getElementById('sowSecSummary');
+      if (sum) sum.textContent = n + ' section' + (n === 1 ? '' : 's') + ' will be numbered in the document'
+        + (dropped.length ? ' · ' + dropped.length + ' left out' : '');
+      const warn = document.getElementById('sowSecWarn');
+      if (warn) {
+        warn.style.display = heavy.length ? 'block' : 'none';
+        warn.innerHTML = heavy.length
+          ? '<b>Leaving out ' + heavy.map(x => escapeHtml(x.name)).join(', ') + '.</b> '
+            + 'A contract without ' + (heavy.length === 1 ? 'it' : 'them') + ' is not wrong, but it is the '
+            + 'kind of gap a client finds later: cross-references to a missing section degrade to a name '
+            + 'rather than a number, and nothing else fills the hole.'
+          : '';
+      }
+    }
     function sowExclusionsTail(list, scopeRef) {
       const h = x => escapeHtml(x || '');
       const ex = (list || []).filter(x => String(x || '').trim());
@@ -28118,7 +28222,14 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       const h = x => escapeHtml(x || '');
       const n = narrative || {};
       const secs = [];
-      const add = (key, title, body) => { if (body) secs.push({ key, title, body }); };
+      /* WHICH SECTIONS THIS DOCUMENT CARRIES. Sections were already a keyed list
+         numbered by position, with cross-references written as {{sec:key}} and
+         resolved at the end — so leaving one out renumbers the rest and re-points
+         every reference for free. An excluded section that would have been empty
+         anyway changes nothing; one that had content is the drafter's decision,
+         and the choice is recorded on the version so a later reader can tell what
+         shape a past document was. */
+      const add = (key, title, body) => { if (body && sowWants(key)) secs.push({ key, title, body }); };
 
       add('overview', 'Overview &amp; Objectives',
         `<p style="font-size:13px">${n.overview || '<em>[Describe the business context and objectives of this engagement.]</em>'}</p>`);
@@ -28497,6 +28608,10 @@ Do not write payment terms or exclusions — both are generated from the project
                cos: Array.isArray(v.cos)
                  ? v.cos.map(c => ({ no: String((c && c.no) || ''), state: String((c && c.state) || '') }))
                  : null,
+               // which sections this document was written to carry, so a past
+               // version can be read for the shape it actually had rather than
+               // for today's setting
+               off: Array.isArray(v.off) ? v.off.map(String) : [],
                baseV: (v.baseV == null ? null : +v.baseV) };
     }
     /* 25 documents, and a SOW is a few tens of KB. The FIRST is never dropped —
@@ -28521,7 +28636,7 @@ Do not write payment terms or exclusions — both are generated from the project
          transition. */
       const v = sowVersionNorm({ n: nextSowNo++, at: fmtISO(new Date()),
                   ts: new Date().toISOString().slice(11, 16),
-                  label: String(label || ''), html: html,
+                  label: String(label || ''), html: html, off: [...sowOffSet()],
                   cos: (coLog || []).map(c => ({ no: String(c.no), state: coState(c) })),
                   baseV: (sowBaseline && sowBaseline.v) || null });
       sowVersions.push(v);
@@ -28681,7 +28796,14 @@ Do not write payment terms or exclusions — both are generated from the project
                    + 'earlier version and the current one can be identical.') + '">same as v' + curNo + '</span>'
                : '') + '</td>'
         + '<td style="font-size:0.78rem;white-space:nowrap">' + escapeHtml(v.at) + ' ' + escapeHtml(v.ts) + '</td>'
-        + '<td style="font-size:0.8rem">' + escapeHtml(v.label || '') + '</td>'
+        + '<td style="font-size:0.8rem">' + escapeHtml(v.label || '')
+            + ((v.off && v.off.length)
+                ? ' <span class="badge badge-warn" style="font-size:0.6rem" title="'
+                  + escapeHtml('Written without: ' + v.off.map(k => {
+                      const S = SOW_SECTIONS.find(x => x.key === k); return S ? S.name : k;
+                    }).join(', ')) + '">' + v.off.length + ' section'
+                  + (v.off.length === 1 ? '' : 's') + ' left out</span>'
+                : '') + '</td>'
         + '<td style="font-size:0.78rem">' + sowVersionCoCell(v) + '</td>'
         + '<td style="font-size:0.78rem;white-space:nowrap">' + Math.round(v.chars / 1024 * 10) / 10 + ' KB</td>'
         + '<td style="white-space:nowrap"><button class="btn-sm btn-secondary no-print" onclick="sowViewVersion('

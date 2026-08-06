@@ -1355,6 +1355,18 @@ const MUTANTS = [
     find: '            const e = plannedEffortDays(t);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';',
     with: '            const e = unitToWorkingDays(t.te || 0);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';' },
 
+  { what: 'SOW: the section picker does nothing — every section prints anyway',
+    find: "    function sowWants(key) { return !sowOffSet().has(String(key)); }",
+    with: "    function sowWants(key) { return true; }" },
+
+  { what: 'SOW: an excluded section leaves a gap in the numbering',
+    find: "      const add = (key, title, body) => { if (body && sowWants(key)) secs.push({ key, title, body }); };",
+    with: "      const add = (key, title, body) => { if (body) secs.push({ key, title, body: sowWants(key) ? body : '<!--x-->' }); };" },
+
+  { what: 'SOW: a saved version does not record the shape it was written in',
+    find: "                  label: String(label || ''), html: html, off: [...sowOffSet()],",
+    with: "                  label: String(label || ''), html: html, off: []," },
+
   { what: 'RAID: the type tab shows every entry regardless of kind',
     find: "        if (raidTab !== 'all' && r.type !== raidTab) return false;",
     with: "        if (false) return false;" },
