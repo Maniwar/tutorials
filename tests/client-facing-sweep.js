@@ -161,11 +161,47 @@ const DATA = FIXTURE();
            pricing assumption is quoted in the body — has to be in the document.
            Blanking the reference would satisfy the check above and still leave
            the reader told that something binds a story they cannot read. */
-        const relied = [...sowReferencedStoryIds()];
+        /* COMPUTED HERE, NOT ASKED FOR. This read sowReferencedStoryIds() —
+           the function under test — so a mutant that stopped it returning
+           NFR-carrying stories shrank the check by exactly as much as it shrank
+           the product, and nothing could ever disagree. The rule is restated
+           independently: a story is relied on when the document quotes one of
+           its quality attributes, dependencies or pricing assumptions. */
+        const relied = ((reqs && reqs.stories) || []).filter(s2 =>
+          (s2.nfrs || []).some(x => String(x).trim())
+          || (s2.assumptions || []).some(x => /^D:/i.test(x)
+               || (/^A:/i.test(x) && !/no WBS activity covers this yet/i.test(String(x))))
+        ).map(s2 => s2.id);
         if (!relied.length)
           say('SOW document', 'no story in the fixture carries an NFR, a D: dependency or an A: assumption, '
             + 'so the reliance check below reads an empty list and would pass on any build');
         else {
+          /* THE DISCRIMINATING CASE, CONSTRUCTED. Every NFR-carrying story in
+             this fixture is ALSO client-facing or also carries a D:/A: line, so
+             removing the NFR path from the referenced set changed nothing the
+             fixture could show. The case that matters is an INTERNAL story whose
+             ONLY claim on the document is a quality attribute — build one, and
+             assert the construction took before asserting anything about it. */
+          const guinea = (reqs.stories || []).find(s2 => storyAudience(s2) === 'internal');
+          if (!guinea)
+            say('SOW document', 'the fixture holds no internal story at all, so the NFR-only reliance '
+              + 'case below cannot be built and proves nothing');
+          else {
+            const keptNfrs = guinea.nfrs, keptAss = guinea.assumptions;
+            // an NFR and NOTHING else — no D:, no A: — so the only thing that can
+            // pull this story into the document is the quality attribute itself
+            guinea.nfrs = ['ZZ probe attribute: responses under 2 seconds'];
+            guinea.assumptions = [];
+            const builtRight = storyAudience(guinea) === 'internal'
+              && !(guinea.assumptions || []).some(x => /^[DA]:/i.test(x));
+            const printedNow = sowPrintedStoryIds();
+            guinea.nfrs = keptNfrs; guinea.assumptions = keptAss;
+            if (!builtRight)
+              say('SOW document', 'the NFR-only subject could not be put into the state the check needs');
+            else if (!printedNow.has(guinea.id))
+              say('SOW document', 'a story whose quality attribute the document quotes (' + guinea.id
+                + ') is not printed by it — the reader is told something binds a story they cannot read');
+          }
           const absent = relied.filter(id => !base.d.printedStoryIds.has(id));
           if (absent.length)
             say('SOW document', 'the SOW quotes requirements drawn from ' + absent.length + ' story/ies it '

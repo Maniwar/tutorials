@@ -197,8 +197,13 @@ const DATA = FIXTURE();
     const out = {};
     const leaf = leafTasks().filter(t => !t.isSummary && !t.milestone);
     const t0 = leaf[0], keep = t0.deliverable;
+    /* Multi-word categories are the ones that PROVE the category list is doing
+       work: a single word like "Analysis" is already caught by the two-word
+       minimum, so testing only those left the whole DELIV_CATEGORY list
+       unguarded — deleting it changed nothing any check could see. */
     const cases = [['', 'missing'], ['Analysis', 'vague'], ['Documentation', 'vague'],
       ['Findings', 'vague'], ['TBD', 'vague'], [t0.name, 'vague'],
+      ['see above', 'vague'], ['as above', 'vague'], ['slide deck', 'vague'],
       ['Signed engagement charter', 'ok'],
       ['Ranked friction-theme table with ticket counts', 'ok']];
     out.wrong = cases.filter(([v, want]) => { t0.deliverable = v; return deliverableFit(t0).level !== want; })

@@ -302,12 +302,45 @@ const { chromium } = requirePlaywright();
       if (Math.round(rc.placed) !== rp.length * 5000)
         say('a retainer places ' + Math.round(rc.placed) + ' across ' + rp.length + ' periods instead of '
           + (rp.length * 5000));
-      // a quiet period is still a period
+      /* A QUIET PERIOD IS STILL A PERIOD — and the span has to come from the
+         PLAN, not from rp. Measuring rp[last] - rp[0] asks the answer to check
+         itself: drop every workless week and both ends move together, so the
+         comparison holds no matter how many periods went missing. */
       const wk = 7 * 86400000;
-      const spanWeeks = Math.round((rp[rp.length - 1].start - rp[0].start) / wk) + 1;
-      if (rp.length !== spanWeeks)
-        say('the retainer bills ' + rp.length + ' weeks across a ' + spanWeeks + '-week engagement — a week '
+      const weeksAcross = () => {
+        const l2 = leafTasks();
+        const fin = Math.max(...l2.map(t => (t.finishDate instanceof Date && !isNaN(t.finishDate.getTime()))
+          ? stripTime(t.finishDate).getTime() : 0));
+        return Math.floor((fin - stripTime(projectStartDate()).getTime()) / wk) + 1;
+      };
+      if (rp.length !== weeksAcross())
+        say('the retainer bills ' + rp.length + ' weeks across a ' + weeksAcross() + '-week engagement — a week '
           + 'with no work in it is still retained');
+      /* A GAP HAS TO EXIST FOR "a quiet week is still billed" TO MEAN ANYTHING.
+         This fixture runs work continuously, so a build that skipped empty weeks
+         skipped none of them and no count could tell. The gap is therefore MADE:
+         the last activity is pinned a month out, which opens four workless weeks
+         in the middle, and the retainer must bill straight through them. */
+      const snapshot = JSON.stringify(serialize());
+      try {
+        const last = lv.slice().sort((a, b) => (b.finishDate || 0) - (a.finishDate || 0))[0];
+        const finAll = Math.max(...lv.map(t => t.finishDate ? stripTime(t.finishDate).getTime() : 0));
+        last.startNoEarlier = fmtISO(new Date(finAll + 28 * 86400000));
+        calculate();
+        const gapWeeks = weeksAcross();
+        const rp2 = retainerPeriods(false, leafTasks());
+        if (gapWeeks <= rp.length)
+          say('pinning an activity a month out did not lengthen the engagement, so the quiet-week check '
+            + 'below has no gap to look at and proves nothing');
+        else if (rp2.length !== gapWeeks)
+          say('with four workless weeks in the middle the retainer bills ' + rp2.length + ' of ' + gapWeeks
+            + ' weeks — a week the client retained but nobody was busy is still owed');
+        else {
+          const starts = rp2.map(x => x.start).sort((a, b) => a - b);
+          const broken = starts.some((x, i) => i && Math.round((x - starts[i - 1]) / wk) !== 1);
+          if (broken) say('the retainer period sequence skips a week rather than running contiguously');
+        }
+      } finally { hydrate(JSON.parse(snapshot)); calculate(); }
       // the ACCRUAL is the comparison and must still follow the work
       const ra = revSpread(false, lv, { cash: false });
       if (near(ra.placed, rc.placed, 0.01) && Math.abs(ra.total - rc.placed) > 1)
@@ -327,6 +360,21 @@ const { chromium } = requirePlaywright();
         if (!/whether or not the period is fully utilised/.test(rh))
           say('the SOW describes a retainer without saying it is owed whether or not the period is used');
       }
+      /* THE LEFTOVER LOOP, WHERE IT IS LOAD-BEARING. Under milestone billing the
+         tail after the final checkpoint is often empty, so deleting the loop
+         changed nothing a milestone-only check could see. Under monthly terms
+         EVERY payment goes through it, and its removal zeroes the schedule. */
+      revTerms = { kind: 'monthly', days: 30, deposit: 0 };
+      const mplan = sowPaymentPlan();
+      if (mplan.total > 0) {
+        if (!mplan.rows.length)
+          say('monthly billing produces no payment rows at all');
+        if (Math.abs(mplan.total - mplan.scheduled) > 1)
+          say('a monthly schedule totals ' + Math.round(mplan.scheduled) + ' against a price of '
+            + Math.round(mplan.total) + ' — money the client is signing for lands on no invoice date');
+      }
+      revTerms = { kind: 'retainer', days: 7, period: 'week', retainer: 5000, deposit: 0 };
+
       // no amount set must not read as a signed schedule of zeroes
       revTerms = { kind: 'retainer', days: 7, period: 'week', retainer: 0, deposit: 0 };
       const zplan = sowPaymentPlan();
