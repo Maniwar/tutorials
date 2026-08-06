@@ -3534,7 +3534,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0229</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0246</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -7707,11 +7707,21 @@ Or say what you want, in your own words:
         };
         const mkBadge = (cls, label) => `<span class="badge ${cls}" title="${escapeHtml(badgeTips[label] || '')}" style="cursor:help">${label}</span>`;
         const sumDone = summary && (t.percentComplete || 0) >= 100;
+        /* CRITICAL IS A POSITION, NOT A STATE. It says any delay here moves the
+           finish date; the progress badge says whether the work has started.
+           Two different questions, and Critical used to REPLACE the answer to
+           the second — so a row that was critical AND late showed only
+           "Critical" and hid the more urgent of the two facts. Both are shown.
+
+           Complete still wins outright: once a row is done its position on the
+           critical path decides nothing, and the badge would be noise. */
+        const critical = t.isCritical && !t.milestone;
         const statusBadge = !calculated ? mkBadge('badge-slack', 'Pending')
           : summary ? (sumDone ? mkBadge('badge-done', '✓ Complete') : mkBadge('badge-slack', 'Rolls up'))
-          : (t.percentComplete >= 100) ? mkBadge('badge-done', 'Complete')          // done beats critical
-          : (t.isCritical && !t.milestone) ? mkBadge('badge-critical', 'Critical')
-          : mkBadge(st.cls, st.label);
+          : (t.percentComplete >= 100) ? mkBadge('badge-done', 'Complete')
+          : critical
+            ? `<span style="display:inline-flex;flex-wrap:wrap;gap:3px;align-items:center">${mkBadge('badge-critical', 'Critical')}${mkBadge(st.cls, st.label)}</span>`
+            : mkBadge(st.cls, st.label);
         const twisty = summary
           ? `<button class="wbs-twisty" onclick="toggleCollapse(${t.id})" title="${collapsedIds.has(t.id) ? 'Expand' : 'Collapse'}">${collapsedIds.has(t.id) ? '▸' : '▾'}</button>`
           : '<span class="wbs-twisty-spacer"></span>';
