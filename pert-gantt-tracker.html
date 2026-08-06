@@ -3534,7 +3534,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0246</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0258</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -30255,10 +30255,50 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
       saveLocal(); renderResources();
       if (calculated) renderAnalytics();
     }
-    function setRevRetainer(v) {
+    /* TYPING MUST NOT REBUILD THE BOX YOU ARE TYPING IN. This ran
+       renderResources() on every keystroke, which replaces the whole panel —
+       so the input was destroyed and recreated mid-digit, focus was lost, and
+       the browser scrolled to wherever the new element landed. The state
+       updates live; the REDRAW waits for blur. */
+    function setRevRetainer(v, live) {
       revTerms = revTermsNorm(Object.assign({}, revTermsNorm(revTerms), { retainer: parseFloat(v) || 0 }));
-      saveLocal(); renderResources();
+      saveLocal();
+      if (live) { retainerLiveNote(); return; }
+      renderResources();
       if (calculated) renderAnalytics();
+    }
+    // the one line that has to keep up while you type, updated in place
+    function retainerLiveNote() {
+      const el = document.getElementById('retSum');
+      if (!el) return;
+      const T = projectRevTerms(), n = retainerPeriods(hasBaseline(), leafTasks()).length, fee = revenueAtCompletion();
+      const tot = n * T.retainer;
+      el.textContent = !(T.retainer > 0) ? 'no amount set yet'
+        : n + ' × ' + fmtMoney(T.retainer) + ' = ' + fmtMoney(tot)
+          + (fee > 0 ? (Math.abs(tot - fee) <= 1 ? ' — matches the priced work'
+              : tot < fee ? ' — ' + fmtMoney(fee - tot) + ' short of the priced work'
+              : ' — ' + fmtMoney(tot - fee) + ' over the priced work') : '');
+    }
+    /* WHY IT WAS NOT SET FOR YOU. It is a contract figure, so the app must not
+       invent one — but it can do the arithmetic nobody enjoys: the fee divided
+       by the periods the plan actually runs for, rounded to something you would
+       write on an invoice. One click, and it is a starting point rather than an
+       empty box beside a red warning. */
+    function retainerSuggest() {
+      /* BLUR FIRST. Pressing this while the amount box still has focus tears the
+         box down during the redraw, which fires its change handler with the
+         value that was already there — after the suggestion had been written.
+         The old value won every time. Let the blur land first, then compute. */
+      try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {}
+      const n = retainerPeriods(hasBaseline(), leafTasks()).length;
+      const fee = revenueAtCompletion();
+      if (!n || !(fee > 0)) { alert('Price the plan first — the suggestion is the fee divided by the periods the plan runs for.'); return; }
+      const raw = fee / n;
+      const step = raw >= 2000 ? 100 : raw >= 500 ? 50 : 10;
+      setRevRetainer(Math.round(raw / step) * step);
+      flashSaved('💷 ' + fmtMoney(projectRevTerms().retainer) + ' per '
+        + RETAINER_PERIODS[projectRevTerms().period].label + ' — ' + n + ' periods against '
+        + fmtMoney(fee) + ' of priced work. Change it to whatever you actually agree.');
     }
     function setOrgCashTerms(id, v) {
       const lib = loadOrgLib().slice();
@@ -30348,10 +30388,22 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
         + '</th><th>Invoicing against</th></tr></thead><tbody>'
         + '<tr><td class="wl-td">' + revTermsPickerHtml(revTerms, 'setProjectRevTerms(this.value)') + '</td>'
         + '<td class="wl-td">' + (T.kind === 'retainer'
-            ? '$ <input class="mini-inp" type="number" min="0" step="100" style="width:7rem" value="'
-              + (T.retainer || '') + '" oninput="setRevRetainer(this.value)" title="The fixed amount invoiced every '
+            ? '<span style="display:inline-flex;align-items:center;gap:.3rem;white-space:nowrap">'
+              + '<span style="color:var(--muted)">$</span>'
+              + '<input class="mini-inp" type="number" min="0" step="100" style="width:7.5rem;text-align:right" value="'
+              + (T.retainer || '') + '" placeholder="0" oninput="setRevRetainer(this.value, true)" '
+              + 'onchange="setRevRetainer(this.value)" title="The fixed amount invoiced every '
               + RETAINER_PERIODS[T.period].label + ', owed whether or not the period is fully used. This is the '
               + 'number the whole schedule is built from." aria-label="Retainer amount per period">'
+              + '<button class="btn-sm btn-secondary" onclick="retainerSuggest()" title="Divide the priced fee evenly '
+              + 'across the periods this plan runs for, and round it to something you would put on an invoice. '
+              + 'A starting point — change it to whatever you actually agree.">÷ Even</button></span>'
+              + '<div class="help-text" id="retSum" style="margin-top:.2rem">'
+              + escapeHtml(!(T.retainer > 0) ? 'no amount set yet'
+                  : rp.length + ' × ' + fmtMoney(T.retainer) + ' = ' + fmtMoney(retTot)
+                    + (fee > 0 ? (Math.abs(retTot - fee) <= 1 ? ' — matches the priced work'
+                        : retTot < fee ? ' — ' + fmtMoney(fee - retTot) + ' short of the priced work'
+                        : ' — ' + fmtMoney(retTot - fee) + ' over the priced work') : '')) + '</div>'
             : '<input class="mini-inp" type="number" min="0" max="100" step="5" style="width:5.5rem" '
               + 'value="' + T.deposit + '" oninput="setRevDeposit(this.value)" title="Percent of the fee invoiced at '
               + 'project start. Often the single biggest lever on the funding gap." aria-label="Deposit percent"> %')
