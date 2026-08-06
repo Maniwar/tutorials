@@ -860,6 +860,49 @@ const DATA = FIXTURE();
       return out;
     })();
 
+    /* ══ THE TIMESHEET IS WORK, NOT ELAPSED TIME ═══════════════════════════
+       The distinction the whole duration-versus-effort pass exists to hold, and
+       the timesheet — the one report anybody reconciles against an invoice —
+       had no assertion of any kind on it. A build that reported the calendar
+       span as somebody's hours passed every check in this directory.
+
+       CONSTRUCTED at a part-time allocation, because at 100% the two quantities
+       are numerically identical and a report that confused them would look
+       perfectly correct. The subject is put on 25% for the length of the check
+       and put back afterwards. */
+    const timesheet = (() => {
+      const t5 = leafTasks().find(x => !x.isSummary && !x.milestone && (taskParticipants(x) || []).length === 1);
+      if (!t5) { say('Timesheet', 'no single-owner activity to vary the allocation on — this check is vacuous'); return null; }
+      const who5 = taskParticipants(t5)[0].name;
+      const kept5 = { units: t5.units, parts: t5.participants };
+      t5.units = 25; t5.participants = null;
+      calculate();
+      const row = timesheetRows().find(r => r.id === t5.id && r.who === who5);
+      const out = {};
+      if (!row) say('Timesheet', 'the activity vanished from the report when its allocation changed');
+      else {
+        const span = unitToWorkingDays(t5.te || 0);
+        out.spanH = Math.round(span * 8 * 10) / 10;
+        out.planH = Math.round(row.planH * 10) / 10;
+        if (Math.abs(row.planH - span * 0.25 * 8) > 0.05)
+          say('Timesheet', 'a person on 25% of a ' + out.spanH + 'h activity is shown as owing '
+            + out.planH + 'h — planned hours must be the span times their allocation, not the span');
+        if (Math.abs(row.planH - span * 8) < 0.05)
+          say('Timesheet', 'planned hours equal the full elapsed span, so the report is quoting how long '
+            + 'the activity stays open as though it were one person’s work');
+        // and the weekly split must still add back to it
+        const wk = timesheetByWeek([row]).reduce((a2, w) => a2 + w.planH, 0);
+        out.weekSum = Math.round(wk * 10) / 10;
+        if (row.planH > 0 && Math.abs(wk - row.planH) > 0.05)
+          say('Timesheet', 'the weekly split totals ' + out.weekSum + 'h against a row total of '
+            + out.planH + 'h — spreading the hours across days lost or duplicated some');
+      }
+      if (kept5.units == null) delete t5.units; else t5.units = kept5.units;
+      t5.participants = kept5.parts;
+      calculate();
+      return out;
+    })();
+
     /* ══ TWO TOTALS ON ONE SCREEN, AND THE GAP NAMED ═══════════════════════ */
     const priceGap = (() => {
       const pv = priceVsRateCard();
@@ -886,7 +929,7 @@ const DATA = FIXTURE();
       return { rateCard: Math.round(pv.rateCard), fee: Math.round(pv.fee), gap: Math.round(pv.gap) };
     })();
 
-    return { contradictions: bad, ledger, priceGap, count: n, recount: mine, built,
+    return { contradictions: bad, ledger, timesheet, priceGap, count: n, recount: mine, built,
              overPeople: rl.resourcesOver, atCapacity, ptoCase, doneRule, levelling, heatmap,
              lintFindings: lint.map(f => String(f.finding).slice(0, 80)) };
   });

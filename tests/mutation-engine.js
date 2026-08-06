@@ -357,7 +357,7 @@ const MUTANTS = [
      one that names only the tab lands wherever you happened to be last —
      "Set day rates" opening the worklist is a button that lies. */
   { what: 'navigation: two sections of the team tab paint the same panel',
-    find: "        cost:     () => resourceEffortHtml() + billingBreakdownHtml() + cashTermsPanelHtml()",
+    find: "        cost:     () => resourceEffortHtml() + timesheetHtml() + ledgerHtml() + billingBreakdownHtml() + cashTermsPanelHtml()",
     with: "        cost:     () => levelBanner + heatmap + summary" },
 
   /* The `hidden` attribute only sets display:none from the user-agent sheet,
@@ -1344,8 +1344,12 @@ const MUTANTS = [
     with: '        const est = t.te || 0;' },
 
   { what: 'timesheet: planned hours are the span rather than the work',
-    find: '          const planH = spanDays * (u / 100) * 8;',
-    with: '          const planH = spanDays * 8;' },
+    /* The ledger computes planned hours the same way and from the same fields,
+       which is correct — and it means the bare line is no longer unique in the
+       file. Two matches make a mutant untrustworthy, so the anchor carries the
+       two lines above it that only the timesheet has. */
+    find: '        parts.forEach(pr => {\n          const u = Number(pr.units) || 0;\n          const planH = spanDays * (u / 100) * 8;',
+    with: '        parts.forEach(pr => {\n          const u = Number(pr.units) || 0;\n          const planH = spanDays * 8;' },
 
   { what: 'timesheet: the weekly split does not add back to the activity total',
     find: '        const perDayPlan = r.planH / days.length;',
@@ -1452,7 +1456,7 @@ const MUTANTS = [
     with: "                  const num = v => fmtDurText(v);" },
 
   { what: 'SOW panel: both history tabs show the same history',
-    find: "          host.innerHTML = docHistTab === 'plan' ? versionChainHtml(true) : sowHistoryHtml();",
+    find: "          host.innerHTML = docHistTab === 'plan' ? versionChainHtml(true) : (sowHistoryHtml() + sowCompareHtml());",
     with: "          host.innerHTML = sowHistoryHtml();" },
 
   { what: 'SOW panel: the selected history tab looks like the unselected one',
@@ -1468,7 +1472,7 @@ const MUTANTS = [
     with: "      const work = unitToWorkingDays(te);" },
 
   { what: 'SOW: the scope table quotes the calendar span as effort',
-    find: "                    const work = workingDaysToUnit(plannedEffortDays(t));",
+    find: "                  const work = workingDaysToUnit(plannedEffortDays(t));",
     with: "                    const work = Number(t.te) || 0;" },
 
   { what: 'SOW: filing an exclusion changes the log and not the document',
@@ -1552,8 +1556,8 @@ const MUTANTS = [
     with: "      return new Set(reqs.stories.filter(s => storyAudience(s) === 'client').map(s => s.id));" },
 
   { what: 'SOW: a dependency traces to a delivery-side story the reader cannot look up',
-    find: "            out.push({ text: String(x).replace(/^D:\\s*/i, ''), ref: printedIds.has(s.id) ? s.id : '' });",
-    with: "            out.push({ text: String(x).replace(/^D:\\s*/i, ''), ref: s.id });" },
+    find: "            const ref = sowTraceRef(s.id, printedIds);\n            if (!ref) dropped++;",
+    with: "            const ref = s.id;\n            if (!ref) dropped++;" },
 
   { what: 'SOW: milestone billing names the milestones and states no amount against any of them',
     find: '          const amt = money.get(k) || 0;',
@@ -1711,8 +1715,8 @@ const MUTANTS = [
     with: '          const rate = getRate(pr.name), bill = getBillRate(pr.name);' },
 
   { what: 'ledger: the second grouping level is chosen and its rows are never drawn',
-    find: "        return grpRow + subs.map(([b, tot]) => '<tr><td class=\"wl-td\" style=\"padding-left:1.6rem;color:var(--muted)\">'",
-    with: "        return grpRow + [].map(([b, tot]) => '<tr><td class=\"wl-td\" style=\"padding-left:1.6rem;color:var(--muted)\">'" },
+    find: "        return grpRow + subs.map(([b, tot]) =>",
+    with: "        return grpRow + [].map(([b, tot]) =>" },
 
   { what: 'ledger: the tie-out to the billing table is never printed, so nobody can tell the two agree',
     find: "      if (s.measure === 'billed' && !ledgerFiltersOn()) {",
