@@ -2937,6 +2937,30 @@
          because there was nowhere else to put it. A dialog can show what is
          being signed, what state it is actually in, and refuse the combination
          that makes no sense — none of which a prompt chain can do. -->
+    <div class="modal-overlay" id="adModal" style="z-index:136">
+      <div class="modal" style="max-width:920px" role="dialog" aria-modal="true" aria-labelledby="adModalTitle">
+        <div class="modal-header"><h3 id="adModalTitle">Draft the deliverable</h3>
+          <button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeDraftChat()" aria-label="Close dialog">✕</button></div>
+        <div class="modal-body">
+          <p class="help-text" id="adSub" style="margin:0 0 .55rem"></p>
+          <details id="adCtxWrap" style="margin-bottom:.6rem">
+            <summary style="cursor:pointer;font-size:0.78rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">What the AI is being given</summary>
+            <pre id="adCtx" style="white-space:pre-wrap;font-size:0.72rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:.6rem;margin:.4rem 0 0;max-height:14rem;overflow:auto"></pre>
+            <p class="help-text" style="margin:.3rem 0 0">No rate, cost or price is ever sent — commercials belong in the SOW. The transcript and any saved document are stored in this project file, so they travel with it if you send it on.</p>
+          </details>
+          <div id="adLog" style="max-height:26rem;overflow:auto;border:1px solid #e2e8f0;border-radius:8px;padding:.6rem;background:#fff"></div>
+          <div id="adChips" class="toolbar" style="margin:.5rem 0 .35rem;gap:.35rem"></div>
+          <div class="form-group" style="margin-bottom:0">
+            <textarea id="adInput" rows="3" placeholder="Draft it — or say what to change: “make the dependency log a table”, “add the day-for-day slip language”, “shorter”."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" style="margin-right:auto" id="adExportBtn" onclick="adExport()">⬇ Download</button>
+          <button class="btn-secondary" onclick="closeDraftChat()">Close</button>
+          <button class="btn-primary" id="adSendBtn" onclick="adSend()">Send</button>
+        </div>
+      </div>
+    </div>
     <div class="modal-overlay" id="signoffModal" style="z-index:132">
       <div class="modal" style="max-width:620px" role="dialog" aria-modal="true" aria-labelledby="signoffModalTitle">
         <div class="modal-header"><h3 id="signoffModalTitle">Record a sign-off</h3>
@@ -3499,7 +3523,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0009</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0217</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3688,6 +3712,7 @@ Or say what you want, in your own words:
                 <label>Deliverable / output</label><button type="button" class="info-icon" aria-label="About the deliverable" data-help="The ARTEFACT this activity hands over, named specifically enough that somebody could tell whether it exists. &quot;Ranked friction-theme table with ticket counts&quot; is a deliverable; &quot;Analysis&quot; is a category. The dictionary flags the vague ones, because an activity whose output nobody can identify cannot be accepted, invoiced or handed to the next activity.">i</button>
                 <textarea id="mDeliverable" rows="2" placeholder="e.g. Signed design doc"></textarea>
               </div>
+              <div class="form-group" id="mDocPanel" style="grid-column:1/-1"></div>
               <div class="form-group">
                 <label>Inputs / what this consumes</label><button type="button" class="info-icon" aria-label="About inputs" data-help="What this activity needs before it can start — one per line. Anything produced by an earlier activity is picked up automatically from the predecessor links, and client dependencies come from the stories; this field is for the rest, the things that arrive from outside the plan. The input/output map in the WBS dictionary joins them up and names whatever is needed and never produced.">i</button>
                 <textarea id="mInputs" rows="2" placeholder="one per line, e.g. 12 months of support ticket export (client)"></textarea>
@@ -3915,6 +3940,7 @@ Or say what you want, in your own words:
         owner: '', units: 100, attendees: [], levelDelay: 0, percentComplete: 0, predecessors: [],
         startNoEarlier: '', deadline: '', jira: '', autoActualStart: false, autoActualFinish: false,
         parentId: null, description: '', deliverable: '', acceptance: '', inputs: '',
+        aiChat: [], aiDoc: null,
         actualStart: '', actualFinish: '', actualEffort: null, fixedCost: 0, actualCost: 0, autoActualCost: true, audience: null, taxonomy: null, taxSrc: null,
         // what was actually INVOICED and RECEIVED against this activity. null is
         // "nobody has said", which is a different fact from zero.
@@ -4630,6 +4656,7 @@ Or say what you want, in your own words:
           owner: t.owner, units: t.units, attendees: t.attendees || [], levelDelay: t.levelDelay,
           percentComplete: t.percentComplete, predecessors: t.predecessors,
           parentId: t.parentId, description: t.description, deliverable: t.deliverable, inputs: t.inputs || '',
+          aiChat: chatLogNorm(t.aiChat), aiDoc: aiDocNorm(t.aiDoc),
           acceptance: t.acceptance, actualStart: t.actualStart, actualFinish: t.actualFinish, actualEffort: (t.actualEffort == null ? null : t.actualEffort),
           fixedCost: t.fixedCost || 0, actualCost: t.actualCost || 0, autoActualCost: t.autoActualCost !== false, audience: t.audience || null,
           actualStartInferred: !!t.actualStartInferred,
@@ -4684,6 +4711,7 @@ Or say what you want, in your own words:
         parentId: (t.parentId == null ? null : t.parentId),
         description: t.description || '', deliverable: t.deliverable || '', acceptance: t.acceptance || '',
         inputs: String(t.inputs || ''),
+        aiChat: chatLogNorm(t.aiChat), aiDoc: aiDocNorm(t.aiDoc),
         actualStart: t.actualStart || '', actualFinish: t.actualFinish || '', actualEffort: (t.actualEffort == null || t.actualEffort === '' ? null : Number(t.actualEffort)),
         autoActualStart: !!t.autoActualStart, autoActualFinish: !!t.autoActualFinish,
         // strict ISO or nothing — these flow into title/value attributes and
@@ -5757,6 +5785,7 @@ Or say what you want, in your own words:
       document.getElementById('mDesc').value = '';
       document.getElementById('mDeliverable').value = '';
       document.getElementById('mInputs').value = '';
+      adDocPanelFill(null);
       document.getElementById('mAcceptance').value = '';
       tcRowFill(null);
       coRowFill(null);
@@ -5890,6 +5919,7 @@ Or say what you want, in your own words:
       document.getElementById('mDesc').value = (isTestCaseTask(t) && hasRealSteps(t)) ? tcStepLines(t.description) : (t.description || '');
       document.getElementById('mDeliverable').value = t.deliverable || '';
       document.getElementById('mInputs').value = t.inputs || '';
+      adDocPanelFill(t);
       document.getElementById('mAcceptance').value = t.acceptance || '';
       tcRowFill(t);
       coRowFill(t);
@@ -15685,7 +15715,7 @@ Or say what you want, in your own words:
                  : i.kind === 'client' ? 'Client dependency (' + (i.ref || '') + '): ' : 'Stated input: ') + i.text)}">${mark[i.kind]} ${escapeHtml(i.text)}</div>`).join('')
               + (ins.length > 4 ? `<div class="help-text" style="font-size:0.68rem">+${ins.length - 4} more</div>` : '');
           })()}</td>
-          <td style="font-size:0.8rem">${(() => {
+          <td style="font-size:0.8rem">${t.aiDoc ? `<span title="${escapeHtml('A drafted document is saved on this activity: ' + (t.aiDoc.title || '') )}" style="cursor:help">📄 </span>` : ''}${(() => {
             const fit = deliverableFit(t);
             const d = escapeHtml(t.deliverable || '');
             if (fit.level === 'ok' || fit.level === 'na') return d || '<span class="help-text">—</span>';
@@ -16909,6 +16939,7 @@ Or say what you want, in your own words:
               <span class="sl-go">
                 <button class="btn-sm btn-secondary" onclick="event.preventDefault();event.stopPropagation();openEditModal(${lt.id}, true)" title="Open the activity editor — estimate, owner, dependencies, dictionary">✎ Edit</button>
                 <button class="btn-sm btn-secondary" onclick="event.preventDefault();event.stopPropagation();showActivityInPlan(${lt.id})" title="Show this activity in the WBS, expanded and highlighted">→ In plan</button>
+                ${(() => { const f = aiDraftFit(lt); return `<button class="btn-sm ${lt.aiDoc ? 'btn-primary' : 'btn-secondary'}" style="${f.fit === 'unlikely' ? 'opacity:.55' : ''}" onclick="event.preventDefault();event.stopPropagation();openDraftChat(${lt.id}, ${ekJs2(s.id)}, true)" title="${escapeHtml((lt.aiDoc ? 'A draft is saved on this activity — open the conversation to revise it. ' : 'Draft this deliverable with the AI, using this story, its acceptance criteria and the activity\u2019s inputs as the brief. ') + f.why)}">${lt.aiDoc ? '📄 Draft' : f.fit === 'suggested' ? '✨ Draft' : '🤖 Draft'}</button>`; })()}
               </span>
             </div>`; }).join('')}
           </div>` : ''}
@@ -17741,6 +17772,359 @@ Or say what you want, in your own words:
         if (s.wbsId != null && !ids.includes(s.wbsId)) s.wbsIds = [s.wbsId, ...ids];
       });
     }
+    /* ═══ DRAFTING THE DELIVERABLE ITSELF ═════════════════════════════════════
+       A story carries everything needed to write its own deliverable: the
+       persona and the want, the acceptance criteria that ARE the spec, the
+       quality attributes, the dependencies, and a linked activity that names
+       the artefact. The app could show you all of that and then leave you to
+       open a blank document somewhere else. This closes that gap.
+
+       ONE ACTIVITY, NOT ONE STORY. The activity is the thing that owns a
+       deliverable, has an acceptance criterion, gets checked off and gets
+       invoiced. A story is a reason for the work; the activity is the work. So
+       the conversation binds to a task id and the saved document lands on the
+       task — which also means deletion, undo, project copy and new-project all
+       come free, because it travels with the row it belongs to.
+
+       THE OUTPUT HAS TO LAND SOMEWHERE. An AI draft that lives in a chat window
+       is a toy. Every reply can be saved onto the activity, and once saved the
+       plan shows it: a chip in the dictionary, a panel in the editor, a marker
+       on the story card. If it cannot be pointed at from the plan, it did not
+       happen.
+
+       ONE TURN AT A TIME, and a turn that failed is not kept — a user message
+       with no reply after it poisons every later round of the conversation. */
+    const CHAT_MSG_CAP = 40, CHAT_MSG_CHARS = 4000, DOC_BODY_CHARS = 24000;
+    /* ONE shape definition, called by BOTH serialize and hydrate. The SOW
+       version records taught this the hard way: a writer that omits a field the
+       reader defaults surfaces only as undo failing, because undo byte-compares
+       a round trip and nothing else in the app ever looks. */
+    function chatMsgNorm(m) {
+      return { role: (m && m.role === 'ai') ? 'ai' : 'user',
+               text: String((m && m.text) || '').slice(0, CHAT_MSG_CHARS),
+               at: String((m && m.at) || ''),
+               trimmed: Math.max(0, Number(m && m.trimmed) || 0) };
+    }
+    function chatLogNorm(a) {
+      if (!Array.isArray(a)) return [];
+      const rows = a.filter(Boolean).map(chatMsgNorm).filter(m => m.text);
+      // the cap keeps the OLDEST turn — it holds the brief the rest answers
+      return rows.length <= CHAT_MSG_CAP ? rows
+        : [rows[0]].concat(rows.slice(rows.length - (CHAT_MSG_CAP - 1)));
+    }
+    function aiDocNorm(d) {
+      const body = String((d && d.body) || '').trim();
+      if (!body) return null;
+      return { title: String((d && d.title) || '').slice(0, 200),
+               body: body.slice(0, DOC_BODY_CHARS),
+               at: String((d && d.at) || ''), model: String((d && d.model) || ''),
+               storyId: String((d && d.storyId) || '') };
+    }
+    /* Whether this activity is the KIND of work an AI can draft. A charter, a
+       memo, a scored backlog, a test plan: yes. An interview, a workshop, a
+       site visit, a cutover: no — the output of those is what happened in the
+       room, and offering to draft one invites somebody to fabricate it. This
+       only ever SUGGESTS; the button is available on everything, because the
+       app does not know the engagement better than the person running it. */
+    function aiDraftFit(t) {
+      if (!t || t.isSummary) return { fit: 'unlikely', why: 'a phase is a container, not a deliverable' };
+      if (t.milestone) return { fit: 'unlikely', why: 'a milestone is a date, not an artefact' };
+      const hay = ((t.name || '') + ' ' + (t.deliverable || '') + ' ' + (t.description || '')).toLowerCase();
+      /* Stems, not whole words. `\binterview\b` does not match "Interviews" —
+         the boundary after the stem fails on the plural — so an activity called
+         "Coordinator Interviews & Usability Sessions" was offered as something
+         to compose. The trailing boundary is dropped where the word inflects. */
+      if (/\b(interview|workshop|session|meeting|site visit|walkthrough|shadow|observ|install|provision|configur|migrat|cutover|go[- ]?live|training|demo|onboarding call|standup|stand-up|retro)/.test(hay))
+        return { fit: 'unlikely', why: 'this is work done with people or systems — its output is what actually happened, not something to compose' };
+      if (/\b(memo|report|plan|spec|charter|backlog|roadmap|analysis|deck|readout|summar|document|register|matrix|guide|checklist|brief|proposal|taxonom|framework|criteri|schedule|policy|runbook|template|dictionary|catalog)/.test(hay))
+        return { fit: 'suggested', why: 'the deliverable is a document, and everything it needs is already in the plan' };
+      return { fit: 'open', why: 'the app cannot tell — draft it if the output is something you would write' };
+    }
+    /* WHAT THE MODEL IS GIVEN, as plain text the user can read before sending.
+       Deterministic and timestamp-free: a clock in here would change the prompt
+       on every turn and throw away the cache it is meant to hit.
+
+       NO MONEY. Not the rate, not the cost, not the margin. The draft is a
+       client-facing artefact and the commercials belong in the SOW, under terms
+       somebody chose — not leaking into a deliverable because the context
+       builder was lazy about what it swept up. */
+    function draftContext(t, storyId) {
+      if (!t) return '';
+      const L = [];
+      L.push('PROJECT: ' + projName());
+      const par = t.parentId != null ? tasks.find(x => x.id === t.parentId) : null;
+      if (par) L.push('PHASE: ' + (par.wbs ? par.wbs + ' ' : '') + par.name);
+      L.push('');
+      L.push('THE ACTIVITY THIS DOCUMENT IS FOR');
+      L.push('  ' + (t.wbs ? t.wbs + ' ' : '') + t.name);
+      if (t.deliverable) L.push('  Deliverable: ' + t.deliverable);
+      if (t.description) L.push('  Scope: ' + t.description);
+      if (t.acceptance) L.push('  Accepted when: ' + t.acceptance);
+      if (t.owner) L.push('  Owner: ' + t.owner + ((resources[t.owner] || {}).role ? ' — ' + resources[t.owner].role : ''));
+      const ins = (typeof taskInputs === 'function') ? taskInputs(t) : [];
+      if (ins.length) {
+        L.push('');
+        L.push('WHAT IT HAS TO WORK FROM');
+        ins.forEach(i => L.push('  - ' + i.text
+          + (i.kind === 'upstream' && i.from ? '  (produced by ' + i.from.name + ')'
+             : i.kind === 'client' ? '  (the client provides this' + (i.ref ? ', ' + i.ref : '') + ')' : '')));
+      }
+      const st = (typeof storiesForTask === 'function') ? storiesForTask(t.id) : [];
+      const use = storyId ? st.filter(s => s.id === storyId).concat(st.filter(s => s.id !== storyId)) : st;
+      if (use.length) {
+        L.push('');
+        L.push('THE REQUIREMENTS IT HAS TO SATISFY');
+        use.forEach(s => {
+          L.push('  ' + s.id + ' — As a ' + (s.persona || '?') + ', I want to ' + (s.want || '?')
+            + ', so that ' + (s.soThat || '?') + '.');
+          (s.ac || []).forEach((a, i) => L.push('      AC' + (i + 1) + ' (' + (a.type || 'happy') + '): ' + a.text));
+          (s.nfrs || []).forEach(n => L.push('      Quality attribute: ' + n));
+          (s.assumptions || []).forEach(a => L.push('      ' + a));
+        });
+      }
+      const ex = (raid || []).filter(r => r.type === 'Exclusion').map(r => r.title);
+      if (ex.length) { L.push(''); L.push('EXPLICITLY OUT OF SCOPE FOR THE ENGAGEMENT'); ex.forEach(x => L.push('  - ' + x)); }
+      return L.join('\n');
+    }
+    const DRAFT_CONTRACT = [
+      'You are drafting ONE deliverable for a billable consulting engagement. The context below is the whole brief.',
+      '',
+      'RULES',
+      '- Reply with the finished document ONLY. Start with a single "# Title" line. No preamble, no "here is", no closing offer to help, no code fences.',
+      '- The acceptance criteria are the specification. Every one of them must be satisfied by something in the document.',
+      '- Use ordinary Markdown: headings, short paragraphs, tables and lists where they earn their place.',
+      '- Write for the client, in their language, about their business. Never mention the plan, the WBS, this tool, or that you are an AI.',
+      '- Invent NOTHING. Where a real figure, name or date is needed and the brief does not have it, write a [SQUARE-BRACKET PLACEHOLDER] naming exactly what is missing.',
+      '- Never state a price, rate, cost or margin. Commercials live in the Statement of Work.',
+      '- If you genuinely cannot proceed without an answer, reply with a single line starting "QUESTION:" and nothing else. Ask one question at a time, and only when the answer changes the document.',
+      '',
+      'On later turns the user is revising this document. Apply their change and return the FULL revised document, not a diff and not a fragment.'
+    ].join('\n');
+
+    /* The way in from ANY activity, not only one with a story. Governance work
+       — a status pack, a runbook, a closure report — carries a deliverable and
+       no user story, and the story card is the only other door. */
+    function adDocPanelFill(t) {
+      const el = document.getElementById('mDocPanel');
+      if (!el) return;
+      if (!t || t.isSummary || t.milestone) { el.innerHTML = ''; return; }
+      const fit = aiDraftFit(t);
+      const d = t.aiDoc;
+      el.innerHTML = d
+        ? `<span class="fg-head"><label>Drafted document</label></span>
+           <div style="border:1px solid #bbf7d0;background:#f0fdf4;border-radius:8px;padding:.55rem .7rem">
+             <div style="font-weight:600;font-size:.85rem">📄 ${escapeHtml(d.title || '(untitled)')}</div>
+             <div class="help-text" style="margin:.15rem 0 .35rem">saved ${escapeHtml(d.at ? fmtNice(new Date(d.at)) : 'earlier')}${d.model ? ' · ' + escapeHtml(d.model) : ''} · ${d.body.length.toLocaleString()} characters</div>
+             <div class="help-text" style="white-space:pre-wrap;max-height:5rem;overflow:hidden">${escapeHtml(d.body.slice(0, 320))}…</div>
+             <button type="button" class="btn-sm btn-secondary" style="margin-top:.4rem" onclick="openDraftChat(${t.id}, ${ekJs2(d.storyId || '')}, false)">🤖 Open the drafting conversation</button>
+           </div>`
+        : `<span class="fg-head"><label>Drafted document</label></span>
+           <p class="help-text" style="margin:0 0 .35rem">Nothing drafted yet. ${escapeHtml(fit.why)}</p>
+           <button type="button" class="btn-sm btn-secondary" style="${fit.fit === 'unlikely' ? 'opacity:.55' : ''}" onclick="openDraftChat(${t.id}, '', false)">${fit.fit === 'suggested' ? '✨' : '🤖'} Draft this deliverable</button>`;
+    }
+    let adTaskId = null, adStoryId = '', adBusy = false, adSaved = false, adFromReq = false;
+    function adTask() { return adTaskId == null ? null : tasks.find(t => t.id === adTaskId) || null; }
+    function openDraftChat(taskId, storyId, fromReq) {
+      const t = tasks.find(x => x.id === Number(taskId));
+      if (!t) { alert('That activity is no longer in the plan.'); return; }
+      adTaskId = t.id; adStoryId = String(storyId || ''); adFromReq = !!fromReq;
+      adBusy = false; adSaved = false;
+      t.aiChat = chatLogNorm(t.aiChat);
+      adPaint();
+      openOverlay(document.getElementById('adModal'));
+      setTimeout(() => { const i = document.getElementById('adInput'); if (i) i.focus(); }, 60);
+    }
+    function closeDraftChat() {
+      closeOverlay('adModal');
+      const wasSaved = adSaved, tid = adTaskId, sid = adStoryId, fromReq = adFromReq;
+      adTaskId = null; adStoryId = ''; adBusy = false; adSaved = false; adFromReq = false;
+      if (!wasSaved) return;
+      // a saved document changes what three surfaces say, and none of them repaint themselves
+      try { if (calculated) recompute(); } catch (e) {}
+      try { renderTaskTable(); } catch (e) {}
+      try { renderWBS(); } catch (e) {}
+      try { if (fromReq) { renderReqs(); if (sid) openReqStory(sid); } } catch (e) {}
+      void tid;
+    }
+    /* The transcript, as text. Bubbles are built with textContent rather than
+       innerHTML: this is model output on a page that also renders the plan, and
+       an escaping mistake here would be an injection point rather than a typo. */
+    function adPaint() {
+      const t = adTask(); if (!t) return;
+      const fit = aiDraftFit(t);
+      const sub = document.getElementById('adSub');
+      const st = (typeof storiesForTask === 'function') ? storiesForTask(t.id) : [];
+      sub.textContent = (t.wbs ? t.wbs + ' ' : '') + t.name
+        + (t.deliverable ? ' — ' + t.deliverable : ' — no deliverable named yet')
+        + (st.length ? '  ·  ' + st.length + ' linked stor' + (st.length === 1 ? 'y' : 'ies') : '')
+        + '  ·  ' + fit.why;
+      document.getElementById('adCtx').textContent = draftContext(t, adStoryId);
+      const log = document.getElementById('adLog');
+      log.innerHTML = '';
+      if (!t.aiChat.length) {
+        const p = document.createElement('p');
+        p.className = 'help-text';
+        p.style.margin = '0';
+        p.textContent = t.aiDoc
+          ? 'A document is already saved on this activity. Ask for a change and the conversation picks up from the brief above.'
+          : 'Nothing drafted yet. Press “Draft it” below, or say what you want written.';
+        log.appendChild(p);
+      }
+      t.aiChat.forEach((m, i) => {
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'margin:0 0 .6rem;padding:.5rem .7rem;border-radius:8px;'
+          + (m.role === 'user' ? 'background:#eff6ff;border:1px solid #bfdbfe' : 'background:#f8fafc;border:1px solid #e2e8f0');
+        const who = document.createElement('div');
+        who.style.cssText = 'font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin-bottom:.25rem';
+        const isQ = m.role === 'ai' && /^QUESTION:/i.test(m.text.trim());
+        who.textContent = m.role === 'user' ? 'You' : (isQ ? 'Needs an answer from you' : 'Draft');
+        wrap.appendChild(who);
+        const body = document.createElement('div');
+        body.style.cssText = 'white-space:pre-wrap;font-size:.82rem;line-height:1.45';
+        body.textContent = m.text + (m.trimmed ? '\n\n… ' + m.trimmed + ' characters were cut to fit the store.' : '');
+        wrap.appendChild(body);
+        if (m.role === 'ai' && !isQ) {
+          const bar = document.createElement('div');
+          bar.style.cssText = 'margin-top:.45rem;display:flex;gap:.35rem;align-items:center';
+          const save = document.createElement('button');
+          save.className = 'btn-sm btn-primary';
+          save.textContent = '💾 Save to activity';
+          save.onclick = () => adSaveDoc(i);
+          bar.appendChild(save);
+          const isCur = t.aiDoc && t.aiDoc.body === m.text;
+          if (isCur) {
+            const tag = document.createElement('span');
+            tag.className = 'help-text'; tag.style.fontSize = '.7rem';
+            tag.textContent = 'this is the version saved on the activity';
+            bar.appendChild(tag);
+          }
+          wrap.appendChild(bar);
+        }
+        log.appendChild(wrap);
+      });
+      log.scrollTop = log.scrollHeight;
+      const chips = document.getElementById('adChips');
+      chips.innerHTML = '';
+      const quick = t.aiChat.length
+        ? [['Tighten it', 'Cut it by a third. Same substance, fewer words.'],
+           ['More specific', 'Replace anything vague with something a client could check. Keep every placeholder that names a real missing fact.'],
+           ['Add a table', 'Turn the list-shaped content into a table where a table reads better.'],
+           ['Check the criteria', 'Go through the acceptance criteria one by one and state where each is satisfied. Then return the full document with any gap filled.']]
+        : [['✨ Draft it', 'Draft this deliverable now.']];
+      quick.forEach(([label, text]) => {
+        const b = document.createElement('button');
+        b.className = 'btn-sm btn-secondary';
+        b.textContent = label;
+        b.disabled = adBusy;
+        b.onclick = () => adSend(text);
+        chips.appendChild(b);
+      });
+      document.getElementById('adSendBtn').disabled = adBusy;
+      document.getElementById('adSendBtn').textContent = adBusy ? 'Drafting…' : 'Send';
+      document.getElementById('adExportBtn').disabled = !t.aiDoc;
+    }
+    async function adSend(preset) {
+      const t = adTask(); if (!t || adBusy) return;
+      const box = document.getElementById('adInput');
+      const text = String(preset != null ? preset : (box ? box.value : '')).trim();
+      if (!text) { if (box) box.focus(); return; }
+      if (preset == null && box) box.value = '';
+      adBusy = true;
+      const stamp = new Date().toISOString();
+      t.aiChat = chatLogNorm(t.aiChat.concat([{ role: 'user', text: text, at: stamp, trimmed: 0 }]));
+      adPaint();
+      /* THE FIRST MESSAGE CARRIES THE BRIEF. Later ones are just the revision,
+         because the brief is already in the history above them — resending it
+         every turn would cost a full context each round and, worse, let the
+         two copies disagree once the plan changes underneath. */
+      const first = t.aiChat.filter(m => m.role === 'user').length === 1;
+      const opening = DRAFT_CONTRACT + '\n\n' + draftContext(t, adStoryId) + '\n\nTASK: ' + text;
+      const history = [];
+      if (!first) {
+        t.aiChat.slice(0, -1).forEach((m, i) => history.push({
+          role: m.role === 'ai' ? 'assistant' : 'user',
+          content: (i === 0 && m.role === 'user')
+            ? DRAFT_CONTRACT + '\n\n' + draftContext(t, adStoryId) + '\n\nTASK: ' + m.text
+            : m.text }));
+      }
+      let out = '';
+      try {
+        out = await callAnthropic(first ? opening : text, {
+          history: history,
+          cachePrefix: [histPromptBlock() + bankPromptBlock()],
+          onDelta: (d, full) => {
+            const log = document.getElementById('adLog');
+            if (!log) return;
+            log.innerHTML = '';
+            const pre = document.createElement('div');
+            pre.style.cssText = 'white-space:pre-wrap;font-size:.8rem;font-family:ui-monospace,monospace;color:#475569';
+            pre.textContent = '✨ drafting… ' + (full.length / 1000).toFixed(1) + 'k\n\n' + full.slice(-2600) + '▋';
+            log.appendChild(pre);
+            log.scrollTop = log.scrollHeight;
+          }
+        });
+      } catch (e) {
+        /* A TURN THAT GOT NO REPLY IS NOT KEPT. Leaving it would put a trailing
+           user message at the end of the rebuilt history, and every later round
+           would be sent a conversation that ends with an unanswered question. */
+        t.aiChat = t.aiChat.slice(0, -1);
+        adBusy = false;
+        adPaint();
+        alert('The draft could not be produced: ' + (e.message || e));
+        return;
+      }
+      const clean = String(out || '').replace(/^\s*```[a-z]*\s*\n?/i, '').replace(/\n?```\s*$/, '').trim();
+      const kept = clean.slice(0, CHAT_MSG_CHARS);
+      t.aiChat = chatLogNorm(t.aiChat.concat([{ role: 'ai', text: kept, at: new Date().toISOString(),
+        trimmed: Math.max(0, clean.length - kept.length) }]));
+      adBusy = false;
+      saveLocal();
+      adPaint();
+    }
+    function adSaveDoc(i) {
+      const t = adTask(); if (!t) return;
+      const m = t.aiChat[i];
+      if (!m || m.role !== 'ai') return;
+      const h1 = (m.text.match(/^\s*#\s+(.+)$/m) || [])[1];
+      t.aiDoc = aiDocNorm({ title: (h1 || t.deliverable || t.name || '').trim(), body: m.text,
+        at: new Date().toISOString(),
+        model: (document.getElementById('aiModel') || {}).value || '', storyId: adStoryId });
+      /* Fill the deliverable ONLY when it is blank. Overwriting a deliverable
+         somebody wrote — the thing the SOW scope table prints and the client
+         signs against — because a draft happened to have a different heading
+         would be the app editing the contract on its own initiative. */
+      let filled = false;
+      if (t.aiDoc && !String(t.deliverable || '').trim() && t.aiDoc.title) {
+        t.deliverable = t.aiDoc.title; filled = true;
+      }
+      adSaved = true;
+      saveLocal();
+      adPaint();
+      flashSaved('📄 Saved to ' + (t.wbs ? t.wbs + ' ' : '') + t.name
+        + (filled ? ' — and its deliverable now reads “' + t.deliverable + '”' : ''));
+    }
+    function adExport() {
+      const t = adTask();
+      if (!t || !t.aiDoc) { alert('Save a draft to the activity first.'); return; }
+      const safe = (t.aiDoc.title || t.name || 'deliverable').replace(/[^\w\d -]+/g, '').trim().slice(0, 60) || 'deliverable';
+      download(safe + '.md', t.aiDoc.body);
+    }
+    /* Reached from a story card. A story with no activity has nothing to hang a
+       deliverable on, so say that rather than opening a panel that cannot save. */
+    function draftFromStory(storyId) {
+      const s = ((reqs && reqs.stories) || []).find(x => x.id === storyId);
+      if (!s) return;
+      const ids = (typeof storyWbsIds === 'function') ? storyWbsIds(s) : (s.wbsId != null ? [s.wbsId] : []);
+      const t = ids.map(id => tasks.find(x => x.id === id)).find(x => x && !x.isSummary && !x.milestone);
+      if (!t) {
+        alert('“' + s.id + '” is not linked to an activity yet, and a deliverable belongs to an activity — '
+          + 'that is what gets accepted, checked off and invoiced.\n\nLink it to one on this card first, '
+          + 'then draft from there.');
+        return;
+      }
+      openDraftChat(t.id, s.id, true);
+    }
+
     /* ═══ WHAT GOES IN, WHAT COMES OUT ═══════════════════════════════════════
        The dictionary could already draw the SCHEDULE chain — ↤ waits for, ↦
        feeds — and that is a statement about dates, not about work. It says B
@@ -22911,9 +23295,32 @@ Rules:
       // continuation only happens after a full max-token generation, which
       // takes longer than the 5-minute cache TTL — the entry would be written
       // (+25% on input) every round and never read back.
+      /* PRIOR TURNS. Every flow in this file was single-shot: one user message,
+         one answer, and the next question started from nothing. A drafting
+         conversation cannot work that way — "make it shorter" means nothing
+         without the thing it is shortening.
+
+         The cache blocks stay on the FIRST user message and nowhere else. They
+         are the expensive, unchanging part (bank + history), and moving them to
+         the newest turn would re-upload them every round and break the cache
+         hit they exist to earn. So a conversation sends: [cached prefix +
+         opening question] … [replies] … [latest question, bare]. */
+      const history = Array.isArray(opts.history)
+        ? opts.history.filter(m => m && m.role && String(m.content || '').trim()).map(m => ({
+            role: m.role === 'assistant' ? 'assistant' : 'user',
+            content: String(m.content) }))
+        : [];
       const userMsg = () => {
-        if (!cacheBlocks.length) return userContent; // wire-identical to the pre-caching shape
+        // with prior turns, the cache prefix already rode on history[0]
+        if (!cacheBlocks.length || history.length) return userContent;
         return cacheBlocks.concat([{ type: 'text', text: userContent }]);
+      };
+      const priorTurns = () => {
+        if (!history.length) return [];
+        const h = history.slice();
+        if (cacheBlocks.length && h[0].role === 'user')
+          h[0] = { role: 'user', content: cacheBlocks.concat([{ type: 'text', text: h[0].content }]) };
+        return h;
       };
       let lastData = Date.now(), lastText = Date.now(), gotText = false, stalled = false;
       const watchdog = setInterval(() => {
@@ -23037,9 +23444,9 @@ Rules:
         let full = '';
         for (let round = 0; round < 8; round++) {
           const prefill = full.replace(/\s+$/, ''); // API rejects trailing whitespace in prefills
-          const messages = prefill
+          const messages = priorTurns().concat(prefill
             ? [{ role: 'user', content: userMsg() }, { role: 'assistant', content: prefill }]
-            : [{ role: 'user', content: userMsg() }];
+            : [{ role: 'user', content: userMsg() }]);
           if (prefill) full = prefill;
           const r = await once(messages, full);
           full += r.text;
@@ -31247,7 +31654,12 @@ Return ONLY JSON: {"narrative":"the three paragraphs separated by \\n\\n"}`;
       validateKeyFormat();
       try { const us = localStorage.getItem('pertGantt.uatStyle'); if (us) document.getElementById('uatStyle').value = us; } catch (e) {}
       document.addEventListener('keydown', e => {
-        if (e.key === 'Escape') closeModal();
+        if (e.key === 'Escape') {
+          // the drafting panel sits above every other modal, so it closes first
+          const ad = document.getElementById('adModal');
+          if (ad && ad.classList.contains('open')) { closeDraftChat(); return; }
+          closeModal();
+        }
         if (!(e.ctrlKey || e.metaKey)) return;
         // leave native undo alone inside text fields / editable regions
         const tag = ((e.target && e.target.tagName) || '').toLowerCase();

@@ -439,6 +439,108 @@ const DATA = FIXTURE();
       + ' outbound request(s) — it is supposed to exercise the validators with no key and no spend: '
       + R.outboundRequests.slice(0, 3).join(', '));
 
+  /* ═══ THE DRAFTING PANEL ══════════════════════════════════════════════════
+     It renders MODEL OUTPUT on the same page that renders the plan, and it
+     writes onto the activity the SOW prints. Three things have to hold: what
+     goes out carries no commercials, what comes back is drawn as text, and
+     what it writes never overwrites a decision somebody made. */
+  const draft = await page.evaluate(() => {
+    const out = {};
+    const leaf = leafTasks().filter(t => !t.isSummary && !t.milestone);
+    const t0 = leaf[0], keepN = t0.name, keepD = t0.deliverable;
+    const cls = v => { t0.name = v; t0.deliverable = ''; return aiDraftFit(t0).fit; };
+    out.wrongFits = [
+      ['Baseline Metrics & Ranked Friction Memo', 'suggested'],
+      ['Coordinator Interviews & Usability Sessions', 'unlikely'],
+      ['Stakeholder workshops', 'unlikely'],
+      ['Production cutover', 'unlikely'],
+      ['Prioritised roadmap document', 'suggested']
+    ].filter(([v, want]) => cls(v) !== want).map(([v, want]) => v + ' wanted ' + want + ' got ' + cls(v));
+    t0.name = keepN; t0.deliverable = keepD;
+    /* NEUTRAL SUBJECTS, BUILT. Reading the fixture's first milestone tested
+       nothing: it is called "Go-Live", which the word rules reject anyway, so
+       deleting the milestone rule entirely changed no verdict. The subject has
+       to carry a name that would otherwise be DRAFTABLE, or the structural rule
+       is never the thing being exercised. */
+    const probe = { id: -1, name: 'Engagement Charter Document', deliverable: 'Signed charter',
+                    description: 'A written charter and register', isSummary: false, milestone: false };
+    out.probeIsDraftable = aiDraftFit(probe).fit !== 'suggested';
+    out.milestoneOffered = aiDraftFit(Object.assign({}, probe, { milestone: true })).fit !== 'unlikely';
+    out.phaseOffered = aiDraftFit(Object.assign({}, probe, { isSummary: true })).fit !== 'unlikely';
+
+    // what leaves: no money, and no clock (a clock breaks the prompt cache)
+    const subj = leaf.find(t => storiesForTask(t.id).length) || leaf[0];
+    const both = [];
+    [true, false].forEach(cs => { const k = clientSafeReports; clientSafeReports = cs;
+      both.push(draftContext(subj, '')); clientSafeReports = k; });
+    out.leaksMoney = both.filter(c => /[$£€]|\brates?\b|\bmargin\b|\bbill(ing)? rate\b/i.test(c)).length;
+    out.notDeterministic = draftContext(subj, '') !== both[1];
+    out.contextEmpty = both[1].length < 80;
+    out.contractSaysNoPrice = /Never state a price, rate, cost or margin/.test(DRAFT_CONTRACT);
+    out.contractBansInvention = /Invent NOTHING/.test(DRAFT_CONTRACT);
+
+    // what comes back is DRAWN AS TEXT
+    const keepChat = subj.aiChat;
+    subj.aiChat = chatLogNorm([{ role: 'user', text: 'go', at: '' },
+      { role: 'ai', text: '# T\n<img src=x onerror=alert(1)><b>b</b>', at: '' },
+      { role: 'ai', text: 'QUESTION: who signs?', at: '' }]);
+    openDraftChat(subj.id, '', false);
+    const log = document.getElementById('adLog');
+    out.rawMarkup = log.innerHTML.indexOf('<img src=x') >= 0 || log.innerHTML.indexOf('<b>b</b>') >= 0;
+    out.payloadNotShown = log.textContent.indexOf('<img src=x') < 0;
+    out.questionOffersSave = [...log.querySelectorAll('button')]
+      .filter(x => /Save to activity/.test(x.textContent)).length !== 1;
+
+    // what it writes: fills a BLANK deliverable, never overwrites a written one
+    const keptDel = subj.deliverable;
+    subj.deliverable = '';
+    adSaveDoc(1);
+    out.blankNotFilled = subj.deliverable !== 'T';
+    subj.deliverable = 'A deliverable somebody typed';
+    adSaveDoc(1);
+    out.clobbered = subj.deliverable !== 'A deliverable somebody typed';
+    subj.deliverable = keptDel;
+    closeDraftChat();
+
+    // a turn with no reply is never persisted, and the cap keeps the brief
+    const capped = chatLogNorm(Array.from({ length: 60 }, (_, i) =>
+      ({ role: i % 2 ? 'ai' : 'user', text: 'turn ' + i, at: '' })));
+    out.capDroppedBrief = capped[0].text !== 'turn 0';
+    out.capTooLong = capped.length > 40;
+    subj.aiChat = keepChat;
+    return out;
+  });
+  R.draftPanel = draft;
+  /* INTO contradictions, WHICH IS THE ARRAY THE EXIT CODE READS. This was
+     R.findings — a real array on R, so nothing threw, and the fifteen checks
+     below reported into a bucket the commit gate never looks at. That is the
+     exact defect this file's own footer warns about, written while writing the
+     checks that guard against it. */
+  R.contradictions = R.contradictions || [];
+  const dsay = m => R.contradictions.push('AI drafting :: ' + m);
+  if (draft.wrongFits.length) dsay('the suggestion classifier is wrong on: ' + draft.wrongFits.join('; '));
+  if (draft.probeIsDraftable) dsay('the neutral probe activity is not classed draftable, so the milestone and '
+    + 'phase rules below are tested against a subject that would be rejected anyway');
+  if (draft.milestoneOffered) dsay('a milestone is offered as something to draft — it is a date, not an artefact');
+  if (draft.phaseOffered) dsay('a phase is offered as something to draft — it is a container');
+  if (draft.contextEmpty) dsay('the context digest is nearly empty, so every check on its contents reads nothing');
+  if (draft.leaksMoney) dsay('the context sent to the model carries a rate, price or margin in '
+    + draft.leaksMoney + ' of 2 client-safe modes — commercials belong in the SOW, not in a deliverable');
+  if (draft.notDeterministic) dsay('the context digest changes between two identical calls, so every turn '
+    + 'misses the prompt cache it was built to hit');
+  if (!draft.contractSaysNoPrice) dsay('the drafting contract no longer forbids stating a price');
+  if (!draft.contractBansInvention) dsay('the drafting contract no longer forbids inventing facts');
+  if (draft.rawMarkup) dsay('model output is written into the transcript as MARKUP — an escaping mistake here '
+    + 'is an injection point on the page that also draws the plan');
+  if (draft.payloadNotShown) dsay('the transcript did not display the text it was given at all');
+  if (draft.questionOffersSave) dsay('a QUESTION turn offers a Save button, or a draft turn does not — a '
+    + 'question saved as a deliverable is a document that asks the client something');
+  if (draft.blankNotFilled) dsay('saving a draft did not fill a blank deliverable from its title');
+  if (draft.clobbered) dsay('saving a draft OVERWROTE a deliverable somebody had written — that is the line '
+    + 'the SOW scope table prints and the client signs against');
+  if (draft.capDroppedBrief) dsay('the transcript cap dropped the opening turn, which holds the brief');
+  if (draft.capTooLong) dsay('the transcript cap did not apply');
+
   R.pageErrors = errs.slice(0, 8);
   console.log(JSON.stringify(R, null, 1));
   await b.close();
