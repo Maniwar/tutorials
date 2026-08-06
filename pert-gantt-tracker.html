@@ -3556,7 +3556,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0559</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0608</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3941,8 +3941,25 @@ Or say what you want, in your own words:
     function ompHintUpd() {
       const el = document.getElementById('ompHint'); if (!el) return;
       const parts = ['mO', 'mM', 'mP'].map(id => durExprEcho(document.getElementById(id).value)).filter(Boolean);
-      el.textContent = parts.join('  \u00b7  ');
-      el.style.display = parts.length ? 'block' : 'none';
+      /* SHOW THE ARITHMETIC ON THE FORM THAT ASKS FOR IT. Every other surface
+         in the product prints the work alongside the span; the one screen where
+         somebody types the estimate and sets the allocation printed neither the
+         PERT mean nor the work it multiplies out to, so the number the whole
+         plan is built from could only be discovered by saving and going to look
+         somewhere else. */
+      const te = (typeof modalTeUnits === 'function') ? modalTeUnits(false) : 0;
+      const uEl = document.getElementById('mUnits');
+      const u = uEl && uEl.value !== '' ? (Number(uEl.value) || 0) : 100;
+      const work = unitToWorkingDays(te) * (u / 100);
+      const derived = !(te > 0) ? '' :
+        '<b>' + escapeHtml(fmtDurCell(te)) + ' open</b>'
+        + (Math.abs(u - 100) < 0.01
+            ? ' \u2014 and the same again in work, at 100%'
+            : ' \u00d7 ' + (Math.round(u * 10) / 10) + '% = <b>'
+              + escapeHtml(fmtDurCell(workingDaysToUnit(work))) + ' of work</b>');
+      el.innerHTML = (parts.length ? escapeHtml(parts.join('  \u00b7  ')) : '')
+        + (derived ? (parts.length ? '<br>' : '') + derived : '');
+      el.style.display = (parts.length || derived) ? 'block' : 'none';
       if (typeof refreshProgressPanel === 'function') refreshProgressPanel(); // estimate half of the readout stays live while O/M/P are typed
     }
     // Auto-scaling duration display: the MATH stays in the project unit (one

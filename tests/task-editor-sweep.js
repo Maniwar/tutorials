@@ -241,6 +241,28 @@ const QA = JSON.parse(fs.readFileSync(
       set('mO', String(before.o)); set('mM', String(before.m)); set('mP', String(before.p));
       saveActivity();
 
+      /* ── THE FORM THAT ASKS FOR THE ESTIMATE SHOWS WHAT IT COMES TO ─────
+         Every other surface prints the work beside the span. The one screen
+         where somebody types O/M/P and sets the allocation printed neither the
+         PERT mean nor the work, so the number the whole plan rests on could
+         only be found by saving and going to look somewhere else. */
+      ran('estimateFormShowsWork');
+      (() => {
+        openEditModal(subject.id, true);
+        set('mO', '1d'); set('mM', '2d'); set('mP', '3d'); set('mUnits', '80');
+        ompHintUpd();
+        const txt = (document.getElementById('ompHint').textContent || '').replace(/\s+/g, ' ');
+        out.ompHint = txt.trim();
+        if (!/2d/.test(txt))
+          say('Editor', 'O/M/P of 1/2/3 has a PERT mean of 2 days and the form does not say so: "' + txt + '"');
+        if (!/1\.6/.test(txt))
+          say('Editor', 'two days open at 80% is 1.6 days of work and the estimate form never states it: "'
+            + txt + '" — the allocation is entered on this screen and its effect is shown on another');
+        if (document.getElementById('ompHint').innerHTML.indexOf('&lt;b&gt;') >= 0)
+          say('Editor', 'the estimate hint escapes its own markup');
+        closeModal();
+      })();
+
       /* ── A SUMMARY'S "ESTIMATED" IS THE WORK UNDER IT ────────────────────
          The Progress panel on a phase compares an estimate against logged
          effort. The estimate was Sigma of the children's te — spans, not work —

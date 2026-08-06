@@ -1355,6 +1355,10 @@ const MUTANTS = [
     find: '            const e = plannedEffortDays(t);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';',
     with: '            const e = unitToWorkingDays(t.te || 0);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';' },
 
+  { what: 'editor: the estimate form does not say what the estimate comes to',
+    find: "      const work = unitToWorkingDays(te) * (u / 100);",
+    with: "      const work = unitToWorkingDays(te);" },
+
   { what: 'SOW: the scope table quotes the calendar span as effort',
     find: "                    const work = workingDaysToUnit(plannedEffortDays(t));",
     with: "                    const work = Number(t.te) || 0;" },
