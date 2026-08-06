@@ -635,6 +635,41 @@ const DATA = FIXTURE();
 
     hydrate(JSON.parse(JSON.stringify(window.__fixture))); calculate();
 
+    /* ═══ THE COMPANY LIST HAS TO BE CORRECTABLE ═══════════════════════════
+       The picker could add a company and nothing else, so a typo was permanent
+       and two spellings of one firm stayed two partners — in the list whose
+       whole job is to be the join key that makes them one. Rename, merge and
+       delete are the correction, and each has a way to be wrong: a rename that
+       mints a duplicate name, a merge that orphans what pointed at the source,
+       a delete that removes an id records still name. */
+    (() => {
+      const A = orgRegister('ZZ Probe Alpha'), B = orgRegister('ZZ Probe Beta');
+      const who = Object.keys(resources)[0];
+      if (!who || !A || !B) { say('the company probe could not be set up, so nothing below is tested'); return; }
+      const keptId = resources[who].orgId, keptOrg = resources[who].org;
+      setResourceOrg(who, A.id);
+      if (orgUsage(A.id).total !== 1) say('a company set on the roster is not counted as used, so the '
+        + 'delete guard below has nothing to refuse');
+      if (!orgDelete(A.id) || !orgFind(A.id))
+        say('a company still named by a roster row was deleted — every record naming it now points at nothing');
+      if (!orgRename(A.id, 'ZZ Probe Renamed') || (orgFind(A.id) || {}).name !== 'ZZ Probe Renamed')
+        say('a company could not be renamed');
+      if (resources[who].org !== 'ZZ Probe Renamed')
+        say('renaming a company left the roster showing its old name — the id moved and the label did not');
+      if (orgRename(A.id, 'ZZ Probe Beta') !== false)
+        say('a company was renamed onto a name already on the list, making the duplicate the list exists to prevent');
+      const m = orgMerge(A.id, B.id);
+      if (!m) say('two companies could not be merged');
+      if (orgFind(A.id)) say('a merged-away company is still on the list');
+      if (resources[who].orgId !== B.id || resources[who].org !== 'ZZ Probe Beta')
+        say('merging did not repoint the roster row onto the surviving company');
+      if (Object.keys(resources).some(n => resources[n].orgId && !orgFind(resources[n].orgId)))
+        say('a roster row points at a company id that is not on the list');
+      if (orgDelete(B.id) === null && orgFind(B.id)) say('deleting an unused company did not remove it');
+      saveOrgLib(loadOrgLib().filter(o => !/^ZZ Probe/.test(o.name)));
+      resources[who].orgId = keptId; resources[who].org = keptOrg;
+    })();
+
     return { contradictions: bad, count: n, recount: mine, built,
              overPeople: rl.resourcesOver, atCapacity, ptoCase, doneRule, levelling, heatmap,
              lintFindings: lint.map(f => String(f.finding).slice(0, 80)) };

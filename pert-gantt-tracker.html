@@ -2937,6 +2937,17 @@
          because there was nowhere else to put it. A dialog can show what is
          being signed, what state it is actually in, and refuse the combination
          that makes no sense — none of which a prompt chain can do. -->
+    <div class="modal-overlay" id="orgMgrModal" style="z-index:137">
+      <div class="modal" style="max-width:760px" role="dialog" aria-modal="true" aria-labelledby="orgMgrTitle">
+        <div class="modal-header"><h3 id="orgMgrTitle">Companies</h3>
+          <button class="btn-ghost" style="color:#64748b;padding:0.25rem 0.5rem" onclick="closeOverlay('orgMgrModal')" aria-label="Close dialog">✕</button></div>
+        <div class="modal-body">
+          <p class="help-text" style="margin:0 0 .6rem">One list, shared by every project. Each company has an id, and that id is what archived activities are filed under — which is how the estimate bank can say how a given partner has historically run against estimate. Two spellings of one firm are two partners, so fix them here rather than living with both.</p>
+          <div id="orgMgrBody"></div>
+        </div>
+        <div class="modal-footer"><button class="btn-secondary" onclick="closeOverlay('orgMgrModal')">Close</button></div>
+      </div>
+    </div>
     <div class="modal-overlay" id="adModal" style="z-index:136">
       <div class="modal" style="max-width:920px" role="dialog" aria-modal="true" aria-labelledby="adModalTitle">
         <div class="modal-header"><h3 id="adModalTitle">Draft the deliverable</h3>
@@ -3523,7 +3534,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0217</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.0229</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -6157,9 +6168,137 @@ Or say what you want, in your own words:
             + escapeHtml(o.name) + '</option>').join('')
         + (legacy ? '<option value="' + escapeHtml(legacy) + '" selected>' + escapeHtml(legacy)
             + ' (not saved yet)</option>' : '')
-        + '<option value="__new">+ Add a company…</option></select>';
+        + '<option value="__new">+ Add a company…</option>'
+        + (lib.length ? '<option value="__manage">⚙ Manage companies…</option>' : '')
+        + '</select>';
+    }
+    /* ═══ CORRECTING THE REGISTRY ═════════════════════════════════════════════
+       The picker could add a company and nothing else. So a typo was permanent,
+       and "Northwind" typed once and "Northwind Consulting" typed on the next
+       engagement were two partners forever — in a list whose entire purpose is
+       to be the JOIN KEY that makes one firm one entity across projects. A
+       registry you can only append to stops being a registry and becomes a pile.
+
+       RENAME IS FREE, because the id is the join and the name is only the
+       label: every archived activity already points at the id, so correcting
+       the spelling reaches records filed years ago. That was designed in; it
+       just had no way to be invoked.
+
+       MERGE REPOINTS, then deletes. Every store that carries an org id gets
+       rewritten in one pass — this project's roster, the estimate bank, the
+       people library — so the history joins up rather than being orphaned.
+
+       DELETE REFUSES while anything still points at the id. An id deleted out
+       from under its references does not remove the company; it turns every
+       record that named it into a row whose company resolves to nothing, which
+       is worse than the duplicate somebody was trying to tidy up. */
+    function orgUsage(id) {
+      const key = String(id || '');
+      if (!key) return { roster: 0, bank: 0, people: 0, total: 0, names: [] };
+      const names = Object.keys(resources).filter(n => (resources[n] || {}).orgId === key);
+      const bank = loadBank().filter(r => r && r.orgId === key).length;
+      const people = loadResLib().filter(r => r && r.orgId === key).length;
+      return { roster: names.length, bank: bank, people: people,
+               total: names.length + bank + people, names: names };
+    }
+    function orgMerge(fromId, toId) {
+      if (!fromId || !toId || fromId === toId) return false;
+      const to = orgFind(toId);
+      if (!to) return false;
+      let moved = 0;
+      Object.keys(resources).forEach(n => {
+        if (resources[n].orgId === fromId) { resources[n].orgId = toId; resources[n].org = to.name; moved++; }
+      });
+      const bank = loadBank().slice();
+      let bMoved = 0;
+      bank.forEach(r => { if (r && r.orgId === fromId) { r.orgId = toId; r.org = to.name; bMoved++; } });
+      if (bMoved) saveBank(bank);
+      const ppl = loadResLib().slice();
+      let pMoved = 0;
+      ppl.forEach(r => { if (r && r.orgId === fromId) { r.orgId = toId; r.org = to.name; pMoved++; } });
+      if (pMoved) saveResLib(ppl);
+      saveOrgLib(loadOrgLib().filter(o => o.id !== fromId));
+      saveLocal();
+      return { roster: moved, bank: bMoved, people: pMoved };
+    }
+    function orgDelete(id) {
+      const u = orgUsage(id);
+      if (u.total) return u;
+      saveOrgLib(loadOrgLib().filter(o => o.id !== id));
+      return null;
+    }
+    function orgManagerHtml() {
+      const lib = loadOrgLib();
+      if (!lib.length) return '<p class="help-text" style="margin:0">No companies saved yet. They appear here as '
+        + 'you set them on the roster, or when a plan names one.</p>';
+      return '<div class="table-wrap"><table class="wl-t" style="font-size:var(--t-sm)">'
+        + '<thead><tr><th>Company</th><th title="Where this company id is referenced. Merging repoints all of them.">Used by</th><th></th></tr></thead><tbody>'
+        + lib.map(o => { const u = orgUsage(o.id);
+            const where = [u.roster ? u.roster + ' on this roster' : '', u.bank ? u.bank + ' archived activit' + (u.bank === 1 ? 'y' : 'ies') : '',
+                           u.people ? u.people + ' in the people library' : ''].filter(Boolean).join(' · ') || 'nothing yet';
+            return '<tr><td class="wl-td" style="font-weight:600">' + escapeHtml(o.name)
+              + (o.adopted ? ' <span class="help-text" style="font-weight:400">(from a file)</span>' : '')
+              + '</td><td class="wl-td wl-wait">' + escapeHtml(where) + '</td>'
+              + '<td class="wl-td" style="white-space:nowrap">'
+              + '<button class="btn-sm btn-secondary" onclick="orgMgrRename(' + ekJs2(o.id) + ')">✎ Rename</button> '
+              + (lib.length > 1 ? '<button class="btn-sm btn-secondary" onclick="orgMgrMerge(' + ekJs2(o.id) + ')">⇢ Merge into…</button> ' : '')
+              + '<button class="btn-sm btn-danger" onclick="orgMgrDelete(' + ekJs2(o.id) + ')">✕</button>'
+              + '</td></tr>'; }).join('')
+        + '</tbody></table></div>'
+        + '<p class="help-text" style="margin:.4rem 0 0">Renaming keeps the id, so every archived activity already '
+        + 'filed under this company follows the new spelling. Merging repoints them onto the company you choose '
+        + 'and then removes this one. Deleting is only offered while nothing points at it — otherwise merge, or '
+        + 'the records that named it end up pointing at a company that no longer exists.</p>';
+    }
+    function orgMgrOpen() {
+      const host = document.getElementById('orgMgrBody');
+      if (!host) return;
+      host.innerHTML = orgManagerHtml();
+      openOverlay(document.getElementById('orgMgrModal'));
+    }
+    function orgMgrRepaint() { const h = document.getElementById('orgMgrBody'); if (h) h.innerHTML = orgManagerHtml(); renderResources(); }
+    function orgMgrRename(id) {
+      const o = orgFind(id); if (!o) return;
+      const nm = prompt('Rename this company. Every record already filed under it follows the new spelling, '
+        + 'because they point at its id rather than its name.', o.name);
+      if (nm == null) return;
+      if (orgRename(id, nm)) { orgMgrRepaint(); flashSaved('🏢 Renamed to ' + String(nm).trim()); }
+      else if (String(nm).trim()) alert('“' + String(nm).trim() + '” is already on the list. '
+        + 'Merge the two instead — that keeps both histories joined up rather than leaving one name twice.');
+    }
+    function orgMgrMerge(id) {
+      const from = orgFind(id); if (!from) return;
+      const others = loadOrgLib().filter(o => o.id !== id);
+      if (!others.length) return;
+      const pick = prompt('Merge “' + from.name + '” INTO which company?\n\n'
+        + others.map((o, i) => (i + 1) + '. ' + o.name).join('\n')
+        + '\n\nType the number. Everything pointing at “' + from.name + '” is repointed, and it is then removed.', '');
+      const n = Number(pick);
+      if (!Number.isFinite(n) || n < 1 || n > others.length) return;
+      const to = others[n - 1];
+      const r = orgMerge(id, to.id);
+      if (!r) return;
+      orgMgrRepaint();
+      flashSaved('🏢 Merged into ' + to.name + ' — repointed ' + (r.roster + r.bank + r.people)
+        + ' record' + ((r.roster + r.bank + r.people) === 1 ? '' : 's') + '. ↶ Undo restores the roster half.');
+    }
+    function orgMgrDelete(id) {
+      const o = orgFind(id); if (!o) return;
+      const u = orgUsage(id);
+      if (u.total) {
+        alert('“' + o.name + '” is still used by ' + u.total + ' record'
+          + (u.total === 1 ? '' : 's') + (u.names.length ? ' (' + u.names.slice(0, 4).join(', ') + ')' : '')
+          + '.\n\nDeleting it would leave them pointing at a company that no longer exists. '
+          + 'Merge it into the right one instead — that keeps the history joined up.');
+        return;
+      }
+      if (!confirm('Remove “' + o.name + '” from the company list? Nothing points at it.')) return;
+      orgDelete(id);
+      orgMgrRepaint();
+      flashSaved('🏢 ' + o.name + ' removed from the company list.');
     }
     function orgPicked(person, val) {
+      if (val === '__manage') { renderResources(); orgMgrOpen(); return; }
       if (val !== '__new') { setResourceOrg(person, val); return; }
       const nm = prompt('Company name — the firm this person works for.\n\nIt is saved once and shared by every '
         + 'project, so the estimate bank can compare the same partner across engagements.', '');
@@ -21932,14 +22071,28 @@ Return ONLY JSON (no prose, no fences): {"links":[{"task":"exact target name","d
       });
       return n;
     }
+    /* THE ONE THAT ALREADY EXISTED, and had no way to be invoked — no button,
+       no menu, nothing. Writing a second one beside it would have been worse
+       than useless: two declarations in one scope means the LATER one wins, so
+       the careful version would have been dead code that read as a feature.
+
+       Two things it was missing. A rename onto a name already on the list makes
+       the exact duplicate this list exists to prevent, so it is refused and the
+       user is pointed at merge instead. And the roster keeps the company NAME
+       beside the id as a snapshot — correct the spelling in the registry and
+       leave that behind, and the roster still shows the old one. */
     function orgRename(id, name) {
       const nm = String(name || '').trim();
       if (!nm) return false;
       const lib = loadOrgLib().slice();
       const i = lib.findIndex(o => o.id === id);
       if (i < 0) return false;
+      if (lib.some(o => o.id !== id && String(o.name || '').trim().toLowerCase() === nm.toLowerCase()))
+        return false;
       lib[i] = Object.assign({}, lib[i], { name: nm });
       saveOrgLib(lib);
+      Object.keys(resources).forEach(n => { if (resources[n].orgId === id) resources[n].org = nm; });
+      try { saveLocal(); } catch (e) {}
       return true;
     }
     function loadResLib() {
