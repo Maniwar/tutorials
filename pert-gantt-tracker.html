@@ -7,6 +7,9 @@
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate" />
   <title>Engagement PERT &amp; Gantt Tracker</title>
   <style>
+    .sync-chip { display:inline-flex; align-items:center; font-size:0.75rem; color:#cbd5e1;
+      background:rgba(255,255,255,0.08); border-radius:999px; padding:0.15rem 0.5rem; margin-left:0.35rem; }
+    .sync-chip-new { background:#fef3c7; color:#92400e; }
     /* Nine controls in one flat row read as nine unrelated decisions. A
        hairline between groups — shape it, draft it, edit it, send it, change it
        — costs one pixel and does the work a heading would. */
@@ -518,7 +521,8 @@
        the six index-keyed table rules move: nth-child(n+6):nth-child(-n+9)
        right-align, nth-child(13) slack, nth-child(15) status min-width,
        nth-child(-n+2) width, td:nth-child(4) min-width, and the two mobile
-       blocks. The hand-counted 16 <td>s in the PROJECT TOTAL row also stay correct. */
+       blocks. The hand-counted <td>s in the PROJECT TOTAL row also stay correct. */
+
     .tx-chip { display: inline-block; margin-left: 5px; padding: 0 5px; border-radius: 999px;
       font-size: var(--t-xs); font-weight: 700; line-height: 1.5; white-space: nowrap;
       vertical-align: middle; cursor: help;
@@ -1638,7 +1642,11 @@
     td .btn-sm.btn-danger:hover { background: #fee2e2; color: #b91c1c; }
     td button.btn-sm:hover:not(:disabled):not(.tab), td button.btn-sm:active:not(:disabled):not(.tab) { transform: none; box-shadow: none; }
     /* W3c: owner clamp + column widths + row rhythm */
+    /* "Engineering Lead · CLIE…" cut the one word in that line that changes how
+       a reader treats the row. CLIENT leads and never clips; the role follows
+       and clips if it must, with the whole string on the title. */
     .role-sub { display: block; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.25; font-size: var(--t-sm); }
+    .role-sub .cli { color: #1e40af; font-weight: 700; }
     #taskTable td[data-owner-id] { min-width: 150px; }
     #wbsContainer td:nth-child(3) { min-width: 150px; }
     #taskTable th:nth-child(-n+2), #taskTable td:nth-child(-n+2):not([colspan]) { width: 28px; padding-left: 0.35rem; padding-right: 0.35rem; }
@@ -2622,6 +2630,17 @@
         Merge a copy
         <input type="file" accept=".json" onchange="mergeOpenFile(event)" style="display:none" />
       </label>
+      <details class="export-menu">
+        <summary class="btn-ghost btn-sm" style="list-style:none">Sync ▾</summary>
+        <div class="export-panel">
+          <div class="grp">Two files in one shared folder</div>
+          <button onclick="setupDiskAutosave()" title="Your copy, rewritten to a real file after every change. Put that file in a folder they can see — Drive Desktop, Dropbox, OneDrive, a network share — and their sync client does the transport.">💾 Auto-save my copy to a file…</button>
+          <button onclick="fsLinkTheirs()" title="Watch their file and say when it changes. It never merges by itself: it opens the same review panel, and every conflict still defaults to keeping yours.">👀 Watch their file…</button>
+          <button onclick="fsUnlink()">✕ Stop watching</button>
+          <div class="grp" style="font-weight:400;text-transform:none;white-space:normal;max-width:19rem;line-height:1.35">You each write your own file. One file both of you write is what makes a sync client leave a second copy called "plan (1).json".</div>
+        </div>
+      </details>
+      <span id="syncChip" style="display:none"></span>
       <button class="btn-light btn-sm" onclick="resetProject()" title="Start a fresh plan — the current project stays saved in the Projects menu">New project</button>
     </div>
   </header>
@@ -2854,10 +2873,16 @@
                   <th title="Work Breakdown Structure code — the outline number of this item">WBS</th>
                   <th title="Click ▸/▾ on a phase to collapse it, or use Phases / L2 / Expand all above to move every level at once. Buttons: ⇤ outdent, ⇥ indent, ⑂ AI-decompose">Activity</th>
                   <th title="Who does the work (⚠ = over-allocated during this task; @n% = partial allocation; +N = additional attendees)">Owner</th>
-                  <th title="Optimistic: best-case duration if everything goes right">O</th>
-                  <th title="Most likely duration — your realistic single-point estimate">M</th>
-                  <th title="Pessimistic: worst-case duration if things go wrong">P</th>
-                  <th title="Expected duration = (O + 4M + P) / 6 — the PERT weighted average used for scheduling">TE</th>
+                  <th title="Optimistic: best-case DURATION — how long the activity stays open, not hours of work">O</th>
+                  <th title="Most likely DURATION — your realistic single-point estimate of how long it stays open">M</th>
+                  <th title="Pessimistic: worst-case DURATION if things go wrong">P</th>
+                  <th title="Expected DURATION = (O + 4M + P) / 6. On a phase row this is the SPAN through its dependency network, not the sum of its children — parallel activities overlap, so a phase is often shorter than its parts added up.">TE</th>
+                  <!-- The four columns beside this one are all DURATION. Without
+                       the work beside them the table reads as though a 3.17h
+                       activity is 3.17h of somebody's time, which at 20% it is
+                       not — and this is the last major surface that had no
+                       column saying so. -->
+                  <th title="The WORK inside that duration: TE x this row's allocation. Equal to TE only at 100%. A phase sums the work of its children, which — unlike the duration beside it — does add up.">Work</th>
                   <th title="What must happen first. FS=finish→start, SS=start→start, FF=finish→finish, SF=start→finish; +n = lag days">Predecessors</th>
                   <th title="Earliest calendar start (skips weekends & holidays)">Start</th>
                   <th title="Earliest calendar finish">Finish</th>
@@ -2990,6 +3015,14 @@
           <p class="help-text" style="margin:0 0 0.5rem">Untick a section to leave it out. The rest <b>renumber as you click</b>, and every cross-reference in the document re-points to wherever its section actually lands — so §11 stays change control however many sections are above it.</p>
           <div id="sowSecList" style="border:1px solid var(--border);border-radius:8px;padding:0 0.6rem"></div>
           <p class="help-text" id="sowSecSummary" style="margin:0.5rem 0 0;font-weight:600"></p>
+          <!-- What goes INSIDE a section, not just which sections. Dropping the
+               whole appendix to get rid of the internal stories would take the
+               client-facing ones with it. -->
+          <label style="display:flex;gap:0.6rem;align-items:flex-start;margin-top:0.6rem;cursor:pointer">
+            <input type="checkbox" id="sowDelivStories" style="flex:0 0 auto;width:16px;height:16px;margin-top:0.15rem" onchange="sowSetDeliveryStories(this.checked)" />
+            <span style="flex:1 1 auto;min-width:0"><span style="font-weight:600">Include delivery-side stories in the appendix</span>
+            <span class="help-text" style="display:block;font-size:0.75rem">Off by default: stories describing how <i>our</i> team works do not belong in a client's contract. Quality attributes, dependencies and assumptions that trace to one cite the <b>activity</b> instead, so nothing points at a story the document does not contain. Turn it on for an internal SOW.</span></span>
+          </label>
           <div id="sowSecWarn" class="help-text" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:0.5rem 0.7rem;margin-top:0.5rem"></div>
           <p class="help-text" style="margin:0.5rem 0 0">The choice travels with the project and is recorded on each saved version, so a past document can be read for the shape it actually had. Generate again to apply it.</p>
         </div>
@@ -3638,7 +3671,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.1645</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.1714</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -4634,6 +4667,8 @@ Or say what you want, in your own words:
     async function restoreDiskHandle() {
       try { const h = await idbGet('disk.handle'); if (h && h.queryPermission) diskFileHandle = h; } catch (e) {}
       updateDiskBtn();
+      // the watched file survives a reload too — the handle is stored beside this one
+      try { if (typeof fsRestore === 'function') fsRestore(); } catch (e) {}
     }
     function updateDiskBtn() {
       const btn = document.getElementById('diskAutoBtn');
@@ -7718,7 +7753,7 @@ Or say what you want, in your own words:
       const r = (resources[n] || {}).role || '';
       const cli = isClientResource(n);
       if (!r && !cli) return '';
-      return `<span class="help-text role-sub" title="${escapeHtml(r)}${r && cli ? ' \u00b7 ' : ''}${cli ? 'CLIENT' : ''}">${escapeHtml(r)}${r && cli ? ' · ' : ''}${cli ? '<span style="color:#1e40af;font-weight:700">CLIENT</span>' : ''}</span>`;
+      return `<span class="help-text role-sub" title="${escapeHtml(cli ? 'CLIENT' : '')}${r && cli ? ' \u00b7 ' : ''}${escapeHtml(r)}">${cli ? '<span class="cli">CLIENT</span>' : ''}${r && cli ? ' · ' : ''}${escapeHtml(r)}</span>`;
     }
     function roleText(name) {
       const n = String(name || '').trim();
@@ -7803,6 +7838,11 @@ Or say what you want, in your own words:
           <td><span class="help-text" style="cursor:help" title="${escapeHtml(spanTip('most-likely', projectSpanUp.m))}">${projectSpanUp.m.toFixed(1)}</span></td>
           <td><span class="help-text" style="cursor:help" title="${escapeHtml(spanTip('pessimistic', projectSpanUp.p))}">${projectSpanUp.p.toFixed(1)}</span></td>
           <td><strong style="cursor:help" title="Expected whole-project duration: the critical path at PERT-expected (TE) durations — the number the Gantt and forecast are built on. Range ${projectSpanUp.o.toFixed(1)}–${projectSpanUp.p.toFixed(1)} ${unitLabel()} best→worst.">${projDur.toFixed(2)}</strong></td>
+          <td><strong style="cursor:help" title="Total WORK in the plan: every activity's duration times its allocation, added up. Unlike the duration beside it this IS a sum — work does not overlap the way calendar time does, which is why the two figures differ.">${(() => {
+            const w = leavesAll.filter(t => !t.milestone)
+              .reduce((sx, t) => sx + workingDaysToUnit(plannedEffortDays(t)), 0);
+            return w > 0 ? fmtDur(w) : '—';
+          })()}</strong></td>
           <td>—</td>
           <td style="font-size:0.8rem;white-space:nowrap">${fmtNice(projectStartDate())}</td>
           <td style="font-size:0.8rem;white-space:nowrap">${fmtNice(finish)}</td>
@@ -7885,7 +7925,15 @@ Or say what you want, in your own words:
             return `<td${a}${ed('o')}>${summary ? rollCell(t.oUp, 'optimistic') : t.milestone ? '—' : fmtDurCell(t.o)}</td>
           <td${a}${ed('m')}>${summary ? rollCell(t.mUp, 'most-likely') : t.milestone ? '—' : fmtDurCell(t.m)}</td>
           <td${a}${ed('p')}>${summary ? rollCell(t.pUp, 'pessimistic') : t.milestone ? '—' : fmtDurCell(t.p)}</td>
-          <td${a}><strong>${noEst ? '⚠ 0' : teStr}</strong></td>`; })()}
+          <td${a}><strong>${noEst ? '⚠ 0' : teStr}</strong></td>
+          <td${a} style="color:#475569">${(() => {
+            if (t.milestone) return '◆';
+            if (!calculated) return '—';
+            const w = t.isSummary
+              ? leafDescendants(t.id).reduce((sx, x) => sx + workingDaysToUnit(plannedEffortDays(x)), 0)
+              : workingDaysToUnit(plannedEffortDays(t));
+            return w > 0 ? fmtDur(w) : '—';
+          })()}</td>`; })()}
           <td data-pred-id="${t.id}" style="font-size:var(--t-md)${summary ? '' : ';cursor:text'}" title="${escapeHtml(summary ? predTitle(t) : (predTitle(t) ? predTitle(t) + '\n' : '') + 'Click to edit right here — comma-separated WBS codes or names, optional FS/SS/FF/SF±lag (e.g. “1.2, 2.1SS+1”). Enter saves, Esc cancels.')}"${summary ? '' : ` onclick="beginPredEdit(${t.id}, this)"`}>${summary ? '—' : (t.predecessors.length ? escapeHtml(predLabel(t)) : '<span class="help-text" style="font-style:italic">+ link</span>')}</td>
           ${(() => { if (summary) return `<td style="font-size:var(--t-md);white-space:nowrap" title="${t.startNoEarlier ? escapeHtml('📌 Pinned: nothing under this phase starts before ' + t.startNoEarlier + '. Dependencies can push it later, never earlier.') : 'Earliest start across everything under this phase'}">${t.startNoEarlier ? '📌 ' : ''}${calculated ? fmtNice(t.startDate) : (t.startNoEarlier || '—')}</td>
           <td style="font-size:var(--t-md);white-space:nowrap">${calculated ? fmtNice(t.finishDate) : '—'}</td>`;
@@ -27897,10 +27945,36 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       });
       return out;
     }
+    /* DELIVERY-SIDE STORIES DO NOT GO IN A CLIENT'S CONTRACT. They were being
+       carried in so that references from the quality attributes, dependencies
+       and assumptions would not dangle — a real problem, solved by printing the
+       thing the reference pointed at. On a plan where seventeen of twenty-five
+       stories describe how OUR team works, that carve-out swallowed the
+       appendix and handed the client our internal process.
+
+       The reference is what should change, not the appendix. Those tables now
+       cite the ACTIVITY a delivery-side story traces to, which is printed in the
+       scope table, so nothing dangles and nothing internal prints. Somebody
+       writing an internal SOW can still ask for them explicitly. */
+    function sowWantsDeliveryStories() { return !!(pricing && pricing.sowDeliveryStories); }
     function sowPrintedStoryIds() {
       if (sowStoriesMode() === 'none' || !reqs || !Array.isArray(reqs.stories)) return new Set();
+      if (!sowWantsDeliveryStories())
+        return new Set(reqs.stories.filter(s => storyAudience(s) === 'client').map(s => s.id));
       const ref = sowReferencedStoryIds();
       return new Set(reqs.stories.filter(s => storyAudience(s) === 'client' || ref.has(s.id)).map(s => s.id));
+    }
+    /* What a row in those tables points at. A client-facing story prints, so its
+       id resolves; a delivery-side one does not, so the activity stands in its
+       place — the reader can find that in the scope table. */
+    function sowTraceRef(id, printed) {
+      if (printed.has(id)) return escapeHtml(id);
+      const st = (reqs && reqs.stories || []).find(x => x.id === id);
+      const t = st && st.wbsId != null ? tasks.find(x => x.id === st.wbsId) : null;
+      if (t) return '<span title="' + escapeHtml('Traces to delivery-side story ' + id
+        + ', which is internal to the engagement and is not printed in this document.')
+        + '">' + escapeHtml((t.wbs ? t.wbs + ' ' : '') + t.name) + '</span>';
+      return '';
     }
     /* Keep only the refs this document resolves. A row whose every reference is
        dropped keeps its place — the requirement is real and belongs in the
@@ -27987,9 +28061,12 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
             const e = map.get(k) || []; e.push(s.id); map.set(k, e);
           }));
           return [...map.entries()].map(([text, ids]) => {
-            const k = sowKeepRefs(ids, printedIds);
-            dropped += k.dropped;
-            return { text, refs: k.refs.slice(0, 6).join(', ') + (k.refs.length > 6 ? '…' : '') };
+            // a delivery-side trace becomes the ACTIVITY rather than vanishing,
+            // so the requirement still says what it applies to
+            const shown = ids.map(id => sowTraceRef(id, printedIds)).filter(Boolean);
+            const uniq = [...new Set(shown)];
+            dropped += ids.length - uniq.length;
+            return { text, refs: uniq.slice(0, 6).join(', ') + (uniq.length > 6 ? '…' : '') };
           });
         })(),
         // client dependencies (story "D:") — each with its slip consequence baked in
@@ -27997,8 +28074,9 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           const out = [];
           ((reqs && reqs.stories) || []).forEach(s => (s.assumptions || []).forEach(x => {
             if (!/^D:/i.test(x)) return;
-            if (!printedIds.has(s.id)) dropped++;
-            out.push({ text: String(x).replace(/^D:\s*/i, ''), ref: printedIds.has(s.id) ? s.id : '' });
+            const ref = sowTraceRef(s.id, printedIds);
+            if (!ref) dropped++;
+            out.push({ text: String(x).replace(/^D:\s*/i, ''), ref: ref });
           }));
           return out;
         })(),
@@ -28010,8 +28088,9 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
             const body = String(x).replace(/^A:\s*/i, '').trim();
             if (/no WBS activity covers this yet/i.test(body)) return; // internal scope-gap marker — never client-facing
             const parts = body.split(/\s*[—-]\s*impact if false:\s*/i);
-            if (!printedIds.has(s.id)) dropped++;
-            out.push({ text: parts[0], impact: parts[1] || '', ref: printedIds.has(s.id) ? s.id : '' });
+            const ref2 = sowTraceRef(s.id, printedIds);
+            if (!ref2) dropped++;
+            out.push({ text: parts[0], impact: parts[1] || '', ref: ref2 });
           }));
           return out;
         })(),
@@ -28141,6 +28220,7 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       renderSowSectionPicker();
     }
     function sowAllSections() { pricing.sowOff = []; saveLocal(); renderSowSectionPicker(); }
+    function sowSetDeliveryStories(on) { pricing.sowDeliveryStories = !!on; saveLocal(); renderSowSectionPicker(); }
     function sowOpenSections() {
       renderSowSectionPicker();
       openOverlay(document.getElementById('sowSecModal'));
@@ -28182,6 +28262,8 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
             <span class="help-text" style="display:block;font-size:0.75rem">${escapeHtml(sec.note)}${empty ? ' — nothing recorded, so it would not print anyway' : ''}</span>
           </span></label>`;
       }).join('');
+      const dv = document.getElementById('sowDelivStories');
+      if (dv) dv.checked = sowWantsDeliveryStories();
       const dropped = SOW_SECTIONS.filter(x => off.has(x.key));
       const heavy = dropped.filter(x => x.heavy);
       const sum = document.getElementById('sowSecSummary');
@@ -28292,20 +28374,20 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       add('nfr', 'Non-Functional Requirements', (d.nfrs && d.nfrs.length)
         ? `<p style="font-size:12.5px;color:#475569">Quality attributes the delivered solution must meet in addition to the functional acceptance criteria — each traces to the stories listed.</p>
         <table style="border-collapse:collapse;width:100%"><tr><th style="${th}">Requirement</th><th style="${th};width:140px">Applies to</th></tr>
-        ${d.nfrs.map(x => `<tr><td style="${td}">${h(x.text)}</td><td style="${td}">${h(x.refs) || '—'}</td></tr>`).join('')}</table>
+        ${d.nfrs.map(x => `<tr><td style="${td}">${h(x.text)}</td><td style="${td}">${x.refs || '—'}</td></tr>`).join('')}</table>
         ${d.nfrs.some(x => !x.refs) ? traceNote : ''}` : '');
 
       add('clientdeps', 'Client Responsibilities &amp; Dependencies', (d.clientDeps && d.clientDeps.length)
         ? `<p style="font-size:12.5px;color:#475569">The schedule and price assume the client meets each item below by the time the dependent work starts; each entry states the consequence of a slip. CLIENT-marked rows in {{sec:scope}} apply in addition.</p>
         <table style="border-collapse:collapse;width:100%"><tr><th style="${th}">Dependency (with slip consequence)</th><th style="${th};width:80px">Story</th></tr>
-        ${d.clientDeps.map(x => `<tr><td style="${td}">${h(x.text)}</td><td style="${td}">${h(x.ref) || '—'}</td></tr>`).join('')}</table>
+        ${d.clientDeps.map(x => `<tr><td style="${td}">${h(x.text)}</td><td style="${td}">${x.ref || '—'}</td></tr>`).join('')}</table>
         ${d.clientDeps.some(x => !x.ref) ? traceNote : ''}` : '');
 
       const assumpRows = d.assumptions.concat(d.storyAssumps || []);
       add('assumptions', 'Assumptions', assumpRows.length
         ? `<p style="font-size:12.5px;color:#475569">Pricing and schedule are based on the assumptions below. If one proves false, the stated impact applies and is handled through change control ({{sec:change}}).</p>
              <table style="border-collapse:collapse;width:100%"><tr><th style="${th}">Assumption</th><th style="${th}">Impact if false / validation</th><th style="${th};width:70px">Source</th></tr>
-             ${assumpRows.map(a => `<tr><td style="${td}">${h(a.text)}</td><td style="${td}">${h(a.impact) || '—'}</td><td style="${td}">${h(a.ref) || '—'}</td></tr>`).join('')}</table>
+             ${assumpRows.map(a => `<tr><td style="${td}">${h(a.text)}</td><td style="${td}">${h(a.impact) || '—'}</td><td style="${td}">${a.ref || '—'}</td></tr>`).join('')}</table>
              ${assumpRows.some(a => !a.ref) ? traceNote : ''}`
         : '<p style="font-size:13px"><em>[Add assumptions to the RAID log or to stories ("A:") and regenerate.]</em></p>');
 
@@ -28415,7 +28497,8 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       const printed = sowPrintedStoryIds();
       const shown = reqs.stories.filter(s => printed.has(s.id));
       const clientStories = shown.filter(s => storyAudience(s) === 'client');
-      const carried = shown.filter(s => storyAudience(s) !== 'client');
+      // only when somebody has explicitly asked for an internal-audience SOW
+      const carried = sowWantsDeliveryStories() ? shown.filter(s => storyAudience(s) !== 'client') : [];
       const omitted = reqs.stories.length - shown.length;
       (reqs.epics || []).forEach(ep => { body += block(ep.id + ' — ' + (ep.title || ''), clientStories.filter(s => (s.epicId || '—') === ep.id)); });
       body += block('Other stories', clientStories.filter(s => !rendered.has(s.id)));
@@ -29293,6 +29376,104 @@ Do not write payment terms or exclusions — both are generated from the project
       mineT.forEach((a, id) => { if (!baseT.has(id) && !theirT.has(id)) myAdds.push({ id: id, name: a.name }); });
       return { base: found, auto: auto, conflicts: conflicts, theirAdds: theirAdds, myAdds: myAdds,
                theirDeletes: theirDeletes, collisions: collisions, deleteEdits: deleteEdits };
+    }
+    /* ═══ WATCHING A TEAMMATE'S FILE ═════════════════════════════════════════
+       Handing files back and forth is the part people forget to do. The File
+       System Access API gives a handle you can keep — in IndexedDB, across
+       reloads — and re-read without asking again, so the app can notice their
+       copy changed and offer the merge itself.
+
+       TWO FILES IN ONE SHARED FOLDER, not one file both write. Drive Desktop,
+       Dropbox and OneDrive all resolve a simultaneous write by making a second
+       copy called "plan (1).json", which is the failure this is meant to
+       prevent. Each person writes their own file and watches the other's, so
+       the sync client never sees a contended write.
+
+       IT NEVER MERGES BY ITSELF. It says their copy moved and opens the same
+       review panel; every conflict still defaults to keeping yours. A tool that
+       silently rewrote your estimates because a file changed on disk would be
+       the most expensive kind of automatic. */
+    let fsTheirs = null, fsSeen = 0, fsTimer = null, fsPending = null;
+    const FS_POLL_MS = 20000;
+    function fsSupported() { return typeof window.showOpenFilePicker === 'function'; }
+    async function fsPerm(h, mode) {
+      if (!h || !h.queryPermission) return false;
+      const o = { mode: mode || 'read' };
+      if ((await h.queryPermission(o)) === 'granted') return true;
+      try { return (await h.requestPermission(o)) === 'granted'; } catch (e) { return false; }
+    }
+    async function fsLinkTheirs() {
+      if (!fsSupported()) { alert('This browser cannot watch a file (the File System Access API is not available). Chrome or Edge can. Until then, use "Merge a copy" when they send you one.'); return; }
+      try {
+        const [h] = await window.showOpenFilePicker({ types: [{ description: 'Project JSON', accept: { 'application/json': ['.json'] } }] });
+        fsTheirs = h;
+        const f = await h.getFile();
+        fsSeen = f.lastModified;                 // link now, alert on the NEXT change
+        await idbSet('fs.theirs', h);
+        fsStart();
+        renderSyncChip();
+        flashSaved('👀 Watching ' + h.name + '. You will be told when it changes — nothing merges on its own.');
+      } catch (e) { if (e && e.name !== 'AbortError') alert('Could not watch that file: ' + (e.message || e)); }
+    }
+    /* MY side is the disk autosave that already existed. It picks a file once
+       and rewrites it after every change, which is exactly what the outgoing
+       half of this needs — a second handle doing the same job to a second file
+       would be two answers to "where is my copy". Put that file in a synced
+       folder and the sync client does the transport. */
+    async function fsCheck() {
+      if (!fsTheirs || document.hidden) return;
+      if (!(await fsPerm(fsTheirs, 'read'))) { renderSyncChip(); return; }
+      let f;
+      try { f = await fsTheirs.getFile(); } catch (e) { return; }
+      if (!f || f.lastModified <= fsSeen) return;
+      fsSeen = f.lastModified;
+      try { fsPending = { doc: JSON.parse(await f.text()), name: fsTheirs.name, at: f.lastModified }; }
+      catch (e) { fsPending = null; return; }
+      renderSyncChip();
+      flashSaved('🔄 ' + fsTheirs.name + ' changed. Review the merge when you are ready — nothing has been applied.');
+    }
+    function fsStart() { clearInterval(fsTimer); fsTimer = setInterval(fsCheck, FS_POLL_MS); }
+    function fsReviewPending() {
+      if (!fsPending) return;
+      const p = fsPending;
+      fsPending = null;
+      renderSyncChip();
+      mergeReview(p.doc, p.name);
+    }
+    async function fsUnlink() {
+      clearInterval(fsTimer);
+      fsTheirs = null; fsPending = null; fsSeen = 0;
+      await idbDel('fs.theirs');
+      renderSyncChip();
+      flashSaved('Stopped watching. The file itself is untouched, and your own autosave is unaffected.');
+    }
+    async function fsRestore() {
+      try {
+        fsTheirs = (await idbGet('fs.theirs')) || null;
+        if (fsTheirs) {
+          // do NOT announce every change made while the tab was closed as news;
+          // start from where the file is now and report what happens next
+          try { const f = await fsTheirs.getFile(); fsSeen = f.lastModified; } catch (e) { fsSeen = 0; }
+          fsStart();
+        }
+      } catch (e) {}
+      renderSyncChip();
+    }
+    function renderSyncChip() {
+      const el = document.getElementById('syncChip');
+      if (!el) return;
+      if (!fsTheirs) { el.innerHTML = ''; el.style.display = 'none'; return; }
+      el.style.display = 'inline-flex';
+      if (fsPending) {
+        el.className = 'sync-chip sync-chip-new';
+        el.innerHTML = '🔄 ' + escapeHtml(fsPending.name) + ' changed <button class="btn-sm btn-primary" style="margin-left:0.4rem" onclick="fsReviewPending()">Review merge</button>';
+        return;
+      }
+      el.className = 'sync-chip';
+      el.innerHTML = '<span title="Watching ' + escapeHtml(fsTheirs.name) + ' — checked every '
+        + (FS_POLL_MS / 1000) + 's while this tab is open, and only while it is visible. '
+        + 'Nothing merges on its own.">👀 Watching ' + escapeHtml(fsTheirs.name) + '</span>'
+        + '<button class="btn-sm btn-ghost" style="margin-left:0.3rem" onclick="fsUnlink()" title="Stop watching. The file is untouched.">✕</button>';
     }
     let mergePlanState = null;
     function mergeOpenFile(ev) {

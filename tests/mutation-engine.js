@@ -1355,6 +1355,10 @@ const MUTANTS = [
     find: '            const e = plannedEffortDays(t);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';',
     with: '            const e = unitToWorkingDays(t.te || 0);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';' },
 
+  { what: 'activity list: the Work column repeats the duration',
+    find: "              : workingDaysToUnit(plannedEffortDays(t));\n            return w > 0 ? fmtDur(w) : '\u2014';",
+    with: "              : (Number(t.te) || 0);\n            return w > 0 ? fmtDur(w) : '\u2014';" },
+
   { what: 'merge: a conflict defaults to taking THEIR value',
     with: "          conflicts.push({ id: id, name: a.name, field: f, label: lbl, mine: va, theirs: vc, take: 'theirs' });",
     find: "          conflicts.push({ id: id, name: a.name, field: f, label: lbl, mine: va, theirs: vc, take: 'mine' });" },

@@ -1028,6 +1028,53 @@ const QA = JSON.parse(fs.readFileSync(
         recompute();
       })();
 
+      /* ── THE ACTIVITY LIST SAYS WHICH QUANTITY IT IS SHOWING ────────────
+         O/M/P/TE are all DURATION. Without the work beside them a reader takes
+         a 3.17h activity for 3.17h of somebody's time, which at 20% it is not —
+         and a phase row makes it worse, because its duration is a SPAN through
+         the dependency network while the work under it is a plain sum. Two
+         parallel children make the phase look like it is not rolling up. */
+      (() => {
+        const t = leafTasks().find(x => !x.isSummary && !x.milestone && (x.te || 0) > 0);
+        const par = tasks.find(x => x.isSummary && leafDescendants(x.id).filter(y => !y.milestone).length > 1);
+        if (!t) { say('Activity list', 'no leaf activity — this check is vacuous'); return; }
+        const keptU = t.units, keptP = t.participants;
+        t.units = 20; t.participants = null;
+        calculate(); switchTab('tasks');
+        const tbl = document.querySelector('#view-tasks table');
+        const hdr = tbl ? [...tbl.querySelectorAll('thead th')].map(x => x.textContent.trim()) : [];
+        const wi = hdr.indexOf('Work'), ti = hdr.indexOf('TE');
+        out.actWorkCol = wi;
+        if (wi < 0) say('Activity list', 'the table shows O/M/P/TE and no work at all — every column in it '
+          + 'is a duration and nothing says so');
+        const rows = tbl ? [...tbl.querySelectorAll('tbody tr')] : [];
+        const bad2 = rows.filter(r => r.cells.length > 1 && r.cells.length !== hdr.length);
+        if (bad2.length) say('Activity list', bad2.length + ' row(s) have a different cell count from the '
+          + 'header — a column was added without every row following');
+        const row = rows.find(r => r.cells[3] && r.cells[3].textContent.indexOf(t.name) >= 0);
+        if (row && wi >= 0 && ti >= 0) {
+          const te = row.cells[ti].textContent.trim(), wk = row.cells[wi].textContent.trim();
+          out.actTE = te; out.actWork = wk;
+          if (te === wk) say('Activity list', 'a 20%-allocated activity shows the same figure for duration '
+            + 'and work ("' + te + '") — the work column is repeating the span');
+        }
+        // and a phase: duration is a span, work is a sum, and the sum is right
+        if (par && wi >= 0) {
+          const prow = rows.find(r => r.cells[3] && r.cells[3].textContent.indexOf(par.name) >= 0);
+          const want = leafDescendants(par.id).reduce((a, x) => a + workingDaysToUnit(plannedEffortDays(x)), 0);
+          if (prow) {
+            const got = prow.cells[wi].textContent.trim();
+            out.phaseWork = got; out.phaseWantWork = want.toFixed(2);
+            const num = parseFloat(String(got).replace(/[^0-9.]/g, ''));
+            if (!(want > 0)) say('Activity list', 'the phase has no work under it — this check is vacuous');
+            else if (!(Math.abs(num - want) < 0.05 || /h|m\b/.test(got)))
+              say('Activity list', 'a phase shows ' + got + ' of work against ' + want.toFixed(2)
+                + ' in its children — work is the one column that IS a sum');
+          }
+        }
+        t.units = keptU; t.participants = keptP; calculate();
+      })();
+
       return { contradictions: bad, counts: out };
     }, label);
   };

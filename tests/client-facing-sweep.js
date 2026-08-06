@@ -198,19 +198,27 @@ const DATA = FIXTURE();
             guinea.nfrs = keptNfrs; guinea.assumptions = keptAss;
             if (!builtRight)
               say('SOW document', 'the NFR-only subject could not be put into the state the check needs');
-            else if (!printedNow.has(guinea.id))
-              say('SOW document', 'a story whose quality attribute the document quotes (' + guinea.id
-                + ') is not printed by it — the reader is told something binds a story they cannot read');
+            /* THE RULE IS "NOTHING DANGLES", NOT "EVERY QUOTED STORY PRINTS".
+               The first form was satisfied by printing our internal process
+               stories in a client's contract. What a reader actually needs is
+               for the trace to name something they can find in this document —
+               a printed story, or the activity in the scope table. */
+            else if (!printedNow.has(guinea.id) && !sowTraceRef(guinea.id, printedNow))
+              say('SOW document', 'a quality attribute the document quotes traces to ' + guinea.id
+                + ', which is neither printed nor resolved to an activity — the reader is told something '
+                + 'binds a story they cannot read');
           }
-          const absent = relied.filter(id => !base.d.printedStoryIds.has(id));
-          if (absent.length)
-            say('SOW document', 'the SOW quotes requirements drawn from ' + absent.length + ' story/ies it '
-              + 'does not print: ' + absent.slice(0, 6).join(', '));
+          const dangling = relied.filter(id => !base.d.printedStoryIds.has(id)
+            && !sowTraceRef(id, base.d.printedStoryIds));
+          if (dangling.length)
+            say('SOW document', 'the SOW quotes requirements traced to ' + dangling.length
+              + ' story/ies it neither prints nor resolves to an activity: ' + dangling.slice(0, 6).join(', '));
           const appx = strip(base.d.storiesAppendix || '');
-          const notInAppendix = relied.filter(id => appx.indexOf(id) < 0);
+          const printedRelied = relied.filter(id => base.d.printedStoryIds.has(id));
+          const notInAppendix = printedRelied.filter(id => appx.indexOf(id) < 0);
           if (notInAppendix.length)
-            say('SOW document', notInAppendix.length + ' relied-on story/ies are missing from the appendix '
-              + 'the document points readers to: ' + notInAppendix.slice(0, 6).join(', '));
+            say('SOW document', notInAppendix.length + ' story/ies the document counts as printed are '
+              + 'missing from the appendix it points readers to: ' + notInAppendix.slice(0, 6).join(', '));
         }
       }
       // and with the appendix switched OFF, nothing may be cited at all
@@ -281,6 +289,56 @@ const DATA = FIXTURE();
         if (/all activities and deliverables are as defined|no exclusions apply/i.test(oosBody))
           say('SOW document', 'the Out of Scope section reads as a waiver rather than a limit');
       }
+      /* ── A CLIENT'S CONTRACT DOES NOT CARRY OUR PROCESS ────────────────
+         Delivery-side stories were printed so that references from the quality
+         attributes, dependencies and assumptions would not dangle. On a plan
+         where most stories describe how OUR team works, that carve-out handed
+         the client the lot. The reference is what changes: it cites the
+         ACTIVITY, which is printed in the scope table. */
+      {
+        const st0 = (reqs.stories || [])[0];
+        if (!st0) say('SOW stories', 'no stories — this check is vacuous');
+        else {
+          const kA = st0.audience, kN = (st0.nfrs || []).slice(), kD = (st0.assumptions || []).slice();
+          const kP = pricing.sowDeliveryStories;
+          st0.audience = 'internal';
+          st0.nfrs = kN.concat(['ZZ internal-only quality attribute']);
+          st0.assumptions = kD.concat(['D: ZZ the client supplies the extract']);
+          pricing.sowDeliveryStories = false;
+          const b1 = build();
+          const t1 = strip(b1.html);
+          if (/Referenced delivery stories/.test(t1))
+            say('SOW stories', 'the appendix prints a "Referenced delivery stories" block — internal '
+              + 'process stories are being handed to the client');
+          if (b1.d.printedStoryIds.has(st0.id))
+            say('SOW stories', 'a delivery-side story is listed as printed in the client document');
+          if (!/ZZ internal-only quality attribute/.test(t1))
+            say('SOW stories', 'the quality attribute vanished with the story it traced to — the '
+              + 'requirement is real and belongs in the contract');
+          if (!/ZZ the client supplies the extract/.test(t1))
+            say('SOW stories', 'the client dependency vanished with the story it traced to');
+          const row = (b1.d.nfrs || []).find(x => /ZZ internal-only/.test(x.text));
+          if (!row) say('SOW stories', 'the quality attribute has no row at all');
+          else {
+            // strip the tooltip: it deliberately names the story it stood in for
+            const visible = String(row.refs).replace(/<[^>]*>/g, '');
+            if (visible.indexOf(st0.id) >= 0)
+              say('SOW stories', 'the trace column still shows ' + st0.id + ', a story this document '
+                + 'does not contain');
+            const act = st0.wbsId != null ? tasks.find(x => x.id === st0.wbsId) : null;
+            if (act && row.refs.indexOf(act.name.split('&')[0].trim()) < 0)
+              say('SOW stories', 'a delivery-side trace names neither the story nor the activity: "'
+                + row.refs + '"');
+            if (!act && row.refs) say('SOW stories', 'a trace with no activity behind it still prints something');
+          }
+          // and it is a CHOICE, not a rule
+          pricing.sowDeliveryStories = true;
+          if (!/Referenced delivery stories/.test(strip(build().html)))
+            say('SOW stories', 'asking for delivery-side stories explicitly does not bring them back');
+          st0.audience = kA; st0.nfrs = kN; st0.assumptions = kD; pricing.sowDeliveryStories = kP;
+        }
+      }
+
       /* ── LEAVING A SECTION OUT RENUMBERS AND RE-POINTS ─────────────────
          Sections are a keyed list numbered by position with references written
          as {{sec:key}}, so omitting one has to renumber the rest AND move every
@@ -326,8 +384,10 @@ const DATA = FIXTURE();
          Product Advisor, I want to a baseline task-completion scorecard" in
          every one of twenty-five stories printed in a client's contract. */
       {
-        const st = (reqs.stories || [])[0];
-        if (!st) say('SOW prose', 'no stories — this check is vacuous');
+        // a story that is actually printed — an internal one is not in the
+        // appendix at all, so its sentence could not be checked there
+        const st = (reqs.stories || []).find(x => storyAudience(x) === 'client');
+        if (!st) say('SOW prose', 'no client-facing story — this check is vacuous');
         else {
           const kp = st.persona, kw = st.want;
           st.persona = 'Independent Product Advisor';       // vowel-initial
