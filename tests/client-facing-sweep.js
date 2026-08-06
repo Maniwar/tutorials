@@ -557,6 +557,40 @@ const DATA = FIXTURE();
         sowCmpA = null; sowCmpB = null;
       }
 
+      /* ── A HISTORY YOU CAN PRUNE, WITHOUT LOSING ITS ANCHORS ───────────
+         A typo is a version and a document is a few hundred KB, so a month of
+         corrections is most of the file. Deletion has to exist — and has to
+         refuse the two versions the history is FOR: the original, and the one
+         on screen. */
+      {
+        sowDraft = build().html;
+        const kept = sowVersions.slice();
+        sowVersions = [];
+        for (let i = 0; i < 8; i++) { sowDraft = sowDraft + '<!--zz' + i + '-->'; sowPushVersion('zz typo ' + i); }
+        const first = sowVersions[0], last = sowVersions[sowVersions.length - 1];
+        if (!sowVersionPin(first)) say('SOW versions', 'the original is not protected from deletion');
+        if (!sowVersionPin(last)) say('SOW versions', 'the current draft is not protected from deletion');
+        const mid = sowVersions[3];
+        if (sowVersionPin(mid)) say('SOW versions', 'an ordinary version reports itself as pinned, so nothing '
+          + 'in the middle could ever be deleted');
+        const n0 = sowVersions.length;
+        sowDeleteVersion(first.n);
+        if (sowVersions.length !== n0) say('SOW versions', 'the original was deleted');
+        sowDeleteVersion(last.n);
+        if (sowVersions.length !== n0) say('SOW versions', 'the current draft was deleted');
+        sowDeleteVersion(mid.n);
+        if (sowVersions.length !== n0 - 1) say('SOW versions', 'deleting an ordinary version did nothing');
+        sowTidyVersions(3);
+        if (sowVersions.length > 5)
+          say('SOW versions', 'tidying to the 3 most recent left ' + sowVersions.length + ' versions');
+        if (!sowVersions.some(v => v.n === first.n)) say('SOW versions', 'tidying deleted the original');
+        if (!sowVersions.some(v => v.n === last.n)) say('SOW versions', 'tidying deleted the current draft');
+        if (!(sowVersions[0].trimmed > 0))
+          say('SOW versions', 'versions were deleted and the history does not record that anything went — '
+            + 'a gap with no explanation reads as a bug');
+        sowVersions = kept; sowDraft = null;
+      }
+
       raid = savedRaid; sowDraft = null;
 
       // ── numbering is contiguous and every reference resolves ────────────

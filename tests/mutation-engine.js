@@ -1355,6 +1355,26 @@ const MUTANTS = [
     find: '            const e = plannedEffortDays(t);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';',
     with: '            const e = unitToWorkingDays(t.te || 0);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';' },
 
+  { what: 'editor: typing the work does not move the duration',
+    find: "      if (cur > 0) {\n        const k = wantTe / cur;",
+    with: "      if (false) {\n        const k = wantTe / cur;" },
+
+  { what: 'editor: work-driven duration flattens the three-point spread',
+    find: "          if (Number.isFinite(v) && v > 0) set(id, v * k);",
+    with: "          if (Number.isFinite(v) && v > 0) set(id, wantTe);" },
+
+  { what: 'SOW: the scope table names nothing an activity consumes',
+    find: "            inputs: (clientSafeReports || t.isSummary || t.milestone) ? []",
+    with: "            inputs: true ? []" },
+
+  { what: 'SOW versions: deleting one takes the original with it',
+    find: "      if (sowVersions.length && v.n === sowVersions[0].n) return 'the original';",
+    with: "      if (false) return 'the original';" },
+
+  { what: 'SOW versions: tidying deletes the document on screen too',
+    find: "      const doomed = sowVersions.filter((v, i) => !sowVersionPin(v) && i < sowVersions.length - keep);",
+    with: "      const doomed = sowVersions.filter((v, i) => i < sowVersions.length - keep);" },
+
   { what: 'activity list: the Work column repeats the duration',
     find: "              : workingDaysToUnit(plannedEffortDays(t));\n            return w > 0 ? fmtDur(w) : '\u2014';",
     with: "              : (Number(t.te) || 0);\n            return w > 0 ? fmtDur(w) : '\u2014';" },

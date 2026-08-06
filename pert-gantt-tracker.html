@@ -3591,6 +3591,8 @@ Or say what you want, in your own words:
               <span class="help-text" style="font-weight:700;letter-spacing:0.03em;margin-right:0.2rem">HISTORY</span>
               <button class="btn-sm" id="dhTabSow" onclick="setDocHistTab('sow')" title="Every draft of this document, back to the original — view or restore any of them">📄 This document</button>
               <button class="btn-sm" id="dhTabPlan" onclick="setDocHistTab('plan')" title="Every version of the PLAN the document was generated from — a different history from the document's own">📌 Plan versions</button>
+              <span class="tb-sep" aria-hidden="true"></span>
+              <button class="btn-sm btn-secondary" onclick="sowTidyVersions(5)" title="A typo is a version, so a month of small corrections is most of the file. This deletes everything except the original, the five most recent and the document on screen, and says how much it freed.">🧹 Tidy</button>
             </div>
             <div id="docHistBody"></div>
           </div>
@@ -3671,7 +3673,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.1714</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.1728</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -3698,7 +3700,7 @@ Or say what you want, in your own words:
         <div id="estBlock">
         <div class="fg-head" style="margin-bottom:0.2rem"><label for="mO" style="margin:0">How long it stays open * <span class="m-unit-hint help-text" style="text-transform:none;font-weight:400"></span></label><button type="button" class="info-icon" aria-label="About the duration estimate" data-help="Calendar span from the day the activity starts to the day it finishes — the length of the bar on the Gantt. It is NOT the hours of work inside it. Give a three-point range and the plan uses (O + 4M + P) / 6. Set Units % below to say how much of the owner&#39;s time it takes while it is open; that is what turns this span into work.">i</button></div>
         <div class="help-text" style="text-transform:none;margin:0 0 0.55rem">Calendar time from start to finish, <b>not</b> hours of work. Four days open at 20% of someone&#39;s time is 0.8 days of work — <i>Units %</i> below converts between the two.</div>
-        <div id="estFields" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
+        <div id="estFields" style="display:grid;grid-template-columns:1fr 1fr 1fr 1.1fr;gap:0.75rem">
           <div class="form-group">
             <label for="mO">Optimistic (O)</label>
             <input id="mO" type="text" inputmode="decimal" placeholder="Best case — 2d · 4h · 30m" oninput="ompHintUpd()" />
@@ -3710,6 +3712,16 @@ Or say what you want, in your own words:
           <div class="form-group">
             <label for="mP">Pessimistic (P)</label>
             <input id="mP" type="text" inputmode="decimal" placeholder="Worst case — 2d · 4h · 30m" oninput="ompHintUpd()" />
+          </div>
+          <!-- EITHER DIRECTION. Duration x allocation = work, and which two you
+               know depends on the job: "four days, he is on it a fifth of the
+               time" and "this is a six-hour job, fit it in that week" are both
+               how people actually estimate. Typing here scales O/M/P to match,
+               holding the allocation, so the three-point spread you chose is
+               kept rather than flattened. -->
+          <div class="form-group">
+            <span class="fg-head"><label for="mWork">Work</label><button type="button" class="info-icon" aria-label="About work" data-help="The hours inside the duration: the expected duration (O + 4M + P) / 6 times Units %. Type a figure here and the three boxes to the left move together to match it, keeping their spread and holding the allocation — so you can estimate in whichever direction you actually think. Blank until there is an estimate to derive it from.">i</button></span>
+            <input id="mWork" type="text" inputmode="decimal" placeholder="or type the work" oninput="workToDuration()" />
           </div>
         </div>
         </div>
@@ -4063,9 +4075,11 @@ Or say what you want, in your own words:
          plan is built from could only be discovered by saving and going to look
          somewhere else. */
       const te = (typeof modalTeUnits === 'function') ? modalTeUnits(false) : 0;
-      const uEl = document.getElementById('mUnits');
-      const u = uEl && uEl.value !== '' ? (Number(uEl.value) || 0) : 100;
+      const u = modalUnitsTotal();
       const work = unitToWorkingDays(te) * (u / 100);
+      // do not fight the person typing in it
+      const wEl = document.getElementById('mWork');
+      if (wEl && document.activeElement !== wEl) wEl.value = te > 0 ? fmtDurCell(workingDaysToUnit(work)) : '';
       const derived = !(te > 0) ? '' :
         '<b>' + escapeHtml(fmtDurCell(te)) + ' open</b>'
         + (Math.abs(u - 100) < 0.01
@@ -4076,6 +4090,61 @@ Or say what you want, in your own words:
         + (derived ? (parts.length ? '<br>' : '') + derived : '');
       el.style.display = (parts.length || derived) ? 'block' : 'none';
       if (typeof refreshProgressPanel === 'function') refreshProgressPanel(); // estimate half of the readout stays live while O/M/P are typed
+    }
+    /* Work typed in -> the three duration boxes move to match, in proportion, so
+       the spread somebody chose survives. Holding the ALLOCATION rather than the
+       duration is deliberate: allocation is usually a fact about the engagement
+       ("Haejo is a fifth of his time on this") while duration is the thing being
+       estimated. With no estimate yet there is nothing to scale, so the implied
+       duration goes into all three and the hint says the spread needs setting. */
+    /* THE ALLOCATION ON THIS FORM IS THE TOTAL ACROSS EVERYBODY ON IT, not the
+       number in the Units % box. That box is the OWNER's share; attendees add
+       theirs on top, and plannedEffortDays — which every table, chart and export
+       reads — sums them. Using the box alone made the editor promise a figure
+       the plan then disagreed with the moment an activity had a second person. */
+    function modalUnitsTotal() {
+      try {
+        const sh = modalShadowTask();
+        const tot = taskUnitsTotal(sh);
+        if (tot > 0) return tot;
+      } catch (e) {}
+      const uEl = document.getElementById('mUnits');
+      return uEl && uEl.value !== '' ? (Number(uEl.value) || 0) : 100;
+    }
+    function workToDuration() {
+      const wEl = document.getElementById('mWork');
+      if (!wEl) return;
+      const wUnits = parseDurExpr(wEl.value);
+      if (!Number.isFinite(wUnits) || !(wUnits > 0)) return;
+      const u = modalUnitsTotal();
+      if (!(u > 0)) return;
+      const wantTe = workingDaysToUnit(unitToWorkingDays(wUnits) / (u / 100));
+      const cur = modalTeUnits(false);
+      const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = fmtDurCell(v); };
+      if (cur > 0) {
+        const k = wantTe / cur;
+        ['mO', 'mM', 'mP'].forEach(id => {
+          const e = document.getElementById(id);
+          const v = parseDurExpr(e ? e.value : '');
+          if (Number.isFinite(v) && v > 0) set(id, v * k);
+        });
+      } else {
+        ['mO', 'mM', 'mP'].forEach(id => set(id, wantTe));
+      }
+      // refresh everything the duration feeds WITHOUT rewriting the box being typed in
+      const el = document.getElementById('ompHint');
+      if (el) {
+        const parts = ['mO', 'mM', 'mP'].map(id => durExprEcho(document.getElementById(id).value)).filter(Boolean);
+        const te2 = modalTeUnits(false);
+        el.innerHTML = (parts.length ? escapeHtml(parts.join('  \u00b7  ')) : '')
+          + (te2 > 0 ? (parts.length ? '<br>' : '')
+              + '<b>' + escapeHtml(fmtDurCell(te2)) + ' open</b> \u00d7 ' + (Math.round(u * 10) / 10) + '% = <b>'
+              + escapeHtml(fmtDurCell(wUnits)) + ' of work</b>'
+              + (cur > 0 ? '' : ' \u2014 <span style="color:#b45309">all three set to the same duration; widen O and P to give it a real spread</span>')
+            : '');
+        el.style.display = 'block';
+      }
+      if (typeof refreshProgressPanel === 'function') refreshProgressPanel();
     }
     // Auto-scaling duration display: the MATH stays in the project unit (one
     // canonical unit, no mixed-unit scheduling), but sub-day values READ as
@@ -28013,6 +28082,15 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
           return tasksInWbsOrder().filter(({ task: t, depth }) => t.milestone || depth < maxD).map(({ task: t, depth }) => ({
             wbs: t.wbs, depth, name: t.name, summary: t.isSummary, milestone: t.milestone,
             deliverable: t.deliverable, description: t.description, acceptance: t.acceptance, owner: t.owner,
+            /* WHAT THIS ACTIVITY CONSUMES. The chain exists — the WBS dictionary
+               has drawn it for a while — and stopped at the contract, which is
+               the one document where "we need this from you before we can start"
+               has to be in writing. A client dependency reads as an obligation
+               here; an upstream deliverable reads as sequencing. */
+            inputs: (clientSafeReports || t.isSummary || t.milestone) ? []
+              : (typeof taskInputs === 'function' ? taskInputs(t) : [])
+                  .map(x => ({ kind: x.kind, text: String(x.text || '').trim() }))
+                  .filter(x => x.text),
             resp: partyOf(t.isSummary
               ? leafDescendants(t.id).flatMap(x => taskParticipants(x).map(pr => pr.name))
               : taskParticipants(t).map(pr => pr.name)),
@@ -28148,6 +28226,9 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
       const scopeRows = d.scope.map(r => `<tr style="${r.summary ? 'font-weight:700;background:#f8fafc' : ''}">
         <td style="${td}">${h(r.wbs)}</td><td style="${td};padding-left:${9 + r.depth * 14}px">${r.milestone ? '◆ ' : ''}${h(r.name)}</td>
         <td style="${td}">${h(r.deliverable)}</td><td style="${td}">${h(r.description)}</td><td style="${td}">${h(r.acceptance)}</td>
+        <td style="${td};font-size:11.5px">${(r.inputs && r.inputs.length)
+          ? r.inputs.map(x => (x.kind === 'client' ? '◇ ' : x.kind === 'upstream' ? '↤ ' : '· ') + h(x.text)).join('<br>')
+          : '<span style="color:#94a3b8">—</span>'}</td>
         <td style="${td}${String(r.resp || '').indexOf('CLIENT') === 0 ? 'background:#fffbeb;' : ''}">${h(r.resp || '—')}</td>${showEffort ? `<td style="${td}">${r.effort ? h(r.effort) : '<span style="color:#94a3b8">n/a — milestone</span>'}</td>` : ''}</tr>`).join('');
       return `<div style="font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;max-width:1080px;margin:0 auto">
         <h1 style="margin:0 0 2px;font-size:22px">Statement of Work — ${h(d.name)}</h1>
@@ -28338,8 +28419,8 @@ Rules: 5-10 entries. Focus on delivery risks (dependencies, client obligations, 
 
       add('scope', 'Scope of Work &amp; Deliverables',
         `<p style="font-size:13px">${n.scopeNarrative || ''}</p>
-        <table style="border-collapse:collapse"><tr><th style="${th}">WBS</th><th style="${th}">Work item</th><th style="${th}">Deliverable</th><th style="${th}">Description</th><th style="${th}">Acceptance criteria</th><th style="${th}" title="Who performs the work — CLIENT rows are the client's obligations and are highlighted">Responsible</th>${showEffort ? `<th style="${th}" title="The WORK inside the activity. Where the named people are not on it full time, the calendar span it runs over is given after it — the two are different numbers and only the first is what is being charged for.">Effort</th>` : ''}</tr>${scopeRows}</table>
-        <p style="font-size:11.5px;color:#64748b;margin:4px 0 0">Effort is in working ${h((typeof unitLabel === 'function' ? unitLabel() : 'days'))} of WORK; where the named people are not assigned full time, the calendar span the activity runs over is stated after it. Phase rows show the rolled-up total of their contained work. Rows marked <b>CLIENT</b> (highlighted) are client responsibilities — their timely completion is a schedule dependency.</p>`);
+        <table style="border-collapse:collapse"><tr><th style="${th}">WBS</th><th style="${th}">Work item</th><th style="${th}">Deliverable</th><th style="${th}">Description</th><th style="${th}">Acceptance criteria</th><th style="${th}" title="What this activity consumes before it can start: ↤ the deliverable of an activity it waits for, ◇ something the client owes, · an input stated on the activity itself. A row with an unmet ◇ is a schedule dependency on the client.">Inputs</th><th style="${th}" title="Who performs the work — CLIENT rows are the client's obligations and are highlighted">Responsible</th>${showEffort ? `<th style="${th}" title="The WORK inside the activity. Where the named people are not on it full time, the calendar span it runs over is given after it — the two are different numbers and only the first is what is being charged for.">Effort</th>` : ''}</tr>${scopeRows}</table>
+        <p style="font-size:11.5px;color:#64748b;margin:4px 0 0">Effort is in working ${h((typeof unitLabel === 'function' ? unitLabel() : 'days'))} of WORK; where the named people are not assigned full time, the calendar span the activity runs over is stated after it. Phase rows show the rolled-up total of their contained work. Rows marked <b>CLIENT</b> (highlighted) are client responsibilities — their timely completion is a schedule dependency. In <b>Inputs</b>, ◇ is something the client owes before the row can start, ↤ is the deliverable of an earlier row, and · is an input stated on the activity itself.</p>`);
 
       /* OUT OF SCOPE LIMITS, IT NEVER WAIVES. With an empty RAID log this
          section used to be handed to the AI, which was asked for "1-2 sentences
@@ -28751,6 +28832,75 @@ Do not write payment terms or exclusions — both are generated from the project
       return v;
     }
     function sowVersionByNo(n) { return sowVersions.find(v => v.n === Number(n)) || null; }
+    /* ═══ DELETING VERSIONS ══════════════════════════════════════════════════
+       A document is a few hundred KB and a typo is a version, so a month of
+       small corrections is most of the file. But some versions are LOAD-BEARING
+       — the one the contract baseline points at, and the ones a change order
+       records itself against — and a history with a hole where a pointer lands
+       is worse than a long one. So deletion refuses those and says why, rather
+       than letting somebody discover it later.
+
+       The first and the newest always stay: "go back to the original" and "what
+       am I looking at" are the two questions this history exists to answer. */
+    function sowVersionPin(v) {
+      if (!v) return 'missing';
+      if (sowVersions.length && v.n === sowVersions[0].n) return 'the original';
+      if (sowVersions.length && v.n === sowVersions[sowVersions.length - 1].n) return 'the current draft';
+      /* Nothing else points AT a SOW version — sowBaseline.v and a version's own
+         baseV both point the other way, at a PLAN version — so the original, the
+         current draft and whatever is on screen are the whole pin list. There is
+         no hidden pointer here to break. */
+      if (v.html && v.html === sowDraft) return 'the document on screen right now';
+      return null;
+    }
+    function sowDeleteVersion(n) {
+      const v = sowVersionByNo(n);
+      if (!v) return;
+      const pin = sowVersionPin(v);
+      if (pin) { alert('v' + v.n + ' cannot be deleted — it is ' + pin + '.\n\nEverything else in this '
+        + 'history can go; use Tidy to clear the small ones in one pass.'); return; }
+      if (!confirm('Delete SOW v' + v.n + (v.label ? ' (' + v.label + ')' : '') + '?\n\n'
+        + 'The document itself is not affected — only this saved copy of it. This is not covered by Undo.')) return;
+      sowVersions = sowVersions.filter(x => x.n !== v.n);
+      saveLocal(); renderSowHistory();
+      flashSaved('🗑 SOW v' + v.n + ' deleted. ' + sowVersions.length + ' version'
+        + (sowVersions.length === 1 ? '' : 's') + ' left.');
+    }
+    /* The bulk answer to "most of these are typos". Keeps everything pinned and
+       the newest few, drops the rest, and says how much came back in KB —
+       because size is the reason somebody is here. */
+    function sowTidyVersions(keepRecent) {
+      const keep = Math.max(1, Number(keepRecent) || 5);
+      const doomed = sowVersions.filter((v, i) => !sowVersionPin(v) && i < sowVersions.length - keep);
+      if (!doomed.length) { alert('Nothing to tidy — every version here is either pinned or among the '
+        + keep + ' most recent.'); return; }
+      const kb = Math.round(doomed.reduce((a, v) => a + (v.chars || 0), 0) / 1024);
+      if (!confirm('Delete ' + doomed.length + ' version' + (doomed.length === 1 ? '' : 's') + ', freeing about '
+        + kb + ' KB?\n\nKept: the original, the ' + keep + ' most recent, and the document on screen. Not covered by Undo.')) return;
+      const gone = new Set(doomed.map(v => v.n));
+      sowVersions = sowVersions.filter(v => !gone.has(v.n));
+      if (sowVersions[0]) sowVersions[0].trimmed = (sowVersions[0].trimmed || 0) + doomed.length;
+      saveLocal(); renderSowHistory();
+      flashSaved('🧹 ' + doomed.length + ' version' + (doomed.length === 1 ? '' : 's') + ' deleted, about '
+        + kb + ' KB freed.');
+    }
+    /* The plan chain has its own pins already — the cap has honoured them for a
+       while — so hand deletion asks the same function rather than a second rule
+       that could disagree with it. */
+    function planDeleteVersion(n) {
+      const i = planVersions.findIndex(x => x.v === Number(n));
+      if (i < 0) return;
+      const v = planVersions[i];
+      const why = i === 0 ? 'the first version'
+        : i === planVersions.length - 1 ? 'the latest version'
+        : versionIsPinned(v) ? 'pinned — it is a contract baseline, a change order or a sign-off point' : null;
+      if (why) { alert('v' + v.v + ' cannot be deleted: it is ' + why + '.'); return; }
+      if (!confirm('Delete plan version v' + v.v + (v.label ? ' (' + v.label + ')' : '') + '?\n\n'
+        + 'The plan itself is untouched — only this snapshot of it. Not covered by Undo.')) return;
+      planVersions.splice(i, 1);
+      saveLocal(); renderSowHistory(); try { renderCoHistory(); } catch (e) {}
+      flashSaved('🗑 Plan v' + v.v + ' deleted.');
+    }
     /* SEEING WHAT CHANGED, not just that something did. The plan's version chain
        has had a structured diff for a while; the document's own history offered
        View and Restore and nothing between them, so answering "what is different
@@ -28913,7 +29063,12 @@ Do not write payment terms or exclusions — both are generated from the project
           + v.n + ')">View</button> <button class="btn-sm btn-secondary no-print" onclick="sowRestoreVersion('
           + v.n + ')"' + (v.n === curNo ? ' disabled title="This is the current draft"'
             : v.html === sowDraft ? ' disabled title="Identical to the current draft — restoring it would '
-              + 'change nothing"' : '') + '>Restore</button></td>'
+              + 'change nothing"' : '') + '>Restore</button>'
+          + (sowVersionPin(v)
+              ? ' <span class="help-text" title="' + escapeHtml('Kept: this is ' + sowVersionPin(v) + '.') + '">🔒</span>'
+              : ' <button class="btn-sm btn-danger no-print" onclick="sowDeleteVersion(' + v.n
+                + ')" aria-label="Delete this version" title="Delete this saved copy. The document itself is not affected.">✕</button>')
+          + '</td>'
         + '</tr>').join('');
       return '<div class="table-wrap"><table><thead><tr><th>Version</th><th>Saved</th><th>What happened</th>'
         + '<th title="The change orders this document already reflects. Recorded when it was written, not read '
@@ -30516,6 +30671,8 @@ Return ONLY JSON {"rationale":"..."} — factual, no invented causes.`, { onDelt
           + '<td style="white-space:nowrap">'
               + '<button class="btn-sm btn-secondary no-print" onclick="versionView(' + v.v + ')"'
               + ' title="Open the plan as this version recorded it — what was promised, read only">👁 open</button>'
+              + ' <button class="btn-sm btn-danger no-print" onclick="planDeleteVersion(' + v.v + ')"'
+              + ' aria-label="Delete this snapshot" title="Delete this snapshot. The plan itself is untouched.">\u2715</button>'
               + ' <button class="btn-sm no-print" style="background:#fef3c7;color:#b45309" onclick="versionRestore('
               + v.v + ')" title="Put the plan back to this version. Estimates, owners, links, pins and fixed'
               + ' costs go back; progress, actual dates and anything invoiced are untouched. The plan as it'

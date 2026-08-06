@@ -255,11 +255,55 @@ const QA = JSON.parse(fs.readFileSync(
         out.ompHint = txt.trim();
         if (!/2d/.test(txt))
           say('Editor', 'O/M/P of 1/2/3 has a PERT mean of 2 days and the form does not say so: "' + txt + '"');
-        if (!/1\.6/.test(txt))
-          say('Editor', 'two days open at 80% is 1.6 days of work and the estimate form never states it: "'
-            + txt + '" — the allocation is entered on this screen and its effect is shown on another');
+        // again: the total across everybody on the activity, not the box
+        const want = (2 * (modalUnitsTotal() / 100));
+        if (txt.indexOf(String(+want.toFixed(2)).replace(/0+$/, '').replace(/\.$/, '')) < 0
+            && txt.indexOf(String(+want.toFixed(1))) < 0)
+          say('Editor', 'two days open at ' + modalUnitsTotal() + '% is ' + want.toFixed(2)
+            + ' days of work and the estimate form never states it: "' + txt + '"');
         if (document.getElementById('ompHint').innerHTML.indexOf('&lt;b&gt;') >= 0)
           say('Editor', 'the estimate hint escapes its own markup');
+        closeModal();
+      })();
+
+      /* ── THE ESTIMATE GOES IN EITHER DIRECTION ──────────────────────────
+         Duration x allocation = work, and which two you know depends on the
+         job. Typing the work scales the three duration boxes to match, holding
+         the allocation and KEEPING THE SPREAD — flattening O and P onto M would
+         tell the Monte Carlo the estimate is certain. */
+      ran('workDrivesDuration');
+      (() => {
+        openEditModal(subject.id, true);
+        set('mO', '2d'); set('mM', '4d'); set('mP', '6d'); set('mUnits', '50');
+        ompHintUpd();
+        // the allocation is the TOTAL across everyone on the activity, not the
+        // Units % box — an activity with attendees has more than the box says
+        const alloc = modalUnitsTotal();
+        out.alloc = alloc;
+        const shownWork = document.getElementById('mWork').value;
+        out.workShown = shownWork;
+        const wantWork = 4 * (alloc / 100);
+        if (parseDurExpr(shownWork) == null || Math.abs(parseDurExpr(shownWork) - wantWork) > 0.02)
+          say('Editor', 'TE 4d at ' + alloc + '% is ' + wantWork.toFixed(2)
+            + 'd of work and the Work box reads "' + shownWork + '"');
+        set('mWork', '4d'); workToDuration();
+        const o2 = parseDurExpr(document.getElementById('mO').value);
+        const m2 = parseDurExpr(document.getElementById('mM').value);
+        const p2 = parseDurExpr(document.getElementById('mP').value);
+        out.afterWork = [o2, m2, p2];
+        const wantTe = 4 / (alloc / 100);
+        if (Math.abs(modalTeUnits(false) - wantTe) > 0.03)
+          say('Editor', 'asking for 4d of work at ' + alloc + '% should give ' + wantTe.toFixed(2)
+            + 'd of duration; the form says ' + modalTeUnits(false));
+        if (Math.abs((p2 - o2) / m2 - 1) > 0.02)
+          say('Editor', 'the three-point spread was not preserved: ' + [o2, m2, p2].join('/')
+            + ' — flattening it tells the simulation the estimate is certain');
+        // and saving delivers what the form promised
+        saveActivity();
+        const aft = tasks.find(x => x.id === subject.id);
+        if (Math.abs(workingDaysToUnit(plannedEffortDays(aft)) - 4) > 0.02)
+          say('Editor', 'the form promised 4d of work and saving produced '
+            + workingDaysToUnit(plannedEffortDays(aft)).toFixed(2));
         closeModal();
       })();
 
