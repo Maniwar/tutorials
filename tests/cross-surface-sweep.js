@@ -193,7 +193,7 @@ const DATA = FIXTURE();
      checks the two ways the map itself can lie: a classifier that waves through
      "Analysis", and inputs that are RETYPED rather than derived — a copy drifts
      from the schedule the moment somebody renames a deliverable. */
-  const io = await page.evaluate(() => {
+  const io = await page.evaluate(async () => {
     const out = {};
     const leaf = leafTasks().filter(t => !t.isSummary && !t.milestone);
     const t0 = leaf[0], keep = t0.deliverable;
@@ -260,6 +260,38 @@ const DATA = FIXTURE();
         t.units = keptU; t.participants = keptP; calculate();
       }
     }
+    /* ── THE LINT CAN NOW FIX WHAT IT FINDS ─────────────────────────────
+       It has been able to NAME these gaps for a while and could do nothing
+       about them, which on a forty-activity plan is a list nobody works
+       through. The repair fills BLANKS only: a plan that quietly reworded the
+       sentence you meant is worse than one with a gap in it. */
+    {
+      const lv2 = leafTasks().filter(x => !x.isSummary && !x.milestone);
+      const gap = lv2[0], mine = lv2[1];
+      if (!gap || !mine) out.ioFixVacuous = true;
+      else {
+        const k = { d0: gap.deliverable, i0: gap.inputs, p0: gap.predecessors,
+                    d1: mine.deliverable, i1: mine.inputs };
+        gap.deliverable = ''; gap.inputs = ''; gap.predecessors = [];
+        mine.deliverable = 'ZZ mine'; mine.inputs = 'ZZ my input';
+        calculate();
+        out.ioGapsBefore = ioFindings().filter(f => f.kind === 'no-deliverable' || f.kind === 'no-inputs').length;
+        const real = window.callAnthropic;
+        window.callAnthropic = async () => JSON.stringify({ fixes: [
+          { id: gap.id, deliverable: 'ZZ filled deliverable', inputs: 'CLIENT: ZZ filled input' },
+          { id: mine.id, deliverable: 'ZZ CLOBBER', inputs: 'ZZ CLOBBER' }] });
+        localStorage.setItem('pertGantt.anthropicKey', 'sk-test');
+        await aiFixIoChain();
+        window.callAnthropic = real; localStorage.removeItem('pertGantt.anthropicKey');
+        out.ioFilledDel = tasks.find(t => t.id === gap.id).deliverable;
+        out.ioFilledIn = tasks.find(t => t.id === gap.id).inputs;
+        out.ioKeptDel = tasks.find(t => t.id === mine.id).deliverable;
+        out.ioKeptIn = tasks.find(t => t.id === mine.id).inputs;
+        gap.deliverable = k.d0; gap.inputs = k.i0; gap.predecessors = k.p0;
+        mine.deliverable = k.d1; mine.inputs = k.i1;
+        calculate();
+      }
+    }
     // the stated field survives a save/load
     const t2 = leaf[1]; t2.inputs = 'ZZ stated input';
     hydrate(JSON.parse(JSON.stringify(serialize())));
@@ -282,6 +314,15 @@ const DATA = FIXTURE();
   if (io.wbsWorkCell != null && io.wbsSpanCell != null && io.wbsWorkCell === io.wbsSpanCell)
     R.contradictions.push('WBS dictionary :: at 20% allocation the Work column reads "' + io.wbsWorkCell
       + '", the same as the duration — it is reprinting the span, not the work');
+  if (io.ioFixVacuous) R.contradictions.push('IO repair :: fewer than two leaf activities — the repair check is vacuous');
+  if (io.ioFilledDel !== undefined && io.ioFilledDel !== 'ZZ filled deliverable')
+    R.contradictions.push('IO repair :: a blank deliverable was not filled — the lint still cannot fix what it finds');
+  if (io.ioFilledIn !== undefined && !/ZZ filled input/.test(String(io.ioFilledIn)))
+    R.contradictions.push('IO repair :: a blank input was not filled');
+  if (io.ioKeptDel !== undefined && io.ioKeptDel !== 'ZZ mine')
+    R.contradictions.push('IO repair :: a deliverable somebody wrote was overwritten — "' + io.ioKeptDel + '"');
+  if (io.ioKeptIn !== undefined && io.ioKeptIn !== 'ZZ my input')
+    R.contradictions.push('IO repair :: an input somebody wrote was overwritten');
   if (io.milestoneFlagged)
     R.contradictions.push('IO map :: a milestone is flagged for having no deliverable — a milestone is a date, '
       + 'and a finding nobody can fix buries the ones they can');

@@ -410,6 +410,32 @@ const DATA = FIXTURE();
         }
       }
 
+      /* ── THE CONTRACT SAYS WHAT EACH ROW CONSUMES ──────────────────────
+         The chain is drawn in the WBS dictionary and stopped at the SOW, which
+         is the one document where "we need this from you before we can start"
+         has to be in writing. */
+      {
+        const b2 = build();
+        const rows2 = (b2.d.scope || []).filter(x => !x.summary && !x.milestone);
+        if (!rows2.length) say('SOW inputs', 'no work-package rows — this check is vacuous');
+        else {
+          if (!/<th[^>]*>Inputs<\/th>/.test(b2.html))
+            say('SOW inputs', 'the scope table has no Inputs column, so the contract never says what a row '
+              + 'needs before it can start');
+          const withIn = rows2.filter(x => (x.inputs || []).length);
+          if (!withIn.length)
+            say('SOW inputs', 'not one of the ' + rows2.length + ' work packages names anything it consumes, '
+              + 'though the WBS dictionary draws the chain');
+          const anyClient = rows2.some(x => (x.inputs || []).some(i => i.kind === 'client'));
+          const anyUp = rows2.some(x => (x.inputs || []).some(i => i.kind === 'upstream'));
+          if (!anyClient && !anyUp)
+            say('SOW inputs', 'inputs are listed but none is traced to a client dependency or an upstream '
+              + 'deliverable — the kinds a reader needs told apart');
+          if (rows2.some(x => (x.inputs || []).some(i => !String(i.text || '').trim())))
+            say('SOW inputs', 'an input row prints with no text');
+        }
+      }
+
       /* ── ONE UNIT DOWN THE EFFORT COLUMN ───────────────────────────────
          The formatter drops to hours below a day, so one table carried "4.0
          days", "1.6 days of work over 2.0 days" and "6.4 h (0.80 days) of work

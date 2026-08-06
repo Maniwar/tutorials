@@ -3673,7 +3673,7 @@ Or say what you want, in your own words:
 
   <footer>
     All data stays in your browser.
-    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.1728</span>
+    <span id="buildStamp" title="Which build this page is running. If it does not match the latest push, you are on a cached copy — hard-refresh (Ctrl/Cmd+Shift+R) or open a private window." style="margin-left:0.5rem;opacity:0.65;font-variant-numeric:tabular-nums">build 2026.08.06.1741</span>
   </footer>
 
   <!-- Add / Edit Modal -->
@@ -16339,6 +16339,12 @@ Or say what you want, in your own words:
           return `<details class="io-findings" open>
             <summary><b>${ioFind.length} gap${ioFind.length === 1 ? '' : 's'} in the input/output chain</b>
               <span class="help-text" style="font-weight:400"> — an activity whose output nobody can identify cannot be accepted, invoiced, or fed into the next one</span></summary>
+            <!-- The lint has been able to NAME these for a while and could do
+                 nothing about them, which on a forty-activity plan is a list
+                 nobody works through by hand. -->
+            <div class="toolbar no-print" style="margin:0.4rem 0 0.2rem">
+              <button class="btn-sm btn-primary" onclick="aiFixIoChain()" title="Reads the plan — activity names, descriptions, the deliverables that already exist and what each activity waits for — and fills the BLANKS: a named deliverable where there is none, and a stated input where nothing feeds the activity. It never overwrites anything you wrote, and nothing is applied until you have seen what it proposes.">✨ Fill the gaps with AI</button>
+            </div>
             ${order.filter(k => byKind[k]).map(k => `<div style="margin:0.35rem 0 0">
               <span class="badge badge-warn">${escapeHtml(ioFindingLabel(k))} · ${byKind[k].length}</span>
               <ul style="margin:0.2rem 0 0;padding-left:1.1rem;font-size:0.78rem">
@@ -18792,6 +18798,77 @@ Or say what you want, in your own words:
     /* The findings, per activity. Deliberately NOT reported for milestones or
        phases: a milestone is a date and a phase is a container, and flagging
        either would bury the real findings under rows that can never be fixed. */
+    /* ═══ FILLING THE CHAIN ══════════════════════════════════════════════════
+       The lint has been able to NAME these gaps for a while and could do nothing
+       about them. On a forty-activity plan that is a list nobody works through
+       by hand, so it stays broken and the SOW ships with "nothing stated" in the
+       column that tells a client what they owe before work can start.
+
+       BLANKS ONLY. It fills a missing deliverable and a missing input; it never
+       touches text somebody wrote, because the one thing worse than a gap is a
+       plan that quietly reworded the sentence you meant. */
+    async function aiFixIoChain() {
+      const gaps = ioFindings().filter(f => f.kind === 'no-deliverable' || f.kind === 'no-inputs'
+        || f.kind === 'vague-deliverable');
+      if (!gaps.length) { alert('No fillable gaps — every activity names a deliverable and says what it starts from.'); return; }
+      if (!(document.getElementById('aiKey').value.trim() || localStorage.getItem(AI_KEY_STORE))) {
+        alert('Add your Anthropic API key first (⚙ API Key on the Tasks tab).'); return; }
+      computeWbsCodes();
+      const byId = new Map(tasks.map(t => [t.id, t]));
+      const ctx = tasksInWbsOrder().filter(({ task: t }) => !t.milestone).map(({ task: t }) => ({
+        id: t.id, wbs: t.wbs, name: t.name,
+        deliverable: String(t.deliverable || '').trim(),
+        description: String(t.description || '').slice(0, 240),
+        waitsFor: (typeof effectivePreds === 'function' ? effectivePreds(t) : (t.predecessors || []))
+          .map(pd => byId.get(Number(pd.id))).filter(Boolean)
+          .map(p => ({ wbs: p.wbs, name: p.name, deliverable: String(p.deliverable || '').trim() })),
+        statedInputs: String(t.inputs || '').trim()
+      }));
+      const want = gaps.reduce((m, f) => { (m[f.id] = m[f.id] || []).push(f.kind); return m; }, {});
+      const p = `You are repairing the input/output chain of a consulting plan. Every activity must name WHAT IT PRODUCES and WHAT IT CONSUMES, so a client can be told what they owe before work starts and an auditor can follow one activity's output into the next one's input.
+
+FILL ONLY WHAT IS ASKED FOR, on the ids listed. Everything else is context.
+
+TO FIX (id -> what is missing):
+${Object.entries(want).map(([id, kinds]) => id + ' -> ' + [...new Set(kinds)].join(', ')).join('\n')}
+
+THE PLAN:
+${JSON.stringify(ctx, null, 1)}
+
+RULES
+- deliverable: the actual ARTEFACT, named so somebody could tell whether it exists. "Ranked friction-theme table with ticket counts" is a deliverable. "Analysis", "Documentation", "Report", "Findings" name a category and are rejected.
+- inputs: one per line. Where an activity WAITS FOR another, the input is that activity's deliverable, written as "<- <deliverable>". Where it needs something from the client, write "CLIENT: <the thing>". Otherwise state the raw material it starts from.
+- An activity that starts a chain still consumes something — the client's data, an existing document, a decision already taken. "nothing" is not an answer; if it genuinely begins from a conversation, say whose and about what.
+- Invent no facts about the client, no tools and no systems the plan does not already mention.
+- Return ONLY the ids you were asked to fix.
+
+Return ONLY JSON: {"fixes":[{"id":<number>,"deliverable":"...","inputs":"line\\nline"}],"note":"one line"}`;
+      try {
+        const onDelta = streamShow('Filling ' + gaps.length + ' gaps');
+        const raw = await callAnthropic(p, { onDelta: onDelta, cachePrefix: [histPromptBlock() + bankPromptBlock()] });
+        streamHide(true);
+        const res = parseAIJsonNoted(raw, 'the chain repair');
+        if (!res || !Array.isArray(res.fixes) || !res.fixes.length) { alert('Nothing came back — nothing changed.'); return; }
+        let dLit = 0, iLit = 0, skipped = 0;
+        res.fixes.forEach(f => {
+          const t = byId.get(Number(f.id));
+          if (!t) return;
+          const d = String(f.deliverable || '').trim();
+          const i = String(f.inputs || '').trim();
+          // BLANKS ONLY — a deliverable somebody wrote is never replaced
+          if (d && !String(t.deliverable || '').trim()) { t.deliverable = d; dLit++; }
+          else if (d) skipped++;
+          if (i && !String(t.inputs || '').trim()) { t.inputs = i; iLit++; }
+          else if (i) skipped++;
+        });
+        saveLocal(); recompute(); refreshAll();
+        const left = ioFindings().filter(f => f.kind === 'no-deliverable' || f.kind === 'no-inputs').length;
+        flashSaved('✨ ' + dLit + ' deliverable' + (dLit === 1 ? '' : 's') + ' and ' + iLit + ' input'
+          + (iLit === 1 ? '' : 's') + ' filled'
+          + (skipped ? ', ' + skipped + ' left alone because you had already written something' : '')
+          + '. ' + left + ' gap' + (left === 1 ? '' : 's') + ' remain. ↶ Undo reverses the whole pass.');
+      } catch (e) { streamHide(false); alert('Filling the chain failed: ' + (e.message || e)); }
+    }
     function ioFindings() {
       const out = [];
       const leaves = (typeof leafTasks === 'function' ? leafTasks() : tasks).filter(t => !t.isSummary && !t.milestone);

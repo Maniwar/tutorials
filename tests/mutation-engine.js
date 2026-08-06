@@ -1355,6 +1355,10 @@ const MUTANTS = [
     find: '            const e = plannedEffortDays(t);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';',
     with: '            const e = unitToWorkingDays(t.te || 0);\n            return e > 0 ? escapeHtml(fmtDurCell(workingDaysToUnit(e))) : \'—\';' },
 
+  { what: 'io repair: the AI pass overwrites a deliverable somebody wrote',
+    find: "          if (d && !String(t.deliverable || '').trim()) { t.deliverable = d; dLit++; }",
+    with: "          if (d) { t.deliverable = d; dLit++; }" },
+
   { what: 'editor: typing the work does not move the duration',
     find: "      if (cur > 0) {\n        const k = wantTe / cur;",
     with: "      if (false) {\n        const k = wantTe / cur;" },
