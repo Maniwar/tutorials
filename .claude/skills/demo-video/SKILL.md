@@ -87,7 +87,16 @@ independent clips are re-recordable and let the assembler cross-fade between the
    with `record.mockSSE` so clips are fast, free, and identical every run.
 5. **Render title cards** with `titlecard.render(...)`.
 6. **Write narration (optional but recommended).** Add a `narration` line to any
-   card/clip segment in the manifest. Don't time your recording to a script — the
+   card/clip segment in the manifest. **Phonemize each line before you render
+   it** — `espeak-ng -q -x "your line"` takes a second and prints exactly what
+   the voice will say. Kokoro and Piper both phonemize through espeak-ng, and it
+   resolves HETERONYMS by lookup, not by context: `lives` comes back `l'aIvz`
+   (the noun, rhyming with hives) in *every* sentence, including "everything
+   lives under Sync". Same trap for `read, live, wound, bow, tear, close, use,
+   record, present, lead` — any word whose two readings differ in VOWEL rather
+   than stress. There is no markup to fix this; reword the line (`lives` →
+   `sits`). Checking costs a second, and catching it after the render costs a
+   full re-assembly. Don't time your recording to a script — the
    assembler synthesizes each line and **stretches that segment to fit its voice**
    (a clip freezes its last frame to fill), so you write the line and the video
    accommodates it. Keep each line to one breath; let the payoff land under it.
@@ -201,7 +210,10 @@ don't. `ffmpeg -i out.mp4 -vf fps=1/3 /tmp/qa_%03d.png` then read them.
 - Card text has no typos and matches the app's story.
 - Transitions don't cut mid-motion; total length matches the brief.
 - File plays (has `+faststart`) and is a sane size (≈ crf 22 → a few MB/min).
-- **If narrated:** the voice is a HUMAN-quality backend (kokoro/edge/openai/elevenlabs/piper) —
+- **If narrated:** every line was phonemized first (`espeak-ng -q -x "…"`) and no
+  heteronym came out wrong — a single mispronounced word is the thing a viewer
+  hears, and it is invisible in every log and every extracted frame. The voice is
+  a HUMAN-quality backend (kokoro/edge/openai/elevenlabs/piper) —
   if it sounds robotic, stop and fix the backend rather than shipping it. There's a
   real audio stream (`ffprobe -select_streams a:0 …`),
   it's 48 kHz, and the length matches (segments stretch to fit their voice, so a
