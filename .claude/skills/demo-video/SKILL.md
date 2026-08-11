@@ -87,7 +87,11 @@ independent clips are re-recordable and let the assembler cross-fade between the
    with `record.mockSSE` so clips are fast, free, and identical every run.
 5. **Render title cards** with `titlecard.render(...)`.
 6. **Write narration (optional but recommended).** Add a `narration` line to any
-   card/clip segment in the manifest. **Phonemize each line before you render
+   card/clip segment in the manifest. **Write it for the ear — see
+   `references/narration.md` before you write the first line.** That file is the
+   difference between a demo people watch and one they close: the failure is not
+   the voice, it is prose that was written to be read. **Phonemize each line
+   before you render
    it** — `espeak-ng -q -x "your line"` takes a second and prints exactly what
    the voice will say. Kokoro and Piper both phonemize through espeak-ng, and it
    resolves HETERONYMS by lookup, not by context: `lives` comes back `l'aIvz`
@@ -190,16 +194,26 @@ const APP = 'file:///abs/path/app.html';                // or an https URL
   scenes. Cards carry the narration the voice-over would.
 - **Compose the shot.** Scroll the payoff into frame before recording it; don't
   make the cursor chase content off-screen.
+- **Push in on the payoff.** A full-page 1920 shot of a dense product screen is
+  a grey smear on a phone, which is where most of this gets watched. Every
+  scene's payoff gets an eased push-in with a slow drift while it holds — three
+  moves, because one reads as a browser zoom and three read as a camera. Helper
+  and the rules that stop it cropping your row labels: `references/pushin.md`.
 - **Consistent canvas.** Pick one resolution (1920×1080 landscape for LinkedIn/
   YouTube; 1080×1920 for stories/reels) and keep every clip + card identical —
   the assembler pads mismatches to black, which you don't want.
 - **Keep it tight.** 60–150s total for a product demo. Cut scenes that don't earn
   their seconds.
 - **Let the voice lead, not the clock.** With narration on, write the line first
-  and let the segment stretch to it — don't crop a sentence to fit a clip. One
-  idea per line, conversational, active voice ("Paste your notes and a plan
-  appears"), and leave the last ~0.5s of each line to breathe before the cut. For
-  a published cut use Piper or an API voice; espeak is for proving the edit.
+  and let the segment stretch to it — don't crop a sentence to fit a clip. Leave
+  the last ~0.5s of each line to breathe before the cut. For a published cut use
+  Kokoro or an API voice; espeak is for proving the edit.
+- **Write for the ear, not the eye.** The single most common way a finished demo
+  goes wrong, and it will be reported as "the voice sounds weird" when the voice
+  is fine. Sentences average 8–12 words, contractions throughout, the viewer's
+  problem before your product. Full rules and a worked before/after in
+  `references/narration.md` — read it before writing narration, not after a
+  viewer tells you the cut sounds off.
 
 ## QA checklist (before you call it done)
 Extract a few frames and actually look at them — recordings lie in ways logs
