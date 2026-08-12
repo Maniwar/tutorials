@@ -26,6 +26,7 @@ People love giving advice.
 - What separates the new hires who move up from the ones who don't?
 - Does your company help pay for school? How does that work in practice — do people really use it?
 - What should I learn *right now* to be useful on day one?
+- Does your company take **interns or co-op students**? Who runs that program?
 - Your held-over question from Week 1 — the one the internet couldn't answer
 - End with: *"Is there anyone else you think I should talk to?"* (This is how 2 interviews become 4.)
 

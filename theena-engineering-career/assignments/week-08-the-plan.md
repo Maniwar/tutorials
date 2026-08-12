@@ -28,6 +28,9 @@ This is the document you'll reread at 20 and 23. Requirements:
 1. **Where I'm going:** the role/credential you're aiming at by ~23, and why — grounded in what you learned, citing your own earlier work ("my Week 4 spreadsheet showed…", "the technician I interviewed said…")
 2. **The route:** job + education path, with the money math (what you'll earn, what school costs, what reimbursement covers, what you'll cover)
 3. **The next 90 days:** specific and dated. Applications, follow-ups, advisor meetings, application windows, deadlines.
+   Include your **first internship or co-op window**: the first term you'll be
+   eligible (enrolled), and the date those applications open — big-company summer
+   internships open the previous August–October (see `resources/internships-and-coops.md`).
 4. **Milestones:** what should be true at 6 months, 1 year, 2 years, 5 years — concrete enough that future-you can check them (e.g., "employed as a technician within 4 months," "12 college credits by next summer")
 5. **Failure modes and answers:** the three most likely ways this plan goes sideways (no offers? class + work overload? interest fades?) and what you'll actually do in each case
 6. **What I'd tell myself from eight weeks ago.** One honest paragraph.

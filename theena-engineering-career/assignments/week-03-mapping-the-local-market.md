@@ -16,6 +16,7 @@ Target: **at least 12 companies.** For each:
 - Name, location, rough size (LinkedIn shows employee count)
 - What they actually make or do (one sentence)
 - Whether their careers page mentions tuition reimbursement, apprenticeships, or "education assistance" (this matters for Week 4)
+- Whether they mention **interns or co-op students** anywhere on the careers page — flag these companies; they matter later (see `resources/internships-and-coops.md`)
 
 **Where to look:**
 - Google Maps: search "manufacturing," "machine shop," "electronics manufacturer," "engineering" around your area and just scroll

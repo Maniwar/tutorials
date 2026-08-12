@@ -30,6 +30,13 @@ Investigate all four routes **as they actually exist where you live**:
 while doing it, whether ABET accreditation applies (see the resources file for why
 you should care), and what door it opens at the end.
 
+**For every college on your list, also ask** (read
+`resources/internships-and-coops.md` first — enrollment is the key that unlocks
+internships and co-ops):
+- Do you have a **co-op program**? Which local employers take your students?
+- Do students get **Handshake** access, and does the career center place pre-engineering/technology students?
+- Which employers sponsor or hire your engineering-track students? (The college knows exactly who.)
+
 ## Part 2: Essay (700–1000 words)
 
 **Prompt:** *"My education plan and why I chose it."*

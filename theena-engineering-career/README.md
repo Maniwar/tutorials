@@ -13,6 +13,7 @@ path — instead of dead-end jobs.
 | `resources/entry-level-jobs.md` | The actual job titles to search for (most people don't know these exist) |
 | `resources/tuition-reimbursement-companies.md` | Employers known for paying for school, and how to verify current programs |
 | `resources/education-pathways.md` | Community college → transfer, apprenticeships, and why ABET matters |
+| `resources/internships-and-coops.md` | How internships and co-ops actually work, what's open before college enrollment, and the self-made internship pitch |
 | `resources/essay-rubric.md` | How to evaluate each essay so feedback is fair and consistent |
 | `tracker.md` | A simple checklist to track progress and deliverables |
 
