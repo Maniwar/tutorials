@@ -12,6 +12,12 @@ electrical engineering work: manufacturers, machine shops, electronics firms,
 utilities, HVAC/controls companies, defense contractors, medical device makers,
 automation/robotics integrators, engineering consultancies.
 
+**Head start:** `resources/north-texas-starter-map.md` is a researched, sourced
+map of the McKinney/Collin County area — Raytheon and Prysmian in town, the TI
+Sherman fab up the road, and more. Start from it, verify each entry is still
+current, and then find what it misses: your census needs at least 5 companies
+that aren't on that map (the small shops are where the self-made opportunities are).
+
 Target: **at least 12 companies.** For each:
 - Name, location, rough size (LinkedIn shows employee count)
 - What they actually make or do (one sentence)

@@ -14,6 +14,7 @@ path — instead of dead-end jobs.
 | `resources/tuition-reimbursement-companies.md` | Employers known for paying for school, and how to verify current programs |
 | `resources/education-pathways.md` | Community college → transfer, apprenticeships, and why ABET matters |
 | `resources/internships-and-coops.md` | How internships and co-ops actually work, what's open before college enrollment, and the self-made internship pitch |
+| `resources/north-texas-starter-map.md` | Researched map of McKinney/Collin County employers, colleges, and apprenticeships (verified Aug 2026) |
 | `resources/essay-rubric.md` | How to evaluate each essay so feedback is fair and consistent |
 | `tracker.md` | A simple checklist to track progress and deliverables |
 
